@@ -1555,7 +1555,9 @@ html { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
 }
 
 /* ── Toast（最多堆叠 3 条，超出自动收起并隐藏）───────────────────────── */
-.toasts { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 200; display: flex; flex-direction: column; gap: 8px; align-items: center; }
+/* 提示条只是通报，不接手势：容器整层 click-through，否则盖在输入区/侧栏底部按钮上时会把点击吃掉
+   （底栏抽屉与窄屏下 #attach-btn / #settings-btn 尤其明显）。本项目没有任何可点的 toast。 */
+.toasts { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 200; display: flex; flex-direction: column; gap: 8px; align-items: center; pointer-events: none; }
 .toast {
   background: var(--fg); color: var(--bg); padding: 9px 18px; border-radius: 999px;
   font-size: var(--ui-fs-12_5px, 12.5px); box-shadow: var(--shadow-lg);
