@@ -25,6 +25,27 @@ try{
      return old(u,o);};
     try{const agent=createAgent(store,{onToolStart:c=>calls.push(c)});await agent.send('Execute the long JavaScript command and fix only its typo.');return{status:agent.getStatus(),calls:calls.map(c=>({name:c.name,args:c.args,status:c.status,settled:c.settled})),path,source:agent.fs.read(path),requestCount:n};}finally{window.fetch=old;}
    });assert.equal(r.status,'done',JSON.stringify(r));assert.equal(r.requestCount,4);assert.equal(r.calls[0].status,'error');assert.equal(r.calls[0].settled,true);assert.equal(r.calls[1].args.mode,'replace');assert.equal(r.calls[1].args.old_text,'badName()');assert.equal(r.calls[2].args.path,r.path);assert.equal(r.calls[2].args.code,undefined);assert.equal(r.calls[2].status,'ok');assert.ok(!r.source.includes('badName()'));}));
+   await t.test('warm-up removes the cold start from the first execution and falls back cleanly',()=>run(async(p)=>{
+    // 第 11 条：首次启动超时。预热后第一次执行不再承担下载与编译成本（启动窗口仍是 12s，只是不用花了）。
+    const r=await p.evaluate(async()=>{
+     const{runJavaScript,createFS,warmSandboxWorker,releaseWarmSandboxWorker}=await import('./js/sandbox.js');
+     const started=warmSandboxWorker();
+     await new Promise((z)=>setTimeout(z,1200));
+     const first=await runJavaScript('1+1',createFS());
+     const second=await runJavaScript('2+2',createFS());
+     releaseWarmSandboxWorker();
+     const cold=await runJavaScript('3+3',createFS());
+     return{started,first:{ok:first.ok,result:first.result,ms:first.durationMs},second:{ok:second.ok,result:second.result},cold:{ok:cold.ok,result:cold.result}};
+    });
+    assert.equal(r.started,true,'预热应能启动');
+    assert.equal(r.first.ok,true,JSON.stringify(r.first));
+    assert.equal(r.first.result,2);
+    assert.ok(r.first.ms<2500,`预热后首次执行不该再等冷启动（实测 ${r.first.ms}ms）`);
+    assert.equal(r.second.ok,true);
+    assert.equal(r.second.result,4);
+    assert.equal(r.cold.ok,true,'释放预热实例后仍能按原路径冷启动');
+    assert.equal(r.cold.result,6);
+   }));
   }finally{await browser.close();}
  });
 }finally{await site.close();}

@@ -232,6 +232,8 @@ export const UI_STRINGS = {
   "使用浏览器原生语音识别，不经过应用中继": "Uses native browser speech recognition, not the app relay",
   "超出安全画布尺寸，请减少选择或改用HTML；没有截断任何消息": "Selection exceeds safe canvas limits. Select fewer messages or export HTML; no messages were truncated.",
   "HTML保留折叠、复制、图表缩放与图片预览，不包含应用设置或密钥": "HTML keeps folds, copying, chart zoom and image preview; no app settings or keys.",
+  "最小分享单位为一轮对话：提问 + 该轮全部输出。": "The smallest shareable unit is one turn: a prompt plus all of its output.",
+  "✓ 网页中继已恢复，联网工具重新可用": "✓ Relay recovered; web tools are available again",
   "还没有会话记录": "No conversations yet",
   "直连": "Direct",
   "直连 · .com": "Direct · .com",

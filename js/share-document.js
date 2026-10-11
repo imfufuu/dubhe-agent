@@ -1,11 +1,11 @@
 import { publicPlanMarkdown } from './publicplan.js';
-import { renderGeoMapSvg } from './quickviz.js?v=2026.10.10.2';
-import { decorateGeoMap } from './quickmap.js?v=2026.10.10.2';
-import { renderMarkdown, renderAttachments, hydrateSandboxMedia, esc, sanitizeSvgRaw } from './ui-markdown.js?v=2026.10.10.2';
-import { commandWindowText, splitToolStreams, renderToolWindowsHtml } from './toolwindows.js?v=2026.10.10.2';
+import { renderGeoMapSvg } from './quickviz.js?v=2026.10.11.1';
+import { decorateGeoMap } from './quickmap.js?v=2026.10.11.1';
+import { renderMarkdown, renderAttachments, hydrateSandboxMedia, esc, sanitizeSvgRaw } from './ui-markdown.js?v=2026.10.11.1';
+import { commandWindowText, splitToolStreams, renderToolWindowsHtml } from './toolwindows.js?v=2026.10.11.1';
 import { APP_LOGO, providerIcon } from './icons.js';
-import { providerOf, APP_VERSION } from './config.js?v=2026.10.10.2';
-import { isSmartRouter, SMART_ROUTER_LABEL, ROUTER_ICON_SVG } from './smartrouter.js?v=2026.10.10.2';
+import { providerOf, APP_VERSION } from './config.js?v=2026.10.11.1';
+import { isSmartRouter, SMART_ROUTER_LABEL, ROUTER_ICON_SVG } from './smartrouter.js?v=2026.10.11.1';
 import { getLanguage, text } from './locale.js';
 const STYLE_URLS = ['../css/styles.css', '../assets/hljs/dubhe.css', '../assets/katex/katex.min.css', '../fonts/literary.css'];
 export const SHARE_CSS = `

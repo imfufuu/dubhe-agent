@@ -1,8 +1,9 @@
 import { installModerationSetting } from './ui-moderation-setting.js';
+import { getLanguage, onLanguageChange } from './locale.js';
 // 设置弹窗：API Key / 中继地址 / 主题 / 字号 / 沙箱 / 联网 / 快速 / 思考 / 识图·视频识别模型 / 清空数据 / 关于
-import { APP_RELEASE, APP_VERSION, STORAGE_KEY, VISION_MODELS, VIDEO_MODELS, IMAGE_MODELS, DEFAULT_IMAGE_MODEL, isImageGenModel, imageModelLabel, resolveVisionModel, resolveVideoModel } from './config.js?v=2026.10.10.2';
+import { APP_RELEASE, APP_VERSION, STORAGE_KEY, VISION_MODELS, VIDEO_MODELS, IMAGE_MODELS, DEFAULT_IMAGE_MODEL, isImageGenModel, imageModelLabel, resolveVisionModel, resolveVideoModel } from './config.js?v=2026.10.11.1';
 import { currentRelay, resetRelayProbe, RELAY_OVERRIDE_KEY } from './net.js';
-import { DEFAULT_TURN_BUDGET } from './execution.js?v=2026.10.10.2';
+import { DEFAULT_TURN_BUDGET } from './execution.js?v=2026.10.11.1';
 import { NEXUS_ARCHITECTURE_SPEC } from './nexus.js';
 import { readLocal, writeLocal, removeLocal } from './legacy-keys.js';
 
@@ -25,7 +26,7 @@ function validateApiKey(s) {
 }
 function toast(msg, type = 'info', ms = 2600) {
   try {
-    import('./ui.js?v=2026.10.10.2').then(({ toast: t }) => t && t(msg, type, ms)).catch(() => {
+    import('./ui.js?v=2026.10.11.1').then(({ toast: t }) => t && t(msg, type, ms)).catch(() => {
       const wrap = document.getElementById('toasts');
       if (!wrap) return;
       const d = document.createElement('div');
@@ -57,15 +58,25 @@ async function relayCheck() {
   } catch (e) { return '探测失败：' + (e.message || e); }
 }
 
+// 模型档位的 tag/note 有中英两版：英文界面不再出现「均衡 / 默认 / 效果最好」这类中文后缀。
+function modelMeta(m, language) {
+  return language === 'en'
+    ? { tag: m.tagEn || m.tag, note: m.noteEn || m.note }
+    : { tag: m.tag, note: m.note };
+}
 function fillModelSelect(el, list, current) {
   if (!el) return;
-  if (el.options.length !== list.length) {
+  const language = getLanguage();
+  el.dataset.lang = language;
+  if (el.options.length !== list.length || el._lang !== language) {
+    el._lang = language;
     el.innerHTML = '';
     for (const m of list) {
+      const { tag, note } = modelMeta(m, language);
       const opt = document.createElement('option');
       opt.value = m.id;
-      opt.textContent = `${m.label} · ${m.tag}`;
-      opt.title = `${m.id} · ${m.note}`;
+      opt.textContent = `${m.label} · ${tag}`;
+      opt.title = `${m.id} · ${note}`;
       el.appendChild(opt);
     }
   }
@@ -320,6 +331,11 @@ export function mountSettings(store, { onRelayChanged, onKeySaved, onSettingChan
   });
   bindModelSelect('#set-vision-model', 'visionModel', resolveVisionModel);
   bindModelSelect('#set-video-model', 'videoModel', resolveVideoModel);
+  // 语言切换：模型档位的 tag/note 有中英两版，切换后立刻重排（面板开着时也生效）
+  onLanguageChange(() => {
+    for (const sel of ['#set-image-model', '#set-vision-model', '#set-video-model']) { const el = $(sel); if (el) el._lang = ''; }
+    syncMultimodalSelects(store);
+  });
 
   // 清除临时缓存：只动「丢了也能重建」的东西——Cache Storage（SW 离线资源：模型 / 审核资产 / 静态文件）、sessionStorage、
   // 中继探测缓存；会话 / 密钥 / 设置 / 长效记忆（localStorage + IndexedDB）一律不碰。不刷新页面，下次用到的资源按需重新下载。

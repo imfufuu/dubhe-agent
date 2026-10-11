@@ -116,6 +116,42 @@ export const SUGGESTIONS = [
     title: '算出 2026 年剩余的每个月第二个星期二，并生成一个可导入的 ICS 日程文件',
     text: '用 data_tool（kind=date）与 JavaScript 配合：从 2026-10-06 起到年底，找出每个月的第二个星期二（10/11/12 月），同时给出距今天的天数。再写一个 iCalendar 文件 files/patch-tuesday.ics：每个日期一个 VEVENT（SUMMARY「补丁星期二 · 例行更新」，10:00–11:00，TZID=Asia/Tokyo，UID 唯一，DTSTAMP 取当前时间）。最后用 text_tool（action=regex）校验文件里 DTSTART 的格式全部是 YYYYMMDDTHHMMSS，并告诉我校验结果。',
   },
+  {
+    title: '把一段中文长句做分词统计，找出重复用词，并给出可直接替换的改写建议',
+    text: '用 JavaScript 对下面这段文字做粗略分词（按标点与常见虚词切分即可，不必装库）：统计每个实词出现次数，找出出现 ≥ 3 次的词，标出它们所在句子。再给每条重复用法一句改写建议。最后把「词频表」写成 Markdown 表，把改写后的整段文字保存到 files/rewrite.md。\n\n我们要保证系统的稳定性，因为稳定性是系统的第一要求，所以我们在任何改动中都要优先考虑稳定性，任何会影响稳定性的改动都要先做稳定性验证。',
+  },
+  {
+    title: '用 C++ 实现大整数加法与乘法，并用 Python 交叉验证 200 组随机用例',
+    text: '在 C++ 沙箱用字符串实现任意长度非负整数的加法与乘法（不要用 __int128 当万能解）。stdin 接受两行十进制数，输出和与积各一行。再用 Python 沙箱（可直接用内置大整数）对 200 组随机用例（长度 1–80 位）交叉验证，逐组比对，全部一致则打印 PASS，否则打印第一组不一致的三元组。',
+  },
+  {
+    title: '把一份 CSV 里的地址粗粒度归一，并统计各城市的订单分布',
+    text: '写入 files/orders.csv（15 行：order_id,city,amount,status），城市字段故意混入「北京市」「北京」「Beijing」「上海市」「Shanghai」等写法。用 data_tool（kind=csv）与 JavaScript 归一为规范城市名（保留原名一列 city_raw），剔除 amount 非数字的行。输出归一对照表、每个城市的订单数与金额合计（Markdown 表 + :::chart 柱状图），并把清洗结果保存到 files/orders.clean.csv。',
+  },
+  {
+    title: '写一个只依赖标准库的 Markdown 表格对齐工具并自测边界',
+    text: '用 JavaScript 实现一个把「错位 Markdown 表」重新对齐的函数：输入多行 | 分隔文本，按列最大宽度补空格，第二行分隔行改写为等宽的 --- 序列。至少覆盖：中文宽字符（按 2 列宽计算）、缺列的行、空单元格、行首尾空格。写 8 组自测用例（含 2 组边界），全部通过后打印 PASS，并把对齐结果保存到 files/table.md。',
+  },
+  {
+    title: '估算一段旋律的调式与拍速，并生成可以直接播放的 WAV 文件',
+    text: '给定音高序列（MIDI 音高）：62 64 66 67 66 64 62 60 62 64 66 69 67 66 64 62。用 JavaScript 判断最可能的调式（比较自然大调与自然小调音阶的匹配度，给出依据），再用沙箱把这段旋律合成为 8 秒的 WAV（正弦波 + 简单包络，44.1kHz 单声道）保存到 outputs/melody.wav，并在回答里用音频方式引用它。',
+  },
+  {
+    title: '给一份 JSON 配置文件找出从没被用到的键，并输出精简后的版本',
+    text: '写入 files/app.config.json：包含 server(port,host,timeoutMs)、models.chat/model、models.image、features.experimental 等键，其中至少 3 个键在下面的使用清单里从未出现。使用清单：server.port、server.host、models.chat。用 json_tool 与 JavaScript 找出未被使用的键（保留路径），输出「可删除候选」清单与精简后的 files/app.config.slim.json，并说明删除前需要人工确认的原因。',
+  },
+  {
+    title: '用正则从一堆文件名里批量生成改名映射，并先给出零风险的预演表',
+    text: '写入 files/names.txt（10 行）混入这些形态：IMG_20260926_1042.jpg、Screenshot 2026-09-26 at 10.42.33.png、报告_终版(2).docx、report_final_FINAL.pdf。设计正则把日期抽成 YYYYMMDD，输出「原名 → 新名」的预演对照表（Markdown），确认无冲突后生成 files/renamed.json（只写映射，不改动原文件），并列出 2 条无法自动判断、需要人工决定的文件名。',
+  },
+  {
+    title: '用哈希校验两份「几乎一样」的文件，定位差异并给出最小补丁',
+    text: '写入 files/a.txt 与 files/b.txt（各 30 行，只差 3 处：1 行新增、1 行删除、1 处改词）。先用 hash 算两份的 sha256 证明不同，再用 diff_text 得到最小补丁，把补丁保存到 files/changes.patch。最后用一个 JavaScript 断言：补丁应用回 a.txt 后与 b.txt 完全相等（用字符串比较），并打印断言结果。',
+  },
+  {
+    title: '检查一份 HTML 的可访问性基础项并给出可直接套用的修补清单',
+    text: '写入 site/index.html：故意缺 lang 属性、一个 <img> 没有 alt、一个按钮只有图标没有 aria-label、一个表单 input 没有关联 label、一个 div 承担了按钮职责。写一个 JavaScript 检查器逐项检出（不要引第三方库），输出「问题 → 影响 → 具体修改」的 Markdown 清单，然后把修好的版本写到 site/index.fixed.html 并再次运行检查器确认清零。',
+  },
 ];
 
 export function shuffled(list, rnd = Math.random) {

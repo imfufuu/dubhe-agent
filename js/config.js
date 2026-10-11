@@ -23,7 +23,7 @@ import { claudeThinkingBudget, reasoningEffortFor } from './reasoning.js';
 // 的 ~10 分钟缓存。每次改动样式或入口逻辑都要 bump 一次（有单测校验二者一致）。
 // 发布版本（正式版标识，界面/文档都读它）与构建戳（每次改动递增，用于 ?v= 缓存击穿）
 export const APP_RELEASE = 'V1.7';
-export const APP_VERSION = '2026.10.10.2';
+export const APP_VERSION = '2026.10.11.1';
 export const ANTHROPIC_VERSION = '2023-06-01';
 // 思考链加密（不返回可见思考正文）的模型模式：菜单显示「思考链已加密」。
 // 另有运行时自学：某模型真实返回过 hidden thinking 后也会被标记（见 agent.js observedHiddenThink）。
@@ -169,14 +169,14 @@ export function sortModelsInFamily(models) {
 // 不可作为对话模型直接选择：统一由主智能体通过 generate_image 工具调用，
 // 保留 Agent 的工具循环特性（生成→写沙箱→可继续编辑/下载）。
 export const IMAGE_MODELS = [
-  { id: 'gpt-image-2',            label: 'GPT Image 2',            tag: '均衡 · 默认',  note: '均衡·默认' },
-  { id: 'gpt-image-2.5-sunburst', label: 'GPT Image 2.5 Sunburst', tag: '写实',        note: '高质感写实' },
-  { id: 'gpt-image-2.5-flare',    label: 'GPT Image 2.5 Flare',    tag: '插画',        note: '风格化/插画' },
-  { id: 'gemini-3.1-flash-image', label: 'Nano Banana 2',          tag: 'Gemini 原生', note: 'Gemini 3.1 Flash Image · 高质量文生图' },
+  { id: 'gpt-image-2',            label: 'GPT Image 2',            tag: '均衡 · 默认',  note: '均衡·默认', tagEn: 'Balanced · Default', noteEn: 'Balanced · default choice' },
+  { id: 'gpt-image-2.5-sunburst', label: 'GPT Image 2.5 Sunburst', tag: '写实',        note: '高质感写实', tagEn: 'Realistic', noteEn: 'High-fidelity realism' },
+  { id: 'gpt-image-2.5-flare',    label: 'GPT Image 2.5 Flare',    tag: '插画',        note: '风格化/插画', tagEn: 'Illustration', noteEn: 'Stylized illustration' },
+  { id: 'gemini-3.1-flash-image', label: 'Nano Banana 2',          tag: 'Gemini 原生', note: 'Gemini 3.1 Flash Image · 高质量文生图', tagEn: 'Gemini native', noteEn: 'Gemini 3.1 Flash Image · high-quality text-to-image' },
   // 网关 2026-10 新上的 nano-banana-2-1：名字不带 -image-，之前被当成对话模型混进模型菜单（.33 修）。与 Nano Banana 2 同走 Gemini generateContent。
   // 2026-10-08 实测（一次成功调用）：ID = gemini-nano-banana-2.1（网关价目表 /v1/models/pricing 同名），Gemini 原生 generateContent，
   // responseModalities IMAGE + imageConfig { aspectRatio, imageSize }；imageSize '512' 上游 503，1K 正常（44s，1120 输出 token ≈ $0.0097/图）。
-  { id: 'gemini-nano-banana-2.1', label: 'Nano Banana 2.1',        tag: 'Gemini 原生 · 新', note: 'Nano Banana 2.1 · 实测 1K 一张约 $0.01 / 44 秒；不支持 512，low 质量自动按 1K' },
+  { id: 'gemini-nano-banana-2.1', label: 'Nano Banana 2.1',        tag: 'Gemini 原生 · 新', note: 'Nano Banana 2.1 · 实测 1K 一张约 $0.01 / 44 秒；不支持 512，low 质量自动按 1K', tagEn: 'Gemini native · New', noteEn: 'Nano Banana 2.1 · measured ~$0.01 per 1K image in 44s; 512 unsupported, low quality falls back to 1K' },
 ];
 export const DEFAULT_IMAGE_MODEL = 'gpt-image-2';
 // 识图模型（analyze_image / analyze_pdf 页图）与视频识别模型（analyze_video）：
@@ -184,17 +184,17 @@ export const DEFAULT_IMAGE_MODEL = 'gpt-image-2';
 // 视频档位只收录 2026-10-06 用 11.5s 测试视频在网关实测能真正收到视频（usage 含 VIDEO modality）的模型；
 // Claude / GPT / DeepSeek / GLM / Kimi / Grok 经网关要么剥掉视频部件、要么上游 400，不列入。
 export const VISION_MODELS = [
-  { id: 'deepseek-v4-flash-vision-exp', label: 'DeepSeek V4 Vision', tag: '默认 · 最便宜', note: '实验价 $0.22/M 输入 · OCR 稳，长文档首选' },
-  { id: 'gemini-3.5-flash-lite',        label: 'Gemini 3.5 Flash Lite',    tag: '便宜 · 极快',   note: '$0.09/M 输入 · 简单截图 / 票据 / 快速看一眼' },
-  { id: 'gemini-3.8-flash',             label: 'Gemini 3.8 Flash',         tag: '均衡',          note: '$0.19/M 输入 · 图表 / 多图 / 中文手写更稳' },
-  { id: 'gemini-3.1-pro-preview',       label: 'Gemini 3.1 Pro',           tag: '效果最好',      note: '$0.57/M 输入 · 复杂版面、公式、细节描述' },
-  { id: 'claude-sonnet-5-5',            label: 'Claude Sonnet 5.5',        tag: '文档 / 代码截图', note: '$0.56/M 输入 · 架构图、代码截图、UI 截图理解强' },
+  { id: 'deepseek-v4-flash-vision-exp', label: 'DeepSeek V4 Vision', tag: '默认 · 最便宜', note: '实验价 $0.22/M 输入 · OCR 稳，长文档首选', tagEn: 'Default · Cheapest', noteEn: 'Experimental $0.22/M input · steady OCR, best for long documents' },
+  { id: 'gemini-3.5-flash-lite',        label: 'Gemini 3.5 Flash Lite',    tag: '便宜 · 极快',   note: '$0.09/M 输入 · 简单截图 / 票据 / 快速看一眼', tagEn: 'Cheap · Fast', noteEn: '$0.09/M input · quick look at simple screenshots and receipts' },
+  { id: 'gemini-3.8-flash',             label: 'Gemini 3.8 Flash',         tag: '均衡',          note: '$0.19/M 输入 · 图表 / 多图 / 中文手写更稳', tagEn: 'Balanced', noteEn: '$0.19/M input · steadier on charts, multiple images and handwriting' },
+  { id: 'gemini-3.1-pro-preview',       label: 'Gemini 3.1 Pro',           tag: '效果最好',      note: '$0.57/M 输入 · 复杂版面、公式、细节描述', tagEn: 'Best quality', noteEn: '$0.57/M input · complex layouts, formulas, fine detail' },
+  { id: 'claude-sonnet-5-5',            label: 'Claude Sonnet 5.5',        tag: '文档 / 代码截图', note: '$0.56/M 输入 · 架构图、代码截图、UI 截图理解强', tagEn: 'Docs / code shots', noteEn: '$0.56/M input · strong on architecture diagrams, code and UI screenshots' },
 ];
 export const DEFAULT_VISION_MODEL = 'deepseek-v4-flash-vision-exp';
 export const VIDEO_MODELS = [
-  { id: 'gemini-3.5-flash-lite',  label: 'Gemini 3.5 Flash Lite', tag: '便宜 · 最快 · 默认', note: '约 $0.0004 / 分钟视频 · 实测 11s 短片 6 秒出结果' },
-  { id: 'gemini-3.8-flash',       label: 'Gemini 3.8 Flash',      tag: '均衡',          note: '约 $0.0008 / 分钟视频 · 动作时间线 + 字幕转录都稳' },
-  { id: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro',        tag: '效果最好',      note: '约 $0.0024 / 分钟视频 · 带时间轴的细致描述、语音线索更全' },
+  { id: 'gemini-3.5-flash-lite',  label: 'Gemini 3.5 Flash Lite', tag: '便宜 · 最快 · 默认', note: '约 $0.0004 / 分钟视频 · 实测 11s 短片 6 秒出结果', tagEn: 'Cheap · Fastest · Default', noteEn: '~$0.0004 per video minute · an 11s clip returned in 6 seconds' },
+  { id: 'gemini-3.8-flash',       label: 'Gemini 3.8 Flash',      tag: '均衡',          note: '约 $0.0008 / 分钟视频 · 动作时间线 + 字幕转录都稳', tagEn: 'Balanced', noteEn: '~$0.0008 per video minute · steady action timelines and subtitle transcription' },
+  { id: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro',        tag: '效果最好',      note: '约 $0.0024 / 分钟视频 · 带时间轴的细致描述、语音线索更全', tagEn: 'Best quality', noteEn: '~$0.0024 per video minute · timestamped detail and fuller audio cues' },
 ];
 export const DEFAULT_VIDEO_MODEL = 'gemini-3.5-flash-lite';
 export function resolveVisionModel(id) {

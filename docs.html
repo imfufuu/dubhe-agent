@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<meta name="app-version" content="2026.10.10.2" />
+<meta name="app-version" content="2026.10.11.1" />
 <meta name="app-release" content="V1.7" />
 <meta name="robots" content="noindex" />
 <title>文档 · Dubhe Agent V1.7</title>
@@ -213,9 +213,10 @@
   <!-- ══════════════ 第 1 页：更新日志 ══════════════ -->
 <section class="page" id="page-changelog">
  <h2>更新日志</h2><p class="h-sub">先看本次变化，历史按阶段归档。精确构建与来源以build.json和仓库记录为准。</p>
- <div class="release-overview"><div><span class="release-label">CURRENT BUILD</span><h3>2026.10.10.2</h3><p>界面收束、可见计划与跨设备表现</p></div><a class="nav-link" href="./build.json">部署清单 ↗</a></div>
- <div class="change-grid"><article><span>INTERFACE</span><h3>入口更少，控制更明确</h3><p>语言留在设置与页脚；移除侧栏分享和设置内清空操作。按设备检测语音/拍照，本地审核可确认风险后关闭。</p></article><article><span>AGENT</span><h3>先给方向，细节按需读取</h3><p>执行前在正文展示方向和行动计划；精简核心提示词，双语知识库按需检索。最终总结选择框可在任意位置渲染。</p></article><article><span>COMPATIBILITY</span><h3>状态与特效可靠降级</h3><p>英文进行时与抛光，输入光标彩色循环；彩虹和渐显兼容回退。减少动态效果不再把介绍片强制跳成导航页。</p></article></div>
+ <div class="release-overview"><div><span class="release-label">CURRENT BUILD</span><h3>2026.10.11.1</h3><p>按轮分享、停止后的排布与英文界面收尾</p></div><a class="nav-link" href="./build.json">部署清单 ↗</a></div>
+ <div class="change-grid"><article><span>SHARING</span><h3>按轮分享，导出一定落地</h3><p>最小分享单位是一轮对话（提问＋该轮全部输出），用户消息不再出现分享按钮。导出后明确给出结果，并保留「再存一次」入口，长图与 ZIP 同样交付。</p></article><article><span>PRESENTATION</span><h3>停止后的画面归位</h3><p>动作条固定在整条回答之后，「已停止」标记紧贴其上；正文分段与工具穿插不再错位。语言切换带淡入过渡，关动效时不过渡。</p></article><article><span>RELIABILITY</span><h3>首次执行不再等冷启动</h3><p>空闲时预热沙箱 Worker 并接管就绪实例，首次执行不必再等待下载编译；光标放慢为每秒一格，拼字与选区不受影响。</p></article><article><span>ENGLISH UI</span><h3>英文界面收尾</h3><p>底部按钮按内容分配宽度、设置页档位补英文说明，英文界面不再漏出中文；提示条与弹窗间距一并整理。</p></article></div>
  <div class="archive-heading"><h3>此前已交付</h3><p>同一阶段的补丁合并概览，避免逐条重复展示。</p></div>
+ <details class="release-archive"><summary><span>2026.10.10.2</span><b>界面收束、可见计划与跨设备表现</b><small>展开阶段摘要</small></summary><ul><li>移除侧栏分享与顶栏语言入口；本地审核确认风险后可关闭，麦克风/摄像头按设备检测。</li><li>正文先给方向与 2–5 步行动计划，工具与渲染细节移入内置双语知识库按需检索。</li><li>彩色光标、Ultra 渐变回退与介绍片动效降级；提示条不再吃掉下方点击。</li></ul></details>
  <details class="release-archive"><summary><span>2026.10.10.1</span><b>双语、分享与浏览器原生交互</b><small>展开阶段摘要</small></summary><ul><li>默认跟随浏览器的中英文界面、英文核心及专业提示词。</li><li>多选PNG长图/离线HTML分享，原生语音、固定后台完成通知及可选赞踩。</li><li>Worker启动/执行分计时与最小源码补丁路径。</li></ul></details>
  <details class="release-archive"><summary><span>2026.10.9.3–5</span><b>真实项目调试与稳定的执行展示</b><small>展开阶段摘要</small></summary><ul><li>本地伴侣＋真实Chromium，只运行Agent创建的静态项目，不恢复公网截图。</li><li>命令/正文时序、流式读写、全文Edit快照与按发起顺序缓冲展示。</li><li>错误/停止/重生成边界，当前轮正文与手动折叠规则。</li></ul></details>
  <details class="release-archive"><summary><span>V1.7 / Helix 3.0</span><b>能力登记、执行治理与本地工具</b><small>展开阶段摘要</small></summary><ul><li>统一能力登记、按需工具、风险/授权/预算/审计与可恢复执行。</li><li>本地数据与文本工作台、结构化图表、照片工作台、持久文件。</li></ul></details>
@@ -391,7 +392,7 @@
 </main>
 
 <footer>
-  <span>Dubhe Agent V1.7 · 构建 2026.10.10.2 · 独立项目，与 TeamoRouter 互不隶属</span>
+  <span>Dubhe Agent V1.7 · 构建 2026.10.11.1 · 独立项目，与 TeamoRouter 互不隶属</span>
   <span class="foot-links">
     <button type="button" class="nav-link language-toggle" data-language-toggle title="语言">EN</button>
     <a href="mailto:lks.tan.cn@gmail.com">lks.tan.cn@gmail.com</a>
@@ -480,6 +481,6 @@
     addEventListener('scroll', function () { nav.style.borderBottomColor = scrollY > 8 ? 'var(--line)' : 'transparent'; }, { passive: true });
   })();
 </script>
-<script type="module" src="js/docs-language.js?v=2026.10.10.2"></script>
+<script type="module" src="js/docs-language.js?v=2026.10.11.1"></script>
 </body>
 </html>

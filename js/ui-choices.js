@@ -1,4 +1,4 @@
-import { $, $$, esc } from './ui-markdown.js?v=2026.10.10.2';
+import { $, $$, esc } from './ui-markdown.js?v=2026.10.11.1';
 export function installChoiceHandler({ root, store, agent, getBusy, openKeyModal, toast }) {
   function readChoiceAnswers(box) {
     try { return JSON.parse(box.dataset.choiceAnswers || '[]'); } catch { return []; }

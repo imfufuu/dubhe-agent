@@ -61,12 +61,34 @@ export function installLanguage(root = document) {
     for (const r of records) { if (r.type === 'childList') for (const n of r.addedNodes) pending.add(n); else pending.add(r.target); }
     if (!queued && pending.size) { queued = true; queueMicrotask(flush); }
   });
+  // 语言切换的平滑过渡：先压暗再重绘，最后回到正常——文案不会「瞬间整体跳变」。
+  // 只加/去类名，不改任何文案；减少动效时 CSS 里已把过渡关掉。
+  let animTimer = 0, lastLang = null;
+  const animateSwitch = (doc) => {
+    const lang = getLanguage();
+    if (lastLang === null) { lastLang = lang; return; }
+    if (lastLang === lang) return;
+    lastLang = lang;
+    const el = doc.documentElement;
+    // 关掉动效时直接换文案，不淡入淡出（CSS 也有兜底，这里少一次无谓的状态切换）
+    if (el.dataset.motion === 'off') return;
+    el.classList.remove('lang-switching-done');
+    el.classList.add('lang-switching');
+    clearTimeout(animTimer);
+    animTimer = setTimeout(() => {
+      el.classList.remove('lang-switching');
+      el.classList.add('lang-switching-done');
+      clearTimeout(animTimer);
+      animTimer = setTimeout(() => el.classList.remove('lang-switching-done'), 260);
+    }, 180);
+  };
   const sync = () => {
     const doc = root.ownerDocument || root; doc.documentElement.lang = getLanguage() === 'en' ? 'en' : 'zh-CN';
     doc.documentElement.dataset.uiLanguage = getLanguage();
     observer.disconnect(); translate(root); watch();
     const select = doc.getElementById('set-language'); if (select) select.value = languagePreference();
     doc.querySelectorAll('[data-language-toggle]').forEach((b) => { b.textContent = getLanguage() === 'en' ? '中文' : 'EN'; b.setAttribute('aria-label', getLanguage() === 'en' ? 'Switch to Chinese' : 'Switch to English'); });
+    animateSwitch(doc);
   };
   root.addEventListener('click', (e) => { if (e.target.closest?.('[data-language-toggle]')) setLanguagePreference(getLanguage() === 'en' ? 'zh' : 'en'); });
   root.addEventListener('change', (e) => { if (e.target.id === 'set-language') setLanguagePreference(e.target.value); });

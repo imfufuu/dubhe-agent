@@ -1,18 +1,18 @@
 import { installDeviceControls } from './ui-devices.js';
 import { effectiveModeration } from './ui-moderation-setting.js';
-import { installLanguage } from './ui-language.js?v=2026.10.10.2';
+import { installLanguage } from './ui-language.js?v=2026.10.11.1';
 import { installTaskNotifications } from './notifications.js';
-import { probeLocalBrowser } from './localbrowser.js?v=2026.10.10.2';
+import { probeLocalBrowser } from './localbrowser.js?v=2026.10.11.1';
 // ─── 启动引导 ──────────────────────────────────────────────────────────
-import { createStore } from './state.js?v=2026.10.10.2';
-import { createAgent } from './agent.js?v=2026.10.10.2';
-import { mountUI, toast } from './ui.js?v=2026.10.10.2';
+import { createStore } from './state.js?v=2026.10.11.1';
+import { createAgent } from './agent.js?v=2026.10.11.1';
+import { mountUI, toast } from './ui.js?v=2026.10.11.1';
 import { relayAvailable } from './net.js';
 import { probeGatewayHosts } from './endpoint.js';
 import { isAdminAlias, unlockAdminKey } from './adminkey.js';
-import { mountDebugWindow, toggleDebug, debugActive, setDebug } from './debugwindow.js?v=2026.10.10.2';
-import { mountSettings, applyFontSize, applyMotion, browserFeatureReport } from './settings.js?v=2026.10.10.2';
-import { APP_RELEASE } from './config.js?v=2026.10.10.2';
+import { mountDebugWindow, toggleDebug, debugActive, setDebug } from './debugwindow.js?v=2026.10.11.1';
+import { mountSettings, applyFontSize, applyMotion, browserFeatureReport } from './settings.js?v=2026.10.11.1';
+import { APP_RELEASE } from './config.js?v=2026.10.11.1';
 
 // 启动屏真实进度：模块图已下载并执行到这里 → 「加载模块」完成
 const bootStage = (name) => { try { const g = window.__dubheBootGuard; g && typeof g.stage === 'function' && g.stage(name); } catch { /* 启动屏已移除 */ } };
@@ -115,7 +115,7 @@ mountSettings(store, {
   onRelayChanged: () => { relayAvailable().then((ok) => { store.state.relayOk = ok; if (ui && ui.syncWeb) ui.syncWeb(); }).catch(() => {}); },
   onKeySaved: () => { if (ui && ui.updateStats) ui.updateStats(); },
   // 设置页任何开关 / 档位 / 主题变化 → 顶栏 pill（沙箱 / 联网 / 快速 / 思考）、能力行、主题按钮同步
-  onSettingChanged: () => { if (ui && ui.syncToolbar) ui.syncToolbar(); },
+  onSettingChanged: (key) => { if (ui && ui.syncToolbar) ui.syncToolbar(); if (key === 'sandboxEnabled') warmSandbox(); },
 });
 // β 调试浮窗：?debug=1 / Ctrl+Alt+D / ⌘K「打开调试浮窗」三种入口，挂载失败不影响主应用
 try {
@@ -129,6 +129,15 @@ try {
     }
   });
 } catch { /* 调试浮窗异常不阻塞主应用 */ }
+// 启动即后台预热 JS 沙箱 Worker：先把 worker-js.js / worker-shims.js 取进缓存并拉起一个等待载荷的实例，
+// 用户在首次 execute_javascript 上就不会撞上冷启动超时。失败静默（真正执行时仍走原本的降级路径）。
+function warmSandbox() {
+  if (store.state.settings.sandboxEnabled === false) return;
+  Promise.resolve().then(() => import('./sandbox.js')).then((m) => m.warmSandboxWorker?.()).catch(() => {});
+}
+if (typeof requestIdleCallback === 'function') requestIdleCallback(warmSandbox, { timeout: 4000 });
+else setTimeout(warmSandbox, 2500);
+
 // 启动即后台预热图片审核模型（不等用户加附件）——慢网络给 26MB 资源留足下载窗口
 setTimeout(() => { try { globalThis.__dubhePrewarmImageModeration && globalThis.__dubhePrewarmImageModeration('startup'); } catch { /* 忽略 */ } }, 2000);
 // 这里不再 fs.import(state.files)：createAgent 已经用同一份 state.files 建好了 fs，

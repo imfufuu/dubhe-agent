@@ -1,20 +1,20 @@
 import { installCaretEffect } from './ui-caret.js';
 import { publicPlanHtml } from './ui-publicplan.js';
-import { installChoiceHandler } from './ui-choices.js?v=2026.10.10.2';
-import { installSharing } from './ui-share.js?v=2026.10.10.2';
+import { installChoiceHandler } from './ui-choices.js?v=2026.10.11.1';
+import { installSharing } from './ui-share.js?v=2026.10.11.1';
 import { text as localeText, onLanguageChange } from './locale.js';
 import { installFeedback } from './ui-feedback.js';
 import { installSpeechInput } from './ui-speech.js';
-import { createToolPresentation, presentationCallSettled, turnToolResults } from './toolpresentation.js?v=2026.10.10.2';
-import { paintEditFoldContent, syncEditingFold } from './ui-editpreview.js?v=2026.10.10.2';
-import { paintOrderedAssistant, renderToolChipDetail, paintCommandRows, ownerOfTool, paintVisibleTurn, activeToolOwner } from './ui-toolflow.js?v=2026.10.10.2';
-import { adjacentToolMessages, turnHasAssistantText, appendToolStream, toolFamily } from './toolflow.js?v=2026.10.10.2';
+import { createToolPresentation, presentationCallSettled, turnToolResults } from './toolpresentation.js?v=2026.10.11.1';
+import { paintEditFoldContent, syncEditingFold } from './ui-editpreview.js?v=2026.10.11.1';
+import { paintOrderedAssistant, renderToolChipDetail, paintCommandRows, ownerOfTool, paintVisibleTurn, activeToolOwner } from './ui-toolflow.js?v=2026.10.11.1';
+import { adjacentToolMessages, turnHasAssistantText, appendToolStream, toolFamily } from './toolflow.js?v=2026.10.11.1';
 // ─── UI 层：渲染 / 交互 / 动画 ─────────────────────────────────────────
-import { providerOf, supportsFastMode, DEFAULT_IMAGE_MODEL, APP_VERSION, APP_RELEASE } from './config.js?v=2026.10.10.2';
-import { isSmartRouter, ROUTER_ICON_SVG, SMART_ROUTER_LABEL, modelDisplayName } from './smartrouter.js?v=2026.10.10.2';
+import { providerOf, supportsFastMode, DEFAULT_IMAGE_MODEL, APP_VERSION, APP_RELEASE } from './config.js?v=2026.10.11.1';
+import { isSmartRouter, ROUTER_ICON_SVG, SMART_ROUTER_LABEL, modelDisplayName } from './smartrouter.js?v=2026.10.11.1';
 import { REASONING_LEVELS, normalizeReasoningLevel, reasoningLevelLabel, reasoningLevelHint } from './reasoning.js';
 import { fileBytesFromValue, withExtension, mimeFromPath } from './zip.js';
-import { getTransport } from './api.js?v=2026.10.10.2';
+import { getTransport } from './api.js?v=2026.10.11.1';
 import { gatewayBase, gatewayChosenBy, setGatewayBase, otherGatewayBase } from './endpoint.js';
 import { estimateTokens } from './context.js';
 import { providerIcon, APP_LOGO, ICON } from './icons.js';
@@ -27,17 +27,17 @@ import { shortSuggest } from './commands.js';
 import { summarizeTurnCost, formatUsd } from './pricing.js';
 import { relayAvailable, relaySupports, currentRelay, resetRelayProbe, relayState } from './net.js';
 // P3：编辑直播预览模块单独版本化；缺失时不影响核心对话。
-import { buildEditPreview, editFoldLabel, pathsOfEdits, PREVIEW_REFRESH_MS, findTurnTempCommit, discardedForFold, discardedFoldLabel, turnRange } from './editpreview.js?v=2026.10.10.2';
-import { historyWindowStart, previousHistoryWindowStart, HISTORY_WINDOW_MAX_MESSAGES, HISTORY_WINDOW_MAX_CHARS } from './history.js?v=2026.10.10.2';
-import { installLightbox } from './ui-lightbox.js?v=2026.10.10.2';
-import { installFilesPanel } from './ui-files-panel.js?v=2026.10.10.2';
-import { installAttachments } from './ui-attachments.js?v=2026.10.10.2';
-import { installCapabilityPop } from './ui-capability.js?v=2026.10.10.2';
-import { installModelPicker } from './ui-model-picker.js?v=2026.10.10.2';
-import { installPopovers } from './ui-popovers.js?v=2026.10.10.2';
-import { installCommandPalette } from './ui-command-palette.js?v=2026.10.10.2';
-import { installSystemCommands } from './ui-system-commands.js?v=2026.10.10.2';
-import { decorateGeoMap, installMapInteractions } from './quickmap.js?v=2026.10.10.2';
+import { buildEditPreview, editFoldLabel, pathsOfEdits, PREVIEW_REFRESH_MS, findTurnTempCommit, discardedForFold, discardedFoldLabel, turnRange } from './editpreview.js?v=2026.10.11.1';
+import { historyWindowStart, previousHistoryWindowStart, HISTORY_WINDOW_MAX_MESSAGES, HISTORY_WINDOW_MAX_CHARS } from './history.js?v=2026.10.11.1';
+import { installLightbox } from './ui-lightbox.js?v=2026.10.11.1';
+import { installFilesPanel } from './ui-files-panel.js?v=2026.10.11.1';
+import { installAttachments } from './ui-attachments.js?v=2026.10.11.1';
+import { installCapabilityPop } from './ui-capability.js?v=2026.10.11.1';
+import { installModelPicker } from './ui-model-picker.js?v=2026.10.11.1';
+import { installPopovers } from './ui-popovers.js?v=2026.10.11.1';
+import { installCommandPalette } from './ui-command-palette.js?v=2026.10.11.1';
+import { installSystemCommands } from './ui-system-commands.js?v=2026.10.11.1';
+import { decorateGeoMap, installMapInteractions } from './quickmap.js?v=2026.10.11.1';
 
 // 预览窗刷新节流：直播时每 ~50ms 合并更新（换文件/收尾立即刷）
 const EDIT_PREVIEW_REFRESH_MS = PREVIEW_REFRESH_MS;
@@ -46,11 +46,11 @@ const EDIT_PREVIEW_REFRESH_MS = PREVIEW_REFRESH_MS;
 import {
   $, $$, el, esc, safeImgSrc, sanitizeSvgRaw, hydrateSandboxMedia, bindFoldRows,
   fmtSize, fmtSpan, contextBudgetLabel, videoBlobUrl, renderAttachments, highlightCode, sysReplyHtml, renderMarkdown,
-} from './ui-markdown.js?v=2026.10.10.2';
+} from './ui-markdown.js?v=2026.10.11.1';
 export { renderMarkdown, videoBlobUrl }; // 兼容旧导入路径（tests / 外部调用方）
-import { renderGeoMapSvg } from './quickviz.js?v=2026.10.10.2';
+import { renderGeoMapSvg } from './quickviz.js?v=2026.10.11.1';
 
-import { toast, MAX_TOAST_STACK, fmtClock, fmtAgo } from './ui-common.js?v=2026.10.10.2';
+import { toast, MAX_TOAST_STACK, fmtClock, fmtAgo } from './ui-common.js?v=2026.10.11.1';
 export { toast, MAX_TOAST_STACK };
 
 // 这些工具不进 Ran Commands，而是各自的文件折叠（Explored / Edited File(s)）
@@ -1041,14 +1041,16 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
   function saveLastSuggest(picks) {
     try { sessionStorage.setItem('dubhe.suggest.last', JSON.stringify((picks || []).map((x) => x.text))); } catch { /* 无 storage */ }
   }
+  // 空状态一次展示更多示例（配合「换一批」轮换 36 条池子）。
+  const SUGGEST_VISIBLE = 4;
   function renderEmpty() {
     if (store.state.messages.length) return;
     const jb = $('#jump-bottom');
     if (jb) jb.classList.remove('show');
     const exclude = loadLastSuggest();
-    let picks = pickSuggestions(localizedSuggestions(), 3, Math.random, exclude);
+    let picks = pickSuggestions(localizedSuggestions(), SUGGEST_VISIBLE, Math.random, exclude);
     const same = picks.map((x) => x.text).join('\0') === exclude.join('\0');
-    if (same && SUGGESTIONS.length > 3) picks = pickSuggestions(localizedSuggestions(), 3, Math.random, exclude);
+    if (same && SUGGESTIONS.length > SUGGEST_VISIBLE) picks = pickSuggestions(localizedSuggestions(), SUGGEST_VISIBLE, Math.random, exclude);
     saveLastSuggest(picks);
     msgList.appendChild(el('div', 'empty-state', `
       <div class="empty-logo">${APP_LOGO}</div>
@@ -1334,14 +1336,15 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
   function paintAssistant(wrap, m) {
     if (!m._displayFragment) {
       syncPresentationScope();
-      if (toolPresentation.deferred(m, store.state.messages)) return;
+      // 未决（deferred）时这条不重画，但已经在屏上的节点仍要归位：停止后动作条常常就卡在中间
+      if (toolPresentation.deferred(m, store.state.messages)) { syncCancelledTail(wrap, m); settleTurnToolbars(); return; }
       m = toolPresentation.project(m);
     }
     if (paintOrderedAssistant(wrap, m, {
       paintPart: paintAssistant, paintMeta: paintTurnMeta, paintFoot, syncShell: syncAssistantShell,
       syncFolds: syncCompletedToolFolds,
       refreshActions: refreshActionVisibility,
-    })) return;
+    })) { syncCancelledTail(wrap, m); refreshActionVisibility(); settleTurnToolbars(); return; }
     wrap.classList.toggle('cancelled', !!m.cancelled);
     const body = $('.md-body', wrap);
     let html = publicPlanHtml(m.publicPlan);
@@ -1721,7 +1724,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     const currentTurn = idxA >= msgsAll.findLastIndex((x) => x.role === 'user' && !x.silent);
     const resultIds = new Set(toolResults(m.id).keys());
     const writing = currentTurn && getBusy() && !m.cancelled && !presentationStopped && fileCluster('write_file').flatMap((x) => x.toolCalls || []).some((c) => c.name === 'write_file' && !presentationCallSettled(c, resultIds));
-    const afterEdit = paintEditFold(afterRead, !!writing);
+    paintEditFold(afterRead, !!writing);
     const read = (m.toolCalls || []).filter((c) => c.name === 'read_file').at(-1);
     const readNode = $('.explored-files', wrap);
     if (read && readNode) {
@@ -1734,19 +1737,14 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       pre.textContent = value.slice(-65536) || (active ? '读取中…' : '（空文件）');
       syncFileFold(readNode);
     }
-    let tail = wrap.querySelector(':scope > .message-tail');
-    if (m.cancelled) {
-      if (!tail) { tail = el('div', 'message-tail'); afterEdit.after(tail); }
-      tail.innerHTML = '<span class="cancelled-tag">已停止</span>';
-      if (tail.previousElementSibling !== afterEdit) afterEdit.after(tail);
-    } else if (tail) tail.remove();
+    syncCancelledTail(wrap, m);
     syncCompletedToolFolds();
     // meta（无 msg-head 的续消息没有该节点；多轮工具调用时汇总整轮 token 与官方预估价格到本轮首条 msg-head）
     paintTurnMeta(wrap, m);
     paintFoot(wrap, m);
     syncAssistantShell(wrap);
     // 复制/回滚/重新生成的显隐统一交给 refreshActionVisibility（回合结束才显示）
-    refreshActionVisibility();
+    refreshActionVisibility(); settleTurnToolbars();
   }
 
   function syncAssistantShell(w) {
@@ -1905,6 +1903,60 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     return box;
   }
 
+  // ── 回合动作条（复制/回滚/重新生成/分享）永远排在「这一轮最后一个节点」之后 ──────────
+  // 停止、工具穿插、正文分段时，动作条原本留在首个 assistant 节点里，看起来就是
+  // 「正文 → 按钮 → 正文 / 工具」的错位（用户截图里的暂停后按钮错位）。这里在每次绘制后
+  // 把这一轮唯一的 .msg-toolbar 移到该轮最后一个消息节点末尾（有「已停止」标记则排在标记前）。
+  // 「已停止」标记：流式（fragment）与整体两种画法都要有，且永远贴在动作条上方，
+  // 不能像以前那样停在中间（第 13 条：暂停后按钮/标记错位）。
+  function syncCancelledTail(wrap, m) {
+    // 片段行（.assistant-fragment）不画标记：整轮的「已停止」挂在消息底部，避免同一条回答出现两个
+    if (wrap.classList.contains('assistant-fragment')) return;
+    let tail = wrap.querySelector(':scope > .message-tail');
+    if (!m.cancelled) { tail?.remove(); return; }
+    if (!tail) { tail = el('div', 'message-tail'); wrap.append(tail); }
+    if (tail.innerHTML !== '<span class="cancelled-tag">已停止</span>') tail.innerHTML = '<span class="cancelled-tag">已停止</span>';
+    const bar = wrap.querySelector(':scope > .msg-toolbar');
+    if (bar) wrap.insertBefore(tail, bar); else wrap.append(tail);
+  }
+
+  function settleTurnToolbars() {
+    // ① 单条消息内部：动作条（复制/回滚/重新生成/分享）必须排在整条消息的最后。
+    //    正文分段 + 工具穿插时，后画的片段会追加在动作条下面，看起来就是「正文 → 按钮 → 正文 / 工具」的错位。
+    //    「已停止」标记排在动作条之前（先说明发生了什么，再给操作）。
+    for (const wrap of $$('.msg[data-id]', msgList)) {
+      const bar = wrap.querySelector(':scope > .msg-toolbar');
+      if (!bar) continue;
+      const tail = wrap.querySelector(':scope > .message-tail');
+      if (tail) { if (bar.previousElementSibling !== tail) wrap.insertBefore(tail, bar); if (wrap.lastElementChild !== bar) wrap.append(bar); }
+      else if (wrap.lastElementChild !== bar) wrap.append(bar);
+    }
+    // ② 一轮之内：动作条只保留一个，归到该轮最后一个消息节点（多段回答属于同一条消息，命中 ①）。
+    const nodes = $$('.msg[data-id]', msgList);
+    if (!nodes.length) return;
+    const byId = new Map(nodes.map((n) => [String(n.dataset.id), n]));
+    const msgs = store.state.messages || [];
+    const turns = [];
+    for (let i = 0; i < msgs.length; i++) {
+      if (msgs[i].role !== 'user') continue;
+      const members = [];
+      for (let k = i; k < msgs.length && (k === i || msgs[k].role !== 'user'); k++) members.push(String(msgs[k].id));
+      turns.push(members);
+    }
+    for (const members of turns) {
+      const els = members.map((id) => byId.get(id)).filter(Boolean);
+      if (els.length < 2) continue;
+      const bars = els.map((n) => n.querySelector(':scope > .msg-toolbar')).filter(Boolean);
+      if (bars.length < 2) continue;
+      const last = els[els.length - 1], bar = bars[0];
+      for (const extra of bars.slice(1)) extra.remove();
+      if (bar.parentElement !== last) last.append(bar);
+      else if (last.lastElementChild !== bar) last.append(bar);
+      const tail = last.querySelector(':scope > .message-tail');
+      if (tail) last.insertBefore(tail, bar);
+    }
+  }
+
   function refreshActionVisibility() {
     const msgs = store.state.messages;
     const busy = getBusy();
@@ -1962,7 +2014,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       paintAssistant(wrap, m);
     }
     msgList.appendChild(wrap);
-    if (m.role === 'assistant') refreshActionVisibility();
+    if (m.role === 'assistant') { refreshActionVisibility(); settleTurnToolbars(); }
     scrollToBottom();
   }
 
@@ -2045,6 +2097,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     for (const n of $$('.msg', msgList)) n.classList.remove('enter');
     // 把 tool 结果回填到芯片（需要在可见范围内查找）
     for (const m of store.state.messages) if (m.role === 'tool') attachToolResult(m);
+    settleTurnToolbars();
     refreshActionVisibility();
     scrollToBottom(true);
   }
@@ -2764,6 +2817,8 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       }
       refreshActionVisibility();
       scrollToBottom();
+      // 停止后的画面是最终态（不再重绘），这里必须把动作条与「已停止」标记一次性归位
+      settleTurnToolbars();
     },
 
     // 沙箱执行进度 → 回写到对应工具芯片的状态位（Pyodide 首次加载 10~30s、

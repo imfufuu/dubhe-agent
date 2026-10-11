@@ -1,6 +1,6 @@
 # ◐ Dubhe Agent — 基于 TeamoRouter 的网页端智能体
 
-> **Dubhe Agent V1.7** · 架构 **Dubhe Helix 3.0 · DC（Dubhe Cambrian，天枢·寒武）** · 构建 `2026.10.10.2` · [线上介绍](https://imfufuu.github.io/dubhe-agent/) · 对话 [app.html](./app.html) · [CHANGELOG](./CHANGELOG.md)
+> **Dubhe Agent V1.7** · 架构 **Dubhe Helix 3.0 · DC（Dubhe Cambrian，天枢·寒武）** · 构建 `2026.10.11.1` · [线上介绍](https://imfufuu.github.io/dubhe-agent/) · 对话 [app.html](./app.html) · [CHANGELOG](./CHANGELOG.md)
 
 [![CI](https://github.com/imfufuu/dubhe-agent/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/imfufuu/dubhe-agent/actions/workflows/ci.yml)
 [![Pages](https://github.com/imfufuu/dubhe-agent/actions/workflows/pages.yml/badge.svg?branch=main)](https://github.com/imfufuu/dubhe-agent/actions/workflows/pages.yml)
@@ -693,7 +693,20 @@ JS/Python 支持 `path` 读取已存在源码代替重复 `code`；长内联 JS/
 浏览器回归包括真实 Chromium 与 Linux WebKit（不等于用户具体 Safari/iOS 设备），以及浏览器语音/通知 API 的模拟接口测试；不会把这些测试称为真实语音服务或操作系统权限验收。长图渲染依赖本地固定版本 html2canvas 1.4.1（MIT），许可见 `assets/licenses/html2canvas-MIT.txt`。
 
 
-### 当前界面与跨设备行为（2026.10.10.2）
+### 当前界面与跨设备行为（2026.10.11.1）
+
+- **分享按轮**：最小分享单位是一轮对话（提问＋该轮全部输出），用户消息上方不再出现分享入口；选择器按轮分组显示「第 N 轮 · 含 M 条输出」。
+- **导出必定落地**：导出后给出结果状态（下载／系统分享／新标签页），并保留「再存一次」链接；导出失败显示原因而不是静默。长图与多图 ZIP 走同一交付路径。
+- **停止后的排布**：动作条（复制／回滚／重新生成／分享）固定在整条回答的最后，「已停止」标记紧贴其上；正文分段与工具穿插时不再错位。
+- **光标**：原生 caret-color 彩虹循环，每色停留 1.1 秒（一圈 7.7 秒），不做高频行内写入；输入法拼字期间暂停，选区与拼字颜色不受影响，失焦／关动效即停。
+- **英文界面**：底部按钮按内容分配宽度（WebKit 下也不再裁字），设置页识图／视频／生图档位补英文档位与说明，英文界面不再漏出中文；提示条文案同样本地化。
+- **审核与提示**：点赞／踩取消 toast，用颜色与轻微弹动表达状态；关闭本地审核后隐藏灰区远程复核设置；审核提示窗与分享窗底部按钮间距 10px。
+- **沙箱首次启动**：空闲时预热 Worker 并接管已就绪实例，首次 execute_javascript 不再承担冷启动；释放或预热失败时回到原路径（启动 12 秒／执行 8 秒不变）。
+- **语言与示例**：语言切换带淡入过渡且必定落回不透明；空状态每轮 4 张示例卡，中文池 36 条、英文池 27 条，新一轮不重复上一轮。
+- **任务计划**：正文第一行先给「收到任务」回执，再给方向与 2–5 步公开计划，工具调用排在其后。
+- Ultra 彩虹滚动提速到 2.6 秒；对话正文、代码与文件内容可选中，界面其余区域禁止误选。
+
+### 上一个构建的界面与跨设备行为（2026.10.10.2）
 
 - 侧栏分享和顶栏语言入口移除；消息多选分享保留，语言在设置及页脚。设置内不再提供清空当前/全部数据按钮，独立会话管理/系统命令不变。
 - 麦克风/摄像头按enumerateDevices及权限策略检测，缺设备隐藏，不先调用getUserMedia索权；设备插拔重新检测。检测未知不谎称不存在。
