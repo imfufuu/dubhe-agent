@@ -1,3 +1,4 @@
+import { coreSystemPrompt } from './prompt-core.js';
 import { getLanguage } from './locale.js';
 import { systemPromptEnglish, OUTPUT_SPEC_EN } from './prompt-en.js';
 export { OUTPUT_SPEC_EN };
@@ -22,7 +23,7 @@ import { claudeThinkingBudget, reasoningEffortFor } from './reasoning.js';
 // 的 ~10 分钟缓存。每次改动样式或入口逻辑都要 bump 一次（有单测校验二者一致）。
 // 发布版本（正式版标识，界面/文档都读它）与构建戳（每次改动递增，用于 ?v= 缓存击穿）
 export const APP_RELEASE = 'V1.7';
-export const APP_VERSION = '2026.10.10.1';
+export const APP_VERSION = '2026.10.10.2';
 export const ANTHROPIC_VERSION = '2023-06-01';
 // 思考链加密（不返回可见思考正文）的模型模式：菜单显示「思考链已加密」。
 // 另有运行时自学：某模型真实返回过 hidden thinking 后也会被标记（见 agent.js observedHiddenThink）。
@@ -360,7 +361,7 @@ export const OUTPUT_SPEC = [
   '- 大工程先给文件列表与接口，再每次只实现一个文件、每次最多改 1–3 个函数。一次做不完就在末尾单独一行写 <<<CONTINUE>>>，等用户让你继续。不要一次输出整个项目。',
   '- 沙箱文件：要让用户看见沙箱里的图或文件，用 Markdown 图片语法 ![说明](sandbox://相对路径)，例如 ![示例](sandbox://outputs/example.png)。不要输出 data URL，不要写 HTML <img>。',
   '- 沙箱持久规则：本轮新建的文件只有在最终回答里提到其路径或文件名（或用 sandbox:// 链接）才会保留，没提到的回合结束即丢弃；internal/ 与 uploads/ 下的文件（抓取全文、识图结果、下载件、用户上传）总是保留，无需提及。',
-  '- 选择框：只用于需要用户拍板的重要决策。必须是本条回复的最后一个块（可连续多个 :::choice），后面不许再有任何文字、代码或折叠栏。客户端只渲染文末完整块；用户点选项、「跳过」或发出下一条消息后选择框消失。禁止在段中或工具循环中途输出。格式：\n:::choice 问题\n- 选项一\n- 选项二\n:::',
+  '- 选择框：只用于需要用户拍板的重要决策，可在最终总结任意位置（开头、中间或结尾）输出完整 :::choice；前后可有正文/代码，关闭符 ::: 优先独占一行。工具循环或规划中途不放交互选择。用户选项或发出下一消息后旧控件关闭。格式：\n:::choice 问题\n- 选项一\n- 选项二\n:::',
   '- 折叠栏（次要内容或答案，默认收起，少用）：\\n:::fold 标题\\n内容\\n:::',
   '- 文学创作或需要精细排版时，可用 :::font 楷体|宋体|仿宋|黑体|行楷|serif|jp 包裹段落切换字体。日常聊天、写代码、分析文件不要换字体。格式：\\n:::font 楷体\\n正文\\n:::',
   '- 居中 / 右对齐排版：可用 :::center … :::、:::right … :::，或 :::align center|right … ::: 包裹 Markdown 段落；只在诗歌、题签、署名等需要版式时使用。',
@@ -370,6 +371,10 @@ export const OUTPUT_SPEC = [
 ].join('\n');
 
 export function systemPrompt(now = new Date(), opts = {}) {
+  return coreSystemPrompt(now, { ...opts, language: opts.language || getLanguage() });
+}
+// Kept as a reference extractor for source compatibility; not injected into live requests.
+export function referenceSystemPrompt(now = new Date(), opts = {}) {
   if ((opts.language || getLanguage()) === 'en') return systemPromptEnglish(now, opts);
   // opts.webEnabled===false 时，工具清单里的联网说明要换成「本轮关闭」，
   // 否则提示词一边说「请求已带上原生搜索字段」一边又关着开关，模型会以为能查实时信息。
@@ -455,3 +460,5 @@ export function systemPrompt(now = new Date(), opts = {}) {
 }
 
 export function outputSpec(language = getLanguage()) { return language === 'en' ? OUTPUT_SPEC_EN : OUTPUT_SPEC; }
+
+export function compactOutputSpec(language = getLanguage()) { return language === 'en' ? 'Use Markdown, fenced runnable code and valid KaTeX. Deliver sandbox:// files and dependencies; no raw HTML/data URLs. Summary :::choice blocks may occur anywhere. Use knowledge_search for exact chart/map/flow/mind/font grammar, only as needed.' : '使用Markdown、完整围栏代码与合法KaTeX；用sandbox://交付文件及依赖，不输出raw HTML/data URL。最终总结:::choice可在任意位置。chart/map/flow/mind/font精确语法按需调用knowledge_search，不整库预装。'; }

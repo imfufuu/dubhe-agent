@@ -12,20 +12,20 @@
      · connect 仅放行网关（.com 与 .cn 双域名，中国网络自动择路）/ C++ 远程执行 / Pyodide CDN / 本站代理
      · 'wasm-unsafe-eval' 为 Pyodide 在 Worker 内编译 WebAssembly 所需 -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' 'sha256-KWAlpbtB4R45zBOqEtLM+90JdLvHqoOyoaQRSGS6uBs=' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; img-src 'self' data: blob: https:; media-src 'self' blob: data:; font-src 'self' data: https://fonts.gstatic.com https://cdn.jsdelivr.net; connect-src 'self' https://api.teamorouter.com https://api.teamorouter.cn https://godbolt.org https://cdn.jsdelivr.net https://*.workers.dev; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'" />
-<meta name="app-version" content="2026.10.10.1" />
+<meta name="app-version" content="2026.10.10.2" />
 <meta name="app-release" content="V1.7" />
 <title>Dubhe Agent V1.7 — 网页端智能体</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2032%2032'%20aria-hidden%3D'true'%3E%3Ccircle%20cx%3D'16'%20cy%3D'16'%20r%3D'15'%20fill%3D'%230a0a0a'%2F%3E%3Ccircle%20cx%3D'16'%20cy%3D'16'%20r%3D'13'%20fill%3D'none'%20stroke%3D'%23f4f4f4'%20stroke-opacity%3D'0.18'%20stroke-width%3D'1.3'%2F%3E%3Cpath%20d%3D'M22.128%2021.142%20A8.000%208.000%200%200%201%209.872%2021.142'%20fill%3D'none'%20stroke%3D'%23f4f4f4'%20stroke-opacity%3D'0.55'%20stroke-width%3D'2.2'%20stroke-linecap%3D'round'%2F%3E%3Cpath%20d%3D'M8.482%2018.736%20A8.000%208.000%200%200%201%2014.611%208.122'%20fill%3D'none'%20stroke%3D'%23f4f4f4'%20stroke-opacity%3D'0.55'%20stroke-width%3D'2.2'%20stroke-linecap%3D'round'%2F%3E%3Cpath%20d%3D'M17.389%208.122%20A8.000%208.000%200%200%201%2023.518%2018.736'%20fill%3D'none'%20stroke%3D'%23f4f4f4'%20stroke-opacity%3D'0.55'%20stroke-width%3D'2.2'%20stroke-linecap%3D'round'%2F%3E%3Ccircle%20cx%3D'16'%20cy%3D'16'%20r%3D'2.7'%20fill%3D'%23f4f4f4'%2F%3E%3Ccircle%20cx%3D'16.000'%20cy%3D'24.000'%20r%3D'1.8'%20fill%3D'%23f4f4f4'%2F%3E%3Ccircle%20cx%3D'9.072'%20cy%3D'12.000'%20r%3D'1.8'%20fill%3D'%23f4f4f4'%2F%3E%3Ccircle%20cx%3D'22.928'%20cy%3D'12.000'%20r%3D'1.8'%20fill%3D'%23f4f4f4'%2F%3E%3C%2Fsvg%3E" />
 <link rel="manifest" href="manifest.webmanifest" />
 <link rel="apple-touch-icon" href="assets/app-icon-192.png" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
-<link rel="stylesheet" href="css/styles.css?v=2026.10.10.1" />
-<link rel="stylesheet" href="assets/hljs/dubhe.css?v=2026.10.10.1" />
+<link rel="stylesheet" href="css/styles.css?v=2026.10.10.2" />
+<link rel="stylesheet" href="assets/hljs/dubhe.css?v=2026.10.10.2" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <!-- 第三方字体（Google Fonts / jsDelivr）改由启动脚本动态插入：解析器插入的外链样式表会阻塞后面所有脚本执行，
      国内或弱网下这两个域名一挂起，整个应用就卡在加载屏直到 60 秒超时（V1.7.1 修复）。 -->
-<link rel="stylesheet" href="fonts/literary.css?v=2026.10.10.1" />
+<link rel="stylesheet" href="fonts/literary.css?v=2026.10.10.2" />
 <!-- LaTeX 渲染（KaTeX）：CDN 加载失败时自动降级为代码块显示 -->
 <link rel="stylesheet" href="assets/katex/katex.min.css" />
 <script defer src="assets/katex/katex.min.js"></script>
@@ -311,7 +311,6 @@
         <button id="settings-btn" class="mini-btn" type="button" title="设置">
           <svg class="pill-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.37.16.68.43.9.76"/></svg>设置
         </button>
-        <button id="share-open" class="mini-btn" type="button" title="分享对话">分享</button>
         <button id="export-btn" class="mini-btn" type="button" title="导出会话 JSON">导出</button>
         <button id="import-btn" class="mini-btn" type="button" title="从 JSON 导入会话">导入</button>
         <input id="import-input" type="file" accept="application/json,.json" hidden />
@@ -326,7 +325,6 @@
       <button id="sidebar-fab" type="button" title="展开侧栏" aria-label="展开侧栏"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h10"/></svg></button>
       <div class="status"><span id="status-dot" class="dot ok"></span><span id="status-text"></span><span id="time-stats" class="time-stats mono"></span></div>
       <div class="topbar-right">
-        <button class="pill language-toggle" type="button" data-language-toggle title="语言">EN</button>
         <div class="think-picker" id="think-picker">
           <button id="thinking-toggle" class="pill on" type="button" title="推理级别：Mini / Low / Medium / High / Max / Ultra。Claude→budget_tokens，GPT/Gemini/Grok→reasoning_effort，DeepSeek→reasoning，GLM→thinking；不支持的模型自动降级" aria-haspopup="listbox" aria-expanded="false"><svg class="pill-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/><path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/><path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4"/></svg>思考</button>
           <div id="think-menu" class="dd-menu think-menu" role="listbox"></div>
@@ -493,6 +491,7 @@
 
       <section class="set-sec">
         <h4>对话行为</h4>
+        <div class="set-row"><div class="set-lbl"><div class="set-title">本地内容审核</div><div id="set-moderation-note" class="set-sub">默认开启；关闭前需确认风险与责任，仅影响本地检查，不改变上游政策</div></div><div class="set-ctl"><label class="sw"><input type="checkbox" id="set-moderation" checked/><span></span></label></div></div>
         <div class="set-row"><div class="set-lbl"><div class="set-title">长任务完成通知</div><div id="notifications-note" class="set-sub">固定：超过60秒且在后台；手动停止不通知</div></div><div class="set-ctl"><button id="set-notifications" class="mini-btn" type="button" aria-pressed="false">开启通知</button></div></div>
         <div class="set-row"><div class="set-lbl"><div class="set-title">代码沙箱</div><div class="set-sub">JS / Python / C++</div></div><div class="set-ctl"><label class="sw"><input type="checkbox" id="set-sandbox"/><span></span></label></div></div>
         <div class="set-row"><div class="set-lbl"><div class="set-title">远程 C++（Compiler Explorer）</div><div class="set-sub">代码会发送到 godbolt.org</div></div><div class="set-ctl"><label class="sw"><input type="checkbox" id="set-cpp"/><span></span></label></div></div>
@@ -541,10 +540,7 @@
           <div class="set-about-row"><span>部署提交</span><b id="set-about-commit" class="mono" title="来自线上 build.json：这次部署对应的 git 提交与文件清单，可用 tools/verify-build.mjs 逐文件核对">—</b></div>
         </div>
         <div class="set-row"><div class="set-lbl"><div class="set-title">临时缓存</div><div class="set-sub" id="set-cache-note">不含会话、密钥、设置与记忆</div></div><div class="set-ctl"><button type="button" id="set-clear-cache" class="ghost-btn">清除临时缓存</button></div></div>
-        <div class="set-danger">
-          <button type="button" id="set-clear-chat" class="ghost-btn danger">清空当前会话</button>
-          <button type="button" id="set-clear-all" class="ghost-btn danger">清空所有数据</button>
-        </div>
+
       </section>
 
     </div>
@@ -552,6 +548,9 @@
   </div>
 </div>
 
+<div id="moderation-risk-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="moderation-risk-title">
+ <div class="modal-card"><div class="modal-head"><h3 id="moderation-risk-title">关闭本地内容审核？</h3></div><p class="share-note">关闭后，输入和附件可能不再经过本地风险检查，可能包含有害、违法、隐私或不适宜内容。你需自行检查内容、保护敏感数据，并对使用和传播承担适用法律下的责任。关闭不改变网关或模型服务商的审核政策，也不代表内容安全。</p><label class="moderation-risk-check"><input id="moderation-risk-ack" type="checkbox">我已了解风险，会自行检查内容并承担使用责任</label><div class="modal-actions"><button id="moderation-risk-cancel" class="ghost-btn" type="button">保持开启</button><button id="moderation-risk-confirm" class="primary-btn" type="button" disabled>确认关闭本地审核</button></div></div>
+</div>
 <div id="share-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="share-title">
   <div class="modal-card share-card"><div class="modal-head"><h3 id="share-title">分享对话</h3><button type="button" id="share-close" class="icon-btn" aria-label="关闭">×</button></div>
   <p class="share-note">仅在本机导出。请确认所选消息与附件不含密钥或敏感信息。</p>
@@ -563,6 +562,6 @@
   </div></div>
 <div id="toasts" class="toasts"></div>
 
-<script type="module" src="js/main.js?v=2026.10.10.1"></script>
+<script type="module" src="js/main.js?v=2026.10.10.2"></script>
 </body>
 </html>

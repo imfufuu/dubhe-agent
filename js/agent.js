@@ -1,3 +1,4 @@
+import { publicTaskPlan } from './publicplan.js';
 import { feedbackPrompt } from './feedback.js';
 import { getLanguage } from './locale.js';
 // ─── Agent 核心：工具调用循环（Hermes 式回合生命周期）────────────────
@@ -18,17 +19,17 @@ import { getLanguage } from './locale.js';
 //   · 生图：不作为对话模型直接调用，统一由主智能体经 generate_image 工具发起
 
 import { CODE_TOOL_NAMES as REG_CODE_TOOL_NAMES } from './capabilities.js';
-import { streamChat, createToolCallAccumulator, createThinkingTracker, getTransport } from './api.js?v=2026.10.10.1';
+import { streamChat, createToolCallAccumulator, createThinkingTracker, getTransport } from './api.js?v=2026.10.10.2';
 import { TOOL_DEFS, executeTool } from './tools.js';
-import { probeLocalBrowser, localBrowserAvailable } from './localbrowser.js?v=2026.10.10.1';
-import { recordOutputText, recordOutputTool } from './toolflow.js?v=2026.10.10.1';
+import { probeLocalBrowser, localBrowserAvailable } from './localbrowser.js?v=2026.10.10.2';
+import { recordOutputText, recordOutputTool } from './toolflow.js?v=2026.10.10.2';
 import { relayAvailable, relaySupports, relayState } from './net.js';
 import { createFS, createTempFS } from './sandbox.js';
 import { effectiveApiKey } from './adminkey.js';
 import { compactMessages, contextBudgetFor } from './context.js';
 import { subagentGuide, specialistPrompt } from './subagents.js';
-import { TOOL_LOOP_MAX, SUBAGENT_LOOP_MAX, systemPrompt, OUTPUT_SPEC, outputSpec, DEFAULT_IMAGE_MODEL, SMART_ROUTER_ID, FALLBACK_MODELS, resolveModelAlias } from './config.js?v=2026.10.10.1';
-import { routeModel, isSmartRouter } from './smartrouter.js?v=2026.10.10.1';
+import { TOOL_LOOP_MAX, SUBAGENT_LOOP_MAX, systemPrompt, OUTPUT_SPEC, outputSpec, compactOutputSpec, DEFAULT_IMAGE_MODEL, SMART_ROUTER_ID, FALLBACK_MODELS, resolveModelAlias } from './config.js?v=2026.10.10.2';
+import { routeModel, isSmartRouter } from './smartrouter.js?v=2026.10.10.2';
 import { planTurn } from './jev.js';
 import { assembleSystemLayers, formatRuntime, formatBudgetNote } from './prompt.js';
 import { formatSkillsIndex, selectSkillBodies, distillSkill, rememberSkill, pruneLearnedSkillsWithReport } from './skills.js';
@@ -64,7 +65,7 @@ import {
   createTurnTelemetry,
   verifyRuntimePremises,
 } from './nexus.js';
-import { moderateUserTurn } from './moderation.js?v=2026.10.10.1';
+import { moderateUserTurn } from './moderation.js?v=2026.10.10.2';
 // ─── P0 执行内核（Dubhe Helix 2.5 · P0）：统一状态机 + 预算与风险治理 + 工具契约校验 ───
 // 新模块单独成文件并带 ?v=（混版纪律）：旧版 agent.js 不 import 它，不会因缺导出白屏。
 import {
@@ -87,37 +88,37 @@ import {
   summarizeExecutionRecord,
   createConfirmationGate,
   GUARD_MODES,
-} from './execution.js?v=2026.10.10.1';
+} from './execution.js?v=2026.10.10.2';
 // ─── P1（Dubhe Helix 2.5）：执行检查点与恢复 / 幂等账本 / 记忆生命周期 / 轨迹级评测 ───
 import {
   createCheckpointStore,
   planResume,
   formatResumePlan,
-} from './recovery.js?v=2026.10.10.1';
+} from './recovery.js?v=2026.10.10.2';
 import {
   createIdempotencyLedger,
-} from './idempotency.js?v=2026.10.10.1';
+} from './idempotency.js?v=2026.10.10.2';
 import {
   resolveRecallStates,
   planMemoryInjection,
   evaluateMemoryWriteGate,
-} from './memorylife.js?v=2026.10.10.1';
+} from './memorylife.js?v=2026.10.10.2';
 import {
   evaluateTrajectory,
   summarizeTrajectoryTotals,
   appendTrajectoryEntry,
-} from './trajectory.js?v=2026.10.10.1';
+} from './trajectory.js?v=2026.10.10.2';
 
 // ─── P2（Dubhe Helix 2.5）：策略版本化 / 统一指标 / 策略实验 / 故障注入 / 审计目标分层 ───
-import { snapshotPolicies, verifyPolicyRegistry, diffPolicySnapshots, formatPolicyLine, formatPolicyDriftReport } from './policy.js?v=2026.10.10.1';
-import { formatMetricsPanel, METRIC_DEFS } from './metrics.js?v=2026.10.10.1';
+import { snapshotPolicies, verifyPolicyRegistry, diffPolicySnapshots, formatPolicyLine, formatPolicyDriftReport } from './policy.js?v=2026.10.10.2';
+import { formatMetricsPanel, METRIC_DEFS } from './metrics.js?v=2026.10.10.2';
 import {
   resolveExperimentAssignment,
   experimentPolicyOverrides,
   summarizeExperiment,
   formatExperimentReport,
-} from './experiments.js?v=2026.10.10.1';
-import { createFaultInjector, formatFaultReport, FAULT_KINDS } from './faults.js?v=2026.10.10.1';
+} from './experiments.js?v=2026.10.10.2';
+import { createFaultInjector, formatFaultReport, FAULT_KINDS } from './faults.js?v=2026.10.10.2';
 // P2：统一执行上下文（单一真相源）——工具表由它派生，「声明允许 Web 但工具表没有 Web」在此当场判为缺陷
 import {
   createTurnExecutionContext,
@@ -133,12 +134,12 @@ import {
   recentToolNames,
   describeDropReason,
   formatDroppedTools,
-} from './executionContext.js?v=2026.10.10.1';
-import { createToolRunner } from './toolrunner.js?v=2026.10.10.1';
-import { finalizeTurn } from './turnfinalizer.js?v=2026.10.10.1';
-import { formatAuditGoalsReport, auditBoundaryStatement } from './audit.js?v=2026.10.10.1';
+} from './executionContext.js?v=2026.10.10.2';
+import { createToolRunner } from './toolrunner.js?v=2026.10.10.2';
+import { finalizeTurn } from './turnfinalizer.js?v=2026.10.10.2';
+import { formatAuditGoalsReport, auditBoundaryStatement } from './audit.js?v=2026.10.10.2';
 // P3：编辑直播预览保持独立模块，旧缓存组合下缺少它也不影响核心对话。
-import { buildFileEditPreview, formatEditPreviewNote, pathsOfEdits } from './editpreview.js?v=2026.10.10.1';
+import { buildFileEditPreview, formatEditPreviewNote, pathsOfEdits } from './editpreview.js?v=2026.10.10.2';
 
 // 沙箱开关只该管住代码执行 —— 这份列表与 tools.js 里的 CODE_TOOL_NAMES 必须一致
 //（有单测钉住）。故意不在这里 import toolsFor/CODE_TOOL_NAMES：静态站点没有构建器，
@@ -224,8 +225,7 @@ export function subagentTools(sandboxEnabled, def, { remoteCpp = true } = {}) {
   // 但读写文件之类不执行任意代码的工具仍应留给子智能体（旧写法直接给了 null，
   // 等于一关沙箱就把所有子智能体退化成纯推理）。
   const allow = new Set(toolsFor(sandboxEnabled, { remoteCpp }).map((t) => t.name));
-  if (!def.tools.length) return null;
-  const list = TOOL_DEFS.filter((t) => def.tools.includes(t.name) && t.name !== 'dispatch_subagent' && allow.has(t.name));
+  const list = TOOL_DEFS.filter((t) => (t.name === 'knowledge_search' || def.tools.includes(t.name)) && t.name !== 'dispatch_subagent' && allow.has(t.name));
   return list.length ? list : null;
 }
 
@@ -233,7 +233,7 @@ export async function runSubagent(def, task, { apiKey, model, thinking, reasonin
   const subTools = subagentTools(sandboxEnabled, def, { remoteCpp });
   const memBlock = formatMemory(memory);
   const messages = [
-    { role: 'system', text: `${specialistPrompt(def)}\n\n${getLanguage() === 'en' ? `You are ${def.tag}, a Dubhe Agent specialist. Give a final report without small talk. Current time: ${new Date().toISOString()}` : `你是 Dubhe Agent 体系中的「${def.name}」子智能体。直接产出最终报告，不要寒暄。当前时间：${new Date().toISOString()}`}${memBlock ? `\n\n${memBlock}` : ''}\n\n${outputSpec()}` },
+    { role: 'system', text: `${specialistPrompt(def)}\n\n${getLanguage() === 'en' ? `You are ${def.tag}, a Dubhe Agent specialist. Give a final report without small talk. Current time: ${new Date().toISOString()}` : `你是 Dubhe Agent 体系中的「${def.name}」子智能体。直接产出最终报告，不要寒暄。当前时间：${new Date().toISOString()}`}${memBlock ? `\n\n${memBlock}` : ''}\n\n${compactOutputSpec()}` },
     { role: 'user', text: task },
   ];
   let finalText = '';
@@ -290,7 +290,7 @@ export async function runSubagent(def, task, { apiKey, model, thinking, reasonin
 export {
   PARALLEL_TOOLS, batchToolCalls, toolAccessSet, toolCallsConflict, NETWORK_TOOLS, PARALLEL_LIMITS,
   toolCategoryOf, plannedConcurrency, runWithCategoryLimits, planToolWaves,
-} from './toolrunner.js?v=2026.10.10.1';
+} from './toolrunner.js?v=2026.10.10.2';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 export function createAgent(store, hooks = {}) {
@@ -971,6 +971,7 @@ export function createAgent(store, hooks = {}) {
         exec.machine.transition(EXECUTION_STATES.PLANNED,
           turnPlan ? `Jev 预判完成（route=${turnPlan.route || 'chat'}）` : 'Jev 未启用或未返回计划，按默认计划执行');
 
+        turn.publicPlan = publicTaskPlan(lastUserInit?.text || '');
         while (TOOL_LOOP_MAX <= 0 || iterations < TOOL_LOOP_MAX) {
           iterations++;
           setStatus(turn.thinking ? 'thinking' : 'connecting');
@@ -988,6 +989,7 @@ export function createAgent(store, hooks = {}) {
 
           const assistantMsg = store.pushMessage({
             role: 'assistant', text: '', model, usage: null,
+            publicPlan: iterations === 1 ? turn.publicPlan : undefined,
             fastMode: !!settings.fastMode,
             reasoningLevel: turn.thinking ? (turn.reasoningLevel || 'medium') : 'off',
             router: turn.routerDecision || null, // 智能路由器结果（含 provider，不含模型 ID）

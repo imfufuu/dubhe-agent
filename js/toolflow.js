@@ -54,13 +54,13 @@ export function turnHasAssistantText(messages, id) {
   let lo = at, hi = at;
   while (lo > 0 && messages[lo - 1].role !== 'user') lo--;
   while (hi + 1 < messages.length && messages[hi + 1].role !== 'user') hi++;
-  return messages.slice(lo, hi + 1).some((m) => m.role === 'assistant' && String(m.text || '').trim());
+  return messages.slice(lo, hi + 1).some((m) => m.role === 'assistant' && String(m.text || m.publicPlan?.direction || '').trim());
 }
 // Only adjacent, text-free tool-only assistant messages are eligible for merging.
 export function adjacentToolMessages(messages, id, predicate) {
   const at = messages.findIndex((m) => m.id === id);
   if (at < 0) return [];
-  const eligible = (m) => m?.role === 'assistant' && !String(m.text || '').trim()
+  const eligible = (m) => m?.role === 'assistant' && !m.publicPlan?.direction && !String(m.text || '').trim()
     && m.toolCalls?.length && m.toolCalls.every(predicate);
   if (!eligible(messages[at])) return [messages[at]];
   const cluster = [messages[at]];

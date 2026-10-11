@@ -761,7 +761,7 @@ console.log('\n⑳ .36 回归：能力表里把禁用工具全部启用后，弹
       : new Response('nf', { status: 404 });
   try {
     net.resetRelayProbe();
-    const lb = await import('../js/localbrowser.js?v=2026.10.10.1'); await lb.probeLocalBrowser({ force: true });
+    const lb = await import('../js/localbrowser.js?v=2026.10.10.2'); await lb.probeLocalBrowser({ force: true });
     store.state.relayOk = await net.relayAvailable();
     store.state.settings.webEnabled = true;
     ui.syncWeb();

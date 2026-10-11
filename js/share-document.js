@@ -1,10 +1,11 @@
-import { renderGeoMapSvg } from './quickviz.js?v=2026.10.10.1';
-import { decorateGeoMap } from './quickmap.js?v=2026.10.10.1';
-import { renderMarkdown, renderAttachments, hydrateSandboxMedia, esc, sanitizeSvgRaw } from './ui-markdown.js?v=2026.10.10.1';
-import { commandWindowText, splitToolStreams, renderToolWindowsHtml } from './toolwindows.js?v=2026.10.10.1';
+import { publicPlanMarkdown } from './publicplan.js';
+import { renderGeoMapSvg } from './quickviz.js?v=2026.10.10.2';
+import { decorateGeoMap } from './quickmap.js?v=2026.10.10.2';
+import { renderMarkdown, renderAttachments, hydrateSandboxMedia, esc, sanitizeSvgRaw } from './ui-markdown.js?v=2026.10.10.2';
+import { commandWindowText, splitToolStreams, renderToolWindowsHtml } from './toolwindows.js?v=2026.10.10.2';
 import { APP_LOGO, providerIcon } from './icons.js';
-import { providerOf, APP_VERSION } from './config.js?v=2026.10.10.1';
-import { isSmartRouter, SMART_ROUTER_LABEL, ROUTER_ICON_SVG } from './smartrouter.js?v=2026.10.10.1';
+import { providerOf, APP_VERSION } from './config.js?v=2026.10.10.2';
+import { isSmartRouter, SMART_ROUTER_LABEL, ROUTER_ICON_SVG } from './smartrouter.js?v=2026.10.10.2';
 import { getLanguage, text } from './locale.js';
 const STYLE_URLS = ['../css/styles.css', '../assets/hljs/dubhe.css', '../assets/katex/katex.min.css', '../fonts/literary.css'];
 export const SHARE_CSS = `
@@ -45,7 +46,7 @@ export function snapshotMessage(m, messages, fs, { tools = false, reasoning = fa
   const node = document.createElement('article'); node.className = `msg msg-${m.role}`; node.dataset.shareMessage = String(m.id);
   const router = isSmartRouter(m.userModel), model = router ? SMART_ROUTER_LABEL : m.model || 'Dubhe Agent';
   const avatar = router ? ROUTER_ICON_SVG : providerIcon(providerOf(model)) || APP_LOGO;
-  const body = renderMarkdown(m.text || '') + renderAttachments(m.attachments || []);
+  const body = renderMarkdown(publicPlanMarkdown(m.publicPlan) + (m.text || '')) + renderAttachments(m.attachments || []);
   if (m.role === 'user') node.innerHTML = `<div class="bubble md-body">${body}</div>`;
   else node.innerHTML = `<div class="msg-head"><span class="avatar">${avatar}</span><span class="msg-model mono">${esc(model)}</span></div>`
     + (reasoning && m.reasoning ? `<details class="share-reason"><summary>${text('思考过程', 'Reasoning')}</summary><pre>${esc(m.reasoning)}</pre></details>` : '')

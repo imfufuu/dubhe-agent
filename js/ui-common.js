@@ -1,4 +1,4 @@
-import { $, el, esc } from './ui-markdown.js?v=2026.10.10.1';
+import { $, el, esc } from './ui-markdown.js?v=2026.10.10.2';
 // ── Toast（底部最多堆叠 3 条，超出自动隐藏并移除最旧消息）──────────────────
 export const MAX_TOAST_STACK = 3;
 export function toast(msg, type = 'info', ms = 2600) {
