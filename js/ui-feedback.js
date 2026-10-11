@@ -26,7 +26,7 @@ export function installFeedback({ store, agent, getBusy, root, toast }) {
     if (!['up', 'down'].includes(vote)) return;
     const next = m.feedback?.vote === vote ? undefined : { vote, ts: Date.now() };
     store.updateMessage(m.id, { feedback: next }); refresh();
-    toast(next ? vote === 'up' ? '已标记有帮助' : '已标记没有帮助' : '已取消评价', 'ok', 1400);
+    // 状态由 aria-pressed + 颜色/小动效表达，不再弹提示条（避免打断阅读）。
   });
   let pending = false;
   const observer = new root.ownerDocument.defaultView.MutationObserver(() => { if (pending) return; pending = true; queueMicrotask(() => { pending = false; observer.disconnect(); refresh(); observe(); }); });

@@ -1,6 +1,6 @@
-import { prepareCommandArgs } from './commandsource.js?v=2026.10.10.2';
-import { appendToolStream } from './toolflow.js?v=2026.10.10.2';
-import { captureEditPreviewBase, captureEditPreviewSnapshot } from './editpreview.js?v=2026.10.10.2';
+import { prepareCommandArgs } from './commandsource.js?v=2026.10.11.1';
+import { appendToolStream } from './toolflow.js?v=2026.10.11.1';
+import { captureEditPreviewBase, captureEditPreviewSnapshot } from './editpreview.js?v=2026.10.11.1';
 // ─── 工具运行器（P4 拆分：从 agent.js 抽出「单个工具调用的执行与记账」）────────────────────
 // 拥有：① 同一波工具调用的调度（只读并发 / 写串行 / 委派限流：batchToolCalls · planToolWaves · runWithCategoryLimits）；
 //       ② 每次调用的完整生命周期——契约预检（validateToolCallPre）→ 风险分级与确认闸门 → 预算扣减 → 幂等账本回放
@@ -17,10 +17,10 @@ import {
   validateToolCallPre, validateToolResultPost, classifyToolRisk, summarizeArgs, fsDigest,
   guardRequiresConfirmation, formatConfirmationRequest, formatConfirmationDecision,
   formatBudgetLedger, formatBudgetRecovery,
-} from './execution.js?v=2026.10.10.2';
-import { buildCheckpoint, diffFileState, digestArtifact } from './recovery.js?v=2026.10.10.2';
-import { operationKey, planReplay, digestResultText } from './idempotency.js?v=2026.10.10.2';
-import { toolName } from './executionContext.js?v=2026.10.10.2';
+} from './execution.js?v=2026.10.11.1';
+import { buildCheckpoint, diffFileState, digestArtifact } from './recovery.js?v=2026.10.11.1';
+import { operationKey, planReplay, digestResultText } from './idempotency.js?v=2026.10.11.1';
+import { toolName } from './executionContext.js?v=2026.10.11.1';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // 一次委派最多并发几个子智能体（再高就是自己跟自己抢网关并发额度了）

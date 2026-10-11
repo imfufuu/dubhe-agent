@@ -383,12 +383,12 @@ store.state.messages.length = 0;
 ui.rebuildMessages();
 const emptyState = $('#messages .empty-state');
 const cards = emptyState ? [...emptyState.querySelectorAll('.suggest')] : [];
-ok('空状态展示 3 条示例卡片', cards.length === 3, `${cards.length} 张`);
+ok('空状态展示 4 条示例卡片', cards.length === 4, `${cards.length} 张`);
 const cmp = (a, b) => { const n = Math.min(a.length, b.length); for (let i = 0; i < n; i++) if (a[i] !== b[i]) return `${i}:${a.charCodeAt(i)}≠${b.charCodeAt(i)}`; return a.length === b.length ? 'eq' : `len ${a.length}/${b.length}`; };
 ok('示例卡不再带「任务类型」标签，主题短于完整提示词', cards.every((c) => !c.querySelector('.suggest-tag') && c.textContent.trim() && c.dataset.prompt && c.textContent.trim() !== c.dataset.prompt && c.textContent.trim().length < c.dataset.prompt.length),
   cards.map((c) => `${cmp(c.textContent.trim(), c.dataset.prompt || '')}/${c.querySelector('.suggest-tag') ? '有标签' : '无标签'}`).join(' | '));
 ok('CSS 里也没有 .suggest-tag 残留', !cssText.includes('.suggest-tag'));
-ok('示例文本来自池子且本轮不重复', cards.every((c) => sg.SUGGESTIONS.some((x) => x.text === c.dataset.prompt)) && new Set(cards.map((c) => c.dataset.prompt)).size === 3);
+ok('示例文本来自池子且本轮不重复', cards.every((c) => sg.SUGGESTIONS.some((x) => x.text === c.dataset.prompt)) && new Set(cards.map((c) => c.dataset.prompt)).size === 4);
 ok('有「换一批」按钮', !!$('#messages .suggest-shuffle svg'));
 const firstBatch = cards.map((c) => c.dataset.prompt).join('|');
 // 连续重挂若干次，期望至少出现一次不同的组合（随机生效）
@@ -761,7 +761,7 @@ console.log('\n⑳ .36 回归：能力表里把禁用工具全部启用后，弹
       : new Response('nf', { status: 404 });
   try {
     net.resetRelayProbe();
-    const lb = await import('../js/localbrowser.js?v=2026.10.10.2'); await lb.probeLocalBrowser({ force: true });
+    const lb = await import('../js/localbrowser.js?v=2026.10.11.1'); await lb.probeLocalBrowser({ force: true });
     store.state.relayOk = await net.relayAvailable();
     store.state.settings.webEnabled = true;
     ui.syncWeb();

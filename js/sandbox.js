@@ -2,7 +2,7 @@
 // JS 沙箱：独立 Web Worker，无 DOM/fetch 访问面，超时强制 terminate
 // Python 沙箱：Pyodide（WASM）跑在独立 Worker 中，可终止；CDN 加载失败时优雅降级
 
-import { APP_VERSION, SANDBOX_JS_STARTUP_TIMEOUT_MS, SANDBOX_JS_TIMEOUT_MS, SANDBOX_PY_TIMEOUT_MS } from './config.js?v=2026.10.10.2';
+import { APP_VERSION, SANDBOX_JS_STARTUP_TIMEOUT_MS, SANDBOX_JS_TIMEOUT_MS, SANDBOX_PY_TIMEOUT_MS } from './config.js?v=2026.10.11.1';
 import { readLocal, writeLocal } from './legacy-keys.js';
 import { SANDBOX_STORAGE_CAP } from './storagefmt.js';
 
@@ -369,12 +369,56 @@ function savePyPkgs(list) {
 // 文件加载再失败时，取源码文本回退为 blob Worker，仍失败则给出明确诊断。
 // rpc：{ method: async (params) => result }——主线程替沙箱做它自己做不了的事（目前只有受控 fetch）。
 // 通道是 MessageChannel 的一端，随首条消息 transfer 给 Worker；Worker 侧把它关在闭包里，用户代码拿不到。
+// ── 首次启动预热（2026.10.11.1）──────────────────────────────────────────────
+// 症状：首次 execute_javascript 偶发「未在 12s 内就绪」。原因是冷启动要现场下载
+// worker-js.js + worker-shims.js（缓存未命中或弱网/慢设备），启动预算被网络吃光。
+// 处理：应用空闲时先把脚本取进 HTTP 缓存，并预先拉起一个「等待载荷」的 Worker 实例；
+// 首次真正执行直接接管这个已就绪实例，冷启动成本不再落在用户那一次点击上。
+// 预算本身不动（启动 12s / 执行 8s 的分账保持原样），只是让启动不再需要花时间。
+// 版本化 URL：Worker 脚本与垫片都带 ?v=，避免 CDN/浏览器缓存拿到旧版本
+const versionedURL = (name) => { const u = new URL(name, import.meta.url); u.searchParams.set('v', APP_VERSION); return u; };
+const WARM_TTL_MS = 5 * 60 * 1000;
+const WARM_SCRIPTS = ['worker-shims.js', 'worker-js.js'];
+let warmWorker = null; // { worker, dispose, at, ready }
+function discardWarmWorker() {
+  if (!warmWorker) return;
+  try { warmWorker.worker.terminate(); } catch { /* 已关闭 */ }
+  try { warmWorker.dispose?.(); } catch { /* 已释放 */ }
+  warmWorker = null;
+}
+export function warmSandboxWorker() {
+  if (typeof Worker !== 'function' || typeof fetch !== 'function') return false;
+  if (warmWorker && Date.now() - warmWorker.at < WARM_TTL_MS) return true;
+  discardWarmWorker();
+  // 先取进缓存：即便预热实例被浏览器回收，脚本也已经在缓存里了（force-cache 命中就别再等网络）。
+  for (const name of WARM_SCRIPTS) {
+    try { fetch(versionedURL(name), { cache: 'force-cache' }).catch(() => {}); } catch { /* 忽略 */ }
+  }
+  let worker, dispose = () => {};
+  try {
+    worker = new Worker(versionedURL(WARM_SCRIPTS[1]));
+    worker.onerror = () => { if (warmWorker && warmWorker.worker === worker) discardWarmWorker(); };
+    worker.onmessage = (e) => {
+      const data = e.data;
+      const parsed = typeof data === 'string' ? (() => { try { return JSON.parse(data); } catch { return null; } })() : data;
+      if (warmWorker && warmWorker.worker === worker && parsed?.__dubheReady === 'js-runtime-2') warmWorker.ready = true;
+    };
+  } catch (err) {
+    // 预热失败不影响功能（真正执行时仍走原来的冷启动路径），只留一条可诊断的日志
+    try { console.info('[sandbox] Worker 预热未成功：' + (err && err.message ? err.message : err)); } catch { /* 忽略 */ }
+    return false;
+  }
+  warmWorker = { worker, dispose, at: Date.now(), ready: false };
+  return true;
+}
+export function releaseWarmSandboxWorker() { discardWarmWorker(); }
+
 function runInWorker(workerFile, payload, timeoutMs, { rpc = null, extraScripts = [], onOutput = null, onPhase = null, signal = null } = {}) {
   return new Promise((resolve) => {
     let settled = false, active = null, triedBlob = false, started = false;
     let execTimer = null, attemptTimer = null;
     const fetchAbort = new AbortController();
-    const sourceURL = (name) => { const u = new URL(name, import.meta.url); u.searchParams.set('v', APP_VERSION); return u; };
+    const sourceURL = versionedURL;
     const closeActive = () => {
       if (!active) return;
       try { active.worker.terminate(); active.port?.close(); } catch { /* closed */ }
@@ -398,9 +442,15 @@ function runInWorker(workerFile, payload, timeoutMs, { rpc = null, extraScripts 
       if (settled) return;
       if (!useBlob) closeActive();
       clearTimeout(attemptTimer);
-      let worker, dispose = () => {};
+      let worker, dispose = () => {}, adoptedReady = false;
       try {
-        if (useBlob) {
+        // 预热实例：同一份 worker-js.js、还在 TTL 内 → 直接接管，省掉整个冷启动窗口。
+        // worker-js.js 自己会 importScripts 垫片，所以只要请求的就是它（外加允许的垫片），预热实例即可直接接管。
+        const warmCompatible = workerFile === WARM_SCRIPTS[1] && (extraScripts || []).every((f) => WARM_SCRIPTS.includes(f));
+        if (!useBlob && warmCompatible && warmWorker && warmWorker.worker && Date.now() - warmWorker.at < WARM_TTL_MS) {
+          worker = warmWorker.worker; dispose = warmWorker.dispose; adoptedReady = !!warmWorker.ready;
+          warmWorker = null;
+        } else if (useBlob) {
           const fetchText = async (name) => { const r = await fetch(sourceURL(name), { signal: fetchAbort.signal, cache: 'reload' }); if (!r.ok) throw new Error(`${name}: HTTP ${r.status}`); return r.text(); };
           const texts = await Promise.all([...extraScripts, workerFile].map(fetchText));
           if (settled || started) return;
@@ -454,6 +504,8 @@ function runInWorker(workerFile, payload, timeoutMs, { rpc = null, extraScripts 
         if (!mine.sent) bootstrapFail(detail || '脚本被浏览器拒绝');
         else finish({ ok: false, logs: [], error: { message: `沙箱 Worker 执行失败：${detail || '运行时崩溃，结果丢失'}` } });
       };
+      // 预热实例握手可能早于这里的监听器：直接开跑，不占启动预算。
+      if (adoptedReady) { start(); return; }
       // Some WebKit/CSP failures never dispatch onerror. Fall back while the shared bootstrap deadline still has room.
       if (!useBlob) attemptTimer = setTimeout(() => { if (!settled && active === mine && !mine.sent) { triedBlob = true; spawn(true); } }, 6000);
     };
