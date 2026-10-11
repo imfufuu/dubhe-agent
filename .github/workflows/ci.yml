@@ -123,6 +123,12 @@ jobs:
       - name: 双语界面与离线分享浏览器回归
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/share-ui-browser.mjs
+      - name: refinement-core contracts
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/refinement-core.mjs
+      - name: Chromium/WebKit refinement UI and compatibility
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/refinement-browser.mjs
       - name: '汇总测试计数（::notice:: + job summary）'
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs --summary

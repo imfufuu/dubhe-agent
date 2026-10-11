@@ -1,6 +1,6 @@
 // ─── P3 DOM 冒烟（tests/p3-dom-smoke.mjs）─────────────────────────────────
 // 用 jsdom 真挂载 app.html + mountUI，验证编辑直播预览在界面这一层接通：
-//   ① 编辑直播折叠行（Editing Files）+ 预览窗（全文 / 行号 / 写入中游标 / 节流字段）
+//   ① 编辑直播折叠行（Writing Files）+ 预览窗（全文 / 行号 / 写入中游标 / 节流字段）
 // 依赖 jsdom（npm ci 会装；CI 必跑本文件，未安装时本地自动跳过）。
 //   node tests/p3-dom-smoke.mjs          # 需 npm i -D jsdom
 import fs from 'node:fs';
@@ -55,7 +55,7 @@ const $ = (s) => window.document.querySelector(s);
 const $$ = (s) => [...window.document.querySelectorAll(s)];
 
 // ── 编辑直播折叠行 + 预览窗 ──
-console.log('\n② 编辑直播（Editing Files + 预览窗）');
+console.log('\n② 编辑直播（Writing Files + 预览窗）');
 const rawCall = { id: 'call-live-1', name: 'write_file', args: { __raw: '{"path":"tmp/live.md","content":"第一行\\n第二行\\n第三行' } };
 const liveMsg = store.pushMessage({ role: 'assistant', text: '', model: 'gpt-5.6-sol', toolCalls: [rawCall], done: false });
 const realGetStatus = agent.getStatus;
@@ -64,7 +64,7 @@ ui.onAssistantStart(liveMsg);
 
 const fold = $('.edited-files');
 ok('写文件折叠行已渲染', !!fold);
-ok('直播期间显示 Editing Files（不是 Edited Files）', /Editing file/.test(fold.querySelector('.chip-name').textContent), fold.querySelector('.chip-name').textContent);
+ok('直播期间显示 Writing Files（不是 Edited Files）', /Writing file/.test(fold.querySelector('.chip-name').textContent), fold.querySelector('.chip-name').textContent);
 ok('折叠行在直播期间自动展开（能看到预览窗）', fold.classList.contains('expanded'));
 ok('路径来自半截 JSON（流式期间也能拿到路径）', fold.textContent.includes('tmp/live.md'), fold.textContent.slice(0, 80));
 const win = $('.edited-files .edit-preview');
