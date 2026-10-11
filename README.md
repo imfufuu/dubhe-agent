@@ -1,6 +1,6 @@
 # ◐ Dubhe Agent — 基于 TeamoRouter 的网页端智能体
 
-> **Dubhe Agent V1.7** · 架构 **Dubhe Helix 3.0 · DC（Dubhe Cambrian，天枢·寒武）** · 构建 `2026.10.10.1` · [线上介绍](https://imfufuu.github.io/dubhe-agent/) · 对话 [app.html](./app.html) · [CHANGELOG](./CHANGELOG.md)
+> **Dubhe Agent V1.7** · 架构 **Dubhe Helix 3.0 · DC（Dubhe Cambrian，天枢·寒武）** · 构建 `2026.10.10.2` · [线上介绍](https://imfufuu.github.io/dubhe-agent/) · 对话 [app.html](./app.html) · [CHANGELOG](./CHANGELOG.md)
 
 [![CI](https://github.com/imfufuu/dubhe-agent/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/imfufuu/dubhe-agent/actions/workflows/ci.yml)
 [![Pages](https://github.com/imfufuu/dubhe-agent/actions/workflows/pages.yml/badge.svg?branch=main)](https://github.com/imfufuu/dubhe-agent/actions/workflows/pages.yml)
@@ -691,3 +691,15 @@ Worker 脚本采用构建版本 URL，并在 ready 握手后才发送代码：�
 JS/Python 支持 `path` 读取已存在源码代替重复 `code`；长内联 JS/Python/C++ 命令会保留到 `internal/commands/`。小语法/变量/逻辑错误先核验副作用，使用 `write_file(mode=replace, old_text, new_text)` 最小补丁，随后按源码路径执行。源码在审批与执行之间发生变化时拒绝执行；路径源码参与能力检查及幂等键，不绕过网络限制。
 
 浏览器回归包括真实 Chromium 与 Linux WebKit（不等于用户具体 Safari/iOS 设备），以及浏览器语音/通知 API 的模拟接口测试；不会把这些测试称为真实语音服务或操作系统权限验收。长图渲染依赖本地固定版本 html2canvas 1.4.1（MIT），许可见 `assets/licenses/html2canvas-MIT.txt`。
+
+
+### 当前界面与跨设备行为（2026.10.10.2）
+
+- 侧栏分享和顶栏语言入口移除；消息多选分享保留，语言在设置及页脚。设置内不再提供清空当前/全部数据按钮，独立会话管理/系统命令不变。
+- 麦克风/摄像头按enumerateDevices及权限策略检测，缺设备隐藏，不先调用getUserMedia索权；设备插拔重新检测。检测未知不谎称不存在。
+- 本地审核默认开启，关闭需版本化风险/责任确认；旧未确认false不生效，上游政策/代码权限不变。
+- 正文执行前给简短方向和2–5步公开行动计划，简单问答一句方向；不暴露隐藏思考，不额外请求规划模型。计划与原始回答独立记录。
+- 34工具、核心表增加只读knowledge_search。assets/knowledge内置双语细节按需检索，响应最多7500字符，8秒加载截止；核心权限规则常驻。子智能体只增加只读知识权限，不增加执行或再委派能力。
+- 总结:::choice可放任意位置，前后正文顺序不变；支持空行、多题、同行关闭。半截/代码/取消/工具中间消息不激活，用户推进关闭旧控件。
+- 原生caret-color红黄蓝绿青蓝紫循环，不改变文字/选区/输入法；失焦后台停止。Ultra直接渐变避免负z失效，Running/Reading/Writing中性抛光，减少动效时静态可见。
+- 介绍片不因减少动效自动跳导航，#gate与HTML状态类隔离，2D轻量回退；渐显低阈值观察与几何回退。导航聚焦能力/流程/边界，手机不堆锚点，功能融入能力而非V1.7栏目；日志当前概览、历史折叠、仓库可追溯。

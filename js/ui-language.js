@@ -7,6 +7,7 @@ export function translateUI(value, language = getLanguage()) {
   const key = raw.trim(), exact = Object.hasOwn(UI_STRINGS, key) ? UI_STRINGS[key] : null;
   if (exact) return raw.replace(key, exact);
   const rules = [
+    [/^(Dubhe Agent) · 构建 (.+)$/, '$1 · Build $2'],
     [/^(Dubhe Agent V1\.7) · 构建 (.+) · 独立项目，与 TeamoRouter 互不隶属$/, '$1 · Build $2 · Independent of TeamoRouter'], [/^(Dubhe Agent V1\.7) · 构建 (.+)$/, '$1 · Build $2'],
     [/^思考 (.+)$/, 'Reasoning $1'], [/^已禁用 (\d+)$/, '$1 disabled'], [/^(\d+) 个会话 · (.+)$/, '$1 conversations · $2'],
     [/^剩余 (.+)$/, 'Remaining $1'], [/^已用 (.+)$/, 'Used $1'],

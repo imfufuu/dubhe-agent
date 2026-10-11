@@ -1,4 +1,4 @@
-import { installLanguage } from './ui-language.js?v=2026.10.10.1';
+import { installLanguage } from './ui-language.js?v=2026.10.10.2';
 installLanguage();
 import { readThemePreference, writeThemePreference, THEME_STORAGE_KEY, LEGACY_HOME_THEME_KEY } from './theme.js';
 import { TRACK } from './home-beats.js';
@@ -25,6 +25,8 @@ root.dataset.theme = readThemePreference(preferDark ? 'dark' : 'light');
 writeThemePreference(root.dataset.theme);
 
 const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const liteFilm = reduce || typeof CSS === 'undefined' || !CSS.supports?.('transform-style', 'preserve-3d');
+root.classList.toggle('film-lite', liteFilm);
 const audio = document.getElementById('home-audio');
 const stage = document.getElementById('stage');
 const world = document.getElementById('world');
@@ -209,7 +211,7 @@ function camAt(t) {
 
 function applyCam(c) {
   if (!world) return;
-  world.style.transform = `translate3d(${-c.x}px, ${-c.y}px, ${-c.z}px) rotateX(${c.rx}deg) rotateY(${c.ry}deg) rotateZ(${c.rz}deg) scale(${FILM_SCALE})`;
+  world.style.transform = liteFilm ? 'none' : `translate3d(${-c.x}px, ${-c.y}px, ${-c.z}px) rotateX(${c.rx}deg) rotateY(${c.ry}deg) rotateZ(${c.rz}deg) scale(${FILM_SCALE})`;
   root.classList.toggle('integrating', !!c.integrate);
   root.dataset.focus = c.focus || (c.integrate ? 'logo' : '');
   if (hudScene) {
@@ -690,7 +692,7 @@ function openGate() {
 function syncThemeBtn() {
   if (!themeBtn) return;
   const dark = root.dataset.theme === 'dark';
-  themeBtn.textContent = dark ? '浅色' : '深色';
+  themeBtn.innerHTML = '<svg class="home-theme-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16Z" fill="currentColor" stroke="none"/></svg><span>' + (dark ? '浅色' : '深色') + '</span>';
   themeBtn.title = dark ? '切换到浅色主题' : '切换到深色主题';
 }
 function flipTheme() {
@@ -706,7 +708,6 @@ window.addEventListener('storage', (event) => {
 });
 
 function prepareReveal() {
-  if (reduce) return;
   const site = document.querySelector('.site');
   if (!site) return;
   const sels = ['.hero > div', '.stat', '.section h2', '.section .sub', '.card', '.think-table', '.steps li', '.panel-preview', '.chip', '.faq details', '.honesty li', '.cta-block h2', '.cta-block p', '.cta-block .cta', 'footer'];
@@ -722,19 +723,18 @@ function prepareReveal() {
   }
 }
 
+let revealObserver=null,revealQueued=false;
 function watchReveal() {
-  if (reduce) return;
-  const nodes = document.querySelectorAll('.site .reveal:not(.in)');
-  if (!nodes.length) return;
-  const io = new IntersectionObserver((entries) => {
-    for (const e of entries) {
-      if (!e.isIntersecting) continue;
-      e.target.classList.add('in');
-      e.target.style.removeProperty('--delay');
-      io.unobserve(e.target);
-    }
-  }, { threshold: 0.14, rootMargin: '0px 0px -8% 0px' });
-  nodes.forEach((n) => io.observe(n));
+  const nodes=[...document.querySelectorAll('.site .reveal:not(.in)')];if(!nodes.length)return;
+  const reveal=n=>{n.classList.add('in');n.style.removeProperty('--delay');revealObserver?.unobserve(n);};
+  if(reduce){nodes.forEach(reveal);return;}
+  const visible=()=>{revealQueued=false;for(const n of document.querySelectorAll('.site .reveal:not(.in)')){const r=n.getBoundingClientRect();if(r.width&&r.height&&r.top<innerHeight&&r.bottom>0)reveal(n);}};
+  if(typeof IntersectionObserver==='function'){
+    if(!revealObserver)revealObserver=new IntersectionObserver(entries=>{for(const e of entries)if(e.isIntersecting)reveal(e.target);},{threshold:0.01,rootMargin:'0px'});
+    nodes.forEach(n=>revealObserver.observe(n));
+  }
+  visible();
+  if(!window.__dubheRevealBound){window.__dubheRevealBound=true;const queue=()=>{if(!revealQueued){revealQueued=true;requestAnimationFrame(visible);}};addEventListener('scroll',queue,{passive:true});addEventListener('resize',queue);addEventListener('pageshow',queue);document.addEventListener('visibilitychange',queue);}
 }
 
 function bindFaqAccordion() {
@@ -867,7 +867,7 @@ window.addEventListener('keydown', (e) => {
   }
 });
 
-if (reduce || initialView === 'nav') {
+if (initialView === 'nav') {
   openSite(true);
   prefetchAudio();
 } else {

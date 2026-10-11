@@ -5,7 +5,7 @@ import {
   createToolCallAccumulator, createThinkingTracker, buildOpenAIMessages, buildAnthropicPayload,
   authHeaders, toOpenAITools, toAnthropicTools,
   thinkingDisabledFor, __resetThinkingFallbackForTests,
-} from '../js/api.js?v=2026.10.10.1';
+} from '../js/api.js?v=2026.10.10.2';
 import { protocolOf, providerOf, supportsFastMode, ENCRYPTED_THINKING_RE } from '../js/config.js';
 import { renderMarkdown } from '../js/ui.js';
 import _fs from 'node:fs';
@@ -28,10 +28,10 @@ const storeNoWeb = (st) => { st.state.settings.webEnabled = false; st.state.sett
 const drainSaves = () => new Promise((r) => setTimeout(r, 350));
 // 命名空间引用：新增用例集中使用，避免与顶部具名 import 冲突
 const cfg = await import('../js/config.js');
-const api = await import('../js/api.js?v=2026.10.10.1');
+const api = await import('../js/api.js?v=2026.10.10.2');
 // V1.7.1：ui.js 已拆出 ui-files-panel.js / ui-lightbox.js / quickviz.js。源码级断言（grep 字符串）
 // 一律读「UI 层整体」，拆分不应改变这些契约；只需精确到某个文件的断言请直接 readFileSync 该文件。
-const UI_SOURCE_PARTS = ['../js/ui.js', '../js/ui-common.js', '../js/ui-toolflow.js', '../js/ui-editpreview.js', '../js/ui-markdown.js', '../js/ui-model-picker.js', '../js/ui-popovers.js', '../js/ui-command-palette.js', '../js/ui-system-commands.js', '../js/ui-files-panel.js', '../js/ui-lightbox.js', '../js/ui-attachments.js', '../js/ui-capability.js', '../js/quickviz.js'];
+const UI_SOURCE_PARTS = ['../js/ui.js', '../js/ui-common.js', '../js/ui-choices.js', '../js/ui-toolflow.js', '../js/ui-editpreview.js', '../js/ui-markdown.js', '../js/ui-model-picker.js', '../js/ui-popovers.js', '../js/ui-command-palette.js', '../js/ui-system-commands.js', '../js/ui-files-panel.js', '../js/ui-lightbox.js', '../js/ui-attachments.js', '../js/ui-capability.js', '../js/quickviz.js'];
 function readUiSource() {
   const fsp = _fs;
   return UI_SOURCE_PARTS.map((rel) => fsp.readFileSync(new URL(rel, import.meta.url), 'utf8')).join('\n');
@@ -778,12 +778,12 @@ test('第 6 条定稿：智能路由图标 = 方案 B（轨道枢纽）：单色
   assert.doesNotMatch(ROUTER_ICON_SVG, /TeamoRouter|TEAMOROUTER/i, '不再复刻第三方产品 LOGO');
 });
 
-test('2026.10.10.1 版本与文档：构建号、CHANGELOG 与 README 同步', async () => {
+test('2026.10.10.2 版本与文档：构建号、CHANGELOG 与 README 同步', async () => {
   const fsp = await import('node:fs');
   const changelog = fsp.readFileSync(new URL('../CHANGELOG.md', import.meta.url), 'utf8');
   const readme = fsp.readFileSync(new URL('../README.md', import.meta.url), 'utf8');
-  assert.match(changelog, /^## Dubhe Agent V1\.7 Stable · 2026-10-10 · 构建 2026\.10\.10\.1 ·/m, 'CHANGELOG 顶部新增 2026.10.10.1 条目');
-  assert.match(readme, /构建 `2026\.10\.10\.1`/);
+  assert.match(changelog, /^## Dubhe Agent V1\.7 Stable · 2026-10-10 · 构建 2026\.10\.10\.2 ·/m, 'CHANGELOG 顶部新增 2026.10.10.2 条目');
+  assert.match(readme, /构建 `2026\.10\.10\.2`/);
 });
 
 group('多模态标识');
@@ -952,7 +952,8 @@ test('renderMarkdown：完整 Markdown（markdown-it）+ KaTeX 公式', async ()
   assert.match(mind, /md-diagram-mind/);
   assert.match(mind, /复习计划/);
   const mid = renderMarkdown(':::choice 不该出现\n- A\n:::\n后面还有字');
-  assert.equal(mid.includes('choice-box'), false, '选择框不在文末则不渲染');
+  assert.equal(mid.includes('choice-box'), true, '总结选择框可在正文中间渲染');
+  assert.ok(mid.indexOf('choice-box') < mid.indexOf('后面还有字'), '正文在选择框后仍保留原顺序');
 });
 test('照片编辑工作台：复用站点设计令牌（浅深色自适应）与内联 SVG 控件图标', async () => {
   const fs = await import('node:fs');
@@ -1042,12 +1043,14 @@ test('systemPrompt / 子智能体：注入输出规范', async () => {
   assert.ok(OUTPUT_SPEC.includes(String.raw`少用）：\n:::fold 标题\n内容\n:::`), '折叠栏示例只保留单层反斜杠');
   assert.ok(OUTPUT_SPEC.includes('Emoji：默认不使用装饰性 Emoji'), '提示词降低装饰性 Emoji 频率');
   assert.match(OUTPUT_SPEC, /完整可运行/, '代码不得写太短太简略');
-  assert.ok(systemPrompt().includes('输出规范'), '主提示词含输出规范');
-  assert.match(systemPrompt(), /imfufuu/);
-  assert.match(systemPrompt(), /上海初中业余编程爱好者/);
-  assert.match(systemPrompt(), /lks\.tan\.cn@gmail\.com/);
-  assert.match(systemPrompt(), /不是 Kiro/);
-  assert.match(systemPrompt(), /只回答 Dubhe Agent/);
+  assert.match(systemPrompt(), /Markdown/);
+  assert.match(systemPrompt(), /knowledge_search/);
+  assert.match(systemPrompt(), /产品身份仅为 Dubhe Agent/);
+  const kb = JSON.parse(_fs.readFileSync(new URL('../assets/knowledge/index.json', import.meta.url), 'utf8'));
+  const text = kb.records.map(r => r.content).join('\n');
+  assert.match(text, /imfufuu/);
+  assert.match(text, /上海初中业余编程爱好者/);
+  assert.match(text, /lks\.tan\.cn@gmail\.com/);
   assert.equal(/望舒|团团|茶沫/.test(systemPrompt()), false);
 });
 
@@ -1927,7 +1930,7 @@ test('工具 Schema 用 enum 限定模型 ID，提示词给出可选值', () => 
   const m = def.parameters.properties.model;
   assert.deepEqual(m.enum, cfg.IMAGE_MODEL_IDS, 'enum 约束比自由文本更难被模型写错');
   assert.ok(/不要传/.test(m.description), '描述里要明确“不要传显示名”');
-  const sys = cfg.systemPrompt();
+  const sys = cfg.referenceSystemPrompt();
   assert.ok(/gpt-image-2\.5-sunburst/.test(sys), '系统提示词列出真实 ID');
   assert.ok(/gemini-3\.1-flash-image/.test(sys), '系统提示词列出 Nano Banana 真实 ID');
   assert.ok(/不要传 model/.test(sys), '系统提示词禁止用工具参数覆盖菜单选定');
@@ -2262,7 +2265,7 @@ test('index.html 是产品介绍页并跳转到 app.html', async () => {
   assert.match(home, /css\/home\.css\?v=/);
   const m = /css\/home\.css\?v=([\d.]+)/.exec(home);
   assert.equal(m[1], APP_VERSION);
-  assert.match(home, /开始对话|进入对话/);
+  assert.match(home, /打开对话|打开工作台/);
   assert.match(home, /开始探索/);
   assert.match(home, /id="explore"/);
   assert.match(home, /explore-mark/);
@@ -2274,12 +2277,12 @@ test('index.html 是产品介绍页并跳转到 app.html', async () => {
   assert.match(home, /id="gate-load"/);
   assert.match(home, /id="film-pause"/);
   assert.match(home, /正在加载影片/);
-  assert.match(home, /<h2>现在就开始<\/h2>/);
+  assert.match(home, /<h2>把目标写下来。<\/h2>/);
   assert.equal(/cta-block[\s\S]{0,80}现在就开始。/.test(home), false);
   assert.match(home, /media-src 'self' blob:/);
   assert.match(home, /id="curtain"/);
   assert.match(home, /class="logo-text"/);
-  assert.match(home, /M15 13a4\.5 4\.5 0 0 1-3-4/);
+  assert.match(home, /M22\.128 21\.142/, '生产轨道枢纽标识保留');
   assert.match(home, /id="world"/);
   assert.match(home, /class="shot"/);
   assert.match(home, /media-src 'self'/);
@@ -2343,17 +2346,13 @@ test('index.html 是产品介绍页并跳转到 app.html', async () => {
   assert.equal(appHtml.includes('lks.tan.cn@gmail.com'), false, '对话页不展示联系邮箱');
   assert.equal(appHtml.includes('github.com/imfufuu/dubhe-agent'), false, '对话页不展示仓库链接');
   assert.match(home, /id="principles"/);
-  assert.match(home, /id="why"/);
-  assert.match(home, /为什么选我们？/);
-  assert.match(home, /id="think-levels"/);
-  assert.match(home, /思考档不是装饰/);
-  assert.match(home, /<table class="think-table">/);
-  assert.match(home, /32,768/);
-  assert.match(homeCss, /\.think-table/);
-  assert.equal(home.includes('为什么选我们。'), false);
-  assert.match(home, /Local Key/);
-  assert.match(home, /本地密钥/);
-  assert.equal(home.includes('本机 Key'), false);
+  assert.match(home, /id="capabilities"/);
+  assert.match(home, /id="flow"/);
+  assert.equal(home.includes('id="whats-new"'), false, '版本卖点融入当前能力，不单独开V1.7栏目');
+  assert.match(home, /自己的Key，直接到网关/);
+  assert.match(home, /先给方向与计划/);
+  assert.match(home, /长图|单页HTML/);
+  assert.match(home, /Off至Ultra七档/);
   assert.match(homeCss, /honesty \+ \.faq/);
   assert.match(homeJs, /IntersectionObserver/);
   const titles = [...homeJs.matchAll(/title: '([^']*)'/g)].map((m) => m[1]).filter(Boolean);
@@ -2496,11 +2495,11 @@ test('subagentTools：沙箱关闭时子智能体保留文件工具，不整体�
   const { subagentTools } = await import('../js/agent.js');
   const names = (list) => (list || []).map((t) => t.name);
   const writer = findSubagent('doc-writer');
-  assert.deepEqual(names(subagentTools(false, writer)).sort(), ['list_files', 'read_file', 'text_tool', 'write_file']);
+  assert.deepEqual(names(subagentTools(false, writer)).sort(), ['knowledge_search', 'list_files', 'read_file', 'text_tool', 'write_file']);
   const analyst = findSubagent('data-analyst');
   assert.ok(names(subagentTools(true, analyst)).includes('execute_python'), '开沙箱时该有代码执行');
   assert.ok(!names(subagentTools(false, analyst)).some((n) => ['execute_javascript', 'execute_python', 'execute_cpp'].includes(n)), '关沙箱时不该有代码执行');
-  assert.equal(subagentTools(true, findSubagent('code-reviewer')), null, '纯推理子智能体不给工具');
+  assert.deepEqual(subagentTools(true, findSubagent('code-reviewer')).map(t=>t.name), ['knowledge_search'], '纯推理专家只可检索内置知识，不获得代码/文件副作用');
   for (const a of SUBAGENTS) {
     assert.ok(!names(subagentTools(true, a)).includes('dispatch_subagent'), `${a.id} 不得再委派（防递归）`);
   }
@@ -3248,7 +3247,7 @@ test('网络层错误才换域名：HTTP 4xx/5xx 与主动停止都不换', asyn
 });
 
 test('请求期切换：.com 网络失败 → 自动用 .cn 重放并记住', async () => {
-  const api = await import('../js/api.js?v=2026.10.10.1');
+  const api = await import('../js/api.js?v=2026.10.10.2');
   const ep = await import('../js/endpoint.js');
   const realFetch = globalThis.fetch;
   const savedLS = globalThis.localStorage;
@@ -4131,7 +4130,7 @@ test('index.html 附件 accept 含 PDF 与 ZIP；提示词说明转图片再识�
   const html = fsp.readFileSync(new URL('../app.html', import.meta.url), 'utf8');
   assert.ok(html.includes('application/pdf') && html.includes('.pdf'), 'attach-input accept 应含 PDF');
   assert.ok(html.includes('application/zip') && html.includes('.zip'), 'accept 应含 ZIP');
-  const sys = cfg.systemPrompt();
+  const sys = cfg.referenceSystemPrompt();
   assert.match(sys, /analyze_image/);
   assert.match(sys, /analyze_pdf/);
   assert.match(sys, /逐页渲染成 JPEG|转成图片|页图/);
@@ -4433,7 +4432,7 @@ test('代码块语言在左侧、复制始终可见；用户气泡反色链接',
   // P3（v2.5.1）：写文件折叠行的文案移到 editpreview.js —— 直播「Editing Files」/ 完成「Edited Files N」
   const ep = fsp.readFileSync(new URL('../js/editpreview.js', import.meta.url), 'utf8');
   assert.match(ui, /editFoldLabel/, '写文件折叠行文案应由 editpreview 统一给出（直播/完成两态）');
-  assert.match(ep, /Editing files/, '写入期间显示 Editing files（.33：第二个词小写）');
+  assert.match(ep, /Writing files/, '写入期间英语进行时 Writing files');
   assert.match(ep, /Edited Files/i, '完成后显示 Edited Files N');
   assert.match(ui, /\$\{many\} \$\{paths\.length\}/, '多文件才在标题后加数量');
   assert.match(ui, /连续 Edited \/ Explored File/, '同一轮连续 write_file / read_file 合并成一块');
@@ -4598,8 +4597,8 @@ test('P6：regex / hash / codec / unicode 并入 text_tool（旧名字不再注�
   assert.ok(tt.parameters && tt.parameters.properties, 'text_tool 要有参数表');
   for (const a of ['regex', 'hash', 'codec', 'unicode']) assert.ok(tt.parameters.properties.action.enum.includes(a), `text_tool.action 应含 ${a}`);
   for (const k of ['op', 'pattern', 'flags', 'algorithm', 'format', 'form', 'codes']) assert.ok(tt.parameters.properties[k], `text_tool 缺参数 ${k}`);
-  assert.match(cfg.systemPrompt(), /text_tool：本地文本工作台/);
-  assert.match(cfg.systemPrompt(), /action=regex/);
+  assert.match(cfg.referenceSystemPrompt(), /text_tool：本地文本工作台/);
+  assert.match(cfg.referenceSystemPrompt(), /action=regex/);
   const { LEGACY_TOOL_ALIASES, resolveUmbrellaTool } = await import('../js/tools.js');
   for (const n of ['regex', 'hash', 'codec', 'unicode']) assert.equal(LEGACY_TOOL_ALIASES[n], 'text_tool');
   assert.deepEqual(resolveUmbrellaTool('text_tool', { action: 'regex', op: 'replace', pattern: 'a', text: 'a', replacement: 'b' }), { name: 'regex', args: { action: 'replace', pattern: 'a', text: 'a', replacement: 'b' } });
@@ -4858,7 +4857,7 @@ test('多题选择框合成一个框，支持逐题选择与回退清除', async
   const fsp = await import('node:fs');
   const ui = readUiSource();
   const css = fsp.readFileSync(new URL('../css/styles.css', import.meta.url), 'utf8');
-  assert.match(ui, /choiceHtml\(peeled\.blocks\)/, '多个 choice 必须合成一个框');
+  assert.match(ui, /choiceHtml\(peeled\.groups\[\+i\]\)/, '多个 choice 必须合成一个框');
   assert.match(ui, /data-choice-count/);
   assert.match(ui, /data-choice-back/);
   assert.match(ui, /choiceReplyText/);
@@ -4972,7 +4971,7 @@ test('内容审核使用项目内下载模型，不调用 DeepSeek/网关审核'
   assert.match(src, /REMOTE_IMAGE_REVIEW_MODEL = 'gemini-3\.5-flash-lite'/);
   const main = fsp.readFileSync(new URL('../js/main.js', import.meta.url), 'utf8');
   const icons = fsp.readFileSync(new URL('../js/icons.js', import.meta.url), 'utf8');
-  assert.match(main, /contentModeration = true/);
+  assert.match(main, /contentModeration = effectiveModeration/);
   assert.match(icons, /provider === 'Moderator'/);
   assert.equal(providerOf('Moderator'), 'Moderator');
 });
@@ -5319,13 +5318,14 @@ test('V1.7 发布标识与构建号已同步', async () => {
   const home = fsp.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
   const docs = fsp.readFileSync(new URL('../docs.html', import.meta.url), 'utf8');
   assert.equal(APP_RELEASE, 'V1.7');
-  assert.equal(APP_VERSION, '2026.10.10.1');
+  assert.equal(APP_VERSION, '2026.10.10.2');
   assert.match(html, /Dubhe Agent V1\.7 —/);
   const vRe = APP_VERSION.split('.').join('[.]'); // 版本比较用字符类，免得每次构建都要改这里
-  assert.match(home, new RegExp('Dubhe Agent V1[.]7 · 构建 ' + vRe));
+  assert.match(home, new RegExp('Dubhe Agent(?: V1[.]7)? · 构建 ' + vRe));
   assert.match(docs, /class="ver-badge" title="Dubhe Agent V1[.]7">V1[.]7<\/span>/);
-  assert.match(docs, new RegExp('V1[.]7 Stable.*' + vRe));
-  assert.match(docs, /V1\.6 Stable.*2026\.10\.5\.8/);
+  assert.match(docs, /CURRENT BUILD/);
+  assert.match(docs, new RegExp('app-version" content="' + vRe));
+  assert.match(docs, /CHANGELOG\.md/, '完整历史保持可追溯');
 });
 test('电脑端沙箱面板从右侧展开，手机端才从底部上滑', async () => {
   const fsp = await import('node:fs');
@@ -5898,14 +5898,15 @@ test('2026.9.30.6 八项体验与渲染升级（空状态隐藏最新输出、re
   // 3. Agent 知晓自身底层框架名（天枢2.5）
   const { systemPrompt } = await import('../js/config.js');
   const { formatRuntime } = await import('../js/prompt.js');
-  const sysText = systemPrompt(new Date());
+  const sysText = cfg.referenceSystemPrompt(new Date());
   assert.match(sysText, /Dubhe Helix 3\.0/, 'systemPrompt 应声明底层架构号 Helix 3.0');
   assert.match(sysText, /代号「DC」（Dubhe Cambrian，中文名「天枢·寒武」/, '产品代号 DC / 天枢·寒武 只是代号，架构号另有');
   assert.match(sysText, /前身为 Dubhe Helix 2\.5 \/ 天枢2\.5/);
   assert.match(formatRuntime({}), /Dubhe Helix 3\.0 · DC（Dubhe Cambrian，天枢·寒武/, 'runtime 提示应包含底层架构与代号');
 
   // 4. 导航页外观左边改为「文档」
-  assert.match(indexHtml, /<a class="nav-link" href="\.\/docs\.html">文档<\/a>\s*<button id="theme-toggle" class="nav-link" type="button">外观<\/button>/);
+  assert.match(indexHtml, /href="\.\/docs\.html">文档<\/a>/);
+  assert.match(indexHtml, /id="theme-toggle"/);
 
   // 5. 会话页/文档页左上角图标定位到导航页，导航页左上角图标定位到探索页
   assert.match(appHtml, /class="logo-mark" href="\.\/index\.html\?view=nav"/);
@@ -7971,7 +7972,7 @@ test('远程 C++ 开关：关闭后两条工具表派生路径都不含 execute_
   assert.match(out, /已被用户关闭/);
   assert.match(out, /godbolt\.org/);
   const cr = subagentTools(true, { tools: ['execute_cpp', 'execute_python', 'read_file'] }, { remoteCpp: false });
-  assert.deepEqual(cr.map((t) => t.name), ['execute_python', 'read_file']);
+  assert.deepEqual(cr.map((t) => t.name), ['knowledge_search', 'execute_python', 'read_file']);
   const def = TOOL_DEFS.find((t) => t.name === 'execute_cpp');
   assert.match(def.description, /godbolt\.org/, '工具描述必须明说代码会离开浏览器');
   const fsp = await import('node:fs');
@@ -8355,7 +8356,7 @@ test('analyze_video 工具：定义 / 契约 / 并行与访问表 / 执行路径
   assert.match(def.description, /不要传 model/);
   assert.match(def.description, /16MB/);
   assert.deepEqual(Object.keys(def.parameters.properties).sort(), ['path', 'prompt']);
-  assert.equal(TOOL_DEFS.length, 33, '工具总数 33（P6 合并后 32，加本地 browser_sandbox）');
+  assert.equal(TOOL_DEFS.length, 34, '34工具：新增内置知识检索，登记/契约必须同步');
   const c = ex.getToolContract('analyze_video');
   assert.equal(c.sideEffect, 'remote');
   assert.equal(c.external, true);
@@ -9172,7 +9173,7 @@ test('UI 接线：ui-capability.js 提供能力条 + 弹层；ui.js 经 installC
 group('P4 修正：巨型单文件 → agent.js 抽出 toolrunner.js / turnfinalizer.js；ui.js 再拆 5 个 install*(deps) 模块；nexus.js 立界不拆');
 
 test('toolrunner.js：createToolRunner(deps) 返回 runToolCalls / toolCtxFor；agent.js 转发的调度导出与 toolrunner 同一引用', async () => {
-  const tr = await import('../js/toolrunner.js?v=2026.10.10.1'); // 与 agent.js 的 import 同一实例（带 ?v=）
+  const tr = await import('../js/toolrunner.js?v=2026.10.10.2'); // 与 agent.js 的 import 同一实例（带 ?v=）
   const ag = await import('../js/agent.js');
   assert.equal(typeof tr.createToolRunner, 'function');
   const runner = tr.createToolRunner({ store: { state: { settings: {} } }, emit: () => {}, getFs: () => null, runSubagent: async () => '' });
@@ -9214,7 +9215,7 @@ test('ui.js 第三刀：ui-markdown / ui-model-picker / ui-popovers / ui-command
     assert.ok(name in md, `ui-markdown.js 应导出 ${name}`);
   }
   const uiMod = await import('../js/ui.js');
-  const mdV = await import('../js/ui-markdown.js?v=2026.10.10.1');
+  const mdV = await import('../js/ui-markdown.js?v=2026.10.10.2');
   assert.strictEqual(uiMod.renderMarkdown, mdV.renderMarkdown, 'ui.js 再导出同一个 renderMarkdown（旧 import 路径不变）');
   assert.strictEqual(uiMod.videoBlobUrl, mdV.videoBlobUrl);
   assert.match(ui, /const \{ inSystem, isSystemIsolated, selectModel, chatModels, updateModelBtn, renderModelMenu \} = installModelPicker\(\{/);
@@ -9296,11 +9297,11 @@ group('P6 修正：工具选择熵过高 → 两层下发（核心 12 必带 + �
 test('selectToolsForTurn：核心 12 必带；其余按关键词 / 附件 / 近几轮用量 / 点名挂载；exclude 生效；没写规则的工具不会悄悄消失', async () => {
   const ec = await import('../js/executionContext.js');
   const { TOOL_DEFS } = await import('../js/tools.js');
-  assert.deepEqual([...ec.CORE_TOOLS], ['execute_javascript', 'execute_python', 'execute_cpp', 'write_file', 'read_file', 'list_files', 'delete_file', 'copy_file', 'fetch_url', 'search_web', 'analyze_image', 'dispatch_subagent']);
+  assert.deepEqual([...ec.CORE_TOOLS], ['execute_javascript', 'execute_python', 'execute_cpp', 'write_file', 'read_file', 'list_files', 'delete_file', 'copy_file', 'fetch_url', 'search_web', 'analyze_image', 'dispatch_subagent', 'knowledge_search']);
   const names = (r) => r.mounted.map((t) => t.name);
   const hello = ec.selectToolsForTurn({ allowed: TOOL_DEFS, text: '你好' });
   assert.deepEqual(names(hello), [...ec.CORE_TOOLS].filter((n) => TOOL_DEFS.some((t) => t.name === n)).sort((a, b) => TOOL_DEFS.findIndex((t) => t.name === a) - TOOL_DEFS.findIndex((t) => t.name === b)), '寒暄只带核心工具（保持 TOOL_DEFS 原序）');
-  assert.equal(hello.deferred.length, TOOL_DEFS.length - 12);
+  assert.equal(hello.deferred.length, TOOL_DEFS.length - 13);
   assert.ok(hello.deferred.every((d) => d.reason === 'on-demand'));
   // 关键词
   assert.ok(names(ec.selectToolsForTurn({ allowed: TOOL_DEFS, text: '帮我生成一个二维码指向 https://x.y' })).includes('data_tool'));
@@ -10003,11 +10004,11 @@ test('能力登记处：TOOL_DEFS ↔ 登记表 ↔ execution.js 契约三方一
   assert.equal(reg.REGISTERED_TOOL_NAMES.length, TOOL_DEFS.length, '登记数 = 工具数（32）');
   // 派生表（集合）必须与 Helix 2.5 手抄的清单一致——登记处是重构不是改行为
   const same = (a, b) => assert.deepEqual([...a].sort(), [...b].sort());
-  same(reg.PARALLEL_TOOL_NAMES, ['read_file', 'list_files', 'search_files', 'get_current_time', 'get_browser_environment', 'fetch_url', 'search_web', 'regex', 'hash', 'codec', 'unicode', 'evaluate_expression', 'diff_text', 'json_tool', 'date_calc', 'convert_units', 'analyze_image', 'text_tool']);
+  same(reg.PARALLEL_TOOL_NAMES, ['knowledge_search', 'read_file', 'list_files', 'search_files', 'get_current_time', 'get_browser_environment', 'fetch_url', 'search_web', 'regex', 'hash', 'codec', 'unicode', 'evaluate_expression', 'diff_text', 'json_tool', 'date_calc', 'convert_units', 'analyze_image', 'text_tool']);
   same(reg.NETWORK_TOOL_NAMES, ['fetch_url', 'search_web', 'crawl_site', 'download_file']);
-  same(reg.READ_ONLY_TOOL_NAMES, ['read_file', 'list_files', 'search_files', 'get_current_time', 'regex', 'hash', 'codec', 'unicode', 'evaluate_expression', 'diff_text', 'json_tool', 'csv_tool', 'date_calc', 'text_tool', 'convert_units', 'data_tool']);
+  same(reg.READ_ONLY_TOOL_NAMES, ['knowledge_search', 'read_file', 'list_files', 'search_files', 'get_current_time', 'regex', 'hash', 'codec', 'unicode', 'evaluate_expression', 'diff_text', 'json_tool', 'csv_tool', 'date_calc', 'text_tool', 'convert_units', 'data_tool']);
   same(reg.HEAVY_TOOL_NAMES, ['browser_sandbox', 'write_file', 'delete_file', 'copy_file', 'zip_files', 'unzip_file', 'execute_javascript', 'execute_python', 'execute_cpp', 'generate_image', 'dispatch_subagent', 'fetch_url', 'run_git', 'analyze_image', 'render_mermaid', 'render_dot', 'execute_sql']);
-  assert.deepEqual([...reg.CORE_TOOL_NAMES], ['execute_javascript', 'execute_python', 'execute_cpp', 'write_file', 'read_file', 'list_files', 'delete_file', 'copy_file', 'fetch_url', 'search_web', 'analyze_image', 'dispatch_subagent'], '核心表顺序不变');
+  assert.deepEqual([...reg.CORE_TOOL_NAMES], ['execute_javascript', 'execute_python', 'execute_cpp', 'write_file', 'read_file', 'list_files', 'delete_file', 'copy_file', 'fetch_url', 'search_web', 'analyze_image', 'dispatch_subagent', 'knowledge_search'], '原核心顺序不变，末尾增加只读知识检索');
   assert.deepEqual(Object.keys(reg.CAPABILITY_GATED_TOOL_GROUPS), ['invariantCore', 'webFetch', 'workerSearch', 'siteCrawler', 'fileDownload', 'codeSandbox', 'localBrowser', 'subagentSwarm']);
   assert.deepEqual([...reg.CAPABILITY_GATED_TOOL_GROUPS.codeSandbox], ['execute_javascript', 'execute_python', 'execute_cpp']);
   assert.deepEqual([...reg.CAPABILITY_GATED_TOOL_GROUPS.webFetch], ['fetch_url']);
@@ -10141,7 +10142,7 @@ test('生图模型选择器迁到设置 → 多模态模型：模型菜单无 dd
 test('折叠头文案第二个词统一小写：Edited file(s) / Editing file(s) / Explored file(s) / Ran command(s)', async () => {
   const { editFoldLabel } = await import('../js/editpreview.js');
   assert.equal(editFoldLabel(1), 'Edited file'); assert.equal(editFoldLabel(3), 'Edited files 3');
-  assert.equal(editFoldLabel(1, { live: true }), 'Editing file'); assert.equal(editFoldLabel(2, { live: true }), 'Editing files 2');
+  assert.equal(editFoldLabel(1, { live: true }), 'Writing file'); assert.equal(editFoldLabel(2, { live: true }), 'Writing files 2');
   const ui = readUiSource();
   assert.match(ui, /total === 1 \? 'Ran command' : `Ran commands \$\{total\}`/);
   assert.match(ui, /'Explored file', 'Explored files'/);

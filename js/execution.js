@@ -834,6 +834,7 @@ const contract = (o) => Object.freeze({
 });
 
 export const TOOL_CONTRACTS = Object.freeze({
+  knowledge_search: contract({ sideEffect: 'none', idempotent: true, timeoutMs: 12000, riskLevel: 'L0', note: '按需检索项目内置知识，无外部副作用' }),
   browser_sandbox: contract({ sideEffect: 'sandbox', idempotent: false, timeoutMs: 75000, riskLevel: 'L2', verifyAfterRun: true, note: '只运行沙箱 HTML 项目；本机 Chromium 调试/截图，不接受公网 URL 或 shell 命令' }),
   execute_javascript: contract({ sideEffect: 'sandbox', idempotent: false, timeoutMs: 22000, riskLevel: 'L2', verifyAfterRun: true, note: '代码可写沙箱文件，执行后需核验副作用' }),
   execute_python: contract({ sideEffect: 'sandbox', idempotent: false, timeoutMs: 120000, riskLevel: 'L2', verifyAfterRun: true, note: 'Pyodide 首次加载慢，超时阈值按运行时常驻放宽' }),

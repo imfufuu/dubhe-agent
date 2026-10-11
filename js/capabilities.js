@@ -38,6 +38,7 @@ export const CAPABILITY_REGISTRY = Object.freeze({
   execute_python: R('codeSandbox', 'exec', { core: 2, heavy: true, tags: ['code'] }),
   execute_cpp: R('codeSandbox', 'remote', { core: 3, heavy: true, tags: ['code'] }),
   browser_sandbox: R('localBrowser', 'exec', { heavy: true, tags: ['code'] }),
+  knowledge_search: R('invariantCore', 'local', { core: 13, parallel: true, readOnly: true }),
   // ── 文件系统（永远在）──
   write_file: R('invariantCore', 'fs-write', { core: 4, heavy: true }),
   read_file: R('invariantCore', 'fs-read', { core: 5, parallel: true, readOnly: true }),

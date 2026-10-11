@@ -300,7 +300,7 @@ await test('local Chromium project-only acceptance', async (t) => {
     });
     await t.test('the real Agent kernel mounts the local tool, starts a project and commits a genuine screenshot', async () => {
       const { createAgent } = await import('../js/agent.js'), { createStore } = await import('../js/state.js');
-      const lb = await import('../js/localbrowser.js?v=2026.10.10.1');
+      const lb = await import('../js/localbrowser.js?v=2026.10.10.2');
       const oldFetch = globalThis.fetch, oldLocation = globalThis.location; let step = 0, id;
       globalThis.location = { protocol: 'http:', origin: base };
       globalThis.fetch = async (url, opts = {}) => {

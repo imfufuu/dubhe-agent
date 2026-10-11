@@ -1,4 +1,4 @@
-import { buildShareDocument } from './share-document.js?v=2026.10.10.1';
+import { buildShareDocument } from './share-document.js?v=2026.10.10.2';
 import { captureShare } from './share-capture.js';
 import { createZip } from './zip.js';
 import { text, onLanguageChange } from './locale.js';
@@ -10,7 +10,7 @@ export function installSharing({ store, agent, getBusy, root, toast }) {
   const update = () => {
     const count = text(`已选 ${selected.size} 条`, `${selected.size} selected`); if ($('share-count').textContent !== count) $('share-count').textContent = count;
     for (const id of ['share-png', 'share-html']) $(id).disabled = exporting || !selected.size;
-    $('share-open').disabled = getBusy() || !shareableMessages(store.state.messages).length;
+    if ($('share-open')) $('share-open').disabled = getBusy() || !shareableMessages(store.state.messages).length;
   };
   const refresh = () => {
     update();
@@ -43,7 +43,7 @@ export function installSharing({ store, agent, getBusy, root, toast }) {
     renderPicker(); modal.classList.add('open'); modal.setAttribute('aria-hidden', 'false'); $('share-close').focus();
   };
   function close() { abort?.abort(); modal.classList.remove('open'); modal.setAttribute('aria-hidden', 'true'); opener?.focus?.(); }
-  $('share-open').addEventListener('click', () => open()); $('share-close').addEventListener('click', close);
+  $('share-open')?.addEventListener('click', () => open()); $('share-close').addEventListener('click', close);
   root.addEventListener('click', (e) => { const b = e.target.closest('[data-share-message-button]'); if (b) { e.preventDefault(); open(b.dataset.shareMessageButton); } });
   list.addEventListener('change', (e) => { if (e.target.matches('input[type=checkbox]')) { e.target.checked ? selected.add(e.target.value) : selected.delete(e.target.value); update(); } });
   $('share-all').addEventListener('click', () => { selected = new Set(shareableMessages(store.state.messages).map((m) => m.id)); renderPicker(); });

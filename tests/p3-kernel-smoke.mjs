@@ -154,9 +154,9 @@ check('全文预览：内容同长度但变更仍无损，空文件可表示', (
   const empty = buildEditPreview([writeCall('all.md', '')]); assert.equal(empty.content, ''); assert.deepEqual(empty.lines, []);
 });
 
-check('文案：折叠行直播显示 Editing files，完成显示 Edited files N', () => {
-  assert.equal(editFoldLabel(1, { live: true }), 'Editing file');
-  assert.equal(editFoldLabel(2, { live: true }), 'Editing files 2');
+check('文案：折叠行直播显示 Writing files，完成显示 Edited files N', () => {
+  assert.equal(editFoldLabel(1, { live: true }), 'Writing file');
+  assert.equal(editFoldLabel(2, { live: true }), 'Writing files 2');
   assert.equal(editFoldLabel(1), 'Edited file');
   assert.equal(editFoldLabel(3), 'Edited files 3');
   const note = formatEditPreviewNote(buildEditPreview([writeCall('a.md', 'x\ny')]));

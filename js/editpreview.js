@@ -266,7 +266,7 @@ export function pathsOfEdits(toolCalls = []) {
 /** 面板文案：编辑中 / 已完成。用户要求直播时显示 Editing File(s)。 */
 export function editFoldLabel(count, { live = false } = {}) {
   const n = Number(count) || 0;
-  if (live) return n === 1 ? 'Editing file' : `Editing files ${n}`;
+  if (live) return n === 1 ? 'Writing file' : `Writing files ${n}`;
   return n === 1 ? 'Edited file' : `Edited files ${n}`;
 }
 

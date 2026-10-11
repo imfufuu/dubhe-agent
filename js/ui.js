@@ -1,17 +1,20 @@
-import { installSharing } from './ui-share.js?v=2026.10.10.1';
+import { installCaretEffect } from './ui-caret.js';
+import { publicPlanHtml } from './ui-publicplan.js';
+import { installChoiceHandler } from './ui-choices.js?v=2026.10.10.2';
+import { installSharing } from './ui-share.js?v=2026.10.10.2';
 import { text as localeText, onLanguageChange } from './locale.js';
 import { installFeedback } from './ui-feedback.js';
 import { installSpeechInput } from './ui-speech.js';
-import { createToolPresentation, presentationCallSettled, turnToolResults } from './toolpresentation.js?v=2026.10.10.1';
-import { paintEditFoldContent, syncEditingFold } from './ui-editpreview.js?v=2026.10.10.1';
-import { paintOrderedAssistant, renderToolChipDetail, paintCommandRows, ownerOfTool, paintVisibleTurn, activeToolOwner } from './ui-toolflow.js?v=2026.10.10.1';
-import { adjacentToolMessages, turnHasAssistantText, appendToolStream, toolFamily } from './toolflow.js?v=2026.10.10.1';
+import { createToolPresentation, presentationCallSettled, turnToolResults } from './toolpresentation.js?v=2026.10.10.2';
+import { paintEditFoldContent, syncEditingFold } from './ui-editpreview.js?v=2026.10.10.2';
+import { paintOrderedAssistant, renderToolChipDetail, paintCommandRows, ownerOfTool, paintVisibleTurn, activeToolOwner } from './ui-toolflow.js?v=2026.10.10.2';
+import { adjacentToolMessages, turnHasAssistantText, appendToolStream, toolFamily } from './toolflow.js?v=2026.10.10.2';
 // ─── UI 层：渲染 / 交互 / 动画 ─────────────────────────────────────────
-import { providerOf, supportsFastMode, DEFAULT_IMAGE_MODEL, APP_VERSION, APP_RELEASE } from './config.js?v=2026.10.10.1';
-import { isSmartRouter, ROUTER_ICON_SVG, SMART_ROUTER_LABEL, modelDisplayName } from './smartrouter.js?v=2026.10.10.1';
+import { providerOf, supportsFastMode, DEFAULT_IMAGE_MODEL, APP_VERSION, APP_RELEASE } from './config.js?v=2026.10.10.2';
+import { isSmartRouter, ROUTER_ICON_SVG, SMART_ROUTER_LABEL, modelDisplayName } from './smartrouter.js?v=2026.10.10.2';
 import { REASONING_LEVELS, normalizeReasoningLevel, reasoningLevelLabel, reasoningLevelHint } from './reasoning.js';
 import { fileBytesFromValue, withExtension, mimeFromPath } from './zip.js';
-import { getTransport } from './api.js?v=2026.10.10.1';
+import { getTransport } from './api.js?v=2026.10.10.2';
 import { gatewayBase, gatewayChosenBy, setGatewayBase, otherGatewayBase } from './endpoint.js';
 import { estimateTokens } from './context.js';
 import { providerIcon, APP_LOGO, ICON } from './icons.js';
@@ -24,17 +27,17 @@ import { shortSuggest } from './commands.js';
 import { summarizeTurnCost, formatUsd } from './pricing.js';
 import { relayAvailable, relaySupports, currentRelay, resetRelayProbe, relayState } from './net.js';
 // P3：编辑直播预览模块单独版本化；缺失时不影响核心对话。
-import { buildEditPreview, editFoldLabel, pathsOfEdits, PREVIEW_REFRESH_MS, findTurnTempCommit, discardedForFold, discardedFoldLabel, turnRange } from './editpreview.js?v=2026.10.10.1';
-import { historyWindowStart, previousHistoryWindowStart, HISTORY_WINDOW_MAX_MESSAGES, HISTORY_WINDOW_MAX_CHARS } from './history.js?v=2026.10.10.1';
-import { installLightbox } from './ui-lightbox.js?v=2026.10.10.1';
-import { installFilesPanel } from './ui-files-panel.js?v=2026.10.10.1';
-import { installAttachments } from './ui-attachments.js?v=2026.10.10.1';
-import { installCapabilityPop } from './ui-capability.js?v=2026.10.10.1';
-import { installModelPicker } from './ui-model-picker.js?v=2026.10.10.1';
-import { installPopovers } from './ui-popovers.js?v=2026.10.10.1';
-import { installCommandPalette } from './ui-command-palette.js?v=2026.10.10.1';
-import { installSystemCommands } from './ui-system-commands.js?v=2026.10.10.1';
-import { decorateGeoMap, installMapInteractions } from './quickmap.js?v=2026.10.10.1';
+import { buildEditPreview, editFoldLabel, pathsOfEdits, PREVIEW_REFRESH_MS, findTurnTempCommit, discardedForFold, discardedFoldLabel, turnRange } from './editpreview.js?v=2026.10.10.2';
+import { historyWindowStart, previousHistoryWindowStart, HISTORY_WINDOW_MAX_MESSAGES, HISTORY_WINDOW_MAX_CHARS } from './history.js?v=2026.10.10.2';
+import { installLightbox } from './ui-lightbox.js?v=2026.10.10.2';
+import { installFilesPanel } from './ui-files-panel.js?v=2026.10.10.2';
+import { installAttachments } from './ui-attachments.js?v=2026.10.10.2';
+import { installCapabilityPop } from './ui-capability.js?v=2026.10.10.2';
+import { installModelPicker } from './ui-model-picker.js?v=2026.10.10.2';
+import { installPopovers } from './ui-popovers.js?v=2026.10.10.2';
+import { installCommandPalette } from './ui-command-palette.js?v=2026.10.10.2';
+import { installSystemCommands } from './ui-system-commands.js?v=2026.10.10.2';
+import { decorateGeoMap, installMapInteractions } from './quickmap.js?v=2026.10.10.2';
 
 // 预览窗刷新节流：直播时每 ~50ms 合并更新（换文件/收尾立即刷）
 const EDIT_PREVIEW_REFRESH_MS = PREVIEW_REFRESH_MS;
@@ -43,11 +46,11 @@ const EDIT_PREVIEW_REFRESH_MS = PREVIEW_REFRESH_MS;
 import {
   $, $$, el, esc, safeImgSrc, sanitizeSvgRaw, hydrateSandboxMedia, bindFoldRows,
   fmtSize, fmtSpan, contextBudgetLabel, videoBlobUrl, renderAttachments, highlightCode, sysReplyHtml, renderMarkdown,
-} from './ui-markdown.js?v=2026.10.10.1';
+} from './ui-markdown.js?v=2026.10.10.2';
 export { renderMarkdown, videoBlobUrl }; // 兼容旧导入路径（tests / 外部调用方）
-import { renderGeoMapSvg } from './quickviz.js?v=2026.10.10.1';
+import { renderGeoMapSvg } from './quickviz.js?v=2026.10.10.2';
 
-import { toast, MAX_TOAST_STACK, fmtClock, fmtAgo } from './ui-common.js?v=2026.10.10.1';
+import { toast, MAX_TOAST_STACK, fmtClock, fmtAgo } from './ui-common.js?v=2026.10.10.2';
 export { toast, MAX_TOAST_STACK };
 
 // 这些工具不进 Ran Commands，而是各自的文件折叠（Explored / Edited File(s)）
@@ -57,6 +60,7 @@ export function mountUI(store, agent) {
   let feedbackUI, sharingUI;
   const msgList = $('#messages');
   const composer = $('#composer-input');
+  installCaretEffect(composer);
   const sendBtn = $('#send-btn');
   const statusDot = $('#status-dot');
   const statusText = $('#status-text');
@@ -1238,7 +1242,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     const hasText = turnHasAssistantText(displayedMessages(), fold.dataset.ownerId);
     const autoOpen = !allDone || !hasText;
     const label = $('.chip-name', fold);
-    if (label) label.textContent = total === 1 ? 'Ran command' : `Ran commands ${total}`;
+    if (label) label.textContent = allDone ? (total === 1 ? 'Ran command' : `Ran commands ${total}`) : (total === 1 ? 'Running command' : `Running commands ${total}`);
     fold.classList.toggle('done', allDone);
     fold.classList.toggle('live', getBusy() && anyRunning && fold._userToggle !== false);
     fold.classList.toggle('ok', allDone && !failed && !cancelled);
@@ -1340,7 +1344,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     })) return;
     wrap.classList.toggle('cancelled', !!m.cancelled);
     const body = $('.md-body', wrap);
-    let html = '';
+    let html = publicPlanHtml(m.publicPlan);
     const noOutputYet = !m.text && !m.reasoning && !(m.toolCalls && m.toolCalls.length);
     // 光标/连接动画只属于「正在跑的这一条」。导入的历史回复没有 done 字段，
     // 不能靠 !m.done 一直闪烁 —— 必须叠上本轮忙碌状态。
@@ -1372,7 +1376,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     const idx = msgs.findIndex((x) => x.id === m.id);
     const followedByUser = idx >= 0 && msgs.slice(idx + 1).some((x) => x.role === 'user' && !x.silent);
     for (const box of $$('.choice-box', body)) {
-      if (!m.done || followedByUser) box.remove();
+      if (!m.done || followedByUser || m.cancelled || m.error || (m.toolCalls && m.toolCalls.length) || getBusy()) box.remove();
     }
     // 思考过程与工具芯片同构：整行 click + .expanded + .chip-detail，不用 <details>
     // 有可见思考正文时边流边展开；思考结束（正文/工具出现或 round done）自动折叠。
@@ -1724,7 +1728,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       const tm = toolResults(m.id).get(String(read.id));
       const value = tm ? String(tm.content || '') : String(read.liveOutput?.stdout || '');
       const active = currentTurn && getBusy() && !m.cancelled && !tm && (read.status === 'running' || live);
-      const label = $('.chip-name', readNode); if (active && label) label.textContent = read.status === 'running' ? 'Exploring file' : 'Preparing read';
+      const label = $('.chip-name', readNode); if (active && label) label.textContent = read.status === 'running' ? 'Reading file' : 'Preparing read';
       let pre = $('.file-read-stream', readNode);
       if (!pre) { pre = el('pre', 'file-read-stream mono'); $('.fold-inner', readNode)?.appendChild(pre); }
       pre.textContent = value.slice(-65536) || (active ? '读取中…' : '（空文件）');
@@ -2117,6 +2121,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
   }
   function setStatus(s) {
     feedbackUI?.refresh(); sharingUI?.refresh();
+    if (s === 'done') { const last = store.state.messages.findLast(x => x.role === 'assistant'); if (last) schedulePaint(last); }
     const [label, cls] = STATUS[s] || STATUS.idle;
     const busy = ['moderating', 'connecting', 'thinking', 'streaming', 'executing'].includes(s);
     if (busy && presentationStopped) { presentationScope = ''; syncPresentationScope(); }
@@ -2297,40 +2302,8 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     store, agent, toast, inSystem, isSystemIsolated, chatModels, selectModel, applyTheme, rebuildMessages, renderSessions, renderFiles: () => renderFiles(), updateStats, scrollToBottom,
   });
 
-  function readChoiceAnswers(box) {
-    try { return JSON.parse(box.dataset.choiceAnswers || '[]'); } catch { return []; }
-  }
-  function writeChoiceAnswers(box, answers) {
-    box.dataset.choiceAnswers = JSON.stringify((answers || []).map((x) => String(x || '')));
-  }
-  function setChoiceStep(box, step) {
-    if (!box) return;
-    const blocks = $$('.choice-qblock', box);
-    const count = blocks.length || Number(box.dataset.choiceCount || 1) || 1;
-    const idx = Math.max(0, Math.min(count - 1, Number(step) || 0));
-    box.dataset.choiceStep = String(idx);
-    blocks.forEach((b, i) => b.classList.toggle('active', i === idx));
-    const answers = readChoiceAnswers(box);
-    const summary = $('[data-choice-summary]', box);
-    if (summary) {
-      summary.innerHTML = answers.length
-        ? answers.map((a, i) => a ? `<button type="button" class="choice-pill" data-choice-jump="${i}" title="回到第 ${i + 1} 题"><b>${i + 1}</b>${esc(a)}</button>` : '').join('')
-        : '';
-    }
-    blocks.forEach((b, i) => {
-      const ans = answers[i] || '';
-      for (const opt of $$('.choice-opt', b)) opt.classList.toggle('selected', !!ans && opt.getAttribute('data-choice-send') === ans);
-    });
-    const back = $('[data-choice-back]', box);
-    if (back) back.disabled = idx <= 0;
-    const progress = $('[data-choice-progress]', box);
-    if (progress) progress.textContent = `${idx + 1} / ${count}`;
-  }
-  function choiceReplyText(box) {
-    const answers = readChoiceAnswers(box);
-    const qs = $$('.choice-qblock', box).map((b, i) => (($('.choice-q', b) || {}).textContent || `问题 ${i + 1}`).trim());
-    return answers.map((a, i) => `${qs[i] || `问题 ${i + 1}`}：${a}`).join('\n');
-  }
+  const handleChoiceEvent = installChoiceHandler({ root: msgList, store, agent, getBusy, openKeyModal, toast });
+
   // :::chart map — 地理边界按需拉取（assets/geo/world|china.json，约 70–80 KB），拿到后用 renderGeoMapSvg 替换占位 <svg>
   const GEO_CACHE = new Map();
   const loadGeo = (id) => {
@@ -2421,50 +2394,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       }
       return;
     }
-    const opt = e.target.closest('[data-choice-send]');
-    if (opt) {
-      if (getBusy()) return;
-      const box = opt.closest('.choice-box');
-      const block = opt.closest('.choice-qblock');
-      if (!box || !block) return;
-      const text = opt.getAttribute('data-choice-send') || '';
-      if (!text) return;
-      const idx = Number(block.dataset.choiceIdx || box.dataset.choiceStep || 0) || 0;
-      const count = Number(box.dataset.choiceCount || $$('.choice-qblock', box).length || 1) || 1;
-      const answers = readChoiceAnswers(box);
-      answers.length = idx;
-      answers[idx] = text;
-      writeChoiceAnswers(box, answers);
-      if (idx + 1 < count) {
-        setChoiceStep(box, idx + 1);
-        return;
-      }
-      if (!store.state.apiKey) { openKeyModal(); toast('请先配置 TeamoRouter API Key', 'warn'); setChoiceStep(box, idx); return; }
-      const reply = choiceReplyText(box) || text;
-      for (const b of $$('.choice-box', msgList)) b.remove();
-      agent.send(reply, []);
-      return;
-    }
-    const back = e.target.closest('[data-choice-back]');
-    if (back) {
-      e.preventDefault();
-      const box = back.closest('.choice-box');
-      if (!box) return;
-      const target = Math.max(0, (Number(box.dataset.choiceStep || 0) || 0) - 1);
-      const answers = readChoiceAnswers(box);
-      answers.length = target; // 回退即清掉目标题及其后的旧选择状态
-      writeChoiceAnswers(box, answers);
-      setChoiceStep(box, target);
-      return;
-    }
-    const choiceJump = e.target.closest('[data-choice-jump]');
-    if (choiceJump) {
-      e.preventDefault();
-      const box = choiceJump.closest('.choice-box');
-      if (!box) return;
-      setChoiceStep(box, Number(choiceJump.getAttribute('data-choice-jump') || 0));
-      return;
-    }
+    if (handleChoiceEvent(e)) return;
     const chartDatum = e.target.closest('[data-chart-label]');
     if (chartDatum) {
       const chartBox = chartDatum.closest('.md-chart');

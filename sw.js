@@ -5,7 +5,7 @@
  *       连 304 协商都不发生。版本号变更时改 CACHE 名即可整体失效。
  */
 const CACHE = 'dubhe-assets-v2';
-const SCOPE_RE = /\/assets\/(vendor|moderation|katex|pdfjs|hljs|fonts|icons|audio|geo)\//;
+const SCOPE_RE = /\/assets\/(vendor|moderation|katex|pdfjs|hljs|fonts|icons|audio|geo|knowledge)\//;
 
 // 厂商图标安装即预热（.19）：模型菜单/消息头第一次画就有缓存，不发起可见网络加载。
 // 注意必须相对 registration.scope 解析（.20 修正）：Pages 部署在 /dubhe-agent/ 子路径下，

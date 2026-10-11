@@ -1,14 +1,14 @@
-// 2026.10.10.1: chronology, folding, cancellation, incremental file/Worker output.
+// 2026.10.10.2: chronology, folding, cancellation, incremental file/Worker output.
 import test from 'node:test';
 const checks = []; const check = (name, fn) => checks.push([name, fn]);
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { JSDOM } from 'jsdom';
-import { recordOutputText, recordOutputTool, displayParts, turnHasAssistantText, appendToolStream, TOOL_STREAM_MAX_CHARS } from '../js/toolflow.js?v=2026.10.10.1';
-import { createToolPresentation, projectToolPrefix } from '../js/toolpresentation.js?v=2026.10.10.1';
-import { createToolCallAccumulator } from '../js/api.js?v=2026.10.10.1';
+import { recordOutputText, recordOutputTool, displayParts, turnHasAssistantText, appendToolStream, TOOL_STREAM_MAX_CHARS } from '../js/toolflow.js?v=2026.10.10.2';
+import { createToolPresentation, projectToolPrefix } from '../js/toolpresentation.js?v=2026.10.10.2';
+import { createToolCallAccumulator } from '../js/api.js?v=2026.10.10.2';
 import { createFS, createTempFS, websiteDependencies, runJavaScript } from '../js/sandbox.js';
-import { sandboxProject, sandboxBrowserRequest, probeLocalBrowser, resetLocalBrowserProbe } from '../js/localbrowser.js?v=2026.10.10.1';
+import { sandboxProject, sandboxBrowserRequest, probeLocalBrowser, resetLocalBrowserProbe } from '../js/localbrowser.js?v=2026.10.10.2';
 import { computeCapabilityVector } from '../js/nexus.js';
 import { TOOL_DEFS, executeTool } from '../js/tools.js';
 import { buildCapabilityConstraints, checkCapabilityConstraints } from '../js/execution.js';
@@ -686,7 +686,7 @@ check('the actual Agent starts independent reads concurrently and settles each w
   } finally { resetLocalBrowserProbe(); globalThis.fetch = saved; }
 });
 
-await test('2026.10.10.1 streamed tools acceptance', async (t) => {
+await test('2026.10.10.2 streamed tools acceptance', async (t) => {
   try { for (const [name, fn] of checks) await t.test(name, fn); }
   finally { dom.window.close(); globalThis.setInterval = nativeSetInterval; globalThis.clearInterval = nativeClearInterval; }
 });

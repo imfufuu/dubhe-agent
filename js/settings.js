@@ -1,7 +1,8 @@
+import { installModerationSetting } from './ui-moderation-setting.js';
 // 设置弹窗：API Key / 中继地址 / 主题 / 字号 / 沙箱 / 联网 / 快速 / 思考 / 识图·视频识别模型 / 清空数据 / 关于
-import { APP_RELEASE, APP_VERSION, STORAGE_KEY, VISION_MODELS, VIDEO_MODELS, IMAGE_MODELS, DEFAULT_IMAGE_MODEL, isImageGenModel, imageModelLabel, resolveVisionModel, resolveVideoModel } from './config.js?v=2026.10.10.1';
+import { APP_RELEASE, APP_VERSION, STORAGE_KEY, VISION_MODELS, VIDEO_MODELS, IMAGE_MODELS, DEFAULT_IMAGE_MODEL, isImageGenModel, imageModelLabel, resolveVisionModel, resolveVideoModel } from './config.js?v=2026.10.10.2';
 import { currentRelay, resetRelayProbe, RELAY_OVERRIDE_KEY } from './net.js';
-import { DEFAULT_TURN_BUDGET } from './execution.js?v=2026.10.10.1';
+import { DEFAULT_TURN_BUDGET } from './execution.js?v=2026.10.10.2';
 import { NEXUS_ARCHITECTURE_SPEC } from './nexus.js';
 import { readLocal, writeLocal, removeLocal } from './legacy-keys.js';
 
@@ -24,7 +25,7 @@ function validateApiKey(s) {
 }
 function toast(msg, type = 'info', ms = 2600) {
   try {
-    import('./ui.js?v=2026.10.10.1').then(({ toast: t }) => t && t(msg, type, ms)).catch(() => {
+    import('./ui.js?v=2026.10.10.2').then(({ toast: t }) => t && t(msg, type, ms)).catch(() => {
       const wrap = document.getElementById('toasts');
       if (!wrap) return;
       const d = document.createElement('div');
@@ -206,6 +207,7 @@ export function mountSettings(store, { onRelayChanged, onKeySaved, onSettingChan
   // 设置页改了开关 / 档位 / 主题后通知外部（main.js → ui.syncToolbar）：顶栏 pill、能力行、主题按钮要跟着变，
   // 不然「设置里开了快速模式，会话区那颗 ⚡ 还是灰的」（.27 修）
   const changed = (key, value) => { try { onSettingChanged && onSettingChanged(key, value); } catch { /* 不影响设置本身 */ } };
+  const moderationSetting = installModerationSetting({ store, changed });
   const btn = $('#settings-btn');
   if (btn) btn.addEventListener('click', () => openSettingsModal({ store }));
   $('#settings-close').addEventListener('click', closeSettingsModal);
@@ -336,18 +338,7 @@ export function mountSettings(store, { onRelayChanged, onKeySaved, onSettingChan
       toast(`清除失败：${err && err.message ? err.message : String(err)}`, 'err', 5000);
     } finally { cacheBtn.disabled = false; cacheBtn.textContent = label; }
   });
-  $('#set-clear-chat').addEventListener('click', () => {
-    if (!confirm('确认清空当前会话的所有消息与文件？此操作不可撤销。')) return;
-    store.state.messages = [];
-    store.state.files = {};
-    store.notify();
-    closeSettingsModal();
-  });
-  $('#set-clear-all').addEventListener('click', () => {
-    if (!confirm('确认清空所有会话、文件、API Key、设置？此操作不可撤销。')) return;
-    try { localStorage.clear(); } catch {}
-    location.reload();
-  });
+
 }
 
 // 临时缓存清理（纯函数化，便于单测）：返回清掉了什么。任何一项不可用（非 https / 旧浏览器）都跳过而不是报错。

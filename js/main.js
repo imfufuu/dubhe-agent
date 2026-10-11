@@ -1,16 +1,18 @@
-import { installLanguage } from './ui-language.js?v=2026.10.10.1';
+import { installDeviceControls } from './ui-devices.js';
+import { effectiveModeration } from './ui-moderation-setting.js';
+import { installLanguage } from './ui-language.js?v=2026.10.10.2';
 import { installTaskNotifications } from './notifications.js';
-import { probeLocalBrowser } from './localbrowser.js?v=2026.10.10.1';
+import { probeLocalBrowser } from './localbrowser.js?v=2026.10.10.2';
 // ─── 启动引导 ──────────────────────────────────────────────────────────
-import { createStore } from './state.js?v=2026.10.10.1';
-import { createAgent } from './agent.js?v=2026.10.10.1';
-import { mountUI, toast } from './ui.js?v=2026.10.10.1';
+import { createStore } from './state.js?v=2026.10.10.2';
+import { createAgent } from './agent.js?v=2026.10.10.2';
+import { mountUI, toast } from './ui.js?v=2026.10.10.2';
 import { relayAvailable } from './net.js';
 import { probeGatewayHosts } from './endpoint.js';
 import { isAdminAlias, unlockAdminKey } from './adminkey.js';
-import { mountDebugWindow, toggleDebug, debugActive, setDebug } from './debugwindow.js?v=2026.10.10.1';
-import { mountSettings, applyFontSize, applyMotion, browserFeatureReport } from './settings.js?v=2026.10.10.1';
-import { APP_RELEASE } from './config.js?v=2026.10.10.1';
+import { mountDebugWindow, toggleDebug, debugActive, setDebug } from './debugwindow.js?v=2026.10.10.2';
+import { mountSettings, applyFontSize, applyMotion, browserFeatureReport } from './settings.js?v=2026.10.10.2';
+import { APP_RELEASE } from './config.js?v=2026.10.10.2';
 
 // 启动屏真实进度：模块图已下载并执行到这里 → 「加载模块」完成
 const bootStage = (name) => { try { const g = window.__dubheBootGuard; g && typeof g.stage === 'function' && g.stage(name); } catch { /* 启动屏已移除 */ } };
@@ -19,8 +21,8 @@ bootStage('modules');
 const store = createStore();
 // relayOk 是运行时探测结果，不复用上次持久化值；null 表示探测进行中。
 store.state.relayOk = null;
-// 正式应用强制开启本地内容审核：旧 localStorage 里即使残留 contentModeration=false 也不能绕过图片审核。
-store.state.settings.contentModeration = true;
+// An explicit, versioned acknowledgement is required; legacy false does not silently disable checks.
+store.state.settings.contentModeration = effectiveModeration(store.state.settings);
 
 // UI 先挂载（agent hooks 需要引用 ui 方法），再创建 agent 注入 hooks
 let ui = null;
@@ -100,6 +102,7 @@ applyFontSize();
 applyMotion();
 bootStage('ui');
 ui = mountUI(store, agent);
+installDeviceControls();
 // 旧浏览器提示（.32）：缺 color-mix / :has 时样式会「有骨架、丢细节」，用户容易以为是加载失败；说清原因与版本建议，每个会话只提一次
 try {
   const feat = browserFeatureReport();

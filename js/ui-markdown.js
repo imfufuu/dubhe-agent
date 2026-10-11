@@ -1,3 +1,4 @@
+import { extractChoices, choiceOptions } from './choices.js';
 import { text as messageLocaleText } from './locale.js';
 // ─── UI · Markdown / 消息片段渲染（P4 拆分：从 ui.js 模块级抽出，不依赖 mountUI 闭包）────────
 // 拥有：DOM 小工具（$ / $$ / el / esc）、安全链接与沙箱媒体（safeHref / safeImgSrc / sandboxPath / hydrateSandboxMedia）、
@@ -6,8 +7,8 @@ import { text as messageLocaleText } from './locale.js';
 // 不拥有：任何 store / agent 状态、toast、消息列表与 mountUI 内的交互。本文件绝不 import ui.js。
 import { contextBudgetFor } from './context.js';
 import { ICON } from './icons.js';
-import { prepareMarkdownExtensions, parsePandocAttributes, pandocAttributesHtml } from './markdown-extensions.js?v=2026.10.10.1';
-import { parseChartInfo, parseDiagramInfo, renderQuickChart, renderQuickDiagram, CHART_DIRECT_ALIASES } from './quickviz.js?v=2026.10.10.1';
+import { prepareMarkdownExtensions, parsePandocAttributes, pandocAttributesHtml } from './markdown-extensions.js?v=2026.10.10.2';
+import { parseChartInfo, parseDiagramInfo, renderQuickChart, renderQuickDiagram, CHART_DIRECT_ALIASES } from './quickviz.js?v=2026.10.10.2';
 
 export const $ = (sel, el = document) => el.querySelector(sel);
 export const $$ = (sel, el = document) => [...el.querySelectorAll(sel)];
@@ -76,38 +77,8 @@ export const editPreviewHtml = (preview, live) => {
     + (foot ? `<div class="ep-foot mono">${esc(foot)}</div>` : '')
     + '</div>';
 };
-const parseChoiceOpts = (body) => {
-  const listed = [];
-  for (const line of String(body || '').split('\n')) {
-    const m = /^\s*(?:[-*]|\d+\.|[A-Za-z]\.)\s+(.+?)\s*$/.exec(line);
-    if (m) listed.push(m[1].trim());
-  }
-  if (listed.length) return listed;
-  return String(body || '').split('\n').map((l) => l.trim()).filter(Boolean);
-};
-const peelChoices = (src) => {
-  const blocks = [];
-  let rest = String(src || '').replace(/[ \t]+\n/g, '\n').replace(/\s+$/, '');
-  // 从文末向前剥离完整 :::choice 块。旧版正则会把连续多个 choice
-  // 贪成「第一个问题 + 所有选项」，导致第二个问题不渲染。
-  const openRe = /(?:^|\n):::choice(?:[ \t]+([^\n]*))?[ \t]*\n/g;
-  // 结束符可能是 `:::` 或 `:::>`（模型把引用块 > 紧贴结束符），接受两种
-  const closeRe = /\n:::(?:>[^\n]*)?[ \t]*$/;
-  while (closeRe.test(rest)) {
-    const close = rest.match(closeRe);
-    if (!close || close.index == null) break;
-    const beforeClose = rest.slice(0, close.index);
-    let last = null;
-    openRe.lastIndex = 0;
-    for (let m; (m = openRe.exec(beforeClose)); ) last = m;
-    if (!last) break;
-    const title = (last[1] || '').trim();
-    const body = beforeClose.slice(last.index + last[0].length);
-    blocks.unshift({ title, body });
-    rest = beforeClose.slice(0, last.index).replace(/\s+$/, '');
-  }
-  return { rest, blocks };
-};
+const parseChoiceOpts = choiceOptions;
+const peelChoices = extractChoices;
 const choiceHtml = (blocks) => {
   const list = (Array.isArray(blocks) ? blocks : [blocks]).filter(Boolean);
   const safe = list.length ? list : [{ title: '请选择', body: '' }];
@@ -786,7 +757,7 @@ export function renderMarkdown(src) {
       .replace(/<p>\s*\uE000COLOR(\d+)\uE000\s*<\/p>/g, colorAt)
       .replace(/\uE000COLOR(\d+)\uE000/g, colorAt)
       .replace(/\uE000IC(\d+)\uE000/g, (_, i) => `<code>${esc(inlineCodes[+i])}</code>`);
-    if (peeled.blocks.length) out += choiceHtml(peeled.blocks);
+    out = out.replace(/<p>\s*\uE000CHOICE(\d+)\uE000\s*<\/p>/g, (_, i) => choiceHtml(peeled.groups[+i])).replace(/\uE000CHOICE(\d+)\uE000/g, (_, i) => choiceHtml(peeled.groups[+i]));
     return out;
   };
 
