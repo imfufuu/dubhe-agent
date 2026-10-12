@@ -123,9 +123,10 @@ export function installSharing({ store, agent, getBusy, root, toast }) {
       existing?.remove();
       const b = document.createElement('button');
       b.type = 'button'; b.className = 'act'; b.dataset.shareTurn = String(turn.id);
-      b.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 8l5-5 5 5M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg><span></span>';
-      b.querySelector('span').textContent = text('分享本轮', 'Share turn');
+      // 图标与其它操作按钮一致：弯箭头（只留图标，文字见 title / aria-label）
+      b.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 5l6 5-6 5"/><path d="M20 10c-7 0-12 3-13 10"/></svg>';
       b.title = text('分享这一轮对话（提问 + 全部输出）', 'Share this turn (prompt plus its full output)');
+      b.setAttribute('aria-label', text('分享本轮', 'Share turn'));
       host.append(b);
     }
   };

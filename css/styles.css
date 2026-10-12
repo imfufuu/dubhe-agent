@@ -1683,7 +1683,7 @@ html { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
     padding-left: max(12px, env(safe-area-inset-left)); padding-right: max(12px, env(safe-area-inset-right));
   }
   .composer { padding: 6px 6px 6px 10px; gap: 6px; }
-  #composer-input { font-size: 16px; min-height: 24px; max-height: 40vh; margin-bottom: 5px; } /* 16px：iOS 不放大页面；5px：与 40px 高的附件按钮图标持平 */
+  #composer-input { font-size: 16px; min-height: 24px; max-height: 40vh; margin-bottom: 9px; } /* 16px：iOS 不放大页面；5px：与 40px 高的附件按钮图标持平 */
   #attach-btn { width: 40px; height: 40px; }
   #send-btn { width: 42px; height: 42px; font-size: var(--ui-fs-17px, 17px); }
   .composer-hint { font-size: var(--ui-fs-10px, 10px); line-height: 1.5; margin-top: 6px; opacity: .85;
