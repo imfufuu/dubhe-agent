@@ -2549,3 +2549,8 @@ html[lang="en"] .side-label-btns > .mini-btn { padding: 3px 7px; }
 html[lang="en"] .pill { letter-spacing: -0.005em; }
 /* 兜底：任何按钮的文字都不该出现「切掉半个字母」的效果，宁可省略号 */
 .mini-btn, .ghost-btn, .act, .pill { text-overflow: ellipsis; }
+
+/* 正文流式浮现：只有新增字符淡入（js/ui-chunks.js） */
+.chunk { opacity: 0; transition: opacity .35s ease-out; }
+.chunk.in { opacity: 1; }
+html[data-motion="off"] .chunk { transition: none; }

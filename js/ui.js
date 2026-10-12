@@ -21,6 +21,7 @@ import { providerIcon, APP_LOGO, ICON } from './icons.js';
 import { readThemePreference, writeThemePreference, THEME_STORAGE_KEY } from './theme.js';
 import { autoTitle } from './titler.js';
 import { pickSuggestionCards } from './suggestions.js';
+import { revealChunks } from './ui-chunks.js?v=2026.10.11.1';
 import { claimsWebSearch, webRefusal } from './websearch.js';
 import { unlockAdminKey, adminUnlocked, isAdminAlias, adminExpiresAt } from './adminkey.js';
 import { shortSuggest } from './commands.js';
@@ -1043,7 +1044,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
   }
   // 空状态一次展示更多示例（配合「换一批」轮换 36 条池子）。
   const SUGGEST_VISIBLE = 3;
-  // 示例卡：选题 / 渲染 / 绑定拆开，「换一批」只替换卡片区，不重绘整个空状态（否则 fadeUp 动画重播，介绍文字会抖动）。
+  // 换一批只换卡片区，不重绘整个空状态
   function pickEmptyPicks() {
     const picks = pickSuggestionCards(loadLastSuggest(), SUGGEST_VISIBLE);
     saveLastSuggest(picks);
@@ -1384,6 +1385,8 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       html += '<div class="trunc-note">输出碰到长度上限，未写完。再说「继续」或点重新生成。</div>';
     }
     body.innerHTML = html;
+    // 正文新增字符淡入
+    revealChunks(body, body._chunk || (body._chunk = { revealed: 0 }), live && !m.done && document.documentElement.dataset.motion !== 'off');
     body.classList.toggle('empty', !String(html || '').trim());
     hydrateSandboxMedia(body, agent.fs);
     bindFoldRows(body);
