@@ -984,6 +984,8 @@ h1 {
 .split { display: grid; grid-template-columns: 1.1fr .9fr; gap: 48px; align-items: center; }
 .steps { list-style: none; display: flex; flex-direction: column; gap: 18px; }
 .steps li { display: grid; grid-template-columns: 42px 1fr; gap: 14px; align-items: start; }
+.steps li > .step-no { grid-row: 1 / span 2; }
+.steps li > h3, .steps li > p { grid-column: 2; }
 .num {
   font-family: var(--mono); font-size: 11px; color: var(--fg-3);
   width: 42px; height: 42px; border-radius: 50%; border: 1px solid var(--line);

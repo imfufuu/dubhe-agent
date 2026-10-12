@@ -87,9 +87,17 @@ export function installLanguage(root = document) {
     const doc = root.ownerDocument || root; doc.documentElement.lang = getLanguage() === 'en' ? 'en' : 'zh-CN';
     doc.documentElement.dataset.uiLanguage = getLanguage();
     // 先淡出，淡出到最暗时再替换文案，最后淡入：避免文案瞬间跳变
-    const switching = animateSwitch(doc);
     const apply = () => { observer.disconnect(); translate(root); watch(); };
-    if (switching) setTimeout(apply, 200); else apply();
+    const changed = lastLang !== null && lastLang !== getLanguage();
+    const reduce = doc.defaultView?.matchMedia?.('(prefers-reduced-motion: reduce)').matches && doc.documentElement.dataset.motion !== 'on';
+    if (changed && typeof doc.startViewTransition === 'function' && doc.documentElement.dataset.motion !== 'off' && !reduce) {
+      // 整页快照交叉淡入：文案在快照里替换，合成层不被整页压暗，动画不会被卡住
+      lastLang = getLanguage();
+      doc.startViewTransition(apply);
+    } else {
+      const switching = animateSwitch(doc);
+      if (switching) setTimeout(apply, 200); else apply();
+    }
     const select = doc.getElementById('set-language'); if (select) select.value = languagePreference();
     doc.querySelectorAll('[data-language-toggle]').forEach((b) => { b.textContent = getLanguage() === 'en' ? '中文' : 'EN'; b.setAttribute('aria-label', getLanguage() === 'en' ? 'Switch to Chinese' : 'Switch to English'); });
   };

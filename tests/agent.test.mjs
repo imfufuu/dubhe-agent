@@ -8739,6 +8739,8 @@ test('端到端：连抓 5 页后第 6 轮请求的 system 里有「外部副作
     store.state.model = 'gpt-5.6-sol';
     store.state.settings.webEnabled = true;
     store.state.settings.jevEnabled = false;
+    // 本用例验证「额度耗尽」的拦截链路，显式把预算钉在 6，不依赖默认值
+    store.state.settings.executionBudget = { maxExternalSideEffects: 6, maxToolCalls: 32 };
     store.state.relayOk = true;
     const agent = createAgent(store, {});
     await agent.send('把 example.com 的七个页面都抓下来');
@@ -10043,7 +10045,7 @@ test('界面动效偏好：auto / on / off 三态，on 覆盖系统 reduce，off
   assert.match(main, /applyMotion\(\);/);
   assert.match(main, /browserFeatureReport\(\)[\s\S]*?dubhe-oldbrowser-noted/);
   const css = fsp.readFileSync(new URL('../css/styles.css', import.meta.url), 'utf8');
-  assert.equal((css.match(/@media \(prefers-reduced-motion: reduce\) \{/g) || []).length, 6);
+  assert.equal((css.match(/@media \(prefers-reduced-motion: reduce\) \{/g) || []).length, 7, '含语音球体的减少动效块');
   const reduceBlocks = css.split('@media (prefers-reduced-motion: reduce) {').slice(1);
   for (const b of reduceBlocks) {
     const body = b.slice(0, b.indexOf('\n}'));

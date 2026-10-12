@@ -23,6 +23,8 @@ export function installCaretEffect(input, { doc = document } = {}) {
   const win = doc.defaultView;
   const host = input && input.parentElement;
   if (!input || !host || !win) return { stop() {}, refresh() {} };
+  // 触屏（iOS / iPad 无触控板）保留原生光标：自绘光标在这些设备上会消失
+  if (win.matchMedia && !win.matchMedia('(pointer: fine)').matches) return { stop() {}, refresh() {} };
   input.dataset.caretEffect = 'custom';
   if (win.getComputedStyle(host).position === 'static') host.style.position = 'relative';
 

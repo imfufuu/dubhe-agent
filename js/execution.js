@@ -1180,12 +1180,12 @@ export function classifyToolFailure({ name = '', args = null, result = '', error
 // 以文档口径为准（它同时更符合真实用法：一轮里并发 3 个子智能体是受支持的常态，
 // 旧值 2 会让第 3 个委派被外部副作用预算拦下——预算太紧和预算没生效一样糟）。
 export const DEFAULT_TURN_BUDGET = Object.freeze({
-  maxToolCalls: 32,
+  maxToolCalls: 64,
   maxRetries: 2,
   maxDurationMs: 600000,
   maxParallelTasks: 3,
   maxMemoryWrites: 4,
-  maxExternalSideEffects: 6,
+  maxExternalSideEffects: 16,
   // 第七路：Token（输入 + 输出合计）。Token 是最容易被忽略的一路——它不像工具调用那样
   // 有明确边界，一轮里「多说几句」就能翻倍；限额设宽（20 万）默认几乎不触发，
   // 但一旦逼近上限必须能拦下后续工具调用，而不是让成本无声膨胀。
