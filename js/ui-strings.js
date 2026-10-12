@@ -149,7 +149,6 @@ export const UI_STRINGS = {
   "清空所有数据": "Clear all data",
   "完成": "Done",
   "语言": "Language",
-  "跟随浏览器": "Browser default",
   "英文界面启用英文系统提示词；回复仍跟随用户语言": "English UI uses English system prompts; replies follow the user's language.",
   "分享": "Share",
   "分享对话": "Share conversation",

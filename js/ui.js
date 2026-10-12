@@ -517,20 +517,20 @@ function validateApiKey(s) {
   }
   function sessionSpanLabel(ts) {
     const days = Math.floor((startOfDay(Date.now()) - startOfDay(ts)) / 86400000);
-    if (days <= 0) return '今天';
-    if (days === 1) return '昨天';
-    if (days === 2) return '前天';
-    if (days <= 6) return '7天内';
-    if (days <= 29) return '30天内';
-    return '更早';
+    if (days <= 0) return localeText('今天', 'Today');
+    if (days === 1) return localeText('昨天', 'Yesterday');
+    if (days === 2) return localeText('前天', '2 days ago');
+    if (days <= 6) return localeText('7天内', 'Past 7 days');
+    if (days <= 29) return localeText('30天内', 'Past 30 days');
+    return localeText('更早', 'Earlier');
   }
   function sessionMeta(s) {
     const n = (s.messages || []).filter((m) => m.role === 'user').length;
     const t = new Date(sessionActivityAt(s));
     const time = t.toDateString() === new Date().toDateString()
-      ? t.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+      ? t.toLocaleTimeString(localeText('zh-CN', 'en-US'), { hour: '2-digit', minute: '2-digit' })
       : `${t.getMonth() + 1}/${t.getDate()}`;
-    return `${n} 轮 · ${time}`;
+    return localeText(`${n} 轮 · ${time}`, `${n} turn${n === 1 ? '' : 's'} · ${time}`);
   }
   let memSelected = new Set();
   function syncMemDelBtn() {

@@ -90,7 +90,14 @@ export function installLanguage(root = document) {
     const apply = () => { observer.disconnect(); translate(root); watch(); };
     const changed = lastLang !== null && lastLang !== getLanguage();
     const reduce = doc.defaultView?.matchMedia?.('(prefers-reduced-motion: reduce)').matches && doc.documentElement.dataset.motion !== 'on';
-    if (changed && typeof doc.startViewTransition === 'function' && doc.documentElement.dataset.motion !== 'off' && !reduce) {
+    const card = doc.querySelector('.modal.open .modal-card');
+    const motionOn = doc.documentElement.dataset.motion !== 'off' && !reduce;
+    if (changed && card) {
+      // 弹层（设置等）打开时不做整页快照：快照会丢掉弹层蒙版的 backdrop-filter 模糊。
+      // 这里文案立即替换，只让弹层卡片做一次轻淡入，蒙版保持不动。
+      lastLang = getLanguage(); apply();
+      if (motionOn && typeof card.animate === 'function') card.animate([{ opacity: .35 }, { opacity: 1 }], { duration: 320, easing: 'ease-out' });
+    } else if (changed && typeof doc.startViewTransition === 'function' && motionOn) {
       // 整页快照交叉淡入：文案在快照里替换，合成层不被整页压暗，动画不会被卡住
       lastLang = getLanguage();
       doc.startViewTransition(apply);

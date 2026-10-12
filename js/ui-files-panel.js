@@ -8,6 +8,7 @@ import { ICON } from './icons.js';
 import { SANDBOX_STORAGE_CAP, sandboxQuotaLabel } from './storagefmt.js';
 import { pdfToImages } from './pdfpages.js';
 import { contentByteSize } from './sandbox.js';
+import { text as localeText } from './locale.js';
 
 // data:video/… → blob URL（与 ui.js 气泡播放同一做法；独立实现以免 split 模块反向 import ui.js）
 function videoBlobUrl(dataUrl) {
@@ -86,7 +87,7 @@ export function installFilesPanel({ store, agent, toast, fmtSize, highlightCode,
     const blob = createZip(entries);
     saveBlob(`${base}-${stampName()}.zip`, blob);
     filesZippedOnce = true;
-    toast(`已打包 ${entries.length} 个文件（${fmtSize(blob.size)}）`, 'ok');
+    toast(localeText(`已打包 ${entries.length} 个文件（${fmtSize(blob.size)}）`, `Packed ${entries.length} files (${fmtSize(blob.size)})`), 'ok');
   }
   $('#download-zip').addEventListener('click', () => {
     const wsKeys = (typeof agent.fs.listWorkspace === 'function' ? agent.fs.listWorkspace() : agent.fs.list()).map((f) => f.path);
@@ -95,17 +96,17 @@ export function installFilesPanel({ store, agent, toast, fmtSize, highlightCode,
   $('#clear-files').addEventListener('click', () => {
     const wsKeys = (typeof agent.fs.listWorkspace === 'function' ? agent.fs.listWorkspace() : agent.fs.list()).map((f) => f.path);
     const n = wsKeys.length;
-    if (!n) return toast('工作区没有文件（内部缓存/OCR 会自动长期保留）');
+    if (!n) return toast(localeText('工作区没有文件（内部缓存/OCR 会自动长期保留）', 'No files in the workspace (internal cache and OCR are kept automatically)'));
     if (!filesZippedOnce) {
-      if (!confirm('尚未打包 ZIP。清空后工作区文件无法恢复，仍要清空？（内部缓存/OCR 等不受影响）')) return;
-    } else if (!confirm('清空工作区里的全部文件？内部缓存/OCR 会保留。此操作不可恢复。')) return;
+      if (!confirm(localeText('尚未打包 ZIP。清空后工作区文件无法恢复，仍要清空？（内部缓存/OCR 等不受影响）', 'No ZIP has been packed yet. Workspace files cannot be restored after clearing. Clear anyway? (internal cache and OCR are not affected)'))) return;
+    } else if (!confirm(localeText('清空工作区里的全部文件？内部缓存/OCR 会保留。此操作不可恢复。', 'Clear all files in the workspace? Internal cache and OCR are kept. This cannot be undone.'))) return;
     if (!confirm('再次确认：确定清空工作区文件？')) return;
     if (typeof agent.fs.clearWorkspace === 'function') {
       agent.fs.clearWorkspace();
     } else {
       agent.fs.clear();
     }
-    store.clearFiles(); renderFiles(); toast('工作区已清空（内部文件保留）');
+    store.clearFiles(); renderFiles(); toast(localeText('工作区已清空（内部文件保留）', 'Workspace cleared (internal files kept)'));
   });
 
   // 目录折叠状态：本次页面会话内记住（沙箱是路径即结构，没有真实目录节点）
@@ -160,8 +161,8 @@ export function installFilesPanel({ store, agent, toast, fmtSize, highlightCode,
     if (nEl) {
       const n = Number(stat.files) || 0;
       const ni = intFiles.length;
-      nEl.textContent = ni ? `${n} 个文件 · 内部 ${ni}` : `${n} 个文件`;
-      nEl.title = ni ? `工作区显示 ${n} 个用户可见文件，另有 ${ni} 个内部长期文件（OCR/缓存等，不可见）` : '';
+      nEl.textContent = ni ? localeText(`${n} 个文件 · 内部 ${ni}`, `${n} files · internal ${ni}`) : localeText(`${n} 个文件`, `${n} files`);
+      nEl.title = ni ? localeText(`工作区显示 ${n} 个用户可见文件，另有 ${ni} 个内部长期文件（OCR/缓存等，不可见）`, `Workspace shows ${n} user-visible files; ${ni} internal long-lived files (OCR/cache) are hidden`) : '';
     }
     const zipEl = $('#files-zip');
     if (zipEl) {
@@ -194,7 +195,7 @@ export function installFilesPanel({ store, agent, toast, fmtSize, highlightCode,
         row.innerHTML = `<span class="ft-chev">${ICON.chevRight}</span>`
           + `<span class="ft-ico">${closed ? ICON.folder : ICON.folderOpen}</span>`
           + `<span class="ft-name">${esc(r.name)}</span>`
-          + `<span class="ft-meta">${Number(r.count) || 0} 个文件 · ${fmtSize(Number(r.size) || 0)}</span>`
+          + `<span class="ft-meta">${localeText(`${Number(r.count) || 0} 个文件 · ${fmtSize(Number(r.size) || 0)}`, `${Number(r.count) || 0} files · ${fmtSize(Number(r.size) || 0)}`)}</span>`
           + `<span class="ft-actions"><button class="files-icon-btn ft-copy" type="button" title="复制文件名">${ICON.copy}</button><button class="files-icon-btn ft-zip" type="button" title="打包 ${esc(r.path)}/">${ICON.download}</button></span>`;
         const toggle = () => {
           if (collapsedDirs.has(r.path)) collapsedDirs.delete(r.path); else collapsedDirs.add(r.path);

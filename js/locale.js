@@ -6,16 +6,17 @@ export function browserLanguage(nav = globalThis.window?.navigator) {
   const first = String(nav?.language || nav?.languages?.[0] || 'zh').toLowerCase();
   return first.startsWith('en') ? 'en' : 'zh';
 }
+// 界面语言只有中文 / English 两档；没有保存过偏好时跟随浏览器（不再提供「跟随浏览器」选项）
 export function languagePreference() {
   if (override) return override;
-  try { const p = globalThis.localStorage?.getItem(LANGUAGE_KEY); if (['zh', 'en'].includes(p)) return p; } catch { /* private storage */ }
-  return 'auto';
+  try { const p = globalThis.localStorage?.getItem(LANGUAGE_KEY); if (p === 'zh' || p === 'en') return p; } catch { /* private storage */ }
+  return browserLanguage();
 }
-export function getLanguage() { const p = languagePreference(); return p === 'auto' ? browserLanguage() : p; }
+export function getLanguage() { return languagePreference(); }
 export function text(zh, en) { return getLanguage() === 'en' ? en : zh; }
 export function setLanguagePreference(value) {
-  const p = ['en', 'zh'].includes(value) ? value : 'auto'; override = p;
-  try { if (p === 'auto') localStorage.removeItem(LANGUAGE_KEY); else localStorage.setItem(LANGUAGE_KEY, p); } catch { /* usable for this page */ }
+  const p = value === 'en' ? 'en' : 'zh'; override = p;
+  try { localStorage.setItem(LANGUAGE_KEY, p); } catch { /* usable for this page */ }
   for (const fn of listeners) fn(getLanguage(), p);
   return getLanguage();
 }
