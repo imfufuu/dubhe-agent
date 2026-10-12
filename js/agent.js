@@ -1541,7 +1541,7 @@ export function createAgent(store, hooks = {}) {
       role: 'assistant',
       text: timedOut
         ? '⚠ 图片 / 视频审核超时（模型资源下载过慢或不可达），本轮已阻止，附件未进沙箱。模型正在后台继续预热，请稍后重发。'
-        : '该内容已被审核', // 命中的是第几帧 / 哪一层只进审核日志（moderation.image），不对用户念内部流程
+        : (getLanguage() === 'en' ? 'This content was flagged by moderation' : '该内容已被审核'), // 命中的是第几帧 / 哪一层只进审核日志（moderation.image），不对用户念内部流程
       model: 'Moderator',
       done: true,
       transientModeration: true,

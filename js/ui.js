@@ -487,16 +487,17 @@ function validateApiKey(s) {
     toast(store.state.apiKey ? 'API Key 已保存（仅存于浏览器 localStorage）' : 'API Key 已清除', 'ok');
     updateKeyBtn(); updateTransportBadge();
   });
-  // 底部「API Key」按钮的文案：管理员模式下明确标出来（但不显示密钥任何片段）
+  // 底部「API Key」按钮的文案：管理员模式下明确标出来（但不显示密钥任何片段）；切换语言时同步刷新
+  onLanguageChange(() => updateKeyBtn());
   function updateKeyBtn() {
     const b = $('#key-btn');
     if (!b) return;
     const admin = isAdminAlias(store.state.apiKey);
-    b.textContent = admin ? '管理员' : 'API Key';
+    b.textContent = admin ? localeText('管理员', 'Admin') : 'API Key';
     b.classList.toggle('admin-mode', admin);
     b.title = admin
-      ? (adminUnlocked() ? `管理员密钥已启用（有效期至 ${fmtAdminExp(adminExpiresAt())}，明文不落盘）` : '管理员密钥未解封或已过期：点开重新输入口令')
-      : '填入 TeamoRouter API Key（或管理员口令）';
+      ? (adminUnlocked() ? localeText(`管理员密钥已启用（有效期至 ${fmtAdminExp(adminExpiresAt())}，明文不落盘）`, `Admin key active (valid until ${fmtAdminExp(adminExpiresAt())}; never stored in plain text)`) : localeText('管理员密钥未解封或已过期：点开重新输入口令', 'Admin key locked or expired: open to re-enter the passphrase'))
+      : localeText('填入 TeamoRouter API Key（或管理员口令）', 'Enter a TeamoRouter API key (or admin passphrase)');
   }
   updateKeyBtn();
   keyInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#key-save').click(); });
@@ -562,6 +563,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     <path d="M30 30v6M27 33h6"/><path d="M136 62v4M134 64h4"/><circle cx="26" cy="70" r="1.4" fill="currentColor" stroke="none"/>
   </g>
 </svg>`;
+  onLanguageChange(() => { if ($('#memory-list')) renderMemory(); });
   function renderMemory() {
     const box = $('#memory-list');
     if (!box) return;
@@ -621,6 +623,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     commitMemory(next);
   });
 
+  onLanguageChange(() => { if ($('#session-list')) renderSessions(); });
   // 侧栏只列「有内容的」会话：空的「新对话」草稿在用户发出第一条消息之前不进列表
   //（store.listableSessions 负责过滤，「＋ 新建」也会复用空草稿，不堆 invisible 记录）
   function renderSessions() {
@@ -1141,9 +1144,9 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
         <div class="tool-chips"></div>
         <div class="msg-toolbar"${moderationNotice ? ' hidden' : ''}>
         <div class="msg-actions">
-          <button class="act" data-act="copy" title="复制本轮回复">${ICON.copy || ''}<span>复制</span></button>
-          <button class="act act-danger" data-act="rollback" title="回滚到本轮之前（将移除该轮及其后的消息）">${ICON.rollback || ''}<span>回滚</span></button>
-          <button class="act act-regen" data-act="regen" title="重新生成并覆盖最近这一条回答（更早的回答请先「回滚」再重新提问）">${ICON.regen || ''}<span>重新生成</span></button>
+          <button class="act" data-act="copy" title="${localeText('复制本轮回复', 'Copy this reply')}" aria-label="${localeText('复制本轮回复', 'Copy this reply')}">${ICON.copy || ''}</button>
+          <button class="act act-danger" data-act="rollback" title="${localeText('回滚到本轮之前（将移除该轮及其后的消息）', 'Roll back to before this turn (removes this turn and later messages)')}" aria-label="${localeText('回滚', 'Roll back')}">${ICON.rollback || ''}</button>
+          <button class="act act-regen" data-act="regen" title="${localeText('重新生成并覆盖最近这一条回答（更早的回答请先「回滚」再重新提问）', 'Regenerate and replace this latest answer (for older answers, roll back first, then ask again)')}" aria-label="${localeText('重新生成', 'Regenerate')}">${ICON.regen || ''}</button>
         </div>
         <div class="msg-foot mono" hidden></div>
         </div>`;
@@ -1199,25 +1202,10 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     const time = [clock, ago].filter(Boolean).join(' | ');
     const head = bits.join(' · ');
     const line = head && time ? `${head} · ${time}` : (head || time);
-    // P1 修正：回合脚注显示两路最常撞墙的预算（工具调用 / 外部副作用）已用 / 上限，耗尽标红
-    const b = m.budget && typeof m.budget === 'object' ? m.budget : null;
-    const budgetBits = [];
-    if (b && Array.isArray(b.toolCalls) && b.toolCalls[0] > 0) budgetBits.push(`工具 ${b.toolCalls[0]}/${b.toolCalls[1] == null ? '∞' : b.toolCalls[1]}`);
-    if (b && Array.isArray(b.external) && b.external[0] > 0) budgetBits.push(`外部 ${b.external[0]}/${b.external[1] == null ? '∞' : b.external[1]}`);
-    const exhausted = b && Array.isArray(b.exhausted) ? b.exhausted : [];
-    if (!line && !budgetBits.length) { foot.hidden = true; foot.textContent = ''; return; }
+    // 回合脚注只显示思考档位与耗时（工具 / 外部副作用的预算用量不在消息下方显示）
+    if (!line) { foot.hidden = true; foot.textContent = ''; return; }
     foot.hidden = false;
     foot.textContent = line;
-    if (budgetBits.length) {
-      const span = document.createElement('span');
-      span.className = `foot-budget${exhausted.length ? ' spent' : ''}`; // 用尽只是信息，不用危险色（用户要求）
-      // 耗尽的是哪一路要写出来：脚注只列了两路，⚠ 却可能来自重试 / 记忆写入 / 时长，不写名字用户看不懂
-      span.textContent = `${line ? ' · ' : ''}${budgetBits.join(' · ')}${exhausted.length ? ` ⚠ ${exhausted.map((c) => BUDGET_CHANNEL_LABEL[c] || c).join('、')}已用尽` : ''}`;
-      span.title = exhausted.length
-        ? `本轮预算已耗尽：${exhausted.map((c) => BUDGET_CHANNEL_LABEL[c] || c).join('、')}。可在「设置 → 执行预算」调高上限（下一轮生效），或新开一轮对话`
-        : '本轮执行预算：工具调用 / 外部副作用（抓取、检索、生图、识图、委派）已用 / 上限；上限可在「设置 → 执行预算」调整';
-      foot.appendChild(span);
-    }
     foot.title = m.reasoningLevel === 'off' ? '本轮思考 Off' : (m.ts ? new Date(m.ts).toLocaleString() : '');
   }
   const BUDGET_CHANNEL_LABEL = { toolCalls: '工具调用', retries: '重试次数', durationMs: '墙钟时长', parallelTasks: '并发任务', memoryWrites: '记忆写入', externalSideEffects: '外部副作用', tokens: 'Token 消耗' };

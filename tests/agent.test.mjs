@@ -8797,9 +8797,7 @@ test('设置页「执行预算」：两路上限可调（写 settings.executionB
   assert.match(agent, /budget: summarizeBudgetForUI\(exec\.budgetGov\) \|\| undefined,/);
   const toolrunner = fsp.readFileSync(new URL('../js/toolrunner.js', import.meta.url), 'utf8');
   assert.equal(((agent + toolrunner).match(/formatBudgetRecovery\(/g) || []).length, 3, '三处拦截文本都带恢复路径（P4 后住在 toolrunner.js）');
-  assert.match(ui, /budgetBits\.push\(`工具 \$\{b\.toolCalls\[0\]\}\/\$\{b\.toolCalls\[1\] == null \? '∞' : b\.toolCalls\[1\]\}`\)/);
-  assert.match(ui, /budgetBits\.push\(`外部 \$\{b\.external\[0\]\}\/\$\{b\.external\[1\] == null \? '∞' : b\.external\[1\]\}`\)/);
-  assert.match(ui, /span\.className = `foot-budget\$\{exhausted\.length \? ' spent' : ''\}`;/);
+  assert.doesNotMatch(ui, /budgetBits|foot-budget/, '消息下方不显示工具 / 外部预算用量');
   assert.match(css, /\.msg-foot \.foot-budget\.spent \{ color: var\(--fg-2\); \}/, '用尽只是信息，不用危险色');
   assert.doesNotMatch(css, /\.foot-budget\.bad/);
   assert.doesNotMatch(css, /\.msg-foot \.foot-budget[^\n]*#dc2626/);
@@ -9512,7 +9510,7 @@ test('#3 用户提示不念内部审核流程：拦截气泡只说「该内容�
   const agent = fsp.readFileSync(new URL('../js/agent.js', import.meta.url), 'utf8');
   const ua = fsp.readFileSync(new URL('../js/ui-attachments.js', import.meta.url), 'utf8');
   assert.doesNotMatch(agent, /帧命中/);
-  assert.match(agent, /: '该内容已被审核', \/\/ 命中的是第几帧/);
+  assert.match(agent, /getLanguage\(\) === 'en' \? 'This content was flagged by moderation' : '该内容已被审核'\), \/\/ 命中的是第几帧/);
   assert.doesNotMatch(ua, /待审核|抽帧审核|通过审核后/);
   assert.match(ua, /已作为视频附件加入\$\{durationSec \? `（约 \$\{Math\.round\(durationSec\)\} 秒）` : ''\}，发送后 Agent 会调用 analyze_video 识别/);
 });
@@ -9551,7 +9549,6 @@ test('#7 并发任务是上限不是消耗：一波正好跑满不算耗尽；�
   g2.spend('retries', 2);
   assert.deepEqual(g2.exhaustedChannels, ['retries'], '消耗型通道到顶仍算耗尽');
   const ui = readUiSource();
-  assert.match(ui, /\$\{exhausted\.length \? ` ⚠ \$\{exhausted\.map\(\(c\) => BUDGET_CHANNEL_LABEL\[c\] \|\| c\)\.join\('、'\)\}已用尽` : ''\}/, '⚠ 后面跟通道名');
 });
 
 test('#9 设置页开关 → 会话区同步：mountSettings 回调 onSettingChanged，main 接到 ui.syncToolbar，四颗 pill + 能力行 + 主题一起刷', async () => {
@@ -9618,7 +9615,7 @@ test('#12 管理员模式下 /key 不可用：别名 = 口令，首尾各露几�
   const fsp = await import('node:fs');
   const src = fsp.readFileSync(new URL('../js/ui-system-commands.js', import.meta.url), 'utf8');
   assert.match(src, /import \{ isAdminAlias \} from '\.\/adminkey\.js';/);
-  assert.match(src, /if \(isAdminAlias\(k\)\) out = '管理员模式下 \/key 不可用：管理员口令与实际密钥都不回显。/);
+  assert.match(src, /out = localeText\('管理员模式下 \/key 不可用：管理员口令与实际密钥都不回显。/);
   assert.match(src, /'\/key —— 查看 API Key 尾号（完整 Key 不回显；管理员模式下不可用）'/);
 });
 

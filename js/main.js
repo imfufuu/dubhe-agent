@@ -8,6 +8,7 @@ import { createStore } from './state.js?v=2026.10.11.1';
 import { createAgent } from './agent.js?v=2026.10.11.1';
 import { mountUI, toast } from './ui.js?v=2026.10.11.1';
 import { relayAvailable } from './net.js';
+import { text as localeText } from './locale.js';
 import { probeGatewayHosts } from './endpoint.js';
 import { isAdminAlias, unlockAdminKey } from './adminkey.js';
 import { mountDebugWindow, toggleDebug, debugActive, setDebug } from './debugwindow.js?v=2026.10.11.1';
@@ -81,7 +82,7 @@ const hooks = {
   onModerationCleared: () => { ui && ui.rebuildMessages && ui.rebuildMessages(); ui && ui.renderSessions(); ui && ui.updateStats(); },
   onModerationBlocked: (_m, result) => {
     const timedOut = !!(result && result.image && result.image.timeout);
-    toast(timedOut ? '图片审核超时，本轮已阻止（未进沙箱），请稍后重发' : '该内容已被审核', 'warn', 7000);
+    toast(timedOut ? localeText('图片审核超时，本轮已阻止（未进沙箱），请稍后重发', 'Image review timed out; this turn was blocked (not sent to the sandbox). Please resend later.') : localeText('该内容已被审核', 'This content was flagged by moderation'), 'warn', 7000);
     ui && ui.renderSessions(); ui && ui.updateStats();
   },
   onError: (err) => {

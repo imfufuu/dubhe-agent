@@ -8,6 +8,7 @@ import { formatObservabilityReport, formatNexusAcceptanceReport } from './nexus.
 import { fmtSpan } from './ui-markdown.js?v=2026.10.11.1';
 import { modelDisplayName } from './smartrouter.js?v=2026.10.11.1';
 import { isAdminAlias } from './adminkey.js';
+import { text as localeText } from './locale.js';
 
 export function installSystemCommands({ store, agent, toast, inSystem, isSystemIsolated, chatModels, selectModel, applyTheme, rebuildMessages, renderSessions, renderFiles, updateStats, scrollToBottom }) {
   // ── /system 隐藏通道：命令识别器（本地执行，不走网关）──
@@ -21,28 +22,28 @@ export function installSystemCommands({ store, agent, toast, inSystem, isSystemI
     let out = '';
     if (name === 'help' || !name) {
       out = [
-        '⌙ /system 可用命令：',
-        '/debug on | off —— 开/关调试浮窗（系统日志：网络/错误/审核全链路）',
-        '/status —— 版本 / 模型 / 预热 / 审核状态',
-        '/version —— 仅版本一行',
-        '/env —— 查看粗略浏览器/设备环境（不读取 Cookie 或精确定位）',
-        '/stats —— 会话与耗时统计',
-        '/model <模型ID> —— 切换模型（需完整 ID）',
-        '/models —— 列出可用模型',
-        '/theme dark|light —— 切换深/浅主题',
-        '/cache [clear] —— 查看离线缓存 / 清空后自动重建',
-        '/key —— 查看 API Key 尾号（完整 Key 不回显；管理员模式下不可用）',
-        '/export —— 导出全部会话记录（JSON 下载）',
-        '/clear —— 清空通道草稿（真实会话不受影响）',
+        localeText('⌙ /system 可用命令：', 'Available /system commands:'),
+        localeText('/debug on | off —— 开/关调试浮窗（系统日志：网络/错误/审核全链路）', '/debug on | off — show or hide the debug panel (network, errors, moderation log)'),
+        localeText('/status —— 版本 / 模型 / 预热 / 审核状态', '/status — version, model, warm-up and moderation status'),
+        localeText('/version —— 仅版本一行', '/version — version line only'),
+        localeText('/env —— 查看粗略浏览器/设备环境（不读取 Cookie 或精确定位）', '/env — rough browser and device info (no cookies, no precise location)'),
+        localeText('/stats —— 会话与耗时统计', '/stats — session and timing statistics'),
+        localeText('/model <模型ID> —— 切换模型（需完整 ID）', '/model <model-id> — switch model (full ID required)'),
+        localeText('/models —— 列出可用模型', '/models — list available models'),
+        localeText('/theme dark|light —— 切换深/浅主题', '/theme dark|light — switch dark or light theme'),
+        localeText('/cache [clear] —— 查看离线缓存 / 清空后自动重建', '/cache [clear] — view offline cache, or clear it (rebuilt automatically)'),
+        localeText('/key —— 查看 API Key 尾号（完整 Key 不回显；管理员模式下不可用）', '/key — show the API key tail (full key never shown; unavailable in admin mode)'),
+        localeText('/export —— 导出全部会话记录（JSON 下载）', '/export — export all session records (JSON download)'),
+        localeText('/clear —— 清空通道草稿（真实会话不受影响）', '/clear — clear the channel draft (real sessions unaffected)'),
         '/p2 [report|policy|fault|exp] —— P2（v2.5）：策略版本 / 统一指标 / 审计三层目标 / 故障注入 / 策略实验',
         '/guard observe|strict|strict-l2 —— 执行内核高风险确认档位（L3 / L2+L3 是否需人工确认）',
         '/resume —— 查看断点续跑计划（未完成步骤 / 需先核验的产物 / 是否需重新确认）',
-        '提示：模型菜单搜索 /system 可回到本识别器',
+        localeText('提示：模型菜单搜索 /system 可回到本识别器', 'Tip: search /system in the model menu to return to this channel'),
       ].join('\n');
     } else if (name === 'debug') {
       const on = /^(on|1|开|开启|open|show)$/i.test(arg);
       const off = /^(off|0|关|关闭|close|hide)$/i.test(arg);
-      if (!on && !off) out = '用法：/debug on 或 /debug off';
+      if (!on && !off) out = localeText('用法：/debug on 或 /debug off', 'Usage: /debug on or /debug off');
       else if (typeof globalThis.__dubheDebugSet !== 'function') out = '调试浮窗模块未加载（旧版本缓存），请强刷页面后重试';
       else {
         const now = globalThis.__dubheDebugSet(on);
@@ -146,7 +147,7 @@ export function installSystemCommands({ store, agent, toast, inSystem, isSystemI
       }
     } else if (name === 'theme') {
       const v = String(arg || '').toLowerCase();
-      if (v !== 'dark' && v !== 'light') out = '用法：/theme dark 或 /theme light';
+      if (v !== 'dark' && v !== 'light') out = localeText('用法：/theme dark 或 /theme light', 'Usage: /theme dark or /theme light');
       else { store.state.settings.theme = v; applyTheme(); store.notify(); out = `✓ 主题已切换：${v === 'dark' ? '深色' : '浅色'}`; }
     } else if (name === 'cache') {
       if (typeof caches === 'undefined') out = '当前环境不支持 Cache Storage（需 https 或 localhost）';
@@ -164,7 +165,7 @@ export function installSystemCommands({ store, agent, toast, inSystem, isSystemI
     } else if (name === 'key') {
       const k = store.state.apiKey || '';
       // 管理员模式：别名本身就是口令（admin-8 位），首尾各露几位等于整段泄露；真实密钥明文从不落盘也不上屏 → 此命令直接不可用
-      if (isAdminAlias(k)) out = '管理员模式下 /key 不可用：管理员口令与实际密钥都不回显。要换回普通 API Key 请点底部「管理员」按钮重新填写。';
+      if (isAdminAlias(k)) out = localeText('管理员模式下 /key 不可用：管理员口令与实际密钥都不回显。要换回普通 API Key 请点底部「管理员」按钮重新填写。', 'Unavailable in admin mode: neither the admin passphrase nor the real key is shown. To switch back to a regular API key, tap the "Admin" button at the bottom and re-enter it.');
       else out = k ? `API Key：${k.slice(0, 10)}…${k.slice(-4)}（已配置；完整 Key 不回显）` : '尚未配置 API Key（普通对话需要；/system 通道本身不需要）';
     } else if (name === 'export') {
       try {
@@ -178,8 +179,8 @@ export function installSystemCommands({ store, agent, toast, inSystem, isSystemI
       } catch (e) { out = `导出失败：${e && e.message ? e.message : e}`; }
     } else if (name === 'model') {
       const id = arg.trim();
-      if (!id) out = '用法：/model <模型完整 ID>（如 /model claude-sonnet-5）';
-      else if (id === '__system__') out = '不能切换到保留标识';
+      if (!id) out = localeText('用法：/model <模型完整 ID>（如 /model claude-sonnet-5）', 'Usage: /model <full model ID> (e.g. /model claude-sonnet-5)');
+      else if (id === '__system__') out = localeText('不能切换到保留标识', 'Cannot switch to a reserved identifier');
       else if (chatModels().some((m) => m.id === id)) { selectModel(id); out = `✓ 已切换模型：${id}`; }
       else out = `未找到模型「${id}」——输入 /models 查看可用列表`;
     } else if (name === 'models') {
@@ -192,7 +193,7 @@ export function installSystemCommands({ store, agent, toast, inSystem, isSystemI
       if (!inSystem()) { try { agent.loadFiles({}); } catch { /* 忽略 */ } }
       store.notify();
       rebuildMessages(); renderFiles(); updateStats();
-      out = inSystem() ? '✓ 通道草稿已清空（真实会话不受影响）' : '✓ 当前会话消息与沙箱文件已清空（会话本身保留）';
+      out = inSystem() ? localeText('✓ 通道草稿已清空（真实会话不受影响）', '✓ Channel draft cleared (real sessions unaffected)') : localeText('✓ 当前会话消息与沙箱文件已清空（会话本身保留）', '✓ Messages and sandbox files cleared (session kept)');
     } else {
       out = `未知命令「${name}」——输入 /help 查看可用命令`;
     }
