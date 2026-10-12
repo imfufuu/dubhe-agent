@@ -59,53 +59,47 @@ function classifyTask(text) {
 }
 
 // 实际映射：(category, difficulty) → 真实模型 ID
+// 路由表（2026-10-12 核对公开发布信息；方案版本号经核实后修正）
+// 各系列当前最新：Claude Opus 5.5 / Sonnet 5.5 / Haiku 5.5（10-07）/ Fable 5.1；
+// GPT-6 Astra（09-03，当前旗舰）、GPT-6 Sol / Luna（09-22）；Gemini 3.8 Flash（09-02，GA 最新）；
+// DeepSeek V4.1-Flash（API 名 deepseek-flash，09-10）、V4-Pro-0813；Kimi K3（07-16）；GLM-5.3（08-14）。
+// 未核实：grok-4.6、gpt-6.1-sol（公开来源中查不到，只留作候选，网关列表里有才会被选中）。
+// 候选按顺序尝试，网关模型列表里没有的直接跳过。
+const ROUTE_TABLE = {
+  [TASK_CATEGORY.CODING]: {
+    [DIFFICULTY.HARD]: ['claude-opus-5-5', 'gpt-6-astra', 'deepseek-v4-pro', 'glm-5.3', 'deepseek-flash'],
+    [DIFFICULTY.MEDIUM]: ['claude-sonnet-5-5', 'deepseek-v4-pro', 'gpt-6-sol', 'glm-5.3'],
+    [DIFFICULTY.EASY]: ['deepseek-flash', 'gemini-3.8-flash', 'glm-5.3-flash', 'claude-haiku-5-5'],
+  },
+  [TASK_CATEGORY.MATH]: {
+    [DIFFICULTY.HARD]: ['gpt-6-astra', 'deepseek-v4-pro', 'claude-opus-5-5', 'gpt-6-sol'],
+    [DIFFICULTY.MEDIUM]: ['gpt-6-sol', 'deepseek-flash', 'claude-sonnet-5-5', 'gemini-3.8-flash'],
+    [DIFFICULTY.EASY]: ['gpt-6-sol', 'deepseek-flash', 'claude-sonnet-5-5', 'gemini-3.8-flash'],
+  },
+  [TASK_CATEGORY.WRITING]: {
+    [DIFFICULTY.MEDIUM]: ['claude-fable-5-1', 'gpt-6-luna', 'claude-sonnet-5-5', 'gemini-3.8-flash'],
+    [DIFFICULTY.EASY]: ['deepseek-flash', 'gemini-3.8-flash', 'glm-5.3-flash', 'gpt-6-luna'],
+  },
+  [TASK_CATEGORY.ANALYSIS]: {
+    [DIFFICULTY.MEDIUM]: ['claude-sonnet-5-5', 'gpt-6-sol', 'deepseek-v4-pro', 'gemini-3.8-flash'],
+    [DIFFICULTY.EASY]: ['deepseek-flash', 'gemini-3.8-flash', 'gpt-6-luna', 'glm-5.3-flash'],
+  },
+  [TASK_CATEGORY.IMAGE]: {
+    [DIFFICULTY.MEDIUM]: ['gemini-3.8-flash', 'gpt-6-astra', 'claude-sonnet-5-5'],
+  },
+  [TASK_CATEGORY.CHAT]: {
+    [DIFFICULTY.EASY]: ['claude-haiku-5-5', 'gemini-3.8-flash', 'gpt-5.4-mini', 'deepseek-flash'],
+  },
+};
+// 跨类兜底：某类候选全部不在网关列表里时，按这个顺序找第一个可用模型
+const ROUTE_FALLBACK = ['claude-sonnet-5-5', 'gpt-6-sol', 'gemini-3.8-flash', 'deepseek-flash', 'glm-5.3', 'claude-haiku-5-5', 'gpt-5.6-sol'];
+
 function pickRealModel(category, difficulty, availableModels) {
-  const available = new Set((availableModels || []).map((m) => (typeof m === 'string' ? m : m.id)));
-  const have = (id) => available.has(id);
-  // 按优先顺序尝试（越靠前越优先）
-  const pick = (candidates) => {
-    for (const id of candidates) if (have(id)) return id;
-    return null;
-  };
-
-  switch (category) {
-    case TASK_CATEGORY.CODING:
-      if (difficulty === DIFFICULTY.HARD) {
-        return pick(['claude-opus-5-5', 'claude-opus-5', 'gpt-6-astra', 'claude-sonnet-5-5', 'gpt-6.1-sol']);
-      }
-      if (difficulty === DIFFICULTY.MEDIUM) {
-        return pick(['claude-sonnet-5-5', 'claude-sonnet-5', 'gpt-6.1-sol', 'deepseek-v4-pro', 'gpt-6-sol']);
-      }
-      return pick(['deepseek-v4-flash', 'gemini-3.8-flash', 'glm-5.3-flash', 'claude-haiku-4-5', 'gpt-6-luna']);
-
-    case TASK_CATEGORY.MATH:
-      if (difficulty === DIFFICULTY.HARD) {
-        return pick(['gpt-6.1-sol', 'claude-opus-5-5', 'gpt-6-astra', 'deepseek-v4-pro', 'claude-sonnet-5-5']);
-      }
-      return pick(['gpt-6-sol', 'deepseek-v4-flash', 'claude-sonnet-5', 'grok-4.6', 'gemini-3.8-flash']);
-
-    case TASK_CATEGORY.WRITING:
-      if (difficulty === DIFFICULTY.MEDIUM) {
-        return pick(['claude-sonnet-5-5', 'claude-sonnet-5', 'gpt-6-sol', 'gemini-3.8-flash', 'kimi-k3']);
-      }
-      return pick(['deepseek-v4-flash', 'gemini-3.8-flash', 'glm-5.3-flash', 'gpt-6-luna']);
-
-    case TASK_CATEGORY.ANALYSIS:
-      if (difficulty === DIFFICULTY.MEDIUM) {
-        return pick(['claude-sonnet-5-5', 'gpt-6.1-sol', 'claude-sonnet-5', 'deepseek-v4-pro']);
-      }
-      return pick(['deepseek-v4-flash', 'gemini-3.8-flash', 'gpt-6-luna', 'glm-5.3-flash']);
-
-    case TASK_CATEGORY.IMAGE:
-      // 图相关对话依然用强模型
-      return pick(['claude-sonnet-5-5', 'gpt-6.1-sol', 'gemini-3.8-flash']);
-
-    case TASK_CATEGORY.CHAT:
-    default:
-      // 简单闲聊优先选支持 thinking/reasoning 的中档模型（DeepSeek 免费档已下架：不返回可见思考正文，
-      // 会让「思考过程」一直显示「已思考」而没有内容）
-      return pick(['claude-sonnet-5', 'deepseek-v4-flash', 'gemini-3.8-flash', 'gpt-6-luna', 'glm-5.3-flash']);
-  }
+  const ids = (availableModels || []).map((m) => (typeof m === 'string' ? m : m.id)).filter(Boolean);
+  const available = new Set(ids);
+  const pick = (candidates) => (candidates || []).find((id) => available.has(id)) || null;
+  const own = ROUTE_TABLE[category] && (ROUTE_TABLE[category][difficulty] || Object.values(ROUTE_TABLE[category])[0]);
+  return pick(own) || pick(ROUTE_FALLBACK) || ids.find((id) => !isSmartRouter(id)) || 'gemini-3.8-flash';
 }
 
 // 路由记录：每轮记录一次选择，供用户事后查看
@@ -133,8 +127,8 @@ export function routeModel(userText, availableModels) {
     difficulty,
     categoryLabel: ROUTE_LABELS[category] || '对话',
     difficultyLabel: DIFF_LABELS[difficulty] || '简单',
-    chosenModel: modelId || 'claude-sonnet-5',
-    chosenProvider: providerOfForRouter(modelId || 'claude-sonnet-5'),
+    chosenModel: modelId,
+    chosenProvider: providerOfForRouter(modelId),
   };
 }
 

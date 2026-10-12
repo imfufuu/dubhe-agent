@@ -1373,7 +1373,7 @@ html { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
 .file-list .ft-row { min-width: max-content; }
 .file-item, .ft-row {
   display: flex; justify-content: flex-start; align-items: center; gap: 8px;
-  padding: 7px 10px; border: 0; border-radius: 8px; cursor: pointer;
+  padding: 3px 8px; border: 0; border-radius: 6px; cursor: pointer; line-height: 1.35;
   transition: background .18s var(--ease);
 }
 .file-item:hover, .ft-row:hover { background: var(--bg-hover); }
@@ -1609,7 +1609,7 @@ html { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
   .set-input, .set-select { min-height: 40px; }
   .ghost-btn { min-height: 40px; padding: 8px 14px; }
   .primary-btn { min-height: 44px; }
-  .file-item, .ft-row { min-height: 44px; }
+  .file-item, .ft-row { min-height: 34px; }
   /* 行内操作键（复制 / 打包 / 下载）原为 22px，优先级高于通用 .files-icon-btn，要单独抬到 40px */
   .ft-row .files-icon-btn, .file-item .file-dl { width: 40px; height: 40px; }
   .ft-row .files-icon-btn svg, .file-item .file-dl svg { width: 14px; height: 14px; }
