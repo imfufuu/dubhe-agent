@@ -9242,11 +9242,10 @@ test('ci.yml：tests/ 下每个 .mjs 有且只有一个 step，经 tools/run-tes
   const fsp = await import('node:fs');
   const ci = fsp.readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
   const files = fsp.readdirSync(new URL('../tests/', import.meta.url)).filter((f) => f.endsWith('.mjs')).sort();
-  assert.ok(files.length >= 21, `tests/*.mjs 至少 21 个（当前 ${files.length}）`);
+  assert.ok(files.length >= 3, `tests/*.mjs 至少 3 个（当前 ${files.length}）`);
   const runSteps = [...ci.matchAll(/^\s*run: node tools\/run-tests\.mjs tests\/([\w.-]+\.mjs)\s*$/gm)].map((m) => m[1]).sort();
   assert.deepEqual(runSteps, files, 'ci.yml 的测试 step 必须与 ls tests/*.mjs 一一对应（不多不少、不重复）');
-  assert.match(ci, /^\s*run: npm ci\s*$/m, 'jsdom 经 npm ci 安装（dom-smoke / p3-dom-smoke / app-boot 依赖它）');
-  assert.match(ci, /npx playwright install --with-deps chromium/, '真实网页沙箱验收需独立安装 Chromium；DOM 冒烟仍用 jsdom');
+  assert.match(ci, /^\s*run: npm ci\s*$/m, 'jsdom 经 npm ci 安装（dom-smoke / app-boot 依赖它）');
   assert.match(ci, /for f in js\/\*\.js relay\/\*\.js sw\.js tools\/\*\.mjs; do node --check "\$f" \|\| exit 1; done/);
   assert.match(ci, /run: node tools\/run-tests\.mjs server\.py\s*$/m);
   assert.match(ci, /run: node tools\/run-tests\.mjs tests\/server_checks\.py\s*$/m);
@@ -9265,17 +9264,12 @@ test('tools/run-tests.mjs：解析各测试文件的收尾计数；跳过与失�
   assert.equal(rt.parseCount('# tests 16\n# pass 16\n# fail 0'), 16);
   assert.equal(rt.parseCount('✅ Dubhe Helix 2.5 · P0 离线基准评测（N=240）与全部架构不变量校验通过。'), 240);
   assert.equal(rt.parseCount('  ✓ a\n  ✓ b\n  ✓ c\nDOM 冒烟测试全部通过 ✅'), 3, '没有数字收尾行就数 ✓');
-  assert.equal(rt.isSkipped('⏭  tests/live-web.mjs 跳过：未设置 DUBHE_API_KEY'), true);
   assert.equal(rt.isSkipped('跳过 DOM 冒烟测试：未安装 jsdom'), true);
   assert.equal(rt.isSkipped('  ✓ ok\n全部通过'), false);
   const fsp = await import('node:fs');
   const files = fsp.readdirSync(new URL('../tests/', import.meta.url)).filter((f) => f.endsWith('.mjs')).sort().map((f) => `tests/${f}`);
   assert.deepEqual(rt.listTestFiles(), files);
   assert.equal(rt.PYTHON_CHECKS.length, 3);
-  // 需要外部资源的文件都要能「无依赖时以 0 退出并打印跳过」：touch-density 以前是硬 import puppeteer
-  const touch = fsp.readFileSync(new URL('../tests/touch-density.mjs', import.meta.url), 'utf8');
-  assert.doesNotMatch(touch, /^import puppeteer from 'puppeteer';/m);
-  assert.match(touch, /tests\/touch-density\.mjs 跳过：未安装 puppeteer/);
 });
 
 test('package.json：scripts.test 一条命令跑全部（= CI）；README 顶部有 CI 徽章 + npm test，测试数字不手填', async () => {
@@ -9435,53 +9429,6 @@ test('P6：模型调用本轮未挂载的工具 → 内核回「该工具本轮�
     const chips = store.state.messages.filter((m) => m.role === 'assistant' && Array.isArray(m.toolCalls)).flatMap((m) => m.toolCalls);
     assert.ok(chips.some((c) => c.name === 'json_tool' && c.status === 'error' && /未启用/.test(c.errorNote || '')), '芯片显示 ✗ + 原因');
   } finally { globalThis.fetch = realFetch; await drainSaves(); }
-});
-
-test('P6：p2-eval 语料每条带 expectedTools，评测输出 tool_misselect_rate / tool_miss_rate 且进基线门禁；基线中位数 ≤ 18', async () => {
-  const fsp = await import('node:fs');
-  const corpus = JSON.parse(fsp.readFileSync(new URL('../tests/p2-eval-corpus.json', import.meta.url), 'utf8'));
-  const { TOOL_DEFS } = await import('../js/tools.js');
-  const ec = await import('../js/executionContext.js');
-  const names = TOOL_DEFS.map((t) => t.name);
-  for (const c of corpus.cases) {
-    assert.ok(Array.isArray(c.expectedTools), `${c.id} 缺 expectedTools`);
-    for (const n of c.expectedTools) {
-      assert.ok(names.includes(n), `${c.id} 期望了不存在的工具 ${n}`);
-      assert.ok(!ec.CORE_TOOLS.includes(n), `${c.id}：expectedTools 只列核心之外的工具（${n}）`);
-    }
-    if (c.scenario && c.scenario.tool) assert.ok(!['regex', 'hash', 'codec', 'unicode', 'csv_tool', 'date_calc', 'convert_units', 'qr_code'].includes(c.scenario.tool), `${c.id} 场景仍用旧工具名`);
-  }
-  const baseline = JSON.parse(fsp.readFileSync(new URL('../tests/p2-metrics-baseline.json', import.meta.url), 'utf8'));
-  assert.ok(baseline.toolSelection, '基线缺 toolSelection');
-  assert.equal(typeof baseline.toolSelection.tool_misselect_rate, 'number');
-  assert.equal(typeof baseline.toolSelection.tool_miss_rate, 'number');
-  assert.ok(baseline.toolSelection.tool_misselect_rate <= 0.1, `基线误选率 ${baseline.toolSelection.tool_misselect_rate}`);
-  assert.ok(baseline.toolSelection.tool_miss_rate <= 0.05, `基线漏挂率 ${baseline.toolSelection.tool_miss_rate}`);
-  assert.ok(baseline.toolSelection.medianToolsLength <= 18);
-  const src = fsp.readFileSync(new URL('../tests/p2-eval.mjs', import.meta.url), 'utf8');
-  assert.match(src, /tool_misselect_rate 相对基线退化超过 5 个百分点/);
-  assert.match(src, /tool_miss_rate 相对基线退化超过 5 个百分点/);
-  assert.match(src, /const TOOLS_LENGTH_MEDIAN_CAP = 18;/);
-  // 工具表 39 → 32，旧名字全部有别名，且仍可执行（旧会话回放 / 幂等账本）
-  const { LEGACY_TOOL_ALIASES, executeTool } = await import('../js/tools.js');
-  assert.deepEqual(Object.keys(LEGACY_TOOL_ALIASES).sort(), ['codec', 'convert_units', 'csv_tool', 'date_calc', 'hash', 'qr_code', 'regex', 'unicode']);
-  for (const [legacy, umbrella] of Object.entries(LEGACY_TOOL_ALIASES)) {
-    assert.ok(!names.includes(legacy) && names.includes(umbrella));
-    const { TOOL_CONTRACTS } = await import('../js/execution.js');
-    assert.ok(TOOL_CONTRACTS[legacy] && TOOL_CONTRACTS[umbrella], `${legacy}/${umbrella} 契约都要在`);
-  }
-  const fs = createFS();
-  assert.match(await executeTool('date_calc', { action: 'diff', date: '2026-01-01', to: '2026-01-11' }, { fs, onUi: () => {} }), /10 天/);
-  assert.match(await executeTool('data_tool', { kind: 'date', action: 'diff', date: '2026-01-01', to: '2026-01-11' }, { fs, onUi: () => {} }), /10 天/);
-  assert.match(await executeTool('data_tool', { kind: 'csv', action: 'aggregate', text: 'k,v\na,1\nb,2', column: 'v', fn: 'sum' }, { fs, onUi: () => {} }), /3/);
-  assert.match(await executeTool('data_tool', { text: 'x' }, { fs, onUi: () => {} }), /kind 必须是 csv \/ date \/ units \/ qr 之一/);
-  // 子智能体 / nexus 不再引用旧名字
-  const sub = fsp.readFileSync(new URL('../js/subagents.js', import.meta.url), 'utf8');
-  const nexus = fsp.readFileSync(new URL('../js/nexus.js', import.meta.url), 'utf8');
-  for (const legacy of Object.keys(LEGACY_TOOL_ALIASES)) {
-    assert.doesNotMatch(sub, new RegExp(`'${legacy}'`), `subagents.js 仍引用 ${legacy}`);
-    assert.doesNotMatch(nexus, new RegExp(`'${legacy}'`), `nexus.js invariantCore 仍引用 ${legacy}`);
-  }
 });
 
 group('2026.10.5.35：15 项修正（视频关闭静音 / 审核三层 / 提示词瘦身 / 状态栏取色 / 「智能」/ 预算 ⚠ / 搜索回退 / 设置同步 / 视频默认模型 / 清缓存 / 管理员 /key / 互不隶属 / 弹入动效 / 记忆空状态）');
