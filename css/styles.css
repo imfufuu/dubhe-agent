@@ -2532,6 +2532,10 @@ html.lang-switching body{opacity:.3;transition:opacity .2s ease-out}
 html.lang-switching-done body{opacity:1;transition:opacity .34s ease-out}
 /* 关掉动效 / 系统要求减少动态时，语言切换不做淡入淡出，直接换文案 */
 html.lang-switching[data-motion="off"] body,html.lang-switching-done[data-motion="off"] body{opacity:1;transition:none}
+/* 弹层打开时的语言切换：压暗层在页面之上、弹层（z-index 100）之下；弹层自身的模糊不受影响 */
+html::after{content:'';position:fixed;inset:0;z-index:99;background:#0a0a0a;opacity:0;pointer-events:none;transition:opacity .2s ease-out}
+html.lang-switching-modal::after{opacity:.3}
+html.lang-switching-modal-done::after{opacity:0;transition:opacity .34s ease-out}
 html[data-motion="off"] body{transition:none!important}
 @media(prefers-reduced-motion:reduce){html:not([data-motion="on"]) body{transition:none!important;opacity:1!important}}
 /* 分享弹窗的状态行与「再存一次」入口：导出失败/设备不触发下载时用户仍然拿得到文件。 */

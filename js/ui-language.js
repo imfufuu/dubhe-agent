@@ -94,9 +94,23 @@ export function installLanguage(root = document) {
     const motionOn = doc.documentElement.dataset.motion !== 'off' && !reduce;
     if (changed && card) {
       // 弹层（设置等）打开时不做整页快照：快照会丢掉弹层蒙版的 backdrop-filter 模糊。
-      // 这里文案立即替换，只让弹层卡片做一次轻淡入，蒙版保持不动。
-      lastLang = getLanguage(); apply();
-      if (motionOn && typeof card.animate === 'function') card.animate([{ opacity: .35 }, { opacity: 1 }], { duration: 320, easing: 'ease-out' });
+      // 改为：html::after 压暗层淡入（层级在页面之上、弹层之下）→ 最暗时换文案 → 淡出；弹层卡片同步轻淡入。
+      lastLang = getLanguage();
+      if (!motionOn) { apply(); }
+      else {
+        const el = doc.documentElement;
+        el.classList.remove('lang-switching-modal-done');
+        el.classList.add('lang-switching-modal');
+        clearTimeout(animTimer);
+        animTimer = setTimeout(() => {
+          apply();
+          el.classList.remove('lang-switching-modal');
+          el.classList.add('lang-switching-modal-done');
+          const c = doc.querySelector('.modal.open .modal-card');
+          if (c && typeof c.animate === 'function') c.animate([{ opacity: .35 }, { opacity: 1 }], { duration: 320, easing: 'ease-out' });
+          animTimer = setTimeout(() => el.classList.remove('lang-switching-modal-done'), 380);
+        }, 200);
+      }
     } else if (changed && typeof doc.startViewTransition === 'function' && motionOn) {
       // 整页快照交叉淡入：文案在快照里替换，合成层不被整页压暗，动画不会被卡住
       lastLang = getLanguage();
