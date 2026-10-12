@@ -879,5 +879,6 @@ window.addEventListener('keydown', (e) => {
 
 // 直接进入主页：不再显示「开始探索」门页与自动片头（门页 DOM / 介绍片代码保留，便于以后恢复）
 void initialView;
-openSite(true);
+// HTML 初始类名已是 open，openSite 会直接返回，因此这里直接完成打开流程（含 watchReveal，否则首屏内容保持隐藏）
+finishOpen(true);
 prefetchAudio();
