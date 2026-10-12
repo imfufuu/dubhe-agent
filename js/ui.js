@@ -22,7 +22,6 @@ import { readThemePreference, writeThemePreference, THEME_STORAGE_KEY } from './
 import { autoTitle } from './titler.js';
 import { pickSuggestionCards } from './suggestions.js';
 import { revealChunks } from './ui-chunks.js?v=2026.10.11.1';
-import { claimsWebSearch, webRefusal } from './websearch.js';
 import { unlockAdminKey, adminUnlocked, isAdminAlias, adminExpiresAt } from './adminkey.js';
 import { shortSuggest } from './commands.js';
 import { summarizeTurnCost, formatUsd } from './pricing.js';
@@ -1399,15 +1398,18 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     // 思考过程与工具芯片同构：整行 click + .expanded + .chip-detail，不用 <details>
     // 有可见思考正文时边流边展开；思考结束（正文/工具出现或 round done）自动折叠。
     // 流式时只改 fold-inner，禁止整段 innerHTML（会把 0fr→1fr 动画打回 0 高，看起来像没流式）。
-    let reason = $('.reasoning', wrap);
-    const thinkPending = live && thinkOn && !m.cancelled && !showThink && !hiddenThink;
+    // 思考块按消息 id 归属（同一 wrap 里可能有多轮思考），展开状态存在元素上，互不覆盖；思考是否进行中看消息真实状态
+    const owner = String(m.id);
+    const thinkRunning = !(m.thinkDone ?? m.done) && getBusy();
+    let reason = [...wrap.querySelectorAll('.reasoning')].find((n) => n.dataset.owner === owner) || null;
+    const thinkPending = thinkRunning && thinkOn && !m.cancelled && !showThink && !hiddenThink;
     if (showThink || hiddenThink || thinkPending) {
       if (!reason) {
-        reason = el('div', 'reasoning');
+        reason = el('div', 'reasoning'); reason.dataset.owner = owner;
         reason.addEventListener('click', (e) => {
           if (e.target.closest('a, button, .chip-copy')) return;
           reason.classList.toggle('expanded');
-          wrap._reasonUser = reason.classList.contains('expanded');
+          reason._user = reason.classList.contains('expanded');
         });
         reason.innerHTML = `<span class="think-ico">${ICON.thinking || ''}</span><span class="mono chip-name"></span><span class="chip-state"></span><div class="chip-detail reason-detail"><div class="fold-inner"></div></div>`;
         wrap.insertBefore(reason, body);
@@ -1418,7 +1420,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       if (hiddenThink && m.usage && m.usage.reasoning) bits.push(`${m.usage.reasoning} tok`);
       if (m.reasoningMs) bits.push(fmtSpan(m.reasoningMs));
       // 思考进行中（本轮还没有正文/工具）只显示「思考中」，完成后才定名为「思考过程」
-      const thinkStreaming = live && !m.text && !(m.toolCalls && m.toolCalls.length);
+      const thinkStreaming = thinkRunning && !m.text && !(m.toolCalls && m.toolCalls.length);
       const title = (showThink || thinkPending) ? (thinkStreaming ? '思考中' : '思考过程') : '已思考';
       const nameEl = $('.chip-name', reason);
       const stateEl = $('.chip-state', reason);
@@ -1426,47 +1428,30 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       if (stateEl) stateEl.textContent = bits.join(' · ');
       const inner = $('.fold-inner', reason);
       const detail = showThink
-        ? (live ? `<pre class="think-stream">${esc(m.reasoning)}</pre>` : renderMarkdown(m.reasoning))
+        ? (thinkRunning ? `<pre class="think-stream">${esc(m.reasoning)}</pre>` : renderMarkdown(m.reasoning))
         : (hiddenThink
           ? '<div class="think-hidden">该模型在网关侧做了推理，但不返回可见思考文本。DeepSeek、GLM、Claude Haiku 会显示正文。</div>'
           : '');
-      const sig = `${live ? 'live' : 'done'}:${(m.reasoning || '').length}:${hiddenThink ? 1 : 0}`;
+      const sig = `${thinkRunning ? 'live' : 'done'}:${(m.reasoning || '').length}:${hiddenThink ? 1 : 0}`;
       if (inner && inner.dataset.sig !== sig) {
         inner.dataset.sig = sig;
         // 流式思考：只改既有 <pre> 的 textContent（整段 innerHTML 会让长思考逐帧重建，越流越卡）
-        const pre = live && showThink ? inner.querySelector('pre.think-stream') : null;
+        const pre = thinkRunning && showThink ? inner.querySelector('pre.think-stream') : null;
         if (pre) pre.textContent = m.reasoning || '';
         else inner.innerHTML = detail;
-        if (!live) {
+        if (!thinkRunning) {
           hydrateSandboxMedia($('.reason-detail', reason) || reason, agent.fs);
           bindFoldRows($('.reason-detail', reason) || reason);
         }
       }
-      const thinkLive = live && (thinkPending || !!m.reasoning) && !m.text && !(m.toolCalls && m.toolCalls.length);
+      const thinkLive = thinkRunning && (thinkPending || !!m.reasoning) && !m.text && !(m.toolCalls && m.toolCalls.length);
       const autoOpen = thinkLive;
       reason.classList.toggle('live', thinkLive);
-      reason.classList.toggle('expanded', wrap._reasonUser == null ? autoOpen : !!wrap._reasonUser);
+      reason.classList.toggle('expanded', reason._user == null ? autoOpen : !!reason._user);
     } else if (reason) {
       reason.remove();
     }
     if (m.webSearch) body.appendChild(webNote(m.webSearch));
-    // 诚实性护栏：正文说「已联网搜索」但本轮没有任何服务端检索事件 → 如实提醒，不替模型背书
-    else if (m.done && m.role === 'assistant' && claimsWebSearch(m.text)) {
-      const warn = el('div', 'web-note warn');
-      warn.innerHTML = '<span class="web-fail">未见检索事件</span>'
-        + '<span>本轮没有收到任何网页搜索事件（模型的「已联网」说法无法证实），其中的具体数字请另行核实</span>';
-      body.appendChild(warn);
-    }
-    // 开关开着、模型却回「我上不了网」：上游没去调用服务器搜索（网关侧实测会发生），给一句可操作提示
-    else if (m.done && m.role === 'assistant' && store.state.settings.webEnabled !== false && webRefusal(m.text)) {
-      const hint = el('div', 'web-note hint');
-      hint.innerHTML = '<span class="web-hint">联网开关是开着的，但本轮没有发生检索</span>'
-        + '<span>上游模型自己没调用服务端搜索（网关侧偶发）。需要实时数据的话，点右边的按钮用同一句提问重试（会自动写明「先联网检索再回答」），或换个模型重问一次</span>'
-        + `<button class="act web-act" data-act="web-retry" title="同一句提问重试，并在提问前面写明「先联网检索再回答」">${ICON.globe || ''}<span>重试并联网检索</span></button>`;
-      body.appendChild(hint);
-      const wb = $('.web-act', hint);
-      if (wb) wb.addEventListener('click', (e) => { e.preventDefault(); doWebRetry(m); });
-    }
     if (m.error) {
       // 网关 401 / 5xx：给「切换 .com / .cn 节点并重试」入口（GATEWAY_HOSTS 本来就有两个，之前只缺在失败处的按钮）
       const gw = /HTTP (401|5\d\d)\b/.test(String(m.error));

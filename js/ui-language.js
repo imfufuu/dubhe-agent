@@ -79,8 +79,8 @@ export function installLanguage(root = document) {
       el.classList.remove('lang-switching');
       el.classList.add('lang-switching-done');
       clearTimeout(animTimer);
-      animTimer = setTimeout(() => el.classList.remove('lang-switching-done'), 260);
-    }, 180);
+      animTimer = setTimeout(() => el.classList.remove('lang-switching-done'), 380);
+    }, 200);
     return true;
   };
   const sync = () => {
@@ -89,7 +89,7 @@ export function installLanguage(root = document) {
     // 先淡出，淡出到最暗时再替换文案，最后淡入：避免文案瞬间跳变
     const switching = animateSwitch(doc);
     const apply = () => { observer.disconnect(); translate(root); watch(); };
-    if (switching) setTimeout(apply, 220); else apply();
+    if (switching) setTimeout(apply, 200); else apply();
     const select = doc.getElementById('set-language'); if (select) select.value = languagePreference();
     doc.querySelectorAll('[data-language-toggle]').forEach((b) => { b.textContent = getLanguage() === 'en' ? '中文' : 'EN'; b.setAttribute('aria-label', getLanguage() === 'en' ? 'Switch to Chinese' : 'Switch to English'); });
   };

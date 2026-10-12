@@ -1,14 +1,11 @@
-// 输入框光标彩虹色：红→黄→蓝→绿→青→蓝→紫，一个颜色停 CARET_HOLD_MS。
+// 输入框彩虹光标（自绘）。
 //
-// 关键取舍（2026.10.11.1 重做）：
-//   · 颜色切换交给 CSS 关键帧（见 styles.css 的 @keyframes caret-rainbow），JS 不再每隔 120ms 写
-//     inline caret-color —— 那样每写一次就可能重置浏览器的光标闪烁计时器，结果是「只有颜色变、光标不闪」，
-//     而且 7 色 2.5 秒一轮看着很躁。
-//   · 一个颜色停 1.1 秒（略长于原生闪烁周期 ~1s），视觉上就是「闪一下、换个颜色」，不再是连续渐变。
-//   · 只动 caret-color 一个属性：不碰 ::selection（选择框颜色）、不碰 -webkit-text-fill-color /
-//     text-decoration（输入法合成下划线），因此不会干涉选区与输入法自身的配色。
-//   · 中文/日文输入法合成期间暂停动画（合成结束后恢复），避免输入法候选阶段的配色被搅动。
-//   · 失焦 / 减少动效 / 显式关动效：停在一个固定颜色，不再轮转。
+// 为什么不用原生光标：原生闪烁相位不可控，CSS 换色只能「撞」在随机的时刻，看起来晚半拍；
+// 桌面端原生光标也只有 1–2px。所以这里隐藏原生光标（caret-color: transparent），用一个 span 代替：
+//   · 位置：隐藏镜像 div 复刻 textarea 的排版，在光标处放一个零宽标记，量它的 offsetLeft/Top；
+//   · 闪烁与换色：同一组关键帧驱动（见 styles.css 的 .rb-caret / rb-blink / rb-color），
+//     颜色边界正好落在光标熄灭的 50% 时刻，所以颜色总是在看不见的时候切换。
+// 输入法合成期间、选中一段文字时隐藏自绘光标（保留原生选区高亮）。
 export const CARET_COLORS = Object.freeze(['#ef4444', '#eab308', '#3b82f6', '#22c55e', '#06b6d4', '#2563eb', '#a855f7']);
 export const CARET_HOLD_MS = 1100;
 export const CARET_CYCLE_MS = CARET_HOLD_MS * CARET_COLORS.length;
@@ -16,14 +13,71 @@ export function caretColorAt(ms) {
   const at = Math.max(0, Number(ms) || 0);
   return CARET_COLORS[Math.floor(at / CARET_HOLD_MS) % CARET_COLORS.length];
 }
+
+// 镜像需要与 textarea 的排版完全一致（字体 / 边距 / 换行），否则光标会偏移
+const MIRROR_PROPS = ['boxSizing', 'fontStyle', 'fontVariant', 'fontWeight', 'fontStretch', 'fontSize', 'fontFamily', 'lineHeight',
+  'letterSpacing', 'textTransform', 'textIndent', 'textAlign', 'wordSpacing', 'tabSize',
+  'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth'];
+
 export function installCaretEffect(input, { doc = document } = {}) {
-  if (!input) return { stop() {} };
-  input.dataset.caretEffect = 'rainbow';
-  const composing = (on) => { input.classList.toggle('caret-rainbow-paused', !!on); };
-  const onStart = () => composing(true);
-  const onEnd = () => composing(false);
+  const win = doc.defaultView;
+  const host = input && input.parentElement;
+  if (!input || !host || !win) return { stop() {}, refresh() {} };
+  input.dataset.caretEffect = 'custom';
+  if (win.getComputedStyle(host).position === 'static') host.style.position = 'relative';
+
+  const mirror = doc.createElement('div');
+  mirror.className = 'rb-mirror';
+  mirror.setAttribute('aria-hidden', 'true');
+  const caret = doc.createElement('span');
+  caret.className = 'rb-caret';
+  caret.setAttribute('aria-hidden', 'true');
+  caret.hidden = true;
+  host.append(mirror, caret);
+
+  let composing = false;
+  const place = () => {
+    const cs = win.getComputedStyle(input);
+    for (const p of MIRROR_PROPS) mirror.style[p] = cs[p];
+    mirror.style.width = `${input.offsetWidth}px`;
+    mirror.style.height = `${input.offsetHeight}px`;
+    mirror.textContent = input.value.slice(0, input.selectionEnd || 0);
+    const marker = doc.createElement('span');
+    marker.textContent = '\u200b';
+    mirror.appendChild(marker);
+    const ir = input.getBoundingClientRect(), hr = host.getBoundingClientRect();
+    const lh = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.4 || 20;
+    caret.style.height = `${lh}px`;
+    const x = ir.left - hr.left + marker.offsetLeft - input.scrollLeft;
+    const y = ir.top - hr.top + marker.offsetTop - input.scrollTop;
+    caret.style.transform = `translate(${x}px, ${y}px)`;
+  };
+  const update = () => {
+    const show = doc.activeElement === input && !composing && !input.disabled && input.selectionStart === input.selectionEnd;
+    caret.hidden = !show;
+    if (show) place();
+  };
+
+  const events = ['input', 'keyup', 'click', 'focus', 'blur', 'scroll', 'mouseup'];
+  for (const e of events) input.addEventListener(e, update);
+  const onSel = () => { if (doc.activeElement === input) update(); };
+  const onStart = () => { composing = true; update(); };
+  const onEnd = () => { composing = false; update(); };
+  doc.addEventListener('selectionchange', onSel);
+  win.addEventListener('resize', update);
   input.addEventListener('compositionstart', onStart);
   input.addEventListener('compositionend', onEnd);
-  // 失焦/切后台由 CSS 的 :not(:focus) 与 data-motion 负责，不需要 JS 计时器。
-  return { stop() { input.removeEventListener('compositionstart', onStart); input.removeEventListener('compositionend', onEnd); composing(false); } };
+  update();
+
+  return {
+    refresh: update,
+    stop() {
+      for (const e of events) input.removeEventListener(e, update);
+      doc.removeEventListener('selectionchange', onSel);
+      win.removeEventListener('resize', update);
+      input.removeEventListener('compositionstart', onStart);
+      input.removeEventListener('compositionend', onEnd);
+      mirror.remove(); caret.remove();
+    },
+  };
 }
