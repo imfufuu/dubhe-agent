@@ -307,7 +307,7 @@ export function installFilesPanel({ store, agent, toast, fmtSize, highlightCode,
       const generation = viewerGeneration;
       const button = $('#fv-run'); button.disabled = true;
       try {
-        if (!await probeLocalBrowser({ force: true })) throw new Error('需要本机 npm run setup:browser，然后 python3 server.py；请从本地网页使用此能力，Pages 本身不能运行 Chromium。');
+        if (!await probeLocalBrowser({ force: true })) throw new Error(localeText('需要本机 npm run setup:browser，然后 python3 server.py；请从本地网页使用此能力，Pages 本身不能运行 Chromium。', 'Requires a local `npm run setup:browser`, then `python3 server.py`. Use this from a local web page; GitHub Pages cannot run Chromium.'));
         if (generation !== viewerGeneration || !viewer.classList.contains('open')) return;
         if (webPreviewId) { await sandboxBrowserRequest({ action: 'stop', preview_id: webPreviewId }).catch(() => {}); webPreviewId = ''; }
         const r = await sandboxBrowserRequest({ action: 'start', ...sandboxProject(agent.fs, path) });

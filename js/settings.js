@@ -1,4 +1,5 @@
 import { installModerationSetting } from './ui-moderation-setting.js';
+import { text as localeText } from './locale.js';
 import { getLanguage, onLanguageChange } from './locale.js';
 // 设置弹窗：API Key / 中继地址 / 主题 / 字号 / 沙箱 / 联网 / 快速 / 思考 / 识图·视频识别模型 / 清空数据 / 关于
 import { APP_RELEASE, APP_VERSION, STORAGE_KEY, VISION_MODELS, VIDEO_MODELS, IMAGE_MODELS, DEFAULT_IMAGE_MODEL, isImageGenModel, imageModelLabel, resolveVisionModel, resolveVideoModel } from './config.js?v=2026.10.11.1';
@@ -351,7 +352,7 @@ export function mountSettings(store, { onRelayChanged, onKeySaved, onSettingChan
       toast(`✓ 临时缓存已清除（${r.cacheStores} 个离线缓存 · ${r.cacheEntries} 条资源）`, 'ok', 4200);
       onRelayChanged && onRelayChanged();
     } catch (err) {
-      toast(`清除失败：${err && err.message ? err.message : String(err)}`, 'err', 5000);
+      toast(localeText(`清除失败：${err && err.message ? err.message : String(err)}`, `Clear failed: ${err && err.message ? err.message : String(err)}`), 'err', 5000);
     } finally { cacheBtn.disabled = false; cacheBtn.textContent = label; }
   });
 

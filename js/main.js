@@ -157,7 +157,7 @@ relayAvailable().then((ok) => { store.state.relayOk = ok; if (ui && ui.syncWeb) 
 // 刷新后如果存的还是管理员别名，重新解封一次（口令就是别名本身，不需要再问用户）
 if (isAdminAlias(store.state.apiKey)) {
   unlockAdminKey(store.state.apiKey).then((r) => {
-    if (!r.ok) toast(r.reason === 'expired' ? '管理员密钥已过期：口令正确也无法再使用，请联系管理员换发' : '管理员密钥未解封：请在 API Key 里重新输入口令', 'warn', 6000);
+    if (!r.ok) toast(r.reason === 'expired' ? localeText('管理员密钥已过期：口令正确也无法再使用，请联系管理员换发', 'Admin key expired: the passphrase is correct but can no longer be used. Ask the admin to reissue it.') : localeText('管理员密钥未解封：请在 API Key 里重新输入口令', 'Admin key not unlocked: re-enter the passphrase in the API Key field'), 'warn', 6000);
     else if (ui && ui.refreshKeyBtn) ui.refreshKeyBtn();
   }).catch(() => {});
 }

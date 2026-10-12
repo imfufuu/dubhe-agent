@@ -1,6 +1,7 @@
 // Dubhe Agent · 附件（从 ui.js 的 mountUI 拆出，V1.7.1）
 // 按钮 / 相机 / 拖拽 / 粘贴 四个入口 → 统一 addFiles：图片缩放与 MIME 白名单、文本 / PDF（原样入沙箱，交给 analyze_pdf）/ ZIP（解包进沙箱）、
 // 大小上限与芯片渲染。对外只暴露 { hasPending, takePending, addFiles }，发送逻辑取走后自动清空。
+import { text as localeText } from './locale.js';
 import { ICON } from './icons.js';
 import { openPhotoEditor } from './photo-editor.js?v=2026.10.11.1';
 import { relayDownload, relaySupports, relayAvailable, RELAY_FILE_MAX_BYTES } from './net.js';
@@ -147,7 +148,7 @@ export function installAttachments({ composer, toast, safeImgSrc, fmtSize }) {
               dataUrl = r.dataUrl; finalMime = r.mime; didScale = r.scaled;
               if (didScale) toast(`${f.name}：已从 ${fmtSize(originalSize)} 等比缩放到 ${r.newW}×${r.newH}`, 'ok', 2400);
             } catch (err) {
-              toast(`${f.name}：图片缩放失败（${err.message}），已跳过`, 'err'); continue;
+              toast(localeText(`${f.name}：图片缩放失败（${err.message}），已跳过`, `${f.name}: image resize failed (${err.message}), skipped`), 'err'); continue;
             }
           } else {
             dataUrl = await readAs('dataURL', f);
@@ -198,7 +199,7 @@ export function installAttachments({ composer, toast, safeImgSrc, fmtSize }) {
           const busyToast = toast(`${f.name}：正在读取视频…`, 'info', 30000);
           const doneBusy = () => { try { busyToast && typeof busyToast.dismiss === 'function' && busyToast.dismiss(); } catch { /* noop */ } };
           let cap;
-          try { cap = await captureVideoFrames(f); } catch (err) { doneBusy(); toast(`${f.name}：${err.message}（未加入）`, 'err', 5200); continue; }
+          try { cap = await captureVideoFrames(f); } catch (err) { doneBusy(); toast(localeText(`${f.name}：${err.message}（未加入）`, `${f.name}: ${err.message} (not added)`), 'err', 5200); continue; }
           const durationSec = cap.durationSec || 0;
           pending.push({
             id: Math.random().toString(36).slice(2),
@@ -300,7 +301,7 @@ export function installAttachments({ composer, toast, safeImgSrc, fmtSize }) {
       try {
         const edited = await openPhotoEditor(photo);
         if (edited) await addFiles([edited]); // camera output uses the existing attachment/upload pipeline
-      } catch (error) { toast(`照片编辑器不可用：${error.message}`, 'err', 5000); }
+      } catch (error) { toast(localeText(`照片编辑器不可用：${error.message}`, `Photo editor unavailable: ${error.message}`), 'err', 5000); }
     });
   }
 
@@ -357,7 +358,7 @@ export function installAttachments({ composer, toast, safeImgSrc, fmtSize }) {
       await addFiles([file]);
       return pending.length > before;
     } catch (err) {
-      toast(`拉取失败：${err && err.message ? err.message : String(err)}`, 'err', 5200);
+      toast(localeText(`拉取失败：${err && err.message ? err.message : String(err)}`, `Fetch failed: ${err && err.message ? err.message : String(err)}`), 'err', 5200);
       return false;
     } finally { urlBusy = false; }
   }

@@ -1,3 +1,4 @@
+import { text as localeText } from './locale.js';
 // Local-only canvas editor used by the explicit camera capture entry.
 export function fitPhotoSize(width, height, maxEdge = 4096) {
   const w = Math.max(1, Number(width) || 1);
@@ -41,12 +42,12 @@ export function resizeCropRect(rect, handle, point, width, height, minSize = 12)
 
 export function rotatePhotoCanvas(source, direction = 1) {
   const doc = source && source.ownerDocument;
-  if (!doc || typeof doc.createElement !== 'function') throw new Error('Canvas 不可用');
+  if (!doc || typeof doc.createElement !== 'function') throw new Error(localeText('Canvas 不可用', 'Canvas is unavailable'));
   const target = doc.createElement('canvas');
   target.width = source.height;
   target.height = source.width;
   const ctx = target.getContext('2d');
-  if (!ctx) throw new Error('Canvas 2D 不可用');
+  if (!ctx) throw new Error(localeText('Canvas 2D 不可用', 'Canvas 2D is unavailable'));
   if (Number(direction) < 0) {
     ctx.translate(0, target.height);
     ctx.rotate(-Math.PI / 2);

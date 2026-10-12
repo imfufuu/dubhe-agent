@@ -6,6 +6,7 @@
 //   ② 每条带直达开关（切到 Max / 打开联网 / 打开沙箱 / 重新探测中继 / 打开设置），点完原地重算，条目消失；
 //   ③ 有裁剪时能力条末尾多一个「已禁用 N」胶囊，不点开也看得见。
 // 弹层复用 #tok-pop（与 token / 智能路由弹层同一时间只开一个）。
+import { text as localeText } from './locale.js';
 import { isSmartRouter, SMART_ROUTER_LABEL } from './smartrouter.js?v=2026.10.11.1';
 import { reasoningLevelLabel } from './reasoning.js';
 import { getTransport } from './api.js?v=2026.10.11.1';
@@ -120,7 +121,7 @@ export function installCapabilityPop({
       else if (kind === 'relay-reprobe') reprobeRelay && (await reprobeRelay());
       else if (kind === 'settings') { hideTokPop(); openSettings && openSettings(); return; }
     } catch (err) {
-      toast && toast(`操作失败：${String((err && err.message) || err).slice(0, 120)}`, 'warn');
+      toast && toast(localeText(`操作失败：${String((err && err.message) || err).slice(0, 120)}`, `Action failed: ${String((err && err.message) || err).slice(0, 120)}`), 'warn');
     }
     syncCapLine();
     const pop = $('#tok-pop');

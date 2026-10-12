@@ -2,6 +2,7 @@
 // 协议路由 + SSE 流式解析 + 传输层（浏览器直连 / 服务端代理兜底）
 // 纯函数导出，便于 node 单测（tests/agent.test.mjs）
 
+import { text as localeText } from './locale.js';
 import { ANTHROPIC_VERSION, MAX_TOKENS, REQUEST_TIMEOUT_MS, protocolOf, thinkingParamsFor, resolveModelAlias } from './config.js?v=2026.10.11.1';
 import { claudeThinkingBudget, normalizeReasoningLevel, reasoningEffortFor } from './reasoning.js';
 import { gatewayBase, setGatewayBase, otherGatewayBase, isNetworkError } from './endpoint.js';
@@ -578,7 +579,7 @@ export async function streamChat({ model, apiKey, messages, tools, fastMode = fa
 
   // 某些代理/服务端会以 200 + 空 body 回（如中间层截断）：直接 getReader() 会抛
   // 一个「reading undefined」的 TypeError，用户看不懂；换成可定位的提示。
-  if (!res.body) throw new Error('网关返回了空响应体（Content-Length 0 或连接被中断），请重试或切换模型');
+  if (!res.body) throw new Error(localeText('网关返回了空响应体（Content-Length 0 或连接被中断），请重试或切换模型', 'The gateway returned an empty response body (Content-Length 0 or the connection was interrupted). Retry or switch models.'));
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   // cancel() 在流已出错时返回 rejected promise，必须显式吞掉，否则产生未处理拒绝
@@ -714,7 +715,7 @@ function withTimeout(signal, timeoutMs) {
 // data URL ↔ 字节（图片编辑要把沙箱内的 data URL 还原成上传文件）
 export function dataUrlToBytes(dataUrl) {
   const m = /^data:([^;,]+)?(;base64)?,([\s\S]*)$/.exec(String(dataUrl || ''));
-  if (!m) throw new Error('不是合法的 data URL，无法作为图片上传');
+  if (!m) throw new Error(localeText('不是合法的 data URL，无法作为图片上传', 'Not a valid data URL; it cannot be uploaded as an image.'));
   const mime = m[1] || 'application/octet-stream';
   const payload = m[3];
   if (m[2]) {
@@ -868,7 +869,7 @@ export function parseImageResponse(json, format = 'png', meta = {}) {
     }
     images.push({ dataUrl, mime, ext, width: entry.width || 0, height: entry.height || 0, revisedPrompt: entry.revised_prompt || '' });
   }
-  if (!images.length) throw new Error('图像接口未返回图片数据（data[*].b64_json / url 均为空）');
+  if (!images.length) throw new Error(localeText('图像接口未返回图片数据（data[*].b64_json / url 均为空）', 'The image API returned no image data (data[*].b64_json and url are both empty).'));
   return { images, ...images[0], created: json.created || 0, usage: json.usage || null };
 }
 
@@ -1038,7 +1039,7 @@ async function generateNanoImage({ model, apiKey, prompt, size, quality, images,
     collected.push(...parsed.images);
     usage = parsed.usage || usage;
   }
-  if (!collected.length) throw new Error('Nano Banana 未返回图片');
+  if (!collected.length) throw new Error(localeText('Nano Banana 未返回图片', 'Nano Banana returned no image.'));
   return { images: collected, ...collected[0], created: 0, usage };
 }
 
@@ -1061,7 +1062,7 @@ export async function generateImage({ model, apiKey, prompt, size, quality, back
 
 // 图片编辑：images = [{ name?, dataUrl }]（沙箱内图片读出即为 data URL）；mask 可选
 export async function editImage({ model, apiKey, prompt, images = [], mask, size, quality, inputFidelity, format = 'png', n, signal, timeoutMs = IMAGE_TIMEOUT_MS, onRetry } = {}) {
-  if (!images.length) throw new Error('图片编辑需要至少一张原图（reference_paths）');
+  if (!images.length) throw new Error(localeText('图片编辑需要至少一张原图（reference_paths）', 'Image editing needs at least one source image (reference_paths).'));
   if (isNanoImageModel(model)) {
     return generateNanoImage({ model, apiKey, prompt, size, quality, images, n, signal, timeoutMs, format, onRetry });
   }

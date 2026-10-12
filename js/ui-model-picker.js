@@ -4,6 +4,7 @@
 // 不拥有：会话切换、消息渲染、能力条。这些经 deps 注入（rebuildMessages / renderSessions / renderFiles / updateStats /
 //       syncCapLine / syncWeb / getBusy / openKeyModal），本文件绝不 import ui.js。
 // deps 里 renderFiles / syncWeb 在 mountUI 中定义得比本模块晚：调用方必须以惰性箭头函数传入。
+import { text as localeText } from './locale.js';
 import { $, el, esc } from './ui-markdown.js?v=2026.10.11.1';
 import { FALLBACK_MODELS, isImageModel, providerOf, SMART_ROUTER_ID, PROVIDER_ORDER, SMART_ROUTER_PROVIDER, sortModelsInFamily, isFreeModel, supportsVision, supportsFastMode, IMAGE_MODELS, DEFAULT_IMAGE_MODEL, imageModelLabel } from './config.js?v=2026.10.11.1';
 import { isJevModel } from './jev.js';
@@ -227,7 +228,7 @@ export function installModelPicker({ store, agent, toast, getBusy, openKeyModal,
       store.state.models = list; store.notify();
       renderModelMenu();
       toast(`已获取 ${list.length} 个模型（GET /v1/models）`, 'ok');
-    } catch (err) { toast('模型列表获取失败：' + err.message, 'err'); }
+    } catch (err) { toast(localeText('模型列表获取失败：', 'Failed to load the model list: ') + err.message, 'err'); }
     finally { $('#refresh-models').classList.remove('spin'); }
   });
 

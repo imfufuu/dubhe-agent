@@ -1,3 +1,5 @@
+/* 页面切换：跨文档 View Transition（落地页 → 应用页），与 styles.css 配对；不支持则直接跳转 */
+@view-transition { navigation: auto; }
 @property --bg { syntax: "<color>"; inherits: true; initial-value: #f6f4ef; }
 @property --fg { syntax: "<color>"; inherits: true; initial-value: #111110; }
 @property --fg-2 { syntax: "<color>"; inherits: true; initial-value: #5c5a54; }

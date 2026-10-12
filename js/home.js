@@ -439,7 +439,14 @@ function setLoadProgress(p, text) {
 
 function setExploreReady(on) {
   if (explore) explore.classList.toggle('waiting', !on);
-  if (exploreCta) exploreCta.disabled = !on;
+  if (exploreCta) {
+    exploreCta.disabled = !on;
+    // 未就绪时用悬浮提示说明原因（禁用按钮本身不接收点击，提示挂在父级 .explore 上）
+    const tip = on ? '' : '介绍片制作中，加载完成后可播放';
+    exploreCta.title = tip;
+    if (explore) explore.title = tip;
+    exploreCta.setAttribute('aria-description', tip);
+  }
   document.querySelectorAll('[data-play-film]').forEach((btn) => {
     btn.disabled = !on;
   });

@@ -468,17 +468,17 @@ function validateApiKey(s) {
     if (!chk.ok) { toast('Key 格式错误：' + chk.reason, 'err', 5000); keyInput.focus(); keyInput.select(); return; }
     // 管理员别名：先用口令解封（解不开就拒绝保存，避免存进去一把用不了的 key）
     if (isAdminAlias(typed)) {
-      toast('正在校验管理员口令…', 'ok', 1500);
+      toast(localeText('正在校验管理员口令…', 'Verifying admin passphrase…'), 'ok', 1500);
       const r = await unlockAdminKey(typed);
       if (!r.ok) {
-        const why = r.reason === 'bad-password' ? '管理员口令不正确（admin- 开头的密钥会被当作管理员口令）'
-          : r.reason === 'expired' ? `管理员密钥已于 ${fmtAdminExp(r.exp)} 过期：口令正确也无法再使用，请联系管理员换发`
-            : '管理员密钥不可用';
+        const why = r.reason === 'bad-password' ? localeText('管理员口令不正确（admin- 开头的密钥会被当作管理员口令）', 'Incorrect admin passphrase (keys starting with admin- are treated as admin passphrases)')
+          : r.reason === 'expired' ? localeText(`管理员密钥已于 ${fmtAdminExp(r.exp)} 过期：口令正确也无法再使用，请联系管理员换发`, `Admin key expired on ${fmtAdminExp(r.exp)}: the passphrase is correct but can no longer be used. Ask the admin to reissue it.`)
+            : localeText('管理员密钥不可用', 'Admin key unavailable');
         return toast(why, 'err', 6000);
       }
       store.state.apiKey = typed; store.notify();
       closeKeyModal();
-      toast(`管理员密钥已启用（有效期至 ${fmtAdminExp(r.exp)}）：请求会用管理员密钥发出，明文不落盘、不上屏`, 'ok', 5200);
+      toast(localeText(`管理员密钥已启用（有效期至 ${fmtAdminExp(r.exp)}）：请求会用管理员密钥发出，明文不落盘、不上屏`, `Admin key enabled (valid until ${fmtAdminExp(r.exp)}). Requests use the admin key; the plaintext is never saved or shown.`), 'ok', 5200);
       updateKeyBtn(); updateTransportBadge();
       return;
     }
