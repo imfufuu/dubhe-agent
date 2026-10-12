@@ -1324,6 +1324,8 @@ html { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
 .panel-body { flex: 1; overflow: auto; padding: 12px; display: flex; flex-direction: column; min-height: 0; }
 .panel-body[hidden] { display: none !important; }
 #tab-memory .mem-card { flex: 1; max-height: none; }
+#tab-memory .mem-card .files-n { white-space: normal; line-height: 1.5; }
+#tab-memory .mem-card .files-card-acts { margin-left: 8px; }
 #tab-memory .mem-list { max-height: none; flex: 1; }
 
 .empty-hint { color: var(--fg-3); font-size: var(--ui-fs-11_5px, 11.5px); text-align: left; padding: 10px 12px 16px; line-height: 1.6; }

@@ -571,8 +571,8 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     if (!list.length) {
       // 空状态：与文件面板同一套「插画 + 一句话 + 补充说明」；说清它是什么、谁来写、能在这里做什么
       const empty = el('div', 'files-empty mem-empty');
-      empty.setAttribute('aria-label', '暂无长效记忆');
-      empty.innerHTML = `${MEM_EMPTY_ART}<p class="files-empty-text">智能体会把值得长期记住的事记在这里，并在之后的每个会话里带上</p><p class="files-empty-sub">例如你的称呼、偏好的语言与格式、长期项目背景。由智能体在对话中自行记录，这里只做查看与多选删除</p>`;
+      empty.setAttribute('aria-label', localeText('暂无长效记忆', 'No long-term memory yet'));
+      empty.innerHTML = `${MEM_EMPTY_ART}<p class="files-empty-text">${localeText('智能体会把值得长期记住的事记在这里，并在之后的每个会话里带上', 'Anything worth remembering long-term is kept here and carried into every later conversation.')}</p><p class="files-empty-sub">${localeText('例如你的称呼、偏好的语言与格式、长期项目背景。由智能体在对话中自行记录，这里只做查看与多选删除', 'For example, your name, preferred language and format, or long-running project context. The agent records these during chats; here you can only view them or select and delete.')}</p>`;
       box.innerHTML = '';
       box.appendChild(empty);
       memSelected = new Set();
@@ -587,7 +587,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       bubble.setAttribute('role', 'listitem');
       bubble.dataset.mem = String(i);
       bubble.setAttribute('aria-pressed', memSelected.has(i) ? 'true' : 'false');
-      bubble.title = '点击选中，可多选后删除';
+      bubble.title = localeText('点击选中，可多选后删除', 'Click to select; select several to delete');
       bubble.textContent = text;
       box.appendChild(bubble);
     }
@@ -982,6 +982,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       const mem = $('#tab-memory');
       if (files) files.hidden = id !== 'files';
       if (mem) mem.hidden = id !== 'memory';
+      if (id === 'memory') renderMemory(); // 打开记忆标签时总是重绘，保证空状态与列表都在
     });
   });
   $('#sidebar-toggle').addEventListener('click', () => {

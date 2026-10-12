@@ -14,10 +14,15 @@ export function languagePreference() {
 }
 export function getLanguage() { return languagePreference(); }
 export function text(zh, en) { return getLanguage() === 'en' ? en : zh; }
+// 切换包装器：由界面层注册（如整页渐白）。run 执行所有语言回调，必须且只能调用一次。
+let transition = (run) => run();
+export function setLanguageTransition(fn) { transition = fn; }
 export function setLanguagePreference(value) {
-  const p = value === 'en' ? 'en' : 'zh'; override = p;
+  const p = value === 'en' ? 'en' : 'zh';
+  const changed = p !== getLanguage();
+  override = p;
   try { localStorage.setItem(LANGUAGE_KEY, p); } catch { /* usable for this page */ }
-  for (const fn of listeners) fn(getLanguage(), p);
+  transition(() => { for (const fn of listeners) fn(getLanguage(), p); }, changed);
   return getLanguage();
 }
 export function onLanguageChange(fn) { listeners.add(fn); return () => listeners.delete(fn); }

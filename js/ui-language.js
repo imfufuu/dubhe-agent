@@ -1,4 +1,4 @@
-import { getLanguage, languagePreference, setLanguagePreference, onLanguageChange } from './locale.js';
+import { getLanguage, languagePreference, setLanguagePreference, onLanguageChange, setLanguageTransition } from './locale.js';
 import { UI_STRINGS } from './ui-strings.js';
 // Only UI chrome is translated. Message bodies, code, file names, model output and user content retain their exact values.
 const PRIVATE = '.md-body,.chip-detail,.ep-tx,.ep-path,.tree-name,.fp-name,.file-path,.thought-text,.reasoning-text,.files-name,.file-name,.session-title,.sess-title,[data-i18n-ignore],textarea,pre,code,script,style';
@@ -61,31 +61,32 @@ export function installLanguage(root = document) {
     for (const r of records) { if (r.type === 'childList') for (const n of r.addedNodes) pending.add(n); else pending.add(r.target); }
     if (!queued && pending.size) { queued = true; queueMicrotask(flush); }
   });
-  // 语言切换：整页慢慢渐白 → 白屏时替换文案 → 缓缓隐出界面。
-  // 白色遮罩盖住整个视口（含弹层），动画结束即移除，不改变任何界面状态；关闭动效时直接换文案。
-  let lastLang = null;
-  const whiteFade = (doc, apply) => {
+  // 语言切换：整页慢慢渐白 → 全白时执行所有语言回调（替换文案）→ 缓缓隐出界面。
+  // 遮罩先出现、回调放在全白时执行：卡顿发生在看不见的时候，而不是点击后画面冻住。
+  // 白色遮罩盖住整个视口（含弹层），动画结束即移除；关闭动效时直接执行回调。
+  const whiteFade = (doc, run) => {
     const veil = doc.createElement('div');
     veil.setAttribute('aria-hidden', 'true');
-    veil.style.cssText = 'position:fixed;inset:0;z-index:2147483000;background:#fff;opacity:0;pointer-events:none;';
+    veil.style.cssText = 'position:fixed;inset:0;z-index:2147483000;background:#fff;opacity:0;pointer-events:none;will-change:opacity;';
     doc.body.appendChild(veil);
     const ease = 'cubic-bezier(.45,0,.25,1)';
     const fadeIn = veil.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 1000, easing: ease, fill: 'forwards' });
     fadeIn.finished.then(() => {
-      apply(); // 全白时替换文案，用户看不到跳变
+      run(); // 全白时执行回调（替换文案、刷新各面板）
       return veil.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 1300, easing: ease, fill: 'forwards' }).finished;
     }).catch(() => {}).finally(() => veil.remove());
   };
+  setLanguageTransition((run, changed) => {
+    const doc = root.ownerDocument || root;
+    const reduce = doc.defaultView?.matchMedia?.('(prefers-reduced-motion: reduce)').matches && doc.documentElement.dataset.motion !== 'on';
+    const motionOn = doc.documentElement.dataset.motion !== 'off' && !reduce;
+    if (changed && motionOn && doc.body) whiteFade(doc, run);
+    else run();
+  });
   const sync = () => {
     const doc = root.ownerDocument || root; doc.documentElement.lang = getLanguage() === 'en' ? 'en' : 'zh-CN';
     doc.documentElement.dataset.uiLanguage = getLanguage();
-    const apply = () => { observer.disconnect(); translate(root); watch(); };
-    const changed = lastLang !== null && lastLang !== getLanguage();
-    lastLang = getLanguage();
-    const reduce = doc.defaultView?.matchMedia?.('(prefers-reduced-motion: reduce)').matches && doc.documentElement.dataset.motion !== 'on';
-    const motionOn = doc.documentElement.dataset.motion !== 'off' && !reduce;
-    if (changed && motionOn && doc.body && typeof doc.body.appendChild === 'function') whiteFade(doc, apply);
-    else apply();
+    observer.disconnect(); translate(root); watch();
     const select = doc.getElementById('set-language'); if (select) select.value = languagePreference();
     doc.querySelectorAll('[data-language-toggle]').forEach((b) => { b.textContent = getLanguage() === 'en' ? '中文' : 'EN'; b.setAttribute('aria-label', getLanguage() === 'en' ? 'Switch to Chinese' : 'Switch to English'); });
   };
