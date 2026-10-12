@@ -1341,3 +1341,22 @@ html.intro-on .hero *, html.intro-on .hero { animation-play-state: paused !impor
 @media (prefers-reduced-motion: reduce) {
   .intro { display: none; }
 }
+
+/* ── 首屏结构调整：三条要点位于左侧文案区（按钮下方），右侧只保留运行卡片 ── */
+.hero-copy .hero-proof { text-align: left; max-width: 540px; margin: 46px auto 0; }
+.hero-copy .hero-proof .proof-line { text-align: left; }
+.hero-run { min-width: 0; }
+@media (min-width: 821px) { .hero-run { align-self: center; } }
+/* 寒武开场：淡出节奏、标题与标签 */
+.intro.fading { transition: opacity 1.2s cubic-bezier(.4,0,.2,1); }
+.intro-word.show { animation: intro-word-in 1.6s cubic-bezier(.16,1,.3,1) forwards; }
+.intro-cap {
+  position: absolute; left: 0; top: 0; white-space: nowrap; pointer-events: none;
+  font-size: clamp(12px, 1.2vw, 15px); letter-spacing: .02em; color: rgba(244,241,234,.95);
+  opacity: 0; will-change: transform, opacity; text-shadow: 0 0 14px rgba(167,139,250,.7);
+}
+.intro-cap::before {
+  content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--c, #a78bfa); box-shadow: 0 0 12px var(--c, #a78bfa), 0 0 3px #fff;
+  margin-right: 10px; vertical-align: middle;
+}
