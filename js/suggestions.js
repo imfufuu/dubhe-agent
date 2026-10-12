@@ -190,3 +190,12 @@ export function pickSuggestions(list = SUGGESTIONS, n = 3, rnd = Math.random, ex
 }
 
 export function localizedSuggestions() { return getLanguage() === 'en' ? SUGGESTIONS_EN : SUGGESTIONS; }
+
+// 空状态示例卡的选题：避开上一批已展示的条目（exclude 为文案数组）；池子不够时允许与上一批重复。
+export function pickSuggestionCards(exclude = [], n = 3, rnd = Math.random) {
+  const list = localizedSuggestions();
+  let picks = pickSuggestions(list, n, rnd, exclude);
+  const same = picks.map((x) => x.text).join('\0') === exclude.join('\0');
+  if (same && list.length > n) picks = pickSuggestions(list, n, rnd, exclude);
+  return picks;
+}

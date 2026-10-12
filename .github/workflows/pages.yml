@@ -24,9 +24,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # 版本号需要完整提交历史（当天提交序号）
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      # 自动版本号：北京时间日期 + 当天第 N 个提交，只改部署产物，仓库源码不改版本号
+      - name: 自动生成版本号
+        run: node tools/stamp-version.mjs
       # P7 供应链可验证性：把「这次发布 = 哪个提交 + 每个文件的 sha256」写进产物根目录的 build.json，
       # 线上 /build.json 可被任何人拉取，用 tools/verify-build.mjs 与仓库该提交逐文件比对。
       - name: 生成部署清单 build.json

@@ -20,7 +20,7 @@ import { estimateTokens } from './context.js';
 import { providerIcon, APP_LOGO, ICON } from './icons.js';
 import { readThemePreference, writeThemePreference, THEME_STORAGE_KEY } from './theme.js';
 import { autoTitle } from './titler.js';
-import { SUGGESTIONS, pickSuggestions, localizedSuggestions } from './suggestions.js';
+import { pickSuggestionCards } from './suggestions.js';
 import { claimsWebSearch, webRefusal } from './websearch.js';
 import { unlockAdminKey, adminUnlocked, isAdminAlias, adminExpiresAt } from './adminkey.js';
 import { shortSuggest } from './commands.js';
@@ -1043,34 +1043,46 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
   }
   // 空状态一次展示更多示例（配合「换一批」轮换 36 条池子）。
   const SUGGEST_VISIBLE = 3;
+  // 示例卡：选题 / 渲染 / 绑定拆开，「换一批」只替换卡片区，不重绘整个空状态（否则 fadeUp 动画重播，介绍文字会抖动）。
+  function pickEmptyPicks() {
+    const picks = pickSuggestionCards(loadLastSuggest(), SUGGEST_VISIBLE);
+    saveLastSuggest(picks);
+    return picks;
+  }
+  function suggestCardsHtml(picks) {
+    return picks.map((x) => {
+      const shown = x.title || (mqPanel.matches ? shortSuggest(x.text) : x.text);
+      return `<button class="suggest" type="button" data-prompt="${esc(x.text)}">${esc(shown)}</button>`;
+    }).join('');
+  }
+  function bindSuggestCards(root) {
+    $$('.suggest', root).forEach((b) => b.addEventListener('click', () => {
+      composer.value = b.dataset.prompt || b.textContent;
+      composer.focus(); autoGrow();
+    }));
+  }
   function renderEmpty() {
     if (store.state.messages.length) return;
     const jb = $('#jump-bottom');
     if (jb) jb.classList.remove('show');
-    const exclude = loadLastSuggest();
-    let picks = pickSuggestions(localizedSuggestions(), SUGGEST_VISIBLE, Math.random, exclude);
-    const same = picks.map((x) => x.text).join('\0') === exclude.join('\0');
-    if (same && SUGGESTIONS.length > SUGGEST_VISIBLE) picks = pickSuggestions(localizedSuggestions(), SUGGEST_VISIBLE, Math.random, exclude);
-    saveLastSuggest(picks);
+    const picks = pickEmptyPicks();
     msgList.appendChild(el('div', 'empty-state', `
       <div class="empty-logo">${APP_LOGO}</div>
       <h2>Dubhe Agent</h2>
       <p>${localeText('Dubhe Agent · 基于 <span class="mono">TeamoRouter</span> 网关的网页端智能体<br>模型自选 · 代码沙箱 · 对话回滚 · 工具调用循环', 'Dubhe Agent · a browser agent powered by the <span class="mono">TeamoRouter</span> gateway<br>Your model · code sandbox · rollback · real tool loops')}</p>
-      <div class="empty-cards">
-        ${picks.map((x) => {
-          const shown = x.title || (mqPanel.matches ? shortSuggest(x.text) : x.text);
-          return `<button class="suggest" type="button" data-prompt="${esc(x.text)}">${esc(shown)}</button>`;
-        }).join('')}
-      </div>
+      <div class="empty-cards">${suggestCardsHtml(picks)}</div>
       <button class="suggest-shuffle" type="button" title="换一批任务示例">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 21v-5h5"/></svg>换一批</button>`));
-    $$('.suggest', msgList).forEach((b) => b.addEventListener('click', () => {
-      composer.value = b.dataset.prompt || b.textContent;
-      composer.focus(); autoGrow();
-    }));
+    bindSuggestCards(msgList);
     const shuffle = $('.suggest-shuffle', msgList);
-    if (shuffle) shuffle.addEventListener('click', () => { clearEmpty(); renderEmpty(); });
+    if (shuffle) shuffle.addEventListener('click', () => {
+      const box = $('.empty-cards', msgList);
+      if (!box) { clearEmpty(); renderEmpty(); return; }
+      box.innerHTML = suggestCardsHtml(pickEmptyPicks());
+      bindSuggestCards(box);
+    });
   }
+
   function clearEmpty() { const e = $('.empty-state', msgList); if (e) e.remove(); }
 
   function messageNode(m) {
