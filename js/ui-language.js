@@ -61,58 +61,31 @@ export function installLanguage(root = document) {
     for (const r of records) { if (r.type === 'childList') for (const n of r.addedNodes) pending.add(n); else pending.add(r.target); }
     if (!queued && pending.size) { queued = true; queueMicrotask(flush); }
   });
-  // 语言切换的平滑过渡：先压暗再重绘，最后回到正常——文案不会「瞬间整体跳变」。
-  // 只加/去类名，不改任何文案；减少动效时 CSS 里已把过渡关掉。
-  let animTimer = 0, lastLang = null;
-  const animateSwitch = (doc) => {
-    const lang = getLanguage();
-    if (lastLang === null) { lastLang = lang; return false; }
-    if (lastLang === lang) return false;
-    lastLang = lang;
-    const el = doc.documentElement;
-    // 关掉动效时直接换文案，不淡入淡出（CSS 也有兜底，这里少一次无谓的状态切换）
-    if (el.dataset.motion === 'off') return false;
-    el.classList.remove('lang-switching-done');
-    el.classList.add('lang-switching');
-    clearTimeout(animTimer);
-    animTimer = setTimeout(() => {
-      el.classList.remove('lang-switching');
-      el.classList.add('lang-switching-done');
-      clearTimeout(animTimer);
-      animTimer = setTimeout(() => el.classList.remove('lang-switching-done'), 380);
-    }, 200);
-    return true;
+  // 语言切换：整页慢慢渐白 → 白屏时替换文案 → 缓缓隐出界面。
+  // 白色遮罩盖住整个视口（含弹层），动画结束即移除，不改变任何界面状态；关闭动效时直接换文案。
+  let lastLang = null;
+  const whiteFade = (doc, apply) => {
+    const veil = doc.createElement('div');
+    veil.setAttribute('aria-hidden', 'true');
+    veil.style.cssText = 'position:fixed;inset:0;z-index:2147483000;background:#fff;opacity:0;pointer-events:none;';
+    doc.body.appendChild(veil);
+    const ease = 'cubic-bezier(.45,0,.25,1)';
+    const fadeIn = veil.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 1000, easing: ease, fill: 'forwards' });
+    fadeIn.finished.then(() => {
+      apply(); // 全白时替换文案，用户看不到跳变
+      return veil.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 1300, easing: ease, fill: 'forwards' }).finished;
+    }).catch(() => {}).finally(() => veil.remove());
   };
   const sync = () => {
     const doc = root.ownerDocument || root; doc.documentElement.lang = getLanguage() === 'en' ? 'en' : 'zh-CN';
     doc.documentElement.dataset.uiLanguage = getLanguage();
-    // 先淡出，淡出到最暗时再替换文案，最后淡入：避免文案瞬间跳变
     const apply = () => { observer.disconnect(); translate(root); watch(); };
     const changed = lastLang !== null && lastLang !== getLanguage();
+    lastLang = getLanguage();
     const reduce = doc.defaultView?.matchMedia?.('(prefers-reduced-motion: reduce)').matches && doc.documentElement.dataset.motion !== 'on';
-    const card = doc.querySelector('.modal.open .modal-card');
     const motionOn = doc.documentElement.dataset.motion !== 'off' && !reduce;
-    if (changed && card) {
-      // 弹层（设置等）打开时：只让弹层卡片内容淡出→换文案→淡入。
-      // 不动弹层背后的页面，也不整页快照，所以蒙版的模糊始终保留。
-      lastLang = getLanguage();
-      if (!motionOn) { apply(); }
-      else {
-        const out = card.animate([{ opacity: 1 }, { opacity: .2 }], { duration: 140, easing: 'ease-in', fill: 'forwards' });
-        out.onfinish = () => {
-          apply();
-          out.cancel();
-          card.animate([{ opacity: .2 }, { opacity: 1 }], { duration: 240, easing: 'ease-out' });
-        };
-      }
-    } else if (changed && typeof doc.startViewTransition === 'function' && motionOn) {
-      // 整页快照交叉淡入：文案在快照里替换，合成层不被整页压暗，动画不会被卡住
-      lastLang = getLanguage();
-      doc.startViewTransition(apply);
-    } else {
-      const switching = animateSwitch(doc);
-      if (switching) setTimeout(apply, 200); else apply();
-    }
+    if (changed && motionOn && doc.body && typeof doc.body.appendChild === 'function') whiteFade(doc, apply);
+    else apply();
     const select = doc.getElementById('set-language'); if (select) select.value = languagePreference();
     doc.querySelectorAll('[data-language-toggle]').forEach((b) => { b.textContent = getLanguage() === 'en' ? '中文' : 'EN'; b.setAttribute('aria-label', getLanguage() === 'en' ? 'Switch to Chinese' : 'Switch to English'); });
   };

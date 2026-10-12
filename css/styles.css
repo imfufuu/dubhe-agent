@@ -2527,11 +2527,6 @@ html[data-motion="off"] .pill.ultra,html[data-motion="off"] .think-item[data-thi
 .image-actions,.att-actions,.chip-copy,.suggest,.chip-ico,.sources,.source-list{user-select:none;-webkit-user-select:none}
 .md-body,.md-body *,.msg-user .md-body,pre,code,textarea,input[type=text],#composer-input,.file-read-stream,.cmd-card pre,.chip-detail pre,[data-selectable]{user-select:text;-webkit-user-select:text}
 
-/* 语言切换：整页做一次 220ms 的淡入过渡，避免文案瞬间整体跳变。 */
-html.lang-switching body{opacity:.3;transition:opacity .2s ease-out}
-html.lang-switching-done body{opacity:1;transition:opacity .34s ease-out}
-/* 关掉动效 / 系统要求减少动态时，语言切换不做淡入淡出，直接换文案 */
-html.lang-switching[data-motion="off"] body,html.lang-switching-done[data-motion="off"] body{opacity:1;transition:none}
 html[data-motion="off"] body{transition:none!important}
 @media(prefers-reduced-motion:reduce){html:not([data-motion="on"]) body{transition:none!important;opacity:1!important}}
 /* 分享弹窗的状态行与「再存一次」入口：导出失败/设备不触发下载时用户仍然拿得到文件。 */
