@@ -1,3 +1,2 @@
-import { publicPlanMarkdown } from './publicplan.js';
-import { renderMarkdown } from './ui-markdown.js?v=2026.10.11.1';
-export function publicPlanHtml(plan) { return plan?.direction ? `<section class="public-task-plan">${renderMarkdown(publicPlanMarkdown(plan))}</section>` : ''; }
+// 「收到任务 / 任务方向 / 计划」卡片已从界面隐藏：数据（m.publicPlan）仍保留，供分享导出与工具流判断使用。
+export function publicPlanHtml() { return ''; }

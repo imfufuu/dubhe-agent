@@ -66,12 +66,12 @@ export function installLanguage(root = document) {
   let animTimer = 0, lastLang = null;
   const animateSwitch = (doc) => {
     const lang = getLanguage();
-    if (lastLang === null) { lastLang = lang; return; }
-    if (lastLang === lang) return;
+    if (lastLang === null) { lastLang = lang; return false; }
+    if (lastLang === lang) return false;
     lastLang = lang;
     const el = doc.documentElement;
     // 关掉动效时直接换文案，不淡入淡出（CSS 也有兜底，这里少一次无谓的状态切换）
-    if (el.dataset.motion === 'off') return;
+    if (el.dataset.motion === 'off') return false;
     el.classList.remove('lang-switching-done');
     el.classList.add('lang-switching');
     clearTimeout(animTimer);
@@ -81,14 +81,17 @@ export function installLanguage(root = document) {
       clearTimeout(animTimer);
       animTimer = setTimeout(() => el.classList.remove('lang-switching-done'), 260);
     }, 180);
+    return true;
   };
   const sync = () => {
     const doc = root.ownerDocument || root; doc.documentElement.lang = getLanguage() === 'en' ? 'en' : 'zh-CN';
     doc.documentElement.dataset.uiLanguage = getLanguage();
-    observer.disconnect(); translate(root); watch();
+    // 先淡出，淡出到最暗时再替换文案，最后淡入：避免文案瞬间跳变
+    const switching = animateSwitch(doc);
+    const apply = () => { observer.disconnect(); translate(root); watch(); };
+    if (switching) setTimeout(apply, 220); else apply();
     const select = doc.getElementById('set-language'); if (select) select.value = languagePreference();
     doc.querySelectorAll('[data-language-toggle]').forEach((b) => { b.textContent = getLanguage() === 'en' ? '中文' : 'EN'; b.setAttribute('aria-label', getLanguage() === 'en' ? 'Switch to Chinese' : 'Switch to English'); });
-    animateSwitch(doc);
   };
   root.addEventListener('click', (e) => { if (e.target.closest?.('[data-language-toggle]')) setLanguagePreference(getLanguage() === 'en' ? 'zh' : 'en'); });
   root.addEventListener('change', (e) => { if (e.target.id === 'set-language') setLanguagePreference(e.target.value); });
