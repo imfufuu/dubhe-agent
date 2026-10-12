@@ -1042,7 +1042,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     try { sessionStorage.setItem('dubhe.suggest.last', JSON.stringify((picks || []).map((x) => x.text))); } catch { /* 无 storage */ }
   }
   // 空状态一次展示更多示例（配合「换一批」轮换 36 条池子）。
-  const SUGGEST_VISIBLE = 4;
+  const SUGGEST_VISIBLE = 3;
   function renderEmpty() {
     if (store.state.messages.length) return;
     const jb = $('#jump-bottom');
@@ -1055,7 +1055,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     msgList.appendChild(el('div', 'empty-state', `
       <div class="empty-logo">${APP_LOGO}</div>
       <h2>Dubhe Agent</h2>
-      <p>Dubhe Agent · 基于 <span class="mono">TeamoRouter</span> 网关的网页端智能体<br>模型自选 · 代码沙箱 · 对话回滚 · 工具调用循环</p>
+      <p>${localeText('Dubhe Agent · 基于 <span class="mono">TeamoRouter</span> 网关的网页端智能体<br>模型自选 · 代码沙箱 · 对话回滚 · 工具调用循环', 'Dubhe Agent · a browser agent powered by the <span class="mono">TeamoRouter</span> gateway<br>Your model · code sandbox · rollback · real tool loops')}</p>
       <div class="empty-cards">
         ${picks.map((x) => {
           const shown = x.title || (mqPanel.matches ? shortSuggest(x.text) : x.text);

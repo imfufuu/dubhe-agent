@@ -184,9 +184,9 @@ ok(`侧栏构建标识 = Dubhe Agent ${cfg.APP_RELEASE} · v${cfg.APP_VERSION}`,
 const htmlSrc = fs.readFileSync(path.join(ROOT, 'app.html'), 'utf8');
 ok('入口样式/脚本带 ?v=（穿透 Pages 静态资源缓存）', htmlSrc.includes(`css/styles.css?v=${cfg.APP_VERSION}`) && htmlSrc.includes(`js/main.js?v=${cfg.APP_VERSION}`));
 
-console.log('\n空状态：随机四条任务示例');
+console.log('\n空状态：随机三条任务示例');
 const cards = $$('#messages .empty-state .suggest');
-ok('展示 4 条示例卡片', cards.length === 4, `${cards.length} 张`);
+ok('展示 3 条示例卡片', cards.length === 3, `${cards.length} 张`);
 ok('示例卡显示短主题、data-prompt 是完整提示词', cards.every((c) => {
   const title = c.textContent.trim();
   const prompt = c.dataset.prompt || '';
@@ -376,7 +376,7 @@ ok('侧栏 Logo 旁徽章与当前发布版本一致', !!$('.ver-badge') && $('.
 ok('「清空」一键删除全部会话记录', $$('#session-list .sess-item').length === 0 && !!$('#session-list .sess-empty-hint'));
 ok('没有会话记录时只显示一句短提示', $('#session-list .sess-empty-hint').textContent.trim() === '还没有会话记录'
   && $('#session-list .sess-empty-hint').querySelectorAll('br').length === 0, $('#session-list .sess-empty-hint').textContent.trim());
-ok('清空后对话区回到空状态示例', $$('#messages .empty-state .suggest').length === 4 && !$$('#messages .msg-assistant').length);
+ok('清空后对话区回到空状态示例', $$('#messages .empty-state .suggest').length === 3 && !$$('#messages .msg-assistant').length);
 
 console.log('\n网络与 git 工具（只留中继抓取 + 本地 git）');
 {

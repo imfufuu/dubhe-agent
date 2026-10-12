@@ -7,25 +7,11 @@
     "test": "node tools/run-tests.mjs",
     "test:unit": "node tests/agent.test.mjs",
     "test:list": "node tools/run-tests.mjs --list",
-    "eval:nexus": "node tests/run-nexus-eval.mjs",
     "test:dom": "node tests/dom-smoke.mjs",
     "test:app": "node tests/app-boot.mjs",
-    "test:live": "node tests/live-smoke.mjs && node tests/live-check.mjs && node tests/live-web.mjs",
-    "test:pyodide": "node tests/pyodide-worker.test.mjs",
-    "test:kernel": "node tests/execution-kernel-smoke.mjs",
     "start": "python3 server.py",
     "test:server": "python3 tests/server_checks.py",
-    "audit:mobile": "node tests/mobile-layout.mjs",
-    "test:persist": "node tests/persist.mjs",
-    "test:touch": "node tests/touch-density.mjs",
-    "test:integrity": "node tests/assets-integrity.mjs",
-    "test:browser": "node tests/moderation-browser.mjs",
-    "test:p1": "node tests/recovery-kernel-smoke.mjs",
-    "test:p2": "node tests/p2-kernel-smoke.mjs && node tests/p2-eval.mjs",
-    "test:p3": "node tests/p3-kernel-smoke.mjs && node tests/p3-dom-smoke.mjs",
-    "test:worker": "node tests/worker.test.mjs",
-    "test:all": "node tools/run-tests.mjs",
-    "setup:browser": "npm ci && playwright install chromium"
+    "test:all": "node tools/run-tests.mjs"
   },
   "version": "1.7.0",
   "dependencies": {
@@ -34,8 +20,5 @@
   },
   "engines": {
     "node": ">=20"
-  },
-  "optionalDependencies": {
-    "playwright": "1.64.0"
   }
 }
