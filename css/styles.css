@@ -2570,6 +2570,8 @@ html[data-motion="off"] .chunk { transition: none; }
 html[data-motion="off"] .rb-caret{animation:none}
 @media (prefers-reduced-motion: reduce){html:not([data-motion="on"]) .rb-caret{animation:none}}
 .share-status[hidden], .share-status:empty { display: none !important; }
+/* 分享页：带 display 的类会覆盖 [hidden]，这里显式恢复隐藏 */
+.share-latest[hidden] { display: none !important; }
 html[data-ui-language="en"] .side-label { text-transform: none; letter-spacing: .02em; font-size: 12px; }
 ::view-transition-old(root), ::view-transition-new(root) { animation-duration: .36s; animation-timing-function: ease-out; }
 /* 语音输入球体：录音时替换麦克风图标，--lvl 由 ui-speech.js 按音量写入 */

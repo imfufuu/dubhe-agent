@@ -692,7 +692,10 @@ function openGate() {
 function syncThemeBtn() {
   if (!themeBtn) return;
   const dark = root.dataset.theme === 'dark';
-  themeBtn.innerHTML = '<svg class="home-theme-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16Z" fill="currentColor" stroke="none"/></svg><span>' + (dark ? '浅色' : '深色') + '</span>';
+  // 日月图标：深色时显示太阳（点击转浅色），浅色时显示月亮（点击转深色）
+  const sun = '<circle cx="12" cy="12" r="4"/><path d="M12 2v2.2M12 19.8V22M4.2 4.2l1.6 1.6M18.2 18.2l1.6 1.6M2 12h2.2M19.8 12H22M4.2 19.8l1.6-1.6M18.2 5.8l1.6-1.6"/>';
+  const moon = '<path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z"/>';
+  themeBtn.innerHTML = '<svg class="home-theme-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (dark ? sun : moon) + '</svg><span>' + (dark ? '浅色' : '深色') + '</span>';
   themeBtn.title = dark ? '切换到浅色主题' : '切换到深色主题';
 }
 function flipTheme() {
