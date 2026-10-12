@@ -877,11 +877,7 @@ window.addEventListener('keydown', (e) => {
   }
 });
 
-if (initialView === 'nav') {
-  openSite(true);
-  prefetchAudio();
-} else {
-  root.classList.add('gate');
-  root.classList.remove('open', 'scoring');
-  prefetchAudio();
-}
+// 直接进入主页：不再显示「开始探索」门页与自动片头（门页 DOM / 介绍片代码保留，便于以后恢复）
+void initialView;
+openSite(true);
+prefetchAudio();
