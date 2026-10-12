@@ -487,5 +487,11 @@ export const UI_STRINGS = {
   "确认关闭本地审核": "Confirm: disable local checks",
   "先看本次变化，历史按阶段归档。精确构建与来源以build.json和仓库记录为准。": "Current changes first, earlier work grouped by stage. Exact provenance is in build.json and repository history.",
   "边界": "Boundaries",
-  "联系": "Contact"
+  "联系": "Contact",
+  "Agent 运行中": "Agent running",
+  "理解目标与约束": "Understand the goal and constraints",
+  "规划 3 步：先写后测": "Plan 3 steps: write first, then test",
+  "调用 python · 运行单元测试": "Call python · run unit tests",
+  "结果：12 通过 · 0 失败": "Result: 12 passed · 0 failed",
+  "产物 report.md 已写入工作区": "Output: report.md saved to workspace"
 };

@@ -882,3 +882,15 @@ void initialView;
 // HTML 初始类名已是 open，openSite 会直接返回，因此这里直接完成打开流程（含 watchReveal，否则首屏内容保持隐藏）
 finishOpen(true);
 prefetchAudio();
+
+// 首屏鼠标光晕：只在支持精细指针且未开启减少动态效果时启用
+{
+  const heroEl = document.getElementById('hero');
+  if (heroEl && !reduce && window.matchMedia && matchMedia('(pointer: fine)').matches) {
+    heroEl.addEventListener('pointermove', (e) => {
+      const r = heroEl.getBoundingClientRect();
+      heroEl.style.setProperty('--mx', `${((e.clientX - r.left) / r.width) * 100}%`);
+      heroEl.style.setProperty('--my', `${((e.clientY - r.top) / r.height) * 100}%`);
+    }, { passive: true });
+  }
+}
