@@ -17,8 +17,12 @@ const easeIn = (x) => Math.pow(clamp01(x), 2.2);
 const rnd = (a, b) => a + Math.random() * (b - a);
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
+// 内测开关：true = 每次进入导航页都播放；调试好后改为 false，恢复「每个会话只播放一次」
+const INTRO_EVERY_VISIT = true;
+
 export function shouldPlayIntro(reduce) {
   if (reduce) return false;
+  if (INTRO_EVERY_VISIT) return true;
   try { return sessionStorage.getItem('dubhe-intro-seen') !== '1'; } catch { return true; }
 }
 
