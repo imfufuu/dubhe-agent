@@ -1244,53 +1244,81 @@ html[data-theme="dark"] .hero::after { background: radial-gradient(560px circle 
 @keyframes hero-shine { 0%, 100% { background-position: 100% 0; } 50% { background-position: 0% 0; } }
 
 .run-card {
-  margin: 0 0 14px; padding: 18px 20px; border-radius: 16px;
+  width: min(360px, 100%); margin: 0 0 14px; padding: 18px 18px 16px; border-radius: 16px;
   border: 1px solid var(--line);
-  background: color-mix(in srgb, var(--card, var(--bg)) 86%, transparent);
+  background: color-mix(in srgb, var(--card, var(--bg)) 90%, transparent);
   box-shadow: 0 28px 60px -30px rgba(17,17,16,.32);
   backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
-  font-family: var(--mono); font-size: 12.5px; line-height: 1.5; color: var(--fg-2);
-  text-align: left;
+  font-size: 12.5px; line-height: 1.55; color: var(--fg-2); text-align: left;
   animation: hero-rise 1s cubic-bezier(.16,1,.3,1) .8s both;
 }
-.run-head {
-  display: flex; align-items: center; gap: 10px; padding-bottom: 12px; margin-bottom: 4px;
-  border-bottom: 1px solid var(--line); color: var(--fg); letter-spacing: .02em;
+/* 用户消息：沿用主界面的深色气泡 */
+.rc-user { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+.rc-bubble {
+  background: var(--fg); color: var(--bg); padding: 8px 13px; border-radius: 14px 14px 4px 14px;
+  max-width: 88%; font-size: 12.5px; line-height: 1.5; box-shadow: var(--shadow);
 }
+/* Agent 消息 */
+.rc-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.rc-av {
+  min-width: 22px; height: 22px; padding: 0 5px; border-radius: 7px; display: inline-flex;
+  align-items: center; justify-content: center; font-family: var(--mono); font-size: 11px;
+  background: var(--fg); color: var(--bg);
+}
+.rc-model { font-size: 11px; font-weight: 600; color: var(--fg-2); }
+.rc-live { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 10.5px; color: var(--fg-3); }
 .run-dot {
-  width: 8px; height: 8px; border-radius: 50%; background: #22c55e;
+  width: 7px; height: 7px; border-radius: 50%; background: #22c55e;
   animation: run-pulse 1.8s ease-out infinite;
 }
 @keyframes run-pulse {
   0% { box-shadow: 0 0 0 0 rgba(34,197,94,.45); }
   70%, 100% { box-shadow: 0 0 0 8px rgba(34,197,94,0); }
 }
-.run-step {
-  display: flex; gap: 10px; padding: 8px 0; opacity: 0;
-  animation: run-in .5s cubic-bezier(.16,1,.3,1) forwards;
+/* 工具调用行：与主界面 chip 相同的单行样式 */
+.rc-chip {
+  display: flex; align-items: center; gap: 7px; padding: 5px 0; font-family: var(--mono); font-size: 11.5px;
+  color: var(--fg-2); opacity: 0; animation: run-in .5s cubic-bezier(.16,1,.3,1) forwards;
 }
-.run-step i { font-style: normal; width: 14px; flex: 0 0 14px; color: var(--fg-3); }
-.run-step.s1 { animation-delay: 1.3s; }
-.run-step.s2 { animation-delay: 1.9s; }
-.run-step.s3 { animation-delay: 2.5s; }
-.run-step.s3 i { color: #a78bfa; }
-.run-step.s4 { animation-delay: 3.3s; }
-.run-step.s4 i { color: #22c55e; }
-.run-step.s5 { animation-delay: 4.0s; }
-@keyframes run-in { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: none; } }
-.run-bar { height: 3px; margin-top: 12px; border-radius: 99px; background: var(--line); overflow: hidden; }
-.run-bar b {
-  display: block; height: 100%; background: linear-gradient(90deg, #a78bfa, #60a5fa);
-  transform-origin: left center; transform: scaleX(0);
-  animation: run-bar 4.6s 1.3s cubic-bezier(.4,0,.2,1) forwards;
+.rc-ico { width: 14px; flex: 0 0 14px; color: var(--fg-3); text-align: center; }
+.rc-name { font-weight: 600; color: var(--fg); white-space: nowrap; }
+.rc-arg { color: var(--fg-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.rc-ok { margin-left: auto; color: #22c55e; white-space: nowrap; font-size: 10.5px; }
+.rc-pending { color: var(--fg-3); }
+.rc-diff { margin-left: auto; white-space: nowrap; font-size: 10.5px; }
+.rc-diff b { color: #22c55e; font-weight: 500; }
+.rc-diff i { font-style: normal; color: #ef4444; margin-left: 4px; }
+.rc-chip.s1 { animation-delay: 1.3s; }
+.rc-chip.s2 { animation-delay: 1.9s; }
+.rc-chip.s3 { animation-delay: 2.5s; }
+.rc-chip.s3 .rc-ico { color: #a78bfa; }
+.rc-done { opacity: 0; animation: run-in .4s cubic-bezier(.16,1,.3,1) forwards; animation-delay: 3.3s; }
+@keyframes rc-blink { 50% { opacity: .2; } }
+/* 命令输出：终端风格，结果后才出现 */
+.rc-out {
+  margin: 4px 0 0; padding: 8px 10px; border-radius: 8px; font-family: var(--mono); font-size: 10.5px; line-height: 1.6;
+  background: color-mix(in srgb, var(--fg) 5%, transparent); color: var(--fg-3); white-space: normal; overflow: hidden;
+  opacity: 0; animation: run-in .5s cubic-bezier(.16,1,.3,1) forwards;
 }
-@keyframes run-bar { to { transform: scaleX(1); } }
+.rc-out span { display: block; }
+.rc-out em { font-style: normal; color: #22c55e; }
+.rc-out.s4 { animation-delay: 3.3s; }
+/* 最终回复 */
+.rc-reply {
+  margin: 10px 0 0; font-size: 12.5px; line-height: 1.6; color: var(--fg); opacity: 0;
+  animation: run-in .6s cubic-bezier(.16,1,.3,1) forwards; animation-delay: 4.0s;
+}
+.rc-caret {
+  display: inline-block; width: 6px; height: 13px; margin-left: 3px; vertical-align: -2px; background: var(--fg-3);
+  animation: rc-blink 1s steps(2) infinite;
+}
+@keyframes run-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 
 @media (prefers-reduced-motion: reduce) {
-  .hero::before, .hero-copy h1 em, .run-dot { animation: none; }
+  .hero::before, .hero-copy h1 em, .run-dot, .rc-caret { animation: none !important; }
+  .rc-done { animation: none !important; opacity: 1; }
   .hero-copy > *, .hero-proof .proof-line, .run-card { animation: none !important; }
-  .run-step { animation: none !important; opacity: 1; }
-  .run-bar b { animation: none !important; transform: none; }
+  .rc-chip, .rc-out, .rc-reply { animation: none !important; opacity: 1; }
 }
 
 /* ── 寒武开场层（每会话一次）── */

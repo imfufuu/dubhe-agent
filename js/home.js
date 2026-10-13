@@ -725,7 +725,7 @@ function prepareReveal() {
   let i = 0;
   for (const sel of sels) {
     site.querySelectorAll(sel).forEach((el) => {
-      if (el.classList.contains('reveal')) return;
+      if (el.classList.contains('reveal') || el.classList.contains('hero-run')) return; // 首屏运行卡自带 hero-rise 入场，不走滚动显隐
       el.classList.add('reveal');
       // 三个 Q&A 卡片使用统一零延迟，保证滚入与点击展开手感完全一致
       el.style.setProperty('--delay', sel === '.faq details' ? '0ms' : `${(i % 4) * 70}ms`);
