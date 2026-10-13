@@ -1,5 +1,4 @@
 import { installLanguage } from './ui-language.js?v=2026.10.12.1';
-import { startHeroRun } from './hero-run.js?v=2026.10.13.1';
 installLanguage();
 import { readThemePreference, writeThemePreference, THEME_STORAGE_KEY, LEGACY_HOME_THEME_KEY } from './theme.js';
 import { TRACK } from './home-beats.js';
@@ -882,7 +881,6 @@ window.addEventListener('keydown', (e) => {
 void initialView;
 // HTML 初始类名已是 open，openSite 会直接返回，因此这里直接完成打开流程（含 watchReveal，否则首屏内容保持隐藏）
 finishOpen(true);
-startHeroRun();
 prefetchAudio();
 
 // 首屏鼠标光晕：只在支持精细指针且未开启减少动态效果时启用

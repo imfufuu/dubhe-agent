@@ -1245,101 +1245,16 @@ html[data-theme="dark"] .hero::after { background: radial-gradient(560px circle 
 
 .run-card {
   position: relative; box-sizing: border-box; width: 360px; max-width: 100%; height: 440px; margin: 0 0 14px;
-  padding: 16px 16px 14px; border-radius: 16px; display: flex; flex-direction: column;
-  border: 1px solid var(--line);
-  background: color-mix(in srgb, var(--card, var(--bg)) 90%, transparent);
+  border-radius: 16px; overflow: hidden; border: 1px solid var(--line);
+  background: var(--bg);
   box-shadow: 0 28px 60px -30px rgba(17,17,16,.32);
-  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
-  font-size: 12.5px; line-height: 1.55; color: var(--fg-2); text-align: left;
   animation: hero-rise 1s cubic-bezier(.16,1,.3,1) .8s both;
 }
-.rc-head { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
-.rc-av {
-  width: 22px; height: 22px; border-radius: 7px; display: inline-flex; align-items: center; justify-content: center;
-  background: var(--fg); color: var(--bg);
-}
-.rc-av svg { width: 14px; height: 14px; }
-.rc-model { font-family: var(--mono); font-size: 11.5px; font-weight: 600; color: var(--fg); }
-.rc-live { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 10.5px; color: var(--fg-3); }
-.run-dot { width: 7px; height: 7px; border-radius: 50%; background: #22c55e; animation: run-pulse 1.8s ease-out infinite; }
-.run-dot.done { animation: none; box-shadow: none; }
-@keyframes run-pulse {
-  0% { box-shadow: 0 0 0 0 rgba(34,197,94,.45); }
-  70%, 100% { box-shadow: 0 0 0 8px rgba(34,197,94,0); }
-}
-/* 对话区：内容从下方增长，超出时贴底滚动（不显示滚动条） */
-.rc-thread {
-  flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 12px 4px 6px 0;
-  scrollbar-width: thin; scrollbar-color: var(--line) transparent;
-  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 14px, #000 calc(100% - 14px), transparent 100%);
-          mask-image: linear-gradient(to bottom, transparent 0, #000 14px, #000 calc(100% - 14px), transparent 100%);
-}
-.rc-thread::-webkit-scrollbar { width: 4px; }
-.rc-thread::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
-.rc-user { display: flex; justify-content: flex-end; margin-bottom: 12px; animation: run-in .45s cubic-bezier(.16,1,.3,1) both; }
-.rc-bubble {
-  background: var(--fg); color: var(--bg); padding: 8px 13px; border-radius: 14px 14px 4px 14px;
-  max-width: 88%; font-size: 12.5px; line-height: 1.5; box-shadow: var(--shadow);
-}
-/* 飞行中的气泡：与输入框一起从底部移动到顶部 */
-.rc-ghost {
-  position: absolute; z-index: 3; box-sizing: border-box; overflow: hidden; pointer-events: none;
-  padding: 8px 13px; border-radius: 14px 14px 4px 14px; background: var(--fg); color: var(--bg);
-  font-size: 12.5px; line-height: 1.5; box-shadow: var(--shadow);
-}
-.rc-chip {
-  display: flex; align-items: center; gap: 7px; padding: 5px 0; font-family: var(--mono); font-size: 11.5px;
-  color: var(--fg-2); animation: run-in .45s cubic-bezier(.16,1,.3,1) both;
-}
-.rc-ico { width: 14px; flex: 0 0 14px; color: var(--fg-3); text-align: center; }
-.rc-ico-run { color: #a78bfa; }
-.rc-name { font-weight: 600; color: var(--fg); white-space: nowrap; }
-.rc-arg { color: var(--fg-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.rc-ok { margin-left: auto; color: #22c55e; white-space: nowrap; font-size: 10.5px; }
-.rc-pending { color: var(--fg-3); animation: rc-blink 1s steps(2) infinite; }
-.rc-diff { white-space: nowrap; font-size: 10.5px; }
-.rc-diff b { color: #22c55e; font-weight: 500; }
-.rc-diff i { font-style: normal; color: #ef4444; margin-left: 4px; }
-@keyframes rc-blink { 50% { opacity: .2; } }
-.rc-out {
-  margin: 2px 0 4px; padding: 8px 10px; border-radius: 8px; font-family: var(--mono); font-size: 10.5px; line-height: 1.6;
-  background: color-mix(in srgb, var(--fg) 5%, transparent); color: var(--fg-3); white-space: normal; overflow: hidden;
-  animation: run-in .4s cubic-bezier(.16,1,.3,1) both;
-}
-.rc-out span { display: block; animation: run-in .35s cubic-bezier(.16,1,.3,1) both; }
-.rc-out em { font-style: normal; color: #22c55e; }
-.rc-reply { margin: 8px 0 0; font-size: 12.5px; line-height: 1.65; color: var(--fg); }
-.rc-caret {
-  display: inline-block; width: 6px; height: 13px; margin-left: 2px; vertical-align: -2px; background: var(--fg-3);
-  animation: rc-blink 1s steps(2) infinite;
-}
-/* 底部输入框 */
-.rc-composer { flex: 0 0 auto; display: flex; align-items: flex-end; gap: 8px; padding-top: 10px; border-top: 1px solid var(--line); }
-.rc-input {
-  flex: 1 1 auto; min-width: 0; min-height: 38px; box-sizing: border-box; position: relative; padding: 9px 12px;
-  border: 1px solid var(--line); border-radius: 12px; background: var(--bg); color: var(--fg);
-  font-size: 12.5px; line-height: 1.5; word-break: break-word;
-}
-.rc-placeholder { color: var(--fg-3); }
-.rc-cursor { display: inline-block; width: 1.5px; height: 14px; margin-left: 1px; vertical-align: -2px; background: var(--fg); animation: rc-blink 1s steps(2) infinite; }
-.rc-cursor[hidden], .rc-placeholder[hidden] { display: none; }
-.rc-send {
-  flex: 0 0 auto; width: 30px; height: 30px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
-  background: var(--fg); color: var(--bg); font-size: 14px; line-height: 1; transition: transform .2s ease;
-}
-.rc-send.press { transform: scale(.86); }
-@keyframes run-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
-/* 固定宽度：运行卡不随输入内容或对话长度变化 */
+/* 对话区示例：真实产品的对话区（仅保留消息与输入框），由 demo/chat-card.html 提供 */
+.rc-frame { display: block; width: 100%; height: 100%; border: 0; background: transparent; }
 .hero-run { width: 360px; max-width: 100%; min-width: 0; }
-/* 运行报错与修复 */
-.rc-ok.rc-fail { color: #ef4444; }
-.rc-err { color: #ef4444; }
-.rc-note { margin: 8px 0 4px; font-size: 12.5px; line-height: 1.65; color: var(--fg-2); animation: run-in .4s cubic-bezier(.16,1,.3,1) both; }
-
 @media (prefers-reduced-motion: reduce) {
-  .hero::before, .hero-copy h1 em, .run-dot, .rc-caret, .rc-cursor, .rc-pending { animation: none !important; }
   .hero-copy > *, .hero-proof .proof-line, .run-card { animation: none !important; }
-  .rc-user, .rc-chip, .rc-out, .rc-out span { animation: none !important; }
 }
 
 /* 首屏左右对齐：左侧文案顶部与右侧卡片顶部对齐，不再整体下沉 */
