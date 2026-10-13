@@ -1,5 +1,4 @@
 import { installLanguage } from './ui-language.js?v=2026.10.12.1';
-import { shouldPlayIntro, playCambrianIntro } from './home-intro.js?v=2026.10.12.1';
 import { startHeroRun } from './hero-run.js?v=2026.10.13.1';
 installLanguage();
 import { readThemePreference, writeThemePreference, THEME_STORAGE_KEY, LEGACY_HOME_THEME_KEY } from './theme.js';
@@ -882,11 +881,7 @@ window.addEventListener('keydown', (e) => {
 // 直接进入主页：不再显示「开始探索」门页与自动片头（门页 DOM / 介绍片代码保留，便于以后恢复）
 void initialView;
 // HTML 初始类名已是 open，openSite 会直接返回，因此这里直接完成打开流程（含 watchReveal，否则首屏内容保持隐藏）
-// 首次进入会话时播放寒武开场；主页在开场下方同步就绪，开场结束后再开始入场动画
-const introOn = shouldPlayIntro(reduce);
-if (introOn) document.documentElement.classList.add('intro-on');
 finishOpen(true);
-if (introOn) playCambrianIntro(document); else document.getElementById('intro')?.remove();
 startHeroRun();
 prefetchAudio();
 

@@ -238,11 +238,6 @@ export function startHeroRun() {
     scrollEnd();
   }
 
-  // 等开场动画完全结束、首屏入场完成后再开始
-  const ready = () => !document.getElementById('intro') && !document.documentElement.classList.contains('intro-on');
-  const whenReady = () => {
-    if (ready()) setTimeout(() => (reduce ? renderStatic() : run()), reduce ? 0 : 900);
-    else setTimeout(whenReady, 150);
-  };
-  whenReady();
+  // 首屏入场完成后开始
+  setTimeout(() => (reduce ? renderStatic() : run()), reduce ? 0 : 900);
 }
