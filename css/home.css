@@ -1244,7 +1244,8 @@ html[data-theme="dark"] .hero::after { background: radial-gradient(560px circle 
 @keyframes hero-shine { 0%, 100% { background-position: 100% 0; } 50% { background-position: 0% 0; } }
 
 .run-card {
-  width: min(360px, 100%); margin: 0 0 14px; padding: 18px 18px 16px; border-radius: 16px;
+  position: relative; box-sizing: border-box; width: min(360px, 100%); height: 440px; margin: 0 0 14px;
+  padding: 16px 16px 14px; border-radius: 16px; display: flex; flex-direction: column;
   border: 1px solid var(--line);
   background: color-mix(in srgb, var(--card, var(--bg)) 90%, transparent);
   box-shadow: 0 28px 60px -30px rgba(17,17,16,.32);
@@ -1252,73 +1253,80 @@ html[data-theme="dark"] .hero::after { background: radial-gradient(560px circle 
   font-size: 12.5px; line-height: 1.55; color: var(--fg-2); text-align: left;
   animation: hero-rise 1s cubic-bezier(.16,1,.3,1) .8s both;
 }
-/* 用户消息：沿用主界面的深色气泡 */
-.rc-user { display: flex; justify-content: flex-end; margin-bottom: 14px; }
-.rc-bubble {
-  background: var(--fg); color: var(--bg); padding: 8px 13px; border-radius: 14px 14px 4px 14px;
-  max-width: 88%; font-size: 12.5px; line-height: 1.5; box-shadow: var(--shadow);
-}
-/* Agent 消息 */
-.rc-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.rc-head { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
 .rc-av {
-  min-width: 22px; height: 22px; padding: 0 5px; border-radius: 7px; display: inline-flex;
-  align-items: center; justify-content: center; font-family: var(--mono); font-size: 11px;
+  width: 22px; height: 22px; border-radius: 7px; display: inline-flex; align-items: center; justify-content: center;
   background: var(--fg); color: var(--bg);
 }
-.rc-model { font-size: 11px; font-weight: 600; color: var(--fg-2); }
+.rc-av svg { width: 14px; height: 14px; }
+.rc-model { font-family: var(--mono); font-size: 11.5px; font-weight: 600; color: var(--fg); }
 .rc-live { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 10.5px; color: var(--fg-3); }
-.run-dot {
-  width: 7px; height: 7px; border-radius: 50%; background: #22c55e;
-  animation: run-pulse 1.8s ease-out infinite;
-}
+.run-dot { width: 7px; height: 7px; border-radius: 50%; background: #22c55e; animation: run-pulse 1.8s ease-out infinite; }
+.run-dot.done { animation: none; box-shadow: none; }
 @keyframes run-pulse {
   0% { box-shadow: 0 0 0 0 rgba(34,197,94,.45); }
   70%, 100% { box-shadow: 0 0 0 8px rgba(34,197,94,0); }
 }
-/* 工具调用行：与主界面 chip 相同的单行样式 */
+/* 对话区：内容从下方增长，超出时贴底滚动（不显示滚动条） */
+.rc-thread { flex: 1 1 auto; min-height: 0; overflow: hidden; padding: 12px 0 6px; }
+.rc-user { display: flex; justify-content: flex-end; margin-bottom: 12px; animation: run-in .45s cubic-bezier(.16,1,.3,1) both; }
+.rc-bubble {
+  background: var(--fg); color: var(--bg); padding: 8px 13px; border-radius: 14px 14px 4px 14px;
+  max-width: 88%; font-size: 12.5px; line-height: 1.5; box-shadow: var(--shadow);
+}
+/* 飞行中的气泡：与输入框一起从底部移动到顶部 */
+.rc-ghost {
+  position: absolute; z-index: 3; box-sizing: border-box; overflow: hidden; pointer-events: none;
+  padding: 8px 13px; border-radius: 14px 14px 4px 14px; background: var(--fg); color: var(--bg);
+  font-size: 12.5px; line-height: 1.5; box-shadow: var(--shadow);
+}
 .rc-chip {
   display: flex; align-items: center; gap: 7px; padding: 5px 0; font-family: var(--mono); font-size: 11.5px;
-  color: var(--fg-2); opacity: 0; animation: run-in .5s cubic-bezier(.16,1,.3,1) forwards;
+  color: var(--fg-2); animation: run-in .45s cubic-bezier(.16,1,.3,1) both;
 }
 .rc-ico { width: 14px; flex: 0 0 14px; color: var(--fg-3); text-align: center; }
+.rc-ico-run { color: #a78bfa; }
 .rc-name { font-weight: 600; color: var(--fg); white-space: nowrap; }
 .rc-arg { color: var(--fg-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .rc-ok { margin-left: auto; color: #22c55e; white-space: nowrap; font-size: 10.5px; }
-.rc-pending { color: var(--fg-3); }
-.rc-diff { margin-left: auto; white-space: nowrap; font-size: 10.5px; }
+.rc-pending { color: var(--fg-3); animation: rc-blink 1s steps(2) infinite; }
+.rc-diff { white-space: nowrap; font-size: 10.5px; }
 .rc-diff b { color: #22c55e; font-weight: 500; }
 .rc-diff i { font-style: normal; color: #ef4444; margin-left: 4px; }
-.rc-chip.s1 { animation-delay: 1.3s; }
-.rc-chip.s2 { animation-delay: 1.9s; }
-.rc-chip.s3 { animation-delay: 2.5s; }
-.rc-chip.s3 .rc-ico { color: #a78bfa; }
-.rc-done { opacity: 0; animation: run-in .4s cubic-bezier(.16,1,.3,1) forwards; animation-delay: 3.3s; }
 @keyframes rc-blink { 50% { opacity: .2; } }
-/* 命令输出：终端风格，结果后才出现 */
 .rc-out {
-  margin: 4px 0 0; padding: 8px 10px; border-radius: 8px; font-family: var(--mono); font-size: 10.5px; line-height: 1.6;
+  margin: 2px 0 4px; padding: 8px 10px; border-radius: 8px; font-family: var(--mono); font-size: 10.5px; line-height: 1.6;
   background: color-mix(in srgb, var(--fg) 5%, transparent); color: var(--fg-3); white-space: normal; overflow: hidden;
-  opacity: 0; animation: run-in .5s cubic-bezier(.16,1,.3,1) forwards;
+  animation: run-in .4s cubic-bezier(.16,1,.3,1) both;
 }
-.rc-out span { display: block; }
+.rc-out span { display: block; animation: run-in .35s cubic-bezier(.16,1,.3,1) both; }
 .rc-out em { font-style: normal; color: #22c55e; }
-.rc-out.s4 { animation-delay: 3.3s; }
-/* 最终回复 */
-.rc-reply {
-  margin: 10px 0 0; font-size: 12.5px; line-height: 1.6; color: var(--fg); opacity: 0;
-  animation: run-in .6s cubic-bezier(.16,1,.3,1) forwards; animation-delay: 4.0s;
-}
+.rc-reply { margin: 8px 0 0; font-size: 12.5px; line-height: 1.65; color: var(--fg); }
 .rc-caret {
-  display: inline-block; width: 6px; height: 13px; margin-left: 3px; vertical-align: -2px; background: var(--fg-3);
+  display: inline-block; width: 6px; height: 13px; margin-left: 2px; vertical-align: -2px; background: var(--fg-3);
   animation: rc-blink 1s steps(2) infinite;
 }
+/* 底部输入框 */
+.rc-composer { flex: 0 0 auto; display: flex; align-items: flex-end; gap: 8px; padding-top: 10px; border-top: 1px solid var(--line); }
+.rc-input {
+  flex: 1 1 auto; min-width: 0; min-height: 38px; box-sizing: border-box; position: relative; padding: 9px 12px;
+  border: 1px solid var(--line); border-radius: 12px; background: var(--bg); color: var(--fg);
+  font-size: 12.5px; line-height: 1.5; word-break: break-word;
+}
+.rc-placeholder { color: var(--fg-3); }
+.rc-cursor { display: inline-block; width: 1.5px; height: 14px; margin-left: 1px; vertical-align: -2px; background: var(--fg); animation: rc-blink 1s steps(2) infinite; }
+.rc-cursor[hidden], .rc-placeholder[hidden] { display: none; }
+.rc-send {
+  flex: 0 0 auto; width: 30px; height: 30px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+  background: var(--fg); color: var(--bg); font-size: 14px; line-height: 1; transition: transform .2s ease;
+}
+.rc-send.press { transform: scale(.86); }
 @keyframes run-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 
 @media (prefers-reduced-motion: reduce) {
-  .hero::before, .hero-copy h1 em, .run-dot, .rc-caret { animation: none !important; }
-  .rc-done { animation: none !important; opacity: 1; }
+  .hero::before, .hero-copy h1 em, .run-dot, .rc-caret, .rc-cursor, .rc-pending { animation: none !important; }
   .hero-copy > *, .hero-proof .proof-line, .run-card { animation: none !important; }
-  .rc-chip, .rc-out, .rc-reply { animation: none !important; opacity: 1; }
+  .rc-user, .rc-chip, .rc-out, .rc-out span { animation: none !important; }
 }
 
 /* ── 寒武开场层（每会话一次）── */

@@ -1,5 +1,6 @@
 import { installLanguage } from './ui-language.js?v=2026.10.12.1';
 import { shouldPlayIntro, playCambrianIntro } from './home-intro.js?v=2026.10.12.1';
+import { startHeroRun } from './hero-run.js?v=2026.10.13.1';
 installLanguage();
 import { readThemePreference, writeThemePreference, THEME_STORAGE_KEY, LEGACY_HOME_THEME_KEY } from './theme.js';
 import { TRACK } from './home-beats.js';
@@ -886,6 +887,7 @@ const introOn = shouldPlayIntro(reduce);
 if (introOn) document.documentElement.classList.add('intro-on');
 finishOpen(true);
 if (introOn) playCambrianIntro(document); else document.getElementById('intro')?.remove();
+startHeroRun();
 prefetchAudio();
 
 // 首屏鼠标光晕：只在支持精细指针且未开启减少动态效果时启用
