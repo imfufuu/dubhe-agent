@@ -117,9 +117,14 @@ test('demo clears input before send, streams, folds, offers one final copy, and 
   assert.equal(root.querySelectorAll('.is-working').length, 0);
   assert.equal(root.querySelectorAll('.explored-files pre').length, 0);
   assert.equal(root.querySelectorAll('.edit-stats').length, 3);
-  const toggle = root.querySelector('.ran-commands .demo-toggle'); toggle.click();
+  assert.equal(root.querySelectorAll('.expanded').length, 0);
+  assert.equal(root.querySelectorAll('.msg-actions button').length, 6);
+  assert.ok([...root.querySelectorAll('.msg-actions button')].every((b) => b.querySelector('svg') && !b.textContent.trim()));
+  assert.equal(root.querySelector('.msg-foot').textContent, '命令总耗时 3.8s · 模拟');
+  const toggle = root.querySelector('.ran-commands .demo-toggle');
   assert.equal(toggle.getAttribute('aria-expanded'), 'false'); toggle.click();
-  assert.equal(toggle.getAttribute('aria-expanded'), 'true');
+  assert.equal(toggle.getAttribute('aria-expanded'), 'true'); toggle.click();
+  assert.equal(toggle.getAttribute('aria-expanded'), 'false');
   await Promise.all([demo.play(), demo.play()]);
   assert.equal(root.querySelectorAll('.msg-user').length, 1);
   assert.equal(root.querySelectorAll('[data-act="copy"]').length, 1);

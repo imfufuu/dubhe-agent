@@ -1,3 +1,4 @@
+import { ICON } from './icons.js?v=2026.10.11.1';
 import { buildShareDocument } from './share-document.js?v=2026.10.11.1';
 import { captureShare } from './share-capture.js';
 import { createZip } from './zip.js';
@@ -124,7 +125,7 @@ export function installSharing({ store, agent, getBusy, root, toast }) {
       const b = document.createElement('button');
       b.type = 'button'; b.className = 'act'; b.dataset.shareTurn = String(turn.id);
       // 图标与其它操作按钮一致：弯箭头（只留图标，文字见 title / aria-label）
-      b.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 5l6 5-6 5"/><path d="M20 10c-7 0-12 3-13 10"/></svg>';
+      b.innerHTML = ICON.share;
       b.title = text('分享这一轮对话（提问 + 全部输出）', 'Share this turn (prompt plus its full output)');
       b.setAttribute('aria-label', text('分享本轮', 'Share turn'));
       host.append(b);

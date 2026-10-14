@@ -1,5 +1,6 @@
 import { feedbackTarget, normalizeFeedback } from './feedback.js';
-const svg = (down) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"${down ? ' style="transform:rotate(180deg)"' : ''}><path d="M7 10v10H3V10zM7 10l4-7a3 3 0 0 1 2 3v4h5a2 2 0 0 1 2 2l-1 6a2 2 0 0 1-2 2H7"/></svg>`;
+import { ICON } from './icons.js?v=2026.10.11.1';
+const svg = (down) => down ? ICON.thumbDown : ICON.thumbUp;
 export function installFeedback({ store, agent, getBusy, root, toast }) {
   const refresh = () => {
     const target = feedbackTarget(store.state.messages, getBusy());

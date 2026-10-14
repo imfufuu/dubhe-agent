@@ -642,10 +642,11 @@ console.log('\n⑰ 工具折叠 / 出参回填 / 识图路径回归');
   ok('失败原因仍通过原生悬浮提示提供', /工具执行失败：测试错误提示/.test(failState?.title || ''), failState?.title);
   const okChip = $$('.tool-call-chip', ran || document).find((n) => n.dataset.callIds === 'copy-1');
   ok('成功命令行只显示 ✓ 图标 + 耗时，不出现中文「成功」', !!okChip && /✓/.test(okChip.querySelector('.chip-state').textContent) && !/成功|失败/.test(okChip.querySelector('.chip-state').textContent) && !!okChip.querySelector('.chip-state .chip-ok'), okChip?.querySelector('.chip-state')?.textContent);
-  click(ran);
-  ok('纯工具轮完成后保持展开，仍可手动折叠', !ran.classList.contains('expanded'));
+  ok('纯工具轮完成后自动折叠', !ran.classList.contains('expanded'));
   click(ran);
   ok('Ran Commands 可手动重新展开', ran.classList.contains('expanded'));
+  click(ran);
+  ok('Ran Commands 可手动折叠', !ran.classList.contains('expanded'));
 }
 
 console.log('\n⑱ 设置页字号 / 深度思考 / 本地会话数回归');

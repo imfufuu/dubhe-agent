@@ -1,6 +1,6 @@
 // Dubhe Agent · Python 沙箱 Worker（Pyodide / WebAssembly，独立同源文件）
 // 关键：经典 Worker 中 importScripts 加载后，loadPyodide 必须显式传 indexURL。
-// 第三方库：micropip.install；本 Worker 内 installed Set 去重。刷新后运行时重建，包名由主线程再传入，字节走浏览器缓存。
+// 第三方库按本次 imports / 显式 packages 按需加载；常驻 Worker 去重，不重放历史依赖。
 //
 // 安全加固：
 //   · 运行时与包必须从网上拉，所以 fetch / importScripts 不能整体删除，改为私有化真实引用 +
@@ -114,16 +114,65 @@ const IMPORT_ALIAS = {
   sympy: 'sympy', networkx: 'networkx', dateutil: 'python-dateutil',
 };
 
-function pkgsFromCode(code) {
-  const found = [];
-  const re = /(?:^|\n)\s*(?:import|from)\s+([A-Za-z_][A-Za-z0-9_]*)/g;
-  let m;
-  while ((m = re.exec(String(code || '')))) {
-    const raw = m[1];
-    if (['os', 'sys', 'json', 're', 'math', 'time', 'random', 'itertools', 'functools', 'collections', 'typing', 'pathlib', 'io', 'csv', 'datetime', 'string', 'struct', 'hashlib', 'base64', 'copy', 'operator', 'statistics', 'decimal', 'fractions', 'unicodedata', 'textwrap', 'pprint', 'enum', 'dataclasses', 'abc', 'contextlib', 'traceback', 'warnings', 'ast', 'asyncio', 'js', 'pyodide', 'micropip', 'pyodide_js', 'numbers', 'array', 'bisect', 'heapq', 'queue', 'threading', 'secrets', 'uuid', 'zlib', 'gzip', 'zipfile', 'tarfile', 'shutil', 'tempfile', 'glob', 'fnmatch', 'logging', 'argparse', 'inspect', 'types', 'weakref', 'gc', 'platform', 'locale', 'calendar', 'html', 'xml', 'urllib', 'http', 'email', 'sqlite3', 'pickle', 'shelve', 'difflib', 'cmath'].includes(raw)) continue;
-    found.push(IMPORT_ALIAS[raw] || raw);
-  }
-  return found;
+// Parse Python, not a regex: comments/strings are not imports, commas and dotted
+// imports are supported, and stdlib/already-installed modules need no downloads.
+const PY_IMPORT_SCAN = `
+import ast, sys, json, importlib.util
+def needed(source):
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return []
+    roots = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            roots.update(item.name.split('.')[0] for item in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+            roots.add(node.module.split('.')[0])
+    missing = []
+    for root in sorted(roots):
+        if root in sys.stdlib_module_names or root in sys.modules or root in {'js', 'pyodide', 'pyodide_js'}:
+            continue
+        try:
+            available = importlib.util.find_spec(root) is not None
+        except (ImportError, ValueError, AttributeError):
+            available = False
+        if not available:
+            missing.append(root)
+    return missing
+json.dumps(needed(source))
+`;
+function pkgsFromCode(pyodide, code) {
+  const globals = pyodide.toPy({ source: String(code || '') });
+  try {
+    const roots = JSON.parse(pyodide.runPython(PY_IMPORT_SCAN, { globals }));
+    return roots.map((name) => IMPORT_ALIAS[name] || name);
+  } finally { globals.destroy?.(); }
+}
+async function ensurePackages(pyodide, packages, code, logs) {
+  const explicit = Array.isArray(packages) ? packages.filter((p) => typeof p === 'string').map((p) => p.trim()) : [];
+  const want = [...new Set([...explicit, ...pkgsFromCode(pyodide, code)])].filter(Boolean);
+  const key = (p) => p.toLowerCase().replace(/_/g, '-');
+  const missing = want.filter((p) => !installed.has(key(p)));
+  if (!missing.length) return;
+  post({ __progress: `正在加载本次需要的 Python 库：${missing.join(', ')}…` });
+  let micropip;
+  try {
+    for (const p of missing) {
+      try {
+        // Bundled Pyodide packages do not need micropip and its dependency tree.
+        try {
+          await pyodide.loadPackage(p);
+          if (!Object.keys(pyodide.loadedPackages || {}).some((name) => key(name) === key(p)))
+            throw new Error('Package not provided by the Pyodide distribution');
+        } catch {
+          if (!micropip) { await pyodide.loadPackage('micropip'); micropip = pyodide.pyimport('micropip'); }
+          await micropip.install(p);
+        }
+        installed.add(key(p));
+      } catch (err) { pushLog(logs, 'error', `安装 ${p} 失败：${err?.message || err}`); }
+    }
+  } finally { micropip?.destroy?.(); }
 }
 
 self.addEventListener('message', async (e) => {
@@ -152,22 +201,7 @@ self.addEventListener('message', async (e) => {
     pyodide.setStdout({ batched: (s) => pushLog(logs, 'log', s) });
     pyodide.setStderr({ batched: (s) => pushLog(logs, 'error', s) });
 
-    const want = [...new Set([...(packages || []), ...pkgsFromCode(code)])].filter(Boolean);
-    const missing = want.filter((p) => !installed.has(p));
-    if (missing.length) {
-      post({ __progress: `正在安装 Python 库：${missing.join(', ')}…` });
-      try { await pyodide.loadPackage('micropip'); } catch { /* 已装 */ }
-      const micropip = pyodide.pyimport('micropip');
-      for (const p of missing) {
-        try {
-          try { await pyodide.loadPackage(p); }
-          catch { await micropip.install(p); }
-          installed.add(p);
-        } catch (err) {
-          pushLog(logs, 'error', `安装 ${p} 失败：${err && err.message ? err.message : err}`);
-        }
-      }
-    }
+    await ensurePackages(pyodide, packages, code, logs);
 
     const fs = { ...before };
     pyodide.globals.set('FILES', pyodide.toPy(fs));

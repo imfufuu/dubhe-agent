@@ -2599,10 +2599,9 @@ html[data-ui-language="en"] .side-label { text-transform: none; letter-spacing: 
 /* Shared by the conversation and homepage demo. Activity is independent of folding. */
 .is-working > :is(.chip-name, .chip-state),
 .edited-files.is-working .edit-path, .explored-files.is-working li {
-  background-image: linear-gradient(105deg, var(--fg-3) 25%, var(--fg) 45%, var(--fg-3) 65%);
-  background-size: 240% 100%; background-repeat: no-repeat;
-  background-clip: text; -webkit-background-clip: text; color: transparent;
-  animation: tool-polish 1.8s linear infinite;
+  /* Animate opaque ink, not transparent glyphs / moving background clips. */
+  color: var(--fg-2); background: none;
+  animation: tool-ink-polish 2.1s ease-in-out infinite;
 }
 .edited-files .edit-path {
   border: 0; padding: 0; background: none; color: inherit; font: inherit;
@@ -2628,4 +2627,10 @@ html[data-motion="off"] :is(.edited-files, .explored-files).is-working :is(.edit
   html:not([data-motion="on"]) :is(.edited-files, .explored-files).is-working :is(.edit-path, li) {
     animation: none; background: none; color: var(--fg-2);
   }
+}
+
+@keyframes tool-ink-polish {
+  0%, 100% { color: var(--fg-2); }
+  45% { color: var(--fg); }
+  70% { color: var(--fg-2); }
 }

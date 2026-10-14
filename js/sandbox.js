@@ -3,7 +3,6 @@
 // Python 沙箱：Pyodide（WASM）跑在独立 Worker 中，可终止；CDN 加载失败时优雅降级
 
 import { APP_VERSION, SANDBOX_JS_STARTUP_TIMEOUT_MS, SANDBOX_JS_TIMEOUT_MS, SANDBOX_PY_TIMEOUT_MS } from './config.js?v=2026.10.11.1';
-import { readLocal, writeLocal } from './legacy-keys.js';
 import { SANDBOX_STORAGE_CAP } from './storagefmt.js';
 
 // ── 虚拟文件系统（会话级，随 state 持久化）─────────────────────────────
@@ -354,12 +353,11 @@ export function createTempFS(baseFS) {
 let pyodideBroken = false; // CDN 加载失败后不再尝试
 export function pythonAvailable() { return !pyodideBroken; }
 
-const PY_PKG_KEY = 'dubhe-py-packages';
-function loadPyPkgs() {
-  try { return JSON.parse(readLocal(PY_PKG_KEY) || '[]'); } catch { return []; }
-}
-function savePyPkgs(list) {
-  writeLocal(PY_PKG_KEY, JSON.stringify([...new Set((list || []).filter(Boolean))]));
+// Package history is not a requirements file. Only the current invocation's
+// explicit packages are sent; the resident Worker reuses already-loaded modules.
+export function pythonPackagesForRun(packages) {
+  return [...new Set((Array.isArray(packages) ? packages : [])
+    .filter((p) => typeof p === 'string').map((p) => p.trim()).filter(Boolean))];
 }
 
 // ── Worker 创建：同源文件优先，blob 兜底 ───────────────────────────────
@@ -570,7 +568,7 @@ export async function runPython(code, fsObj, onProgress, extraPkgs = [], opts = 
     return { ok: false, logs: [], error: { message: 'Pyodide 运行时不可用（CDN 加载失败），请改用 execute_javascript' }, durationMs: 0 };
   }
   const files = fsObj.export();
-  const packages = [...new Set([...loadPyPkgs(), ...(Array.isArray(extraPkgs) ? extraPkgs : [])])];
+  const packages = pythonPackagesForRun(extraPkgs);
   const t0 = performance.now();
   // 增量同步：常驻 Worker 已持有上次镜像时只发 diff；Worker 重建 / 上次失败则发全量
   // 不论全量还是增量，Worker 应用完载荷后的镜像都恰好等于 files（delta = diff(镜像, files)）
@@ -589,13 +587,13 @@ export async function runPython(code, fsObj, onProgress, extraPkgs = [], opts = 
   const attempt = (useBlob) => new Promise((resolve) => {
     const spawn = async () => {
       if (useBlob) {
-        const res = await fetch(new URL('worker-py.js', import.meta.url));
+        const res = await fetch(versionedURL('worker-py.js'));
         if (!res.ok) throw new Error(`无法获取沙箱脚本（HTTP ${res.status}）`);
         const url = URL.createObjectURL(new Blob([await res.text()], { type: 'text/javascript' }));
         pyWorker = new Worker(url); // 常驻复用：后续 attempt(false) 直接拿到这个 blob Worker
         return pyWorker;
       }
-      if (!pyWorker) pyWorker = new Worker(new URL('worker-py.js', import.meta.url));
+      if (!pyWorker) pyWorker = new Worker(versionedURL('worker-py.js'));
       return pyWorker;
     };
     spawn().then((worker) => {
@@ -671,7 +669,7 @@ export async function runPython(code, fsObj, onProgress, extraPkgs = [], opts = 
     pySynced = null;
   }
   if (sentFull && !out.ok) { pySyncedWorker = null; pySynced = null; }
-  if (Array.isArray(out.installed)) savePyPkgs(out.installed.filter((n) => typeof n === 'string' && /^[A-Za-z0-9_.\-\[\]]{1,80}$/.test(n)).slice(0, 200));
+
   return { ...out, durationMs: Math.round(performance.now() - t0) };
 }
 

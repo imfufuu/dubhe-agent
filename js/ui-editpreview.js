@@ -102,8 +102,7 @@ export function paintEditFoldContent(node, options) {
 }
 
 import { presentationCallSettled } from './toolpresentation.js?v=2026.10.11.1';
-import { turnHasAssistantText } from './toolflow.js?v=2026.10.11.1';
-export function syncEditingFold(node, { messages, visibleMessages, resultIds, busy }) {
+export function syncEditingFold(node, { messages, resultIds, busy }) {
   if (!node) return;
   const owner = messages.find((m) => m.id === node.dataset.ownerId);
   const lastUser = messages.findLastIndex((m) => m.role === 'user' && !m.silent);
@@ -113,6 +112,6 @@ export function syncEditingFold(node, { messages, visibleMessages, resultIds, bu
   node.classList.toggle('live', node._active);
   node.classList.toggle('is-working', node._active);
   node.setAttribute('aria-busy', String(node._active));
-  const autoOpen = node._active || !turnHasAssistantText(visibleMessages, node.dataset.ownerId);
+  const autoOpen = node._active;
   node.classList.toggle('expanded', node._userToggle == null ? autoOpen : node._userToggle);
 }

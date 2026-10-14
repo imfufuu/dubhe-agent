@@ -1,3 +1,4 @@
+import { animateMessageSend } from './ui-send-animation.js?v=2026.10.11.1';
 import { installCaretEffect } from './ui-caret.js';
 import { publicPlanHtml } from './ui-publicplan.js';
 import { installChoiceHandler } from './ui-choices.js?v=2026.10.11.1';
@@ -8,7 +9,7 @@ import { installSpeechInput } from './ui-speech.js';
 import { createToolPresentation, presentationCallSettled, turnToolResults } from './toolpresentation.js?v=2026.10.11.1';
 import { paintEditFoldContent, syncEditingFold } from './ui-editpreview.js?v=2026.10.11.1';
 import { paintOrderedAssistant, renderToolChipDetail, paintCommandRows, ownerOfTool, paintVisibleTurn, activeToolOwner } from './ui-toolflow.js?v=2026.10.11.1';
-import { adjacentToolMessages, turnHasAssistantText, appendToolStream, toolFamily } from './toolflow.js?v=2026.10.11.1';
+import { adjacentToolMessages, appendToolStream, toolFamily } from './toolflow.js?v=2026.10.11.1';
 // ─── UI 层：渲染 / 交互 / 动画 ─────────────────────────────────────────
 import { providerOf, supportsFastMode, DEFAULT_IMAGE_MODEL, APP_VERSION, APP_RELEASE } from './config.js?v=2026.10.11.1';
 import { isSmartRouter, ROUTER_ICON_SVG, SMART_ROUTER_LABEL, modelDisplayName } from './smartrouter.js?v=2026.10.11.1';
@@ -60,6 +61,7 @@ export function mountUI(store, agent) {
   let feedbackUI, sharingUI;
   const msgList = $('#messages');
   const composer = $('#composer-input');
+  let pendingSendOrigin = null, sendAnimation = null;
   installCaretEffect(composer);
   const sendBtn = $('#send-btn');
   const statusDot = $('#status-dot');
@@ -1240,10 +1242,9 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     const allDone = children.every((chip) => chip.classList.contains('done'));
     const cancelled = children.some((chip) => chip.dataset.cancelled === 'true');
     const failed = children.some((chip) => chip.classList.contains('fail'));
-    // Pending calls stay visible; completed calls fold only when this turn has body text.
+    // Completed tools fold even before the next assistant text arrives; manual choice wins.
     const anyRunning = children.some((chip) => chip.classList.contains('running'));
-    const hasText = turnHasAssistantText(displayedMessages(), fold.dataset.ownerId);
-    const autoOpen = !allDone || !hasText;
+    const autoOpen = getBusy() && !allDone && !cancelled;
     const label = $('.chip-name', fold);
     if (label) label.textContent = allDone ? (total === 1 ? 'Ran command' : `Ran commands ${total}`) : (total === 1 ? 'Running command' : `Running commands ${total}`);
     fold.classList.toggle('done', allDone);
@@ -1328,8 +1329,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       }
     }
     if (chip._userToggle == null) {
-      const owner = chip.closest('.ran-commands')?.dataset.ownerId;
-      chip.classList.toggle('expanded', !allDone || !turnHasAssistantText(displayedMessages(), owner));
+      chip.classList.toggle('expanded', getBusy() && !allDone && chip.dataset.cancelled !== 'true');
     } else chip.classList.toggle('expanded', chip._userToggle);
     syncRanCommandsFold(chip.closest('.ran-commands'));
   }
@@ -1990,7 +1990,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       if (m.role === 'assistant') syncAssistantShell(wrap);
     }
   }
-  function appendMessage(m) {
+  function appendMessage(m, { scroll = true } = {}) {
     syncPresentationScope();
     if (m.role === 'assistant' && toolPresentation.deferred(m, store.state.messages)) {
       deferredAssistantIds.add(m.id); return;
@@ -2008,7 +2008,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     }
     msgList.appendChild(wrap);
     if (m.role === 'assistant') { refreshActionVisibility(); settleTurnToolbars(); }
-    scrollToBottom();
+    if (scroll) scrollToBottom();
   }
 
   // 长会话分页入口（.36 重做）：居中的「对话接缝」——两侧发丝线 + 中间胶囊，落在与消息同一条
@@ -2059,6 +2059,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
   let wrapLazyInit = false; // 标记 rebuildMessages 是否已做过首次窗口计算
 
   function rebuildMessages() {
+    pendingSendOrigin = null; sendAnimation?.cancel(); sendAnimation = null;
     cancelRollbackAnim();
     clearConfirmCards(); syncPresentationScope(); pendingPaints.clear();
     for (const node of $$('.edited-files', msgList)) if (node._previewTimer != null) clearTimeout(node._previewTimer);
@@ -2120,6 +2121,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
   }
 
   function scrollToBottom(force) {
+    if (sendAnimation) return;
     const near = msgList.scrollHeight - msgList.scrollTop - msgList.clientHeight < 160;
     if (near || force) msgList.scrollTo({ top: msgList.scrollHeight, behavior: 'smooth' });
   }
@@ -2338,6 +2340,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     }
     if (!store.state.apiKey) { openKeyModal(); toast('请先配置 TeamoRouter API Key', 'warn'); return; }
     if (getBusy()) return;
+    pendingSendOrigin = composer.getBoundingClientRect();
     composer.value = ''; autoGrow();
     const atts = attachments.takePending();
     agent.send(text, atts);
@@ -2679,7 +2682,19 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       if (!msg || !msg.id || msgNodes.has(msg.id)) return;
       if (!msg.silent) {
         for (const box of $$('.choice-box', msgList)) box.remove();
-        appendMessage(msg);
+        const origin = pendingSendOrigin; pendingSendOrigin = null;
+        appendMessage(msg, { scroll: !origin });
+        if (origin) {
+          const wrap = msgNodes.get(msg.id);
+          wrap?.classList.remove('enter'); // do not combine popIn with the flight
+          msgList.scrollTo({ top: msgList.scrollHeight, behavior: 'instant' });
+          sendAnimation?.cancel();
+          const flight = animateMessageSend(wrap?.querySelector('.bubble'), origin);
+          sendAnimation = flight;
+          flight?.finished.catch(() => {}).finally(() => {
+            if (sendAnimation === flight) { sendAnimation = null; scrollToBottom(); }
+          });
+        }
       }
       refreshActionVisibility();
     },
