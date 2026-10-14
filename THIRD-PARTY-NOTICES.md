@@ -31,3 +31,13 @@ Subresource Integrity 校验。项目通过固定到精确版本（`v0.26.4`）�
 `assets/icons/` 下的供应商图标为各公司商标（Anthropic / OpenAI / Google / DeepSeek /
 智谱 Z.ai / xAI Grok），SVG 来源为 Wikimedia Commons，仅用于识别对应服务，
 不构成背书。相关商标归各自权利人所有。
+
+## 按需本地文档组件（V1.8）
+
+| 组件 | 固定版本 | 许可 | 本地发行文件 |
+|---|---|---|---|
+| docx | 9.5.1 | MIT | `assets/vendor/office/docx-9.5.1.js`、`docx-LICENSE.txt` |
+| PptxGenJS | 3.12.0 | MIT | `assets/vendor/office/pptxgenjs-3.12.0.js`、`pptxgenjs-LICENSE.txt` |
+| pdf-lib | 1.17.1 | MIT | `assets/vendor/office/pdf-lib-1.17.1.js`、`pdf-lib-LICENSE.txt` |
+
+来源、npm tarball integrity 和文件 SHA-256 记录在 `assets/vendor/office/NOTICE.json`。下载时核验了 npm 发行包完整性，发行文件保留原始字节；运行时按需从本站加载，不把用户文档发送给这些库的上游站点。

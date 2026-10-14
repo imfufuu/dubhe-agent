@@ -79,9 +79,15 @@ test('completed file folds auto-collapse even before assistant text; manual open
   call.status = 'ok'; syncEditingFold(node, context); assert.equal(node.classList.contains('expanded'), false);
   node._userToggle = true; syncEditingFold(node, context); assert.equal(node.classList.contains('expanded'), true);
 });
-test('polish uses opaque ink animation, not transparent text or background clipping', () => {
+test('polish is spatial grayscale with an opaque fallback and excludes names', () => {
   const src = fs.readFileSync(new URL('../css/styles.css', import.meta.url), 'utf8');
-  const rule = src.slice(src.indexOf('/* Shared by the conversation and homepage demo.'));
+  const rule = src.slice(src.indexOf('/* Only operation labels/progress shimmer'));
   assert.match(rule, /animation: tool-ink-polish/);
-  assert.equal(rule.includes('color: transparent'), false); assert.equal(rule.includes('background-clip'), false);
+  assert.match(rule, /background-color: var\(--fg-2\)/);
+  assert.match(rule, /background-repeat: repeat/);
+  assert.match(rule, /from \{ background-position: 120% 0; \} to \{ background-position: -120% 0;/);
+  assert.match(rule, /\.ran-commands, \.edited-files, \.explored-files\)\.is-working > \.chip-name/);
+  assert.doesNotMatch(rule, /\.tool-call-chip[^{}]*\.chip-name|\.edit-path[^{}]*tool-ink-polish/);
+  assert.match(rule, /--polish-ink: #252525; --polish-shine: #707070/);
+  assert.match(rule, /-webkit-text-fill-color: currentColor/);
 });

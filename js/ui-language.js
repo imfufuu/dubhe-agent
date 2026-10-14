@@ -1,5 +1,6 @@
+import { preserveLanguageViewport } from './language-scroll.js';
 import { getLanguage, languagePreference, setLanguagePreference, onLanguageChange, setLanguageTransition } from './locale.js';
-import { UI_STRINGS } from './ui-strings.js?v=2026.10.12.1';
+import { UI_STRINGS } from './ui-strings.js?v=2026.10.11.1';
 // Only UI chrome is translated. Message bodies, code, file names, model output and user content retain their exact values.
 const PRIVATE = '.md-body,.chip-detail,.ep-tx,.ep-path,.tree-name,.fp-name,.file-path,.thought-text,.reasoning-text,.files-name,.file-name,.session-title,.sess-title,[data-i18n-ignore],textarea,pre,code,script,style';
 export function translateUI(value, language = getLanguage()) {
@@ -8,7 +9,7 @@ export function translateUI(value, language = getLanguage()) {
   if (exact) return raw.replace(key, exact);
   const rules = [
     [/^(Dubhe Agent) · 构建 (.+)$/, '$1 · Build $2'],
-    [/^(Dubhe Agent V1\.7) · 构建 (.+) · 独立项目，与 TeamoRouter 互不隶属$/, '$1 · Build $2 · Independent of TeamoRouter'], [/^(Dubhe Agent V1\.7) · 构建 (.+)$/, '$1 · Build $2'],
+    [/^(Dubhe Agent V1\.\d+) · 构建 (.+) · 独立项目，与 TeamoRouter 互不隶属$/, '$1 · Build $2 · Independent of TeamoRouter'], [/^(Dubhe Agent V1\.\d+) · 构建 (.+)$/, '$1 · Build $2'],
     [/^思考 (.+)$/, 'Reasoning $1'], [/^已禁用 (\d+)$/, '$1 disabled'], [/^(\d+) 个会话 · (.+)$/, '$1 conversations · $2'],
     [/^剩余 (.+)$/, 'Remaining $1'], [/^已用 (.+)$/, 'Used $1'],
     [/^(\d+) 个文件$/, '$1 files'], [/^已选 (\d+) 条$/, '$1 selected'],
@@ -80,8 +81,8 @@ export function installLanguage(root = document) {
     const doc = root.ownerDocument || root;
     const reduce = doc.defaultView?.matchMedia?.('(prefers-reduced-motion: reduce)').matches && doc.documentElement.dataset.motion !== 'on';
     const motionOn = doc.documentElement.dataset.motion !== 'off' && !reduce;
-    if (changed && motionOn && doc.body) whiteFade(doc, run);
-    else run();
+    if (changed && motionOn && doc.body) whiteFade(doc, () => preserveLanguageViewport(doc, run));
+    else preserveLanguageViewport(doc, run);
   });
   const sync = () => {
     const doc = root.ownerDocument || root; doc.documentElement.lang = getLanguage() === 'en' ? 'en' : 'zh-CN';

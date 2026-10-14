@@ -1,3 +1,4 @@
+import { mergeAvailableModels, MODEL_CATALOG_DATE } from './model-catalog.js?v=2026.10.11.1';
 // ─── UI · 模型选择器（P4 拆分：从 mountUI 抽出）────────────────────────────────
 // 拥有：模型下拉菜单（合并网关列表与本地兜底表、隐藏已下线/生图模型、搜索/清空）、selectModel 与按钮态同步、
 //       /system 隐藏通道的进入/退出与现场隔离（preSystem）、生图模型 <select>、「刷新模型」按钮。
@@ -23,16 +24,10 @@ export function installModelPicker({ store, agent, toast, getBusy, openKeyModal,
   // 对话模型列表：过滤掉生图模型（只能由主智能体通过 generate_image 工具调用，
   // 直接选中会绕过工具循环、破坏 Agent 特性；网关 /v1/models 里带它们时也照样隐藏）
   function mergedModels() {
-    const map = new Map();
-    for (const m of FALLBACK_MODELS) {
-      if (HIDDEN_MODELS.has(m.id) || isImageModel(m.id) || isJevModel(m.id)) continue;
-      map.set(m.id, { ...m });
-    }
-    for (const id of store.state.models || []) {
-      if (HIDDEN_MODELS.has(id) || isImageModel(id) || isJevModel(id)) continue;
-      if (!map.has(id)) map.set(id, { id, provider: providerOf(id) });
-    }
-    return [...map.values()];
+    return mergeAvailableModels(store.state.models, FALLBACK_MODELS,
+      !!store.state.modelsFetchedAt || (store.state.models || []).length > 0)
+      .filter(m => !HIDDEN_MODELS.has(m.id) && !isImageModel(m.id) && !isJevModel(m.id))
+      .map(m => ({ ...m, provider: m.provider || providerOf(m.id) }));
   }
   if (HIDDEN_MODELS.has(store.state.model)) {
     store.state.model = SMART_ROUTER_ID;
@@ -69,10 +64,13 @@ export function installModelPicker({ store, agent, toast, getBusy, openKeyModal,
       for (const m of sortModelsInFamily(groups.get(p))) {
         const item = el('button', 'dd-item' + (m.id === store.state.model ? ' active' : ''));
         item.type = 'button';
-        const hit = FALLBACK_MODELS.find((x) => x.id === m.id) || {};
+        const hit = m;
         const free = isFreeModel(m.id);
         const hot = !!hit.hot;
-        const cheap = !!hit.cheap || free || /haiku|mini|lite|-free$/i.test(m.id);
+        const cheap = !!hit.cheap || free;
+        const newlyListed = !!hit.newlyListed;
+        const preview = /preview|(?:^|-)exp$/.test(m.id);
+        item.title = hit.listPrice ? localeText(`网关标价（${MODEL_CATALOG_DATE}）：输入 $${hit.listPrice.input} / 输出 $${hit.listPrice.output}，每百万 token；实际账单以网关为准`, `Gateway list price (${MODEL_CATALOG_DATE}): $${hit.listPrice.input} input / $${hit.listPrice.output} output per million tokens; final billing is determined by the gateway`) : m.id;
         const isRouter = isSmartRouter(m.id);
         item.innerHTML = isRouter
           ? `<span class="dd-item-id mono router-name">${esc(SMART_ROUTER_LABEL)}</span>
@@ -81,8 +79,10 @@ export function installModelPicker({ store, agent, toast, getBusy, openKeyModal,
             </span>`
           : `<span class="dd-item-id mono">${esc(m.id)}</span>
             <span class="dd-item-badges">
-              ${hot ? '<span class="badge hot">热门</span>' : ''}
-              ${free ? '<span class="badge">FREE</span>' : (cheap ? '<span class="badge cheap">低价</span>' : '')}
+              ${hot ? `<span class="badge hot" title="${localeText('应用预设推荐，非热度排行或质量实测排名', 'App-curated recommendation, not a popularity or benchmark ranking')}">${localeText('推荐', 'Recommended')}</span>` : ''}
+              ${newlyListed ? `<span class="badge">${localeText('新收录', 'Newly listed')}</span>` : ''}
+              ${preview ? `<span class="badge ghost">${localeText('预览 / 实验', 'Preview / experimental')}</span>` : ''}
+              ${free ? '<span class="badge">FREE</span>' : (cheap ? `<span class="badge cheap" title="${localeText('网关标价：输入不高于 $1/M 且输出不高于 $5/M', 'Gateway list price: input ≤ $1/M and output ≤ $5/M')}">${localeText('低价', 'Low cost')}</span>` : '')}
               ${supportsVision(m.id) ? '<span class="badge vision" title="支持图片输入（多模态）"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg></span>' : ''}
             </span>`;
         item.addEventListener('click', () => selectModel(m.id));
@@ -225,7 +225,7 @@ export function installModelPicker({ store, agent, toast, getBusy, openKeyModal,
     $('#refresh-models').classList.add('spin');
     try {
       const list = await fetchModels(effectiveApiKey(store.state.apiKey));
-      store.state.models = list; store.notify();
+      store.state.models = list; store.state.modelsFetchedAt = Date.now(); store.notify();
       renderModelMenu();
       toast(`已获取 ${list.length} 个模型（GET /v1/models）`, 'ok');
     } catch (err) { toast(localeText('模型列表获取失败：', 'Failed to load the model list: ') + err.message, 'err'); }

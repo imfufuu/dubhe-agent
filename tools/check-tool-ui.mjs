@@ -64,10 +64,10 @@ try {
       const text = node.querySelector(':scope > .chip-name');
       const animation = text.getAnimations().find(a => a.animationName === 'tool-ink-polish');
       if (!animation) throw new Error('Missing polish animation'); animation.pause();
-      return [0, 800, 1600].map(t => { animation.currentTime = t; const s = getComputedStyle(text); return { color: s.color, opacity: s.opacity }; });
+      return [0, 800, 1600].map(t => { animation.currentTime = t; const s = getComputedStyle(text); return { position: s.backgroundPosition, image: s.backgroundImage, fallback: s.backgroundColor, opacity: s.opacity }; });
     }, theme);
-    assert.ok(new Set(colors.map(c => c.color)).size === 3, JSON.stringify(colors));
-    assert.ok(colors.every(c => c.opacity === '1' && !c.color.includes('rgba')), JSON.stringify(colors)); checks++;
+    assert.ok(new Set(colors.map(c => c.position)).size === 3, JSON.stringify(colors));
+    assert.ok(colors.every(c => c.opacity === '1' && c.image.includes('linear-gradient') && !c.image.includes('rgba') && !c.fallback.includes('rgba')), JSON.stringify(colors)); checks++;
   }
-  console.log(`Browser regressions: ${checks} passed (mobile/desktop, font sizes, themes, fragments/separate messages, nested folding, opaque color animation).`);
+  console.log(`Browser regressions: ${checks} passed (mobile/desktop, font sizes, themes, fragments/separate messages, nested folding, opaque grayscale sweep).`);
 } finally { await browser.close(); }

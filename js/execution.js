@@ -779,7 +779,8 @@ export function checkCapabilityConstraints({ name = '', args = {}, capabilities 
         recovery: '把产物写到允许的目录（如 outputs/），或请用户放宽路径约束',
       };
     }
-    if (name === 'write_file') {
+    if (name === 'document_tool' && ['inspect', 'form_fields'].includes(a.action || 'inspect')) level = 'L1';
+  if (name === 'write_file') {
       const mode = String(a.mode || 'overwrite').toLowerCase();
       const protectedHit = (caps.filesystem.protectedPaths || []).some((p) => String(target || '').startsWith(p));
       if (mode !== 'append' && protectedHit && caps.filesystem.writeOverwrite === 'deny') {
@@ -834,6 +835,8 @@ const contract = (o) => Object.freeze({
 });
 
 export const TOOL_CONTRACTS = Object.freeze({
+  skill_library: contract({ sideEffect: 'none', idempotent: true, timeoutMs: 20000, riskLevel: 'L0', note: '按需探索内置技能，仅加载目录或单篇说明' }),
+  document_tool: contract({ sideEffect: 'filesystem', idempotent: false, timeoutMs: 70000, riskLevel: 'L2', verifyAfterRun: true, note: '本地 Worker 读写文档；保存为新输出，不上传原件' }),
   knowledge_search: contract({ sideEffect: 'none', idempotent: true, timeoutMs: 12000, riskLevel: 'L0', note: '按需检索项目内置知识，无外部副作用' }),
   browser_sandbox: contract({ sideEffect: 'sandbox', idempotent: false, timeoutMs: 75000, riskLevel: 'L2', verifyAfterRun: true, note: '只运行沙箱 HTML 项目；本机 Chromium 调试/截图，不接受公网 URL 或 shell 命令' }),
   execute_javascript: contract({ sideEffect: 'sandbox', idempotent: false, timeoutMs: 22000, riskLevel: 'L2', verifyAfterRun: true, note: '代码可写沙箱文件，执行后需核验副作用' }),
@@ -851,6 +854,7 @@ export const TOOL_CONTRACTS = Object.freeze({
   generate_image: contract({ sideEffect: 'cost', idempotent: false, timeoutMs: 180000, riskLevel: 'L2', external: true, note: '外部生图调用（计费）' }),
   analyze_image: contract({ sideEffect: 'remote', idempotent: true, retryPolicy: 'once', timeoutMs: 60000, riskLevel: 'L1', external: true, note: '图片上行到网关做视觉分析' }),
   analyze_pdf: contract({ sideEffect: 'remote', idempotent: true, retryPolicy: 'once', timeoutMs: 180000, riskLevel: 'L1', external: true, note: 'PDF 文本层本地提取；页图整批上行到网关做视觉分析' }),
+  analyze_audio: contract({ sideEffect: 'remote', idempotent: true, retryPolicy: 'once', timeoutMs: 240000, riskLevel: 'L1', external: true, note: '原音频通过 file 部件上传网关，Gemini 分析（≤16MB）' }),
   analyze_video: contract({ sideEffect: 'remote', idempotent: true, retryPolicy: 'once', timeoutMs: 240000, riskLevel: 'L1', external: true, note: '视频 base64 上行到网关交给 Gemini 做视频理解（≤16MB）' }),
   zip_files: contract({ sideEffect: 'filesystem', idempotent: false, timeoutMs: 15000, riskLevel: 'L2', verifyAfterRun: true }),
   unzip_file: contract({ sideEffect: 'filesystem', idempotent: false, timeoutMs: 15000, riskLevel: 'L2', verifyAfterRun: true, note: '批量写入文件' }),
@@ -1083,7 +1087,7 @@ export function validateToolResultPost({
   if (c && c.timeoutMs && durationMs > c.timeoutMs) {
     issues.push({ id: 'timeout-exceeded', severity: 'warn', detail: `耗时 ${Math.round(durationMs)}ms 超过契约超时 ${c.timeoutMs}ms` });
   }
-  if (c && c.verifyAfterRun && !failureSignalled && !stateChanged) {
+  if (c && c.verifyAfterRun && !(name === 'document_tool' && ['inspect', 'form_fields'].includes(args?.action || 'inspect')) && !failureSignalled && !stateChanged) {
     issues.push({ id: 'side-effect-missing', severity: 'warn', detail: '工具声称成功，但沙箱文件系统无任何变化（可能未真正写入，或写入内容与现值相同）' });
   }
   if (c && c.sideEffect !== 'none' && failureSignalled && stateChanged) {
@@ -1291,7 +1295,7 @@ export function formatBudgetLedger(gov) {
 // 「还剩几次、该怎么省」，耗尽的通道直接告知「这类调用不会再被放行」，让模型提前收敛而不是事后被拦。
 export const BUDGET_WARN_THRESHOLD = 2;
 // 计 1 次外部副作用的工具（与 classifyToolRisk 的 hasExternalSideEffect 判定一致：external / network / cost / remote）
-const EXTERNAL_TOOL_HINT = 'fetch_url / search_web / crawl_site / download_file / generate_image / analyze_image / analyze_pdf / analyze_video / execute_cpp / run_git / dispatch_subagent';
+const EXTERNAL_TOOL_HINT = 'fetch_url / search_web / crawl_site / download_file / generate_image / analyze_image / analyze_pdf / analyze_video / analyze_audio / execute_cpp / run_git / dispatch_subagent';
 
 export function formatBudgetForecast(gov, { tools = null } = {}) {
   if (!gov) return '';

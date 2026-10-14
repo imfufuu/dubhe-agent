@@ -1,4 +1,6 @@
-import { installLanguage } from './ui-language.js?v=2026.10.12.1';
+import { registerOfflineCache } from './register-cache.js';
+import { installSmoothDetails } from './ui-motion.js?v=2026.10.11.1';
+import { installLanguage } from './ui-language.js?v=2026.10.11.1';
 installLanguage();
 import { readThemePreference, writeThemePreference, THEME_STORAGE_KEY, LEGACY_HOME_THEME_KEY } from './theme.js';
 import { TRACK } from './home-beats.js';
@@ -382,7 +384,6 @@ function finishOpen(instant) {
   watchReveal();
 }
 
-const AUDIO_CACHE = 'dubhe-assets-v2';
 
 function stopVolumeRamp() {
   if (volumeRamp) { cancelAnimationFrame(volumeRamp); volumeRamp = 0; }
@@ -491,22 +492,7 @@ async function prefetchAudio() {
   loadAbort = new AbortController();
   const src = audio.getAttribute('src') || 'assets/audio/dubhe-home.mp3';
   try {
-    // 优先命中本地持久化 CacheStorage：下载过一次后随时零延迟播放
-    if (typeof caches !== 'undefined') {
-      try {
-        const cache = await caches.open(AUDIO_CACHE);
-        const cachedRes = await cache.match(src);
-        if (cachedRes && cachedRes.ok) {
-          const blob = await cachedRes.blob();
-          if (blob && blob.size > 0) {
-            setLoadProgress(1, '影片已就绪');
-            await bindAudioBlob(blob);
-            markAudioReady();
-            return;
-          }
-        }
-      } catch { /* CacheStorage 不可用则走网络流 */ }
-    }
+    // 统一交给 SW 的哈希缓存；不再绕过版本校验读取旧音频缓存。
     const res = await fetch(src, { signal: loadAbort.signal, cache: 'force-cache' });
     if (!res.ok || !res.body) throw new Error(String(res.status || 'no body'));
     const total = Number(res.headers.get('Content-Length') || 0);
@@ -522,12 +508,6 @@ async function prefetchAudio() {
     }
     const mime = res.headers.get('Content-Type') || 'audio/mpeg';
     const blob = new Blob(chunks, { type: mime });
-    if (typeof caches !== 'undefined' && blob.size > 0) {
-      try {
-        const cache = await caches.open(AUDIO_CACHE);
-        await cache.put(src, new Response(blob.slice(0, blob.size, mime), { headers: { 'Content-Type': mime } }));
-      } catch { /* 写入缓存失败不影响本次播放 */ }
-    }
     await bindAudioBlob(blob);
     markAudioReady();
   } catch (err) {
@@ -677,25 +657,6 @@ function skipFilm() {
   requestAnimationFrame(tick);
 }
 
-function openGate() {
-  playing = false;
-  enteringFilm = false;
-  if (enterTimer) { clearTimeout(enterTimer); enterTimer = 0; }
-  paused = false;
-  cancelAnimationFrame(raf);
-  stopVolumeRamp();
-  if (audio) try { audio.pause(); audio.currentTime = 0; audio.volume = 1; } catch { /* ignore */ }
-  syncSoundButton();
-  if (curtain) {
-    curtain.style.transition = 'none';
-    curtain.style.opacity = '0';
-  }
-  root.classList.remove('open', 'scoring', 'leaving', 'integrating', 'entering-film', 'paused');
-  root.classList.add('gate');
-  lockScroll(false);
-  pinTop();
-}
-
 function syncThemeBtn() {
   if (!themeBtn) return;
   const dark = root.dataset.theme === 'dark';
@@ -747,63 +708,7 @@ function watchReveal() {
   if(!window.__dubheRevealBound){window.__dubheRevealBound=true;const queue=()=>{if(!revealQueued){revealQueued=true;requestAnimationFrame(visible);}};addEventListener('scroll',queue,{passive:true});addEventListener('resize',queue);addEventListener('pageshow',queue);document.addEventListener('visibilitychange',queue);}
 }
 
-function bindFaqAccordion() {
-  document.querySelectorAll('.faq details').forEach((det) => {
-    const sum = det.querySelector('summary');
-    const body = det.querySelector('p');
-    if (!sum || !body) return;
-    let anim = null;
-    sum.addEventListener('click', (e) => {
-      e.preventDefault();
-      if (reduce || typeof det.animate !== 'function') {
-        det.open = !det.open;
-        det.classList.toggle('is-open', det.open);
-        return;
-      }
-      if (anim) { anim.cancel(); anim = null; }
-      const isOpening = !det.open || det.classList.contains('is-closing');
-      const startH = det.offsetHeight;
-      if (isOpening) {
-        det.classList.remove('is-closing');
-        det.classList.add('is-open');
-        det.open = true;
-        const endH = sum.offsetHeight + body.offsetHeight;
-        anim = det.animate(
-          [{ height: `${startH}px` }, { height: `${endH}px` }],
-          { duration: 300, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' },
-        );
-        body.animate(
-          [{ opacity: 0, transform: 'translateY(-5px)' }, { opacity: 1, transform: 'translateY(0)' }],
-          { duration: 260, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' },
-        );
-        anim.onfinish = () => { det.style.height = ''; anim = null; };
-        anim.oncancel = () => { det.style.height = ''; };
-      } else {
-        det.classList.remove('is-open');
-        det.classList.add('is-closing');
-        const endH = sum.offsetHeight;
-        anim = det.animate(
-          [{ height: `${startH}px` }, { height: `${endH}px` }],
-          { duration: 260, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' },
-        );
-        body.animate(
-          [{ opacity: 1, transform: 'translateY(0)' }, { opacity: 0, transform: 'translateY(-4px)' }],
-          { duration: 200, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' },
-        );
-        anim.onfinish = () => {
-          det.open = false;
-          det.classList.remove('is-closing');
-          det.style.height = '';
-          anim = null;
-        };
-        anim.oncancel = () => {
-          det.classList.remove('is-closing');
-          det.style.height = '';
-        };
-      }
-    });
-  });
-}
+function bindFaqAccordion() { installSmoothDetails(document, '.faq details'); }
 
 if (themeBtn) {
   themeBtn.addEventListener('click', () => flipTheme());
@@ -825,11 +730,12 @@ const navBrand = document.querySelector('.nav .brand');
 if (navBrand) {
   navBrand.addEventListener('click', (e) => {
     e.preventDefault();
-    openGate();
+    // The retired gate must never hide the navigation page.
+    openSite(true);
+    pinTop();
   });
 }
 
-const gateSkip = document.getElementById('gate-skip');
 document.querySelectorAll('[data-play-film]').forEach((btn) => {
   btn.addEventListener('click', (e) => {
     e.preventDefault();
@@ -837,11 +743,7 @@ document.querySelectorAll('[data-play-film]').forEach((btn) => {
   });
 });
 
-try {
-  if ('serviceWorker' in navigator && (location.protocol === 'https:' || ['localhost', '127.0.0.1'].includes(location.hostname))) {
-    navigator.serviceWorker.register('./sw.js', { scope: './' }).catch(() => {});
-  }
-} catch { /* ignore */ }
+registerOfflineCache();
 
 /* 片尾由时钟收束（最后 5 秒黑→白），不在 audio.ended 时硬切 */
 exploreCta && exploreCta.addEventListener('click', requestFilm);
@@ -855,18 +757,9 @@ skip && skip.addEventListener('click', skipFilm);
 soundBtn && soundBtn.addEventListener('click', (e) => { e.stopPropagation(); unblockAudio(); });
 // 切到后台自动暂停，回来不抢播放（手势之外 play() 会被拦）
 document.addEventListener('visibilitychange', () => { if (document.hidden && playing && !paused && !pauseLocked()) setPaused(true); });
-gateSkip && gateSkip.addEventListener('click', () => openSite(true));
 window.addEventListener('keydown', (e) => {
   if (e.metaKey || e.ctrlKey || e.altKey) return;
-  if (root.classList.contains('gate')) {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      requestFilm();
-    } else if (e.key === 'Escape') {
-      e.preventDefault();
-      openSite(true);
-    }
-  } else if (root.classList.contains('scoring') && !root.classList.contains('leaving')) {
+  if (root.classList.contains('scoring') && !root.classList.contains('leaving')) {
     if (e.key === 'Escape') {
       e.preventDefault();
       skipFilm();
@@ -877,7 +770,7 @@ window.addEventListener('keydown', (e) => {
   }
 });
 
-// 直接进入主页：不再显示「开始探索」门页与自动片头（门页 DOM / 介绍片代码保留，便于以后恢复）
+// 直接进入导航页；介绍片仅手动播放，旧门页入口已移除。
 void initialView;
 // HTML 初始类名已是 open，openSite 会直接返回，因此这里直接完成打开流程（含 watchReveal，否则首屏内容保持隐藏）
 finishOpen(true);

@@ -33,15 +33,26 @@ function safeRelPath(name) {
   return parts.join('/');
 }
 
-async function inflateRaw(u8) {
+async function inflateRaw(u8, maxBytes) {
   if (typeof DecompressionStream === 'function') {
     const ds = new DecompressionStream('deflate-raw');
-    const buf = await new Response(new Blob([u8]).stream().pipeThrough(ds)).arrayBuffer();
-    return new Uint8Array(buf);
+    const reader = new Blob([u8]).stream().pipeThrough(ds).getReader();
+    const chunks = []; let size = 0;
+    try {
+      for (;;) {
+        const { done, value } = await reader.read(); if (done) break;
+        size += value.length;
+        if (size > maxBytes) { await reader.cancel(); throw Error('解压后体积过大'); }
+        chunks.push(value);
+      }
+    } finally { reader.releaseLock(); }
+    const out = new Uint8Array(size); let offset = 0;
+    for (const chunk of chunks) { out.set(chunk, offset); offset += chunk.length; }
+    return out;
   }
   const zlib = await import('node:zlib');
   const { promisify } = await import('node:util');
-  return await promisify(zlib.inflateRaw)(u8);
+  return await promisify(zlib.inflateRaw)(u8, { maxOutputLength: maxBytes });
 }
 
 function u8ToB64(u8) {
@@ -85,6 +96,7 @@ export async function unpackZip(bytes, { maxUncompressed = 24 * 1024 * 1024 } = 
   const eocd = findEocd(u8);
   if (eocd < 0) return { ok: false, files: [], error: 'ZIP 目录损坏（找不到 EOCD）' };
   const count = u16(u8, eocd + 10);
+  if (count > 2048) return { ok: false, files: [], error: 'ZIP 文件条目过多' };
   const cdSize = u32(u8, eocd + 12);
   const cdOff = u32(u8, eocd + 16);
   if (cdOff + cdSize > u8.length) return { ok: false, files: [], error: 'ZIP 中央目录越界' };
@@ -117,10 +129,11 @@ export async function unpackZip(bytes, { maxUncompressed = 24 * 1024 * 1024 } = 
     const locName = u16(u8, localOff + 26);
     const locExtra = u16(u8, localOff + 28);
     const dataAt = localOff + 30 + locName + locExtra;
+    if (dataAt + comp > u8.length || uncomp > maxUncompressed - total) return { ok: false, files: [], error: 'ZIP 数据越界或解压后体积过大' };
     const slice = u8.subarray(dataAt, dataAt + comp);
     let raw;
     try {
-      raw = method === 0 ? slice : await inflateRaw(slice);
+      raw = method === 0 ? slice : await inflateRaw(slice, Math.max(1, maxUncompressed - total));
     } catch (err) {
       return { ok: false, files, error: `解压 ${rel} 失败：${err.message || err}` };
     }

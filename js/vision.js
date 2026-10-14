@@ -1,12 +1,14 @@
+import { normalizeAudioData } from './audio-format.js';
 // 识图 / 视频识别工具专用通道：对话模型全部按纯文本发送，图片与视频只走这里。
 // 模型由设置页「多模态模型」决定（config.js VISION_MODELS / VIDEO_MODELS），默认仍是 deepseek-v4-flash-vision-exp。
 // 独立文件，避免给 api.js 新增具名导出（Pages 混版缓存会白屏）。
 import { authHeaders } from './api.js?v=2026.10.11.1';
 import { gatewayBase, otherGatewayBase, setGatewayBase, isNetworkError } from './endpoint.js';
-import { DEFAULT_VISION_MODEL, DEFAULT_VIDEO_MODEL, resolveVisionModel, resolveVideoModel } from './config.js?v=2026.10.11.1';
+import { DEFAULT_VISION_MODEL, DEFAULT_VIDEO_MODEL, resolveVisionModel, resolveVideoModel, DEFAULT_AUDIO_MODEL, resolveAudioModel } from './config.js?v=2026.10.11.1';
 
 export const VISION_TOOL_MODEL = DEFAULT_VISION_MODEL;
 export const VIDEO_TOOL_MODEL = DEFAULT_VIDEO_MODEL;
+export const AUDIO_TOOL_MODEL = DEFAULT_AUDIO_MODEL;
 
 // 网关对 OpenAI 兼容接口未传 max_tokens 时经常默认 1k/4k，OCR 会被 finish_reason=length 砍半截。
 const VISION_MAX_TOKENS = 16384;
@@ -145,12 +147,13 @@ function wantsReasoningOff(model) {
 }
 
 // 公共循环：发一轮，finish_reason=length 就续写，最多 VISION_CONTINUES 次；汇总 usage 回调计费。
-async function runVisionTurns({ model, content, apiKey, signal, onUsage, promptLen = 0, imageCount = 0, videoSeconds = 0 }) {
+async function runVisionTurns({ model, content, apiKey, signal, onUsage, promptLen = 0, imageCount = 0, videoSeconds = 0, audio = false }) {
   const messages = [{ role: 'user', content }];
   let disableReasoning = wantsReasoningOff(model);
   const parts = [];
   let totalInput = 0;
   let totalOutput = 0;
+  let missingAudioUsage = false;
   for (let i = 0; i < VISION_CONTINUES; i++) {
     const body = {
       model,
@@ -170,6 +173,7 @@ async function runVisionTurns({ model, content, apiKey, signal, onUsage, promptL
       }
       throw err;
     }
+    if (audio && (!shot.usage || !shot.usage.input)) missingAudioUsage = true;
     if (shot.usage) {
       totalInput += shot.usage.input;
       totalOutput += shot.usage.output;
@@ -182,9 +186,9 @@ async function runVisionTurns({ model, content, apiKey, signal, onUsage, promptL
   const fullText = parts.join('');
   if (typeof onUsage === 'function') {
     // 没拿到 usage 时的估算：图 ≈1600 tok/张；视频 ≈ 70 tok/秒（Gemini 1fps 实测约 4200 tok/分钟）
-    const estIn = totalInput || (imageCount * 1600 + Math.ceil(videoSeconds * 70) + Math.ceil(promptLen / 2));
+    const estIn = totalInput || (audio ? 0 : (imageCount * 1600 + Math.ceil(videoSeconds * 70) + Math.ceil(promptLen / 2)));
     const estOut = totalOutput || Math.ceil(fullText.length / 2);
-    try { onUsage({ model, input: estIn, output: estOut, imageCount, videoSeconds }); } catch { /* noop */ }
+    try { onUsage({ model, input: estIn, output: estOut, imageCount, videoSeconds, inputUnavailable: audio && missingAudioUsage }); } catch { /* noop */ }
   }
   return fullText;
 }
@@ -214,4 +218,13 @@ export async function analyzeVideo({ apiKey, prompt, dataUrl, filename, model, s
     { type: 'file', file: { filename: String(filename || 'video.mp4'), file_data: fileData } },
   ];
   return runVisionTurns({ model: resolveVideoModel(model), content, apiKey, signal, onUsage, promptLen: text.length, videoSeconds: durationSec });
+}
+
+// Same gateway wire format as video: NOT input_audio or audio_url.
+export async function analyzeAudio({ apiKey, prompt, dataUrl, filename, model, signal, onUsage }) {
+  if (!apiKey) throw Error('未配置 API Key');
+  const media = normalizeAudioData(dataUrl, filename);
+  const text = String(prompt || '转录可听清的语音，标注语言、近似时间点和说话人 A/B；标记听不清处，不猜测真实身份。另列摘要、待办和非语音声音。时间点与说话人区分不是强制对齐结果。').trim();
+  const content = [{ type: 'text', text }, { type: 'file', file: { filename: String(filename || 'audio.mp3'), file_data: media.dataUrl } }];
+  return runVisionTurns({ model: resolveAudioModel(model), content, apiKey, signal, onUsage, promptLen: text.length, audio: true });
 }

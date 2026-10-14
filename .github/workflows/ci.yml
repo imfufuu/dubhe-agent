@@ -54,6 +54,16 @@ jobs:
       - name: tests/reasoning-rhythm.test.mjs · 模型努力映射与消息间距
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/reasoning-rhythm.test.mjs
+      - name: V1.8 static preview and shared motion
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/v18-preview.test.mjs
+      - name: Manifest-based incremental static cache
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/static-cache.test.mjs
+      - name: Discoverable document skills and audio analysis
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/document-skills.test.mjs
+
       - name: '汇总测试计数（::notice:: + job summary）'
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs --summary

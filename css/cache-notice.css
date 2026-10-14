@@ -1,0 +1,3 @@
+.cache-update-note { position: fixed; z-index: 10020; right: max(16px, env(safe-area-inset-right)); bottom: max(18px, env(safe-area-inset-bottom)); display: flex; align-items: center; gap: 14px; box-sizing: border-box; max-width: min(470px, calc(100vw - 32px)); padding: 14px 16px; border: 1px solid var(--line, #d8d8d8); border-radius: 12px; background: var(--bg, #fff); color: var(--fg, #242424); box-shadow: 0 6px 28px #0002; font: 13px/1.7 system-ui, sans-serif; }
+.cache-update-note button { flex-shrink: 0; padding: 6px 10px; border: 1px solid var(--line, #d8d8d8); border-radius: 7px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.cache-update-note button:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }

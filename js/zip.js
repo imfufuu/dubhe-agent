@@ -47,6 +47,8 @@ const MIME_EXT = {
 };
 // 由路径扩展名反推一个合理的 MIME（用于 Blob type，避免浏览器默认 text/plain 把文件标成 .txt）
 const EXT_MIME = {
+  mp3: 'audio/mpeg', wav: 'audio/wav', m4a: 'audio/mp4', aac: 'audio/aac', ogg: 'audio/ogg', opus: 'audio/ogg', flac: 'audio/flac', weba: 'audio/webm',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', doc: 'application/msword',
   mp4: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime', m4v: 'video/x-m4v',
   txt: 'text/plain', md: 'text/markdown', markdown: 'text/markdown', html: 'text/html', htm: 'text/html',
   css: 'text/css', csv: 'text/csv', json: 'application/json', jsonc: 'application/json',

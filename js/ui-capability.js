@@ -8,7 +8,7 @@
 // 弹层复用 #tok-pop（与 token / 智能路由弹层同一时间只开一个）。
 import { text as localeText } from './locale.js';
 import { isSmartRouter, SMART_ROUTER_LABEL } from './smartrouter.js?v=2026.10.11.1';
-import { reasoningLevelLabel } from './reasoning.js';
+import { reasoningLevelLabel } from './reasoning.js?v=2026.10.11.1';
 import { getTransport } from './api.js?v=2026.10.11.1';
 import { DROP_REASON_FIX } from './executionContext.js?v=2026.10.11.1';
 

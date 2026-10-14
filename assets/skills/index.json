@@ -1,0 +1,198 @@
+{
+  "version": 1,
+  "skills": [
+    {
+      "id": "word-docx",
+      "title": {
+        "zh": "Word 文档生成与重建",
+        "en": "Create and rebuild Word documents"
+      },
+      "summary": {
+        "zh": "本地生成 DOCX：标题、段落、项目符号、表格、页眉页脚、PNG/JPEG 插图。",
+        "en": "Create DOCX locally with headings, bullets, tables, headers, footers and PNG/JPEG images."
+      },
+      "tags": "word doc docx 文稿 合同 报告 排版 表格 页眉 页脚",
+      "tools": [
+        "document_tool",
+        "read_file",
+        "write_file"
+      ]
+    },
+    {
+      "id": "word-inspect",
+      "title": {
+        "zh": "Word 长文阅读与结构提取",
+        "en": "Inspect long Word documents"
+      },
+      "summary": {
+        "zh": "提取 DOCX 段落、页眉页脚并分段阅读；明确图像、公式、修订边界。",
+        "en": "Extract DOCX paragraphs, headers and footers with paginated output."
+      },
+      "tags": "word docx 阅读 提取 分页 正文 表格 论文",
+      "tools": [
+        "document_tool"
+      ]
+    },
+    {
+      "id": "slide-deck",
+      "title": {
+        "zh": "可编辑 PPTX 演示文稿",
+        "en": "Editable PPTX slide decks"
+      },
+      "summary": {
+        "zh": "生成 16:9 可编辑 PPTX：标题、正文、表格、插图与演讲备注。",
+        "en": "Create editable 16:9 slides, tables, images and speaker notes."
+      },
+      "tags": "ppt pptx slides 演示 幻灯片 汇报 课件 讲稿",
+      "tools": [
+        "document_tool",
+        "generate_image"
+      ]
+    },
+    {
+      "id": "slide-audit",
+      "title": {
+        "zh": "PPTX 阅读与内容审校",
+        "en": "Read and audit slide content"
+      },
+      "summary": {
+        "zh": "按演示顺序读取文字和备注；审校内容，不假装已渲染。",
+        "en": "Read slide text in presentation order and inspect notes, without pretending to render."
+      },
+      "tags": "pptx 幻灯片 审校 提纲 演讲 备注",
+      "tools": [
+        "document_tool",
+        "diff_text"
+      ]
+    },
+    {
+      "id": "pdf-pages",
+      "title": {
+        "zh": "PDF 合并、拆分、重排与旋转",
+        "en": "Merge, split, reorder and rotate PDFs"
+      },
+      "summary": {
+        "zh": "本地页面操作，保留原件；1-based 页码，最多 200 页。",
+        "en": "Local page operations with 1-based page numbers, preserving originals."
+      },
+      "tags": "pdf merge split extract rotate 合并 拆分 提取 旋转 重排",
+      "tools": [
+        "document_tool"
+      ]
+    },
+    {
+      "id": "pdf-forms",
+      "title": {
+        "zh": "PDF 表单检查、填写与扁平化",
+        "en": "Inspect, fill and flatten PDF forms"
+      },
+      "summary": {
+        "zh": "先查看字段，再填写文本、复选框和选择项；不伪造签名。",
+        "en": "Inspect AcroForm fields before filling text, checkboxes and selections."
+      },
+      "tags": "pdf forms acroform 表单 填写 复选框 扁平化",
+      "tools": [
+        "document_tool"
+      ]
+    },
+    {
+      "id": "pdf-markup",
+      "title": {
+        "zh": "PDF 水印与元数据",
+        "en": "PDF watermarks and metadata"
+      },
+      "summary": {
+        "zh": "添加文本水印或修改元数据；明确不是安全涂黑或彻底匿名化。",
+        "en": "Add text watermarks or edit metadata, without claiming redaction/anonymization."
+      },
+      "tags": "pdf watermark metadata 水印 作者 标题 元数据 脱敏 涂黑",
+      "tools": [
+        "document_tool"
+      ]
+    },
+    {
+      "id": "pdf-text-ocr",
+      "title": {
+        "zh": "PDF 文本与按需视觉识别",
+        "en": "PDF text extraction and opt-in visual analysis"
+      },
+      "summary": {
+        "zh": "优先本地文本层；扫描页才按需要调用已配置视觉模型。",
+        "en": "Prefer local text extraction; use the configured vision model only when needed."
+      },
+      "tags": "pdf text ocr 扫描 表格 公式 提取 论文 识别",
+      "tools": [
+        "analyze_pdf",
+        "document_tool"
+      ]
+    },
+    {
+      "id": "audio-transcription",
+      "title": {
+        "zh": "音频转录与内容分析",
+        "en": "Audio transcription and analysis"
+      },
+      "summary": {
+        "zh": "同视频 file 请求，三个 Gemini 模型；近似时间点与说话人标签。",
+        "en": "Video-style file input to three Gemini choices, with approximate timestamps/speaker labels."
+      },
+      "tags": "audio mp3 wav m4a 音频 录音 播客 转录 听写 会议",
+      "tools": [
+        "analyze_audio"
+      ]
+    },
+    {
+      "id": "data-report",
+      "title": {
+        "zh": "数据清洗到文档报告",
+        "en": "From data cleaning to document reports"
+      },
+      "summary": {
+        "zh": "先计算核验，再把真实结果制作成 DOCX 或 PPTX；不编造数字。",
+        "en": "Compute and validate first, then put real results into DOCX/PPTX."
+      },
+      "tags": "csv tsv 数据 清洗 统计 报告 表格 计算",
+      "tools": [
+        "data_tool",
+        "execute_python",
+        "document_tool"
+      ]
+    },
+    {
+      "id": "document-validation",
+      "title": {
+        "zh": "文档交付前验收",
+        "en": "Document delivery validation"
+      },
+      "summary": {
+        "zh": "格式、结构、关键内容、原件保留与视觉验收边界。",
+        "en": "Validate formats, structure, key content and original preservation."
+      },
+      "tags": "docx pptx pdf validate 验收 校验 交付 检查",
+      "tools": [
+        "document_tool",
+        "list_files",
+        "unzip_file",
+        "text_tool"
+      ]
+    },
+    {
+      "id": "archive-workflow",
+      "title": {
+        "zh": "附件归档与批量交付",
+        "en": "Attachment archives and batch delivery"
+      },
+      "summary": {
+        "zh": "安全解包、逐件处理、归档交付；不把压缩包当成已读内容。",
+        "en": "Safely unpack, process individual files and package deliverables."
+      },
+      "tags": "zip archive batch 归档 压缩 打包 解压 文件",
+      "tools": [
+        "zip_files",
+        "unzip_file",
+        "list_files",
+        "read_file"
+      ]
+    }
+  ]
+}

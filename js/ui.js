@@ -56,7 +56,7 @@ import { toast, MAX_TOAST_STACK, fmtClock, fmtAgo } from './ui-common.js?v=2026.
 export { toast, MAX_TOAST_STACK };
 
 // 这些工具不进 Ran Commands，而是各自的文件折叠（Explored / Edited File(s)）
-const FILE_FOLD_TOOLS = new Set(['write_file', 'read_file', 'analyze_image', 'analyze_pdf', 'analyze_video']);
+const FILE_FOLD_TOOLS = new Set(['write_file', 'read_file', 'analyze_image', 'analyze_pdf', 'analyze_video', 'analyze_audio']);
 
 export function mountUI(store, agent) {
   let feedbackUI, sharingUI;
@@ -931,14 +931,13 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
   }
 
   // ── 侧栏 & 沙箱面板收起体系 ───────────────────────────────────────────
-  // 宽屏：两者都并入网格（收起=列宽归零，展开=挤压布局，绝不遮挡内容）
-  // 中等桌面宽度：沙箱面板改右侧浮层；移动窄屏才自底部全屏滑入，✕ / Esc 收回
+  // 右面板 ≥761px 停靠；侧栏 ≤860px 抽屉；手机面板全屏。
   const sidebar = $('.sidebar');
   const panel = $('#sandbox-panel');
   const backdrop = $('#overlay-backdrop');
   const fab = $('#sidebar-fab');
   const mqSidebar = window.matchMedia('(max-width: 860px)');
-  const mqPanel = window.matchMedia('(max-width: 1180px)');
+  const mqPanel = window.matchMedia('(max-width: 760px)');
 
   function updateBackdrop() {
     const show = (mqSidebar.matches && sidebar.classList.contains('sidebar-open'))
@@ -946,24 +945,23 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     backdrop.classList.toggle('show', show);
     syncThemeColor();
   }
-  // 弹窗 / 灯箱的开合散落在各模块（settings.js / ui-lightbox.js / Key 弹窗），统一用属性观察兜底同步状态栏取色
+  // 跨模块弹层统一同步状态栏取色。
   if (typeof MutationObserver === 'function') {
     const mo = new MutationObserver(() => syncThemeColor());
     for (const n of themeOverlayNodes()) mo.observe(n, { attributes: true, attributeFilter: ['class', 'hidden'] });
   }
-  let viewerCloser = null; // installFilesPanel 之后才有（它在本函数定义之后才挂载，初始化时 setPanelCollapsed(true) 已经在跑）
+  let viewerCloser = null; // 由下方 installFilesPanel 赋值。
   function setPanelCollapsed(v) {
     panel.classList.toggle('collapsed', v);
-    // 收起面板 = 看不见查看器了：把里面的视频 / 音频一并停掉（否则声音在背后继续放）
+    // 收起时停止预览媒体。
     if (v && viewerCloser) viewerCloser();
-    // 以前这里把按钮内容整体替换成两个方块符号字符：既丢掉了 pill 的「SVG 图标 + 中文文字」统一外观，
-    // 又在窄屏下把按钮压到 30 多像素宽（点不中）。改成切状态类 + 提示语，外观与其它 pill 一致。
+    // 保留统一 SVG 胶囊，只切状态与提示。
     const btn = $('#panel-toggle');
     btn.classList.toggle('on', !v);
     btn.setAttribute('aria-pressed', v ? 'false' : 'true');
     btn.title = v ? '沙箱面板已收起（文件树 / 下载 / 清空）：点开' : '沙箱面板已展开：点此收起';
     if (typeof syncCapLine === 'function') syncCapLine();
-    // 面板浮层会盖住内容：打开时关掉移动侧栏；关闭靠面板内 ✕ / Esc，也可点遮罩。
+    // 打开面板时先关闭侧栏抽屉。
     if (!v && mqSidebar.matches) sidebar.classList.remove('sidebar-open');
     updateBackdrop();
   }
@@ -988,7 +986,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       const mem = $('#tab-memory');
       if (files) files.hidden = id !== 'files';
       if (mem) mem.hidden = id !== 'memory';
-      if (id === 'memory') renderMemory(); // 打开记忆标签时总是重绘，保证空状态与列表都在
+      if (id === 'memory') { viewerCloser?.(); renderMemory(); } // 打开记忆标签时总是重绘，保证空状态与列表都在
     });
   });
   $('#sidebar-toggle').addEventListener('click', () => {
@@ -1583,20 +1581,19 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       }
       return [...new Set(out)];
     };
-    // analyze_video：同 analyze_pdf，优先从结果头部回读真实文件名
     const pathsOfAnalyzeVideo = (msg) => {
       const out = [];
       for (const call of (msg && msg.toolCalls || [])) {
-        if (call.name !== 'analyze_video') continue;
+        if (!['analyze_video', 'analyze_audio'].includes(call.name)) continue;
         const args = call.args && typeof call.args === 'object' ? call.args : {};
         const toolMsg = (store.state.messages || []).find((x) => x.role === 'tool' && String(x.toolCallId) === String(call.id));
         const result = String(toolMsg && toolMsg.content != null ? toolMsg.content : '');
-        const found = /^\[视频识别完成\] 模型 \S+ · 文件 (.*?) · /.exec(result);
+        const found = /^\[(?:视频|音频)识别完成\] 模型 \S+ · 文件 (.*?) · /.exec(result);
         let path = found ? found[1].trim() : (args.path ? String(args.path) : decodeRawJsonString(String(args.__raw || ''), 'path'));
         if (!path) {
           try {
             const vids = (agent && agent.fs && typeof agent.fs.list === 'function' ? agent.fs.list() : [])
-              .map((f) => String(f && f.path || '')).filter((p) => /\.(mp4|webm|mov|m4v)$/i.test(p));
+              .map((f) => String(f && f.path || '')).filter((p) => /\.(mp4|webm|mov|m4v|mp3|wav|m4a|aac|ogg|opus|flac|weba)$/i.test(p));
             if (vids.length) path = vids[vids.length - 1];
           } catch { /* noop */ }
         }
@@ -1783,7 +1780,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       for (const tc of a.toolCalls || []) {
         if (!tc) continue;
         if (tc.billing) {
-          toolCosts.push(tc.billing);
+          toolCosts.push({ ...tc.billing, id: tc.id });
         } else if (tc.name === 'generate_image') {
           const args = tc.args || {};
           toolCosts.push({

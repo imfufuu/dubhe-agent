@@ -38,6 +38,8 @@ export const CAPABILITY_REGISTRY = Object.freeze({
   execute_python: R('codeSandbox', 'exec', { core: 2, heavy: true, tags: ['code'] }),
   execute_cpp: R('codeSandbox', 'remote', { core: 3, heavy: true, tags: ['code'] }),
   browser_sandbox: R('localBrowser', 'exec', { heavy: true, tags: ['code'] }),
+  skill_library: R('invariantCore', 'local', { core: 14, parallel: true, readOnly: true }),
+  document_tool: R('invariantCore', 'fs-write', { heavy: true }),
   knowledge_search: R('invariantCore', 'local', { core: 13, parallel: true, readOnly: true }),
   // ── 文件系统（永远在）──
   write_file: R('invariantCore', 'fs-write', { core: 4, heavy: true }),
@@ -64,6 +66,7 @@ export const CAPABILITY_REGISTRY = Object.freeze({
   analyze_image: R('invariantCore', 'remote', { core: 11, parallel: true, heavy: true, tags: ['image'] }),
   analyze_pdf: R('invariantCore', 'remote', { tags: ['image'] }),
   analyze_video: R('invariantCore', 'remote', { tags: ['image'] }),
+  analyze_audio: R('invariantCore', 'remote', { tags: ['audio'] }),
   // ── 记忆 ──
   remember: R('invariantCore', 'memory'),
   // ── 网页（中继 + 联网开关；search / crawl / file 再按 Worker health 能力位）──

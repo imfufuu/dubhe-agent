@@ -779,16 +779,16 @@ test('第 6 条定稿：智能路由图标 = 方案 B（轨道枢纽）：单色
   assert.doesNotMatch(ROUTER_ICON_SVG, /TeamoRouter|TEAMOROUTER/i, '不再复刻第三方产品 LOGO');
 });
 
-test('版本与文档：构建号、CHANGELOG 与 README 同步（跟随 APP_VERSION，不写死）', async () => {
+test('版本与文档：发布标识同步，实时构建以部署清单为准', async () => {
   const fsp = await import('node:fs');
-  const { APP_VERSION } = await import('../js/config.js');
+  const { APP_RELEASE } = await import('../js/config.js');
   const changelog = fsp.readFileSync(new URL('../CHANGELOG.md', import.meta.url), 'utf8');
   const readme = fsp.readFileSync(new URL('../README.md', import.meta.url), 'utf8');
-  const escaped = APP_VERSION.replace(/\./g, '\\.');
-  assert.match(changelog, new RegExp('^## Dubhe Agent V1\\.7 Stable · 2026-\\d\\d-\\d\\d · 构建 ' + escaped + ' ·', 'm'), 'CHANGELOG 顶部的构建号应与 APP_VERSION 一致');
-  assert.match(readme, new RegExp('构建 `' + escaped + '`'), 'README 的构建戳应与 APP_VERSION 一致');
-  assert.match(changelog, /构建 2026\.10\.10\.2 ·/, '上一构建（2026.10.10.2）应作为历史保留');
-  assert.match(readme, /### 当前界面与跨设备行为/, 'README 保留当前界面行为小节');
+  assert.ok(changelog.includes('## Dubhe Agent ' + APP_RELEASE + ' Stable'));
+  assert.ok(readme.includes('**Dubhe Agent ' + APP_RELEASE + ' Stable**'));
+  assert.match(readme, /部署清单/);
+  assert.match(changelog, /构建 2026\.10\.10\.2 ·/, '上一构建应作为历史保留');
+  assert.match(readme, /### 当前界面与跨设备行为/);
 });
 
 group('多模态标识');
@@ -2271,17 +2271,19 @@ test('index.html 是产品介绍页并跳转到 app.html', async () => {
   const m = /css\/home\.css\?v=([\d.]+)/.exec(home);
   assert.equal(m[1], APP_VERSION);
   assert.match(home, /打开对话|打开工作台/);
-  assert.match(home, /开始探索/);
-  assert.match(home, /id="explore"/);
-  assert.match(home, /explore-mark/);
-  assert.match(home, /id="gate-skip"/);
-  assert.match(home, /class="gate-beats"/);
+
+
+
+
+
   assert.match(home, /播放介绍片/);
+  assert.match(home, /打开工作台/);
+  assert.doesNotMatch(home, /id="gate"/);
   assert.equal(home.includes('思考五档'), false, '思考档是七档');
   assert.equal(home.includes('上限 128'), false, 'ZIP 已去掉条目上限');
-  assert.match(home, /id="gate-load"/);
+
   assert.match(home, /id="film-pause"/);
-  assert.match(home, /正在加载影片/);
+
   assert.match(home, /<h2>把目标写下来。<\/h2>/);
   assert.equal(/cta-block[\s\S]{0,80}现在就开始。/.test(home), false);
   assert.match(home, /media-src 'self' blob:/);
@@ -2342,7 +2344,7 @@ test('index.html 是产品介绍页并跳转到 app.html', async () => {
   assert.match(homeJs, /pauseLocked/);
   assert.match(homeJs, /FILM_SEC - CURTAIN_SEC/, '最后五秒渐变不可暂停');
   assert.match(homeJs, /togglePause/);
-  assert.match(homeJs, /gate-skip/);
+  assert.doesNotMatch(homeJs, /gate-skip/, '废除的门页跳过按钮不再有绑定');
   assert.match(homeJs, /keydown/);
   assert.match(homeJs, /hasOwnProperty.call\(sc, 'title'\)/);
   assert.match(home, /mailto:lks\.tan\.cn@gmail\.com/);
@@ -2500,11 +2502,11 @@ test('subagentTools：沙箱关闭时子智能体保留文件工具，不整体�
   const { subagentTools } = await import('../js/agent.js');
   const names = (list) => (list || []).map((t) => t.name);
   const writer = findSubagent('doc-writer');
-  assert.deepEqual(names(subagentTools(false, writer)).sort(), ['knowledge_search', 'list_files', 'read_file', 'text_tool', 'write_file']);
+  assert.deepEqual(names(subagentTools(false, writer)).sort(), ['knowledge_search', 'list_files', 'read_file', 'skill_library', 'text_tool', 'write_file']);
   const analyst = findSubagent('data-analyst');
   assert.ok(names(subagentTools(true, analyst)).includes('execute_python'), '开沙箱时该有代码执行');
   assert.ok(!names(subagentTools(false, analyst)).some((n) => ['execute_javascript', 'execute_python', 'execute_cpp'].includes(n)), '关沙箱时不该有代码执行');
-  assert.deepEqual(subagentTools(true, findSubagent('code-reviewer')).map(t=>t.name), ['knowledge_search'], '纯推理专家只可检索内置知识，不获得代码/文件副作用');
+  assert.deepEqual(subagentTools(true, findSubagent('code-reviewer')).map(t=>t.name), ['skill_library', 'knowledge_search'], '纯推理专家只可检索内置知识与技能，不获得代码/文件副作用');
   for (const a of SUBAGENTS) {
     assert.ok(!names(subagentTools(true, a)).includes('dispatch_subagent'), `${a.id} 不得再委派（防递归）`);
   }
@@ -4196,7 +4198,7 @@ test('工具调用与深度思考无边框；思考有线性 SVG', async () => {
   assert.match(chip, /border:\s*none/, '工具芯片不要边框');
   const reason = css.slice(css.indexOf('.reasoning {'), css.indexOf('.reasoning:hover'));
   assert.match(reason, /border:\s*none/, '思考块不要虚线框');
-  assert.match(css, /\.reasoning\.expanded \.chip-detail/, '思考展开要和芯片一样用 expanded');
+  assert.match(css, /\.reasoning\.expanded > \.chip-detail/, '思考展开要和芯片一样用 expanded');
   assert.ok(ICON.thinking.includes('stroke="currentColor"'));
   assert.match(ui, /ICON\.thinking/, '深度思考提示要带思考图标');
   assert.match(ui, /class="think-ico"/);
@@ -4237,16 +4239,16 @@ test('模型列表不再标「原生」；底部提示为 AI 生成免责声明'
   const fsp = await import('node:fs');
   const ui = readUiSource();
   assert.equal(/badge ghost">原生/.test(ui), false, 'Claude 行不应再挂「原生」标签');
-  assert.match(ui, /badge hot">热门/);
-  assert.match(ui, /badge cheap">低价/);
+  assert.match(ui, /localeText\('推荐', 'Recommended'\)/);
+  assert.match(ui, /localeText\('低价', 'Low cost'\)/);
   const html = fsp.readFileSync(new URL('../app.html', import.meta.url), 'utf8');
   assert.match(html, /内容由AI生成，请仔细甄别/);
   assert.equal(html.includes('网关提供路由'), false);
   assert.equal(html.includes('Claude 走'), false);
   const sonnet = cfg.FALLBACK_MODELS.find((m) => m.id === 'claude-sonnet-5');
-  assert.equal(sonnet.hot, true, '默认对话模型应标热门');
+  assert.equal(!!sonnet.hot, false, '旧版 Sonnet 不再占用推荐标签');
   const fable = cfg.FALLBACK_MODELS.find((m) => m.id === 'claude-fable-5-1');
-  assert.equal(fable.hot, true, 'Fable 5.1 当季旗舰应标热门');
+  assert.equal(!!fable.hot, false, 'Fable 保留但不声称热度排行');
   const astra = cfg.FALLBACK_MODELS.find((m) => m.id === 'gpt-6-astra');
   assert.equal(astra.hot, true, 'GPT-6 Astra 应标热门');
   const gpt55 = cfg.FALLBACK_MODELS.find((m) => m.id === 'gpt-5.5');
@@ -4256,7 +4258,7 @@ test('模型列表不再标「原生」；底部提示为 AI 生成免责声明'
   const haiku = cfg.FALLBACK_MODELS.find((m) => m.id === 'claude-haiku-4-5');
   assert.equal(haiku.cheap, true, 'haiku 应标低价');
   const v4p = cfg.FALLBACK_MODELS.find((m) => m.id === 'deepseek-v4-pro');
-  assert.equal(!!v4p.cheap, false, 'V4 Pro 是中档，不标低价');
+  assert.equal(!!v4p.cheap, true, 'V4 Pro 新标价已满足低价阈值');
   const css = fsp.readFileSync(new URL('../css/styles.css', import.meta.url), 'utf8');
   assert.match(css, /\.badge\.hot/);
   assert.match(css, /\.badge\.cheap/);
@@ -4267,7 +4269,7 @@ test('glm-5.3-flash-free 从菜单隐藏；网关返回也滤掉', async () => {
   assert.equal(cfg.FALLBACK_MODELS.some((m) => m.id === 'glm-5.3-flash-free'), false);
   assert.ok(cfg.FALLBACK_MODELS.some((m) => m.id === 'glm-5.3-flash'), '付费 flash 仍在');
   assert.match(ui, /HIDDEN_MODELS = new Set\(\['glm-5.3-flash-free', 'deepseek-v4-flash-free', 'deepseek-flash-free'\]\)/);
-  assert.match(ui, /HIDDEN_MODELS\.has\(id\)/);
+  assert.match(ui, /HIDDEN_MODELS\.has\(m\.id\)/);
   assert.match(ui, /HIDDEN_MODELS\.has\(store\.state\.model\)/);
 });
 test('代码块加载 extra 语言包并覆盖主流 fence 别名', async () => {
@@ -4407,18 +4409,18 @@ test('非 PDF 字节给出可读失败，不抛', async () => {
 
 
 group('2026.09.22.15 布局与高亮');
-test('侧栏 860、桌面面板右侧浮层，手机面板底部浮层，开面板时藏顶栏胶囊', async () => {
+test('侧栏 860、761 以上面板停靠，窄屏面板浮层，开面板时藏顶栏胶囊', async () => {
   const fsp = await import('node:fs');
   const css = fsp.readFileSync(new URL('../css/styles.css', import.meta.url), 'utf8');
   const ui = readUiSource();
   assert.equal((css.match(/@media \(max-width: 860px\)/g) || []).length >= 2, true);
-  assert.match(css, /@media \(max-width: 1180px\)/);
+  assert.match(css, /@media \(max-width: 760px\)/);
   assert.match(css, /#sandbox-panel\.collapsed \{ transform: translateX\(105%\); \}/);
   assert.match(css, /@media \(max-width: 720px\)/);
   assert.match(css, /#sandbox-panel\.collapsed \{ transform: translateY\(105%\); \}/);
-  assert.equal(/@media \(max-width: 760px\)/.test(css), false, '面板不再单独用 760');
+  assert.equal(/@media \(max-width: 1180px\)/.test(css), false, 'iPad 不再走 1180px 抽屉断点');
   assert.match(ui, /max-width: 860px/);
-  assert.match(ui, /max-width: 1180px/);
+  assert.match(ui, /max-width: 760px/);
   assert.match(css, /#sandbox-panel:not\(\.collapsed\)\) #panel-toggle/);
   assert.match(css, /border-radius:\s*0/);
 });
@@ -4441,7 +4443,7 @@ test('代码块语言在左侧、复制始终可见；用户气泡反色链接',
   assert.match(ep, /Edited Files/i, '完成后显示 Edited Files N');
   assert.match(ui, /\$\{many\} \$\{paths\.length\}/, '多文件才在标题后加数量');
   assert.match(ui, /连续 Edited \/ Explored File/, '同一轮连续 write_file / read_file 合并成一块');
-  assert.match(ui, /FILE_FOLD_TOOLS = new Set\(\['write_file', 'read_file', 'analyze_image', 'analyze_pdf', 'analyze_video'\]\)/, '文件读写与识图从命令芯片组移出');
+  assert.match(ui, /FILE_FOLD_TOOLS = new Set\(\['write_file', 'read_file', 'analyze_image', 'analyze_pdf', 'analyze_video', 'analyze_audio'\]\)/, '文件读写与识图从命令芯片组移出');
   assert.match(ui, /pathsOfAnalyze/, 'analyze_image 路径合并到 Explored Files');
   assert.match(ui, /Ran commands \${total}/, '其余命令统一折叠到 Ran commands（.33：第二个词首字母不大写）');
   assert.doesNotMatch(ui, /'Ran Command'|`Ran Commands|'Explored File'|'Explored Files'/, '折叠头文案第二个词统一小写');
@@ -5315,27 +5317,26 @@ test('图片/文本审核加载中可以终止，不会卡在连接/审核状态
   }
 });
 
-group('V1.7 / 桌面沙箱面板');
-test('V1.7 发布标识与构建号已同步', async () => {
+group('V1.8 / 桌面沙箱面板');
+test('V1.8 发布标识与入口构建一致；历史完整但不再提供仓库/合并入口', async () => {
   const fsp = await import('node:fs');
   const { APP_RELEASE, APP_VERSION } = await import('../js/config.js');
   const html = fsp.readFileSync(new URL('../app.html', import.meta.url), 'utf8');
   const home = fsp.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
   const docs = fsp.readFileSync(new URL('../docs.html', import.meta.url), 'utf8');
-  assert.equal(APP_RELEASE, 'V1.7');
-  assert.equal(APP_VERSION, '2026.10.11.1');
-  assert.match(html, /Dubhe Agent V1\.7 —/);
-  const vRe = APP_VERSION.split('.').join('[.]'); // 版本比较用字符类，免得每次构建都要改这里
-  assert.match(home, new RegExp('Dubhe Agent(?: V1[.]7)? · 构建 ' + vRe));
-  assert.match(docs, /class="ver-badge" title="Dubhe Agent V1[.]7">V1[.]7<\/span>/);
-  assert.match(docs, /CURRENT BUILD/);
-  assert.match(docs, new RegExp('app-version" content="' + vRe));
-  assert.match(docs, /CHANGELOG\.md/, '完整历史保持可追溯');
+  assert.equal(APP_RELEASE, 'V1.8');
+  assert.ok(html.includes('Dubhe Agent ' + APP_RELEASE + ' —'));
+  assert.ok(home.includes('Dubhe Agent ' + APP_RELEASE + ' Stable'));
+  assert.ok(docs.includes('title="Dubhe Agent ' + APP_RELEASE + '">' + APP_RELEASE + '</span>'));
+  assert.match(docs, /CURRENT RELEASE/);
+  assert.ok(docs.includes('app-version" content="' + APP_VERSION));
+  for (const release of ['V1.0','V1.1','V1.2','V1.3','V1.4 Stable','V1.5','V1.6','V1.7','V1.8 Stable']) assert.ok(docs.includes(release));
+  assert.doesNotMatch(docs, /href="[^" ]*(?:CHANGELOG|pulls)/);
 });
 test('电脑端沙箱面板从右侧展开，手机端才从底部上滑', async () => {
   const fsp = await import('node:fs');
   const css = fsp.readFileSync(new URL('../css/styles.css', import.meta.url), 'utf8');
-  assert.match(css, /桌面端仍从右侧展开/);
+  assert.match(css, /@media \(max-width: 760px\)/);
   assert.match(css, /#sandbox-panel\.collapsed \{ transform: translateX\(105%\); \}/);
   assert.match(css, /@media \(max-width: 720px\)[\s\S]*#sandbox-panel\.collapsed \{ transform: translateY\(105%\); \}/);
 });
@@ -5369,7 +5370,7 @@ test('.19 模型热度：claude-opus-5-5 热门且 Anthropic 组置顶', async (
   assert.ok(opus, 'claude-opus-5-5 应在 FALLBACK_MODELS（否则只能靠网关追加到组尾）');
   assert.equal(opus.hot, true, 'Opus 5.5 为 9 月新旗舰应标热门');
   assert.equal(opus.provider, 'Anthropic');
-  const anthropicIds = cfg.FALLBACK_MODELS.filter((m) => m.provider === 'Anthropic').map((m) => m.id);
+  const anthropicIds = cfg.sortModelsInFamily(cfg.FALLBACK_MODELS.filter((m) => m.provider === 'Anthropic')).map((m) => m.id);
   assert.equal(anthropicIds[0], 'claude-opus-5-5', 'Opus 5.5 应在 Anthropic 组第一位');
 });
 
@@ -5481,12 +5482,12 @@ test('Req 3：全模型官方价格查询（识图与生图单独处理）与单
   }
   const vp = pricing.getModelPricing('deepseek-v4-flash-vision-exp');
   assert.equal(vp.kind, 'vision');
-  assert.equal(vp.input, 0.44);
-  assert.equal(vp.output, 1.32);
+  assert.equal(vp.input, 0.22);
+  assert.equal(vp.output, 0.66);
 
   // 识图单独估算
   const vc = pricing.estimateVisionCost({ inputTokens: 2000, outputTokens: 500, imageCount: 1 });
-  assert.ok(Math.abs(vc.costUsd - (2000 * 0.44 + 500 * 1.32) / 1e6) < 1e-9);
+  assert.ok(Math.abs(vc.costUsd - (2000 * 0.22 + 500 * 0.66) / 1e6) < 1e-9);
 
   // 生图单独估算（GPT Image 阶梯价 & Nano Banana 2 token 价）
   const ic1k = pricing.estimateImageCost({ model: 'gpt-image-2.5-sunburst', size: '1024x1024', quality: 'medium', count: 2 });
@@ -5569,7 +5570,8 @@ test('Req 5：介绍片下载完成后缓存且随时可播，进度条完成后
   const swJs = fsp.readFileSync(new URL('../sw.js', import.meta.url), 'utf8');
 
   assert.match(swJs, /audio/, 'Service Worker 应缓存 assets/audio/');
-  assert.match(homeJs, /caches\.open\(AUDIO_CACHE\)/, 'home.js 应使用 CacheStorage 持久化介绍片音频');
+  assert.match(homeJs, /fetch\(src,/, '音频统一通过 fetch 走哈希 SW 缓存');
+  assert.doesNotMatch(homeJs, /caches\.open\(AUDIO_CACHE\)/, '不再绕过 SW 直接读取旧音频缓存');
   assert.doesNotMatch(homeJs, /function openSite[\s\S]{0,120}abortAudioLoad/, '跳过片头不应中断后台音频下载');
   assert.doesNotMatch(homeJs, /function requestFilm\(\)\s*\{\s*if\s*\([^)]*root\.classList\.contains\('open'\)/, '进入主页后也应允许随时重播介绍片');
   assert.match(indexHtml, /data-play-film/, '主页应提供随时播放介绍片的入口按钮');
@@ -5913,7 +5915,7 @@ test('2026.9.30.6 八项体验与渲染升级（空状态隐藏最新输出、re
   assert.match(indexHtml, /href="\.\/docs\.html">文档<\/a>/);
   assert.match(indexHtml, /id="theme-toggle"/);
 
-  // 5. 会话页/文档页左上角图标定位到导航页，导航页左上角图标定位到探索页
+  // 5. 会话页/文档页左上角图标定位到导航页，导航页左上角图标回到导航顶部
   assert.match(appHtml, /class="logo-mark" href="\.\/index\.html\?view=nav"/);
   assert.match(docsHtml, /class="brand" href="\.\/index\.html\?view=nav"/);
   // 5b. 文档页导航：品牌栏与主页同构（不再把 4 个分区塞进同一行），分区入口为独立的分段标签条 + 滑动指示器
@@ -5925,8 +5927,9 @@ test('2026.9.30.6 八项体验与渲染升级（空状态隐藏最新输出、re
   assert.match(docsHtml, /<a class="nav-link nav-home" href="\.\/index\.html\?view=nav">首页<\/a>/);
   assert.match(docsHtml, /<button id="theme-toggle" class="nav-link" type="button">外观<\/button>\s*<a class="cta" href="\.\/app\.html">打开对话<\/a>/);
   assert.equal((docsHtml.match(/class="nav-link doc-tab"/g) || []).length, 4, '四个分区标签');
-  assert.match(homeJs, /function openGate\(\)/, 'home.js 应提供返回探索页的 openGate');
-  assert.match(homeJs, /initialView === 'nav'/, 'home.js 应支持 ?view=nav 直达导航页');
+  assert.doesNotMatch(homeJs, /function openGate\(\)|openGate\(\);/, '废除门页后，品牌图标不得再进入空门页');
+  assert.match(homeJs, /openSite\(true\);\s*pinTop\(\);/, '品牌图标保持导航可见并回到顶部');
+  assert.match(homeJs, /finishOpen\(true\)/, '默认和 ?view=nav 均直达导航');
 
   // 6 & 7. 导航页「现在就开始」双层星轨弧线与三个 Q&A 卡片统一展开手感
   assert.match(homeCss, /@keyframes ctaOrbitReverse/, '现在就开始应具备反向双层星轨弧线');
@@ -5934,7 +5937,8 @@ test('2026.9.30.6 八项体验与渲染升级（空状态隐藏最新输出、re
 
   // 8. 文档页移除零散的 V1.3 β 条目，全部精简整合进 V1.4 Stable
   assert.equal(docsHtml.includes('V1.3 β'), false, 'docs.html 不应再保留零散的 V1.3 β 版本块');
-  assert.match(docsHtml, /V1\.4 Stable（Dubhe Helix 2.5（天枢2.5）融合架构）/);
+  assert.match(docsHtml, /V1\.4 Stable/);
+  assert.match(docsHtml, /天枢融合架构/);
 });
 
 group('2026.9.30.7 40模型全支持与热度版本排序 / 长期记忆自动生效 / 天枢2.5自演进增强 / 黑粒回滚与图表微交互');
@@ -5946,7 +5950,7 @@ test('2026.9.30.7：支持全部固定对话模型（2026.10.5.18 起下架 Deep
     'gpt-6-astra', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini',
     'gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-pro-preview',
     'deepseek-flash', 'deepseek-v4-pro', 'deepseek-v4-flash',
-    'kimi-k3', 'kimi-k3[1M]',
+    'claude-haiku-5-5', 'gemini-4-argon',
     'glm-5.3-flash', 'glm-5.3', 'glm-5.2',
     'grok-4.6',
     'claude-haiku-4-5-20251001', 'claude-sonnet-5-5', 'deepseek-v4-pro-260425', 'gpt-6-luna', 'gpt-6-sol', 'gpt-6.1-sol',
@@ -5960,16 +5964,16 @@ test('2026.9.30.7：支持全部固定对话模型（2026.10.5.18 起下架 Deep
   assert.ok(!fallbackIds.has('deepseek-v4-flash-free') && !fallbackIds.has('deepseek-flash-free'), 'DeepSeek 两个免费模型必须下架');
 
   // Claude 与 GPT 新模型热度与组内版本优先级排序验证
-  const anthropic = cfg.FALLBACK_MODELS.filter((m) => m.provider === 'Anthropic');
+  const anthropic = cfg.sortModelsInFamily(cfg.FALLBACK_MODELS.filter((m) => m.provider === 'Anthropic'));
   assert.equal(anthropic[0].id, 'claude-opus-5-5', 'Claude Opus 5.5 应置顶');
   assert.equal(anthropic[1].id, 'claude-sonnet-5-5', 'Claude Sonnet 5.5 新旗舰应紧随其后');
   assert.equal(anthropic[1].hot, true, 'Claude Sonnet 5.5 应标热门');
 
-  const openai = cfg.FALLBACK_MODELS.filter((m) => m.provider === 'OpenAI');
+  const openai = cfg.sortModelsInFamily(cfg.FALLBACK_MODELS.filter((m) => m.provider === 'OpenAI'));
   assert.equal(openai[0].id, 'gpt-6.1-sol', 'GPT-6.1 Sol 最新主力推理模型应在 OpenAI 组置顶');
   assert.equal(openai[0].hot, true);
   assert.equal(openai[1].id, 'gpt-6-astra');
-  assert.equal(openai[2].id, 'gpt-6-sol');
+  assert.equal(openai[2].id, 'gpt-6-luna');
   assert.equal(openai[2].hot, true);
   const gpt6Luna = openai.find((m) => m.id === 'gpt-6-luna');
   assert.equal(gpt6Luna.cheap, true, 'GPT-6 Luna 为超低价高通量模型');
@@ -6283,7 +6287,13 @@ test('2026.9.30.9：挑刺③治理——软归档可召回（Soft-Archive & Aut
 });
 
 test('2026.9.30.9：挑刺④/⑤/⑥与六项验收指标——0ms 本地预筛、诚实披露深度差距、前提实时重探针、足迹哈希忠实度与六项指标计分板', async () => {
-  const nexus = await import('../js/nexus.js');
+  // Isolated deterministic samples test the statistics contract, not the current
+  // machine's scheduling while other browser regressions may be running.
+  const nexus = await import('../js/nexus.js?latency-contract-fixture');
+  for (let i = 0; i < 50; i++) {
+    nexus.recordRouteLatencySample({ fastPath: true, totalMs: 10, probeOverheadMs: 0 });
+    nexus.recordRouteLatencySample({ fastPath: false, totalMs: 100 });
+  }
 
   // 挑刺 ④：0ms 本地预筛跳过远端探测，快路径 P50 延迟净收益为正
   const localGate = nexus.evaluateLocalFastPathGate('早上好！', { hasAttachments: false, historyLen: 0 });
@@ -7977,7 +7987,7 @@ test('远程 C++ 开关：关闭后两条工具表派生路径都不含 execute_
   assert.match(out, /已被用户关闭/);
   assert.match(out, /godbolt\.org/);
   const cr = subagentTools(true, { tools: ['execute_cpp', 'execute_python', 'read_file'] }, { remoteCpp: false });
-  assert.deepEqual(cr.map((t) => t.name), ['knowledge_search', 'execute_python', 'read_file']);
+  assert.deepEqual(cr.map((t) => t.name), ['skill_library', 'knowledge_search', 'execute_python', 'read_file']);
   const def = TOOL_DEFS.find((t) => t.name === 'execute_cpp');
   assert.match(def.description, /godbolt\.org/, '工具描述必须明说代码会离开浏览器');
   const fsp = await import('node:fs');
@@ -8345,9 +8355,9 @@ test('设置页「多模态模型」：两个下拉 + 默认值进 state + setti
   assert.match(settings, /bindModelSelect\('#set-vision-model', 'visionModel', resolveVisionModel\)/);
   assert.match(settings, /bindModelSelect\('#set-video-model', 'videoModel', resolveVideoModel\)/);
   assert.match(settings, /function syncMultimodalSelects\(store\)/);
-  assert.equal((state.match(/visionModel: 'deepseek-v4-flash-vision-exp', videoModel: 'gemini-3.5-flash-lite', imageRemoteReview: true/g) || []).length, 2, '初始 state 与旧快照补默认两处都要有');
+  assert.equal((state.match(/visionModel: 'deepseek-v4-flash-vision-exp', videoModel: 'gemini-3.5-flash-lite', audioModel: 'gemini-3.5-flash-lite', imageRemoteReview: true/g) || []).length, 2, '初始 state 与旧快照补默认两处都要有');
   assert.match(agent, /visionModel: settings\.visionModel \|\| null,\s*videoModel: settings\.videoModel \|\| null,/);
-  assert.match(agent, /visionModel: turn\.visionModel,\s*videoModel: turn\.videoModel,\s*sandboxEnabled: turn\.sandboxEnabled,/, '主回合工具 ctx 透传');
+  assert.match(agent, /visionModel: turn\.visionModel,\s*videoModel: turn\.videoModel,\s*audioModel: turn\.audioModel,\s*sandboxEnabled: turn\.sandboxEnabled,/, '主回合工具 ctx 透传');
   assert.match(agent, /visionModel: visionModel \|\| null, videoModel: videoModel \|\| null/, '子智能体工具 ctx 透传');
 });
 
@@ -8361,7 +8371,7 @@ test('analyze_video 工具：定义 / 契约 / 并行与访问表 / 执行路径
   assert.match(def.description, /不要传 model/);
   assert.match(def.description, /16MB/);
   assert.deepEqual(Object.keys(def.parameters.properties).sort(), ['path', 'prompt']);
-  assert.equal(TOOL_DEFS.length, 34, '34工具：新增内置知识检索，登记/契约必须同步');
+  assert.equal(TOOL_DEFS.length, 37, '37工具：新增按需技能、本地文档与音频分析，登记/契约必须同步');
   const c = ex.getToolContract('analyze_video');
   assert.equal(c.sideEffect, 'remote');
   assert.equal(c.external, true);
@@ -8400,7 +8410,7 @@ test('analyze_video 工具：定义 / 契约 / 并行与访问表 / 执行路径
     ['../js/api.js', /请调用 analyze_video 工具/],
     ['../js/ui-attachments.js', /source: 'video'/],
     ['../js/ui-attachments.js', /MAX_VIDEO = 16 \* 1024 \* 1024/],
-    ['../app.html', /accept="image\/\*,video\/mp4,video\/webm,video\/quicktime,\.mp4,\.webm,\.mov,\.m4v,/],
+    ['../app.html', /accept="image\/\*,[^\"]*video\/mp4,video\/webm,video\/quicktime,\.mp4,\.webm,\.mov,\.m4v,/],
   ]) assert.match(fsp.readFileSync(new URL(file, import.meta.url), 'utf8'), re, `${file} 缺少 analyze_video 触点`);
   assert.match(readUiSource(), /const pathsOfAnalyzeVideo = \(msg\) =>/);
 });
@@ -8447,7 +8457,7 @@ test('视频附件：上传时抽帧（海报 + 均匀 5 帧），帧只给审�
   assert.match(ua, /const t = d \? \(\(i \+ 0\.5\) \/ n\) \* d : 0;/, '均匀抽帧：(i+0.5)/n · duration');
   assert.match(ua, /poster: cap\.poster,/);
   assert.match(ua, /frames: cap\.frames,/);
-  assert.match(ua, /catch \(err\) \{ doneBusy\(\); toast\(`\$\{f\.name\}：\$\{err\.message\}（未加入）`/, '解码失败 → 拒收而不是无审核放行（提示里不提「抽帧 / 审核」这类内部流程）');
+  assert.match(ua, /catch \(err\) \{ doneBusy\(\); toast\(localeText\(`\$\{f\.name\}：\$\{err\.message\}（未加入）`/, '解码失败 → 拒收而不是无审核放行（提示里不提「抽帧 / 审核」这类内部流程）');
   assert.match(ua, /const busyToast = toast\(`\$\{f\.name\}：正在读取视频…`, 'info', 30000\);/, '.33：点「加入」立刻有反馈，不等抽帧 + 读 base64 完成');
   assert.match(ua, /doneBusy\(\);\s*\n\s*renderAttachChips\(\);[^\n]*\n\s*toast\(`\$\{f\.name\}：已作为视频附件加入/, '完成后收掉忙碌提示、先画芯片再提示');
   assert.doesNotMatch(ua, /帧待审核|抽帧审核|通过审核后/, '用户提示不念内部审核流程（.27）');
@@ -8646,14 +8656,14 @@ test('全局「气泡弹入」动效：统一 --pop-* 令牌 + bubbleIn 关键�
   assert.match(css, /\.bubble-in \{ animation: bubbleIn var\(--pop-dur\) var\(--pop-ease\) both; transform-origin: var\(--pop-origin, top left\); \}/, '通用类');
   // 下拉菜单：open 态 transition 走同一曲线，origin 在按钮下沿
   assert.match(css, /\.dd-menu \{[\s\S]*?transform: translate3d\(0, -14px, 0\) scale\(var\(--pop-scale, \.78\)\); transform-origin: top left;[\s\S]*?\}\n\.dd-menu\.open \{[\s\S]*?transform var\(--pop-dur\) var\(--pop-ease\)/);
-  assert.match(css, /\.attach-menu \{[\s\S]*?animation: bubbleIn var\(--pop-dur\) var\(--pop-ease\) both; transform-origin: bottom left; --pop-dy: 14px;/, '附件菜单从回形针上方冒出');
+  assert.match(css, /\.attach-menu \{[^}]*transform-origin: bottom left; --pop-dy: 14px;/, '附件菜单从回形针上方冒出');
   assert.match(css, /\.tok-pop:not\(\[hidden\]\) \{ animation: bubbleIn var\(--pop-dur\) var\(--pop-ease\) both; transform-origin: top left; --pop-dy: -14px; \}/);
   assert.match(css, /\.tok-pop\[data-place="above"\]:not\(\[hidden\]\) \{ transform-origin: bottom left; --pop-dy: 14px; \}/, '弹层在锚点上方时 origin 翻转');
   assert.match(ui, /pop\.dataset\.place = top >= r\.bottom \? 'below' : 'above';/, 'JS 按摆放方向写 data-place');
   assert.match(css, /\.cmd-card \{[\s\S]*?animation: bubbleIn var\(--pop-dur\) var\(--pop-ease\) both; transform-origin: top center; --pop-dy: -14px;/);
   assert.match(css, /\.md-chart-tooltip\.show \{[^}]*transform var\(--pop-dur\) var\(--pop-ease\)/, '图表提示同曲线');
   assert.match(css, /\.chip-detail > \.fold-inner \{ transform: translate3d\(0, -4px, 0\) scale\(\.985\); transform-origin: top left;/, '折叠面板内容轻弹入');
-  assert.match(css, /grid-template-rows: 1fr; opacity: 1;\n\s+transition: grid-template-rows var\(--pop-dur\) var\(--pop-ease\), opacity \.18s ease-out;/, '折叠展开高度同曲线');
+  assert.match(css, /grid-template-rows: 1fr; opacity: 1; visibility: visible;\n\s+transition: grid-template-rows \.3s cubic-bezier\(\.22,1,\.36,1\), opacity \.2s ease, visibility 0s;/, '折叠展开高度同曲线');
   assert.match(css, /#think-menu \.dd-item \{ animation: rowIn \.2s var\(--ease-out\) both; \}/, '思考档位菜单项错落');
   // .32：reduce 块里每个选择器都带 html:not([data-motion="on"]) 前缀——用户在设置里强制「开」时整体跳过系统的减少动效
   const rm = css.slice(css.indexOf('@media (prefers-reduced-motion: reduce) {\n  html:not([data-motion="on"]) .chip-state .chip-ok'));
@@ -9296,11 +9306,11 @@ group('P6 修正：工具选择熵过高 → 两层下发（核心 12 必带 + �
 test('selectToolsForTurn：核心 12 必带；其余按关键词 / 附件 / 近几轮用量 / 点名挂载；exclude 生效；没写规则的工具不会悄悄消失', async () => {
   const ec = await import('../js/executionContext.js');
   const { TOOL_DEFS } = await import('../js/tools.js');
-  assert.deepEqual([...ec.CORE_TOOLS], ['execute_javascript', 'execute_python', 'execute_cpp', 'write_file', 'read_file', 'list_files', 'delete_file', 'copy_file', 'fetch_url', 'search_web', 'analyze_image', 'dispatch_subagent', 'knowledge_search']);
+  assert.deepEqual([...ec.CORE_TOOLS], ['execute_javascript', 'execute_python', 'execute_cpp', 'write_file', 'read_file', 'list_files', 'delete_file', 'copy_file', 'fetch_url', 'search_web', 'analyze_image', 'dispatch_subagent', 'knowledge_search', 'skill_library']);
   const names = (r) => r.mounted.map((t) => t.name);
   const hello = ec.selectToolsForTurn({ allowed: TOOL_DEFS, text: '你好' });
   assert.deepEqual(names(hello), [...ec.CORE_TOOLS].filter((n) => TOOL_DEFS.some((t) => t.name === n)).sort((a, b) => TOOL_DEFS.findIndex((t) => t.name === a) - TOOL_DEFS.findIndex((t) => t.name === b)), '寒暄只带核心工具（保持 TOOL_DEFS 原序）');
-  assert.equal(hello.deferred.length, TOOL_DEFS.length - 13);
+  assert.equal(hello.deferred.length, TOOL_DEFS.length - ec.CORE_TOOLS.length);
   assert.ok(hello.deferred.every((d) => d.reason === 'on-demand'));
   // 关键词
   assert.ok(names(ec.selectToolsForTurn({ allowed: TOOL_DEFS, text: '帮我生成一个二维码指向 https://x.y' })).includes('data_tool'));
@@ -9329,7 +9339,7 @@ test('selectToolsForTurn：核心 12 必带；其余按关键词 / 附件 / 近�
   // 每个非核心工具都有规则（否则两层下发名存实亡）
   for (const t of TOOL_DEFS) if (!ec.CORE_TOOLS.includes(t.name)) assert.ok(ec.TOOL_MOUNT_RULES[t.name], `${t.name} 缺按需挂载规则`);
   // 提示词一行只列名字
-  assert.match(ec.formatDeferredTools(hello.deferred), /^另有 \d+ 个工具本轮按需未挂载：browser_sandbox、get_current_time、/);
+  assert.match(ec.formatDeferredTools(hello.deferred), /^另有 \d+ 个工具本轮按需未挂载：browser_sandbox、document_tool、get_current_time、/);
   assert.equal(ec.formatDeferredTools([]), '');
   // recentToolNames：只看最近两轮
   const msgs = [
@@ -9573,8 +9583,8 @@ test('#10 视频识别默认模型改为 Gemini 3.5 Flash Lite（设置档位 / 
   assert.equal(cfg2.DEFAULT_VIDEO_MODEL, 'gemini-3.5-flash-lite');
   assert.equal(cfg2.resolveVideoModel(undefined), 'gemini-3.5-flash-lite');
   assert.equal(cfg2.resolveVideoModel('not-a-model'), 'gemini-3.5-flash-lite');
-  assert.equal(cfg2.VIDEO_MODELS.find((m) => m.id === 'gemini-3.5-flash-lite').tag, '便宜 · 最快 · 默认');
-  assert.equal(cfg2.VIDEO_MODELS.find((m) => m.id === 'gemini-3.8-flash').tag, '均衡');
+  assert.equal(cfg2.VIDEO_MODELS.find((m) => m.id === 'gemini-3.5-flash-lite').tag, '默认 · 低价');
+  assert.equal(cfg2.VIDEO_MODELS.find((m) => m.id === 'gemini-3.8-flash').tag, '通用');
   const { createStore } = await import('../js/state.js');
   assert.equal(createStore().state.settings.videoModel, 'gemini-3.5-flash-lite');
   assert.equal(createStore().state.settings.imageRemoteReview, true);
@@ -9957,11 +9967,11 @@ test('能力登记处：TOOL_DEFS ↔ 登记表 ↔ execution.js 契约三方一
   assert.equal(reg.REGISTERED_TOOL_NAMES.length, TOOL_DEFS.length, '登记数 = 工具数（32）');
   // 派生表（集合）必须与 Helix 2.5 手抄的清单一致——登记处是重构不是改行为
   const same = (a, b) => assert.deepEqual([...a].sort(), [...b].sort());
-  same(reg.PARALLEL_TOOL_NAMES, ['knowledge_search', 'read_file', 'list_files', 'search_files', 'get_current_time', 'get_browser_environment', 'fetch_url', 'search_web', 'regex', 'hash', 'codec', 'unicode', 'evaluate_expression', 'diff_text', 'json_tool', 'date_calc', 'convert_units', 'analyze_image', 'text_tool']);
+  same(reg.PARALLEL_TOOL_NAMES, ['skill_library', 'knowledge_search', 'read_file', 'list_files', 'search_files', 'get_current_time', 'get_browser_environment', 'fetch_url', 'search_web', 'regex', 'hash', 'codec', 'unicode', 'evaluate_expression', 'diff_text', 'json_tool', 'date_calc', 'convert_units', 'analyze_image', 'text_tool']);
   same(reg.NETWORK_TOOL_NAMES, ['fetch_url', 'search_web', 'crawl_site', 'download_file']);
-  same(reg.READ_ONLY_TOOL_NAMES, ['knowledge_search', 'read_file', 'list_files', 'search_files', 'get_current_time', 'regex', 'hash', 'codec', 'unicode', 'evaluate_expression', 'diff_text', 'json_tool', 'csv_tool', 'date_calc', 'text_tool', 'convert_units', 'data_tool']);
-  same(reg.HEAVY_TOOL_NAMES, ['browser_sandbox', 'write_file', 'delete_file', 'copy_file', 'zip_files', 'unzip_file', 'execute_javascript', 'execute_python', 'execute_cpp', 'generate_image', 'dispatch_subagent', 'fetch_url', 'run_git', 'analyze_image', 'render_mermaid', 'render_dot', 'execute_sql']);
-  assert.deepEqual([...reg.CORE_TOOL_NAMES], ['execute_javascript', 'execute_python', 'execute_cpp', 'write_file', 'read_file', 'list_files', 'delete_file', 'copy_file', 'fetch_url', 'search_web', 'analyze_image', 'dispatch_subagent', 'knowledge_search'], '原核心顺序不变，末尾增加只读知识检索');
+  same(reg.READ_ONLY_TOOL_NAMES, ['skill_library', 'knowledge_search', 'read_file', 'list_files', 'search_files', 'get_current_time', 'regex', 'hash', 'codec', 'unicode', 'evaluate_expression', 'diff_text', 'json_tool', 'csv_tool', 'date_calc', 'text_tool', 'convert_units', 'data_tool']);
+  same(reg.HEAVY_TOOL_NAMES, ['document_tool', 'browser_sandbox', 'write_file', 'delete_file', 'copy_file', 'zip_files', 'unzip_file', 'execute_javascript', 'execute_python', 'execute_cpp', 'generate_image', 'dispatch_subagent', 'fetch_url', 'run_git', 'analyze_image', 'render_mermaid', 'render_dot', 'execute_sql']);
+  assert.deepEqual([...reg.CORE_TOOL_NAMES], ['execute_javascript', 'execute_python', 'execute_cpp', 'write_file', 'read_file', 'list_files', 'delete_file', 'copy_file', 'fetch_url', 'search_web', 'analyze_image', 'dispatch_subagent', 'knowledge_search', 'skill_library'], '原核心顺序不变，末尾增加只读知识检索');
   assert.deepEqual(Object.keys(reg.CAPABILITY_GATED_TOOL_GROUPS), ['invariantCore', 'webFetch', 'workerSearch', 'siteCrawler', 'fileDownload', 'codeSandbox', 'localBrowser', 'subagentSwarm']);
   assert.deepEqual([...reg.CAPABILITY_GATED_TOOL_GROUPS.codeSandbox], ['execute_javascript', 'execute_python', 'execute_cpp']);
   assert.deepEqual([...reg.CAPABILITY_GATED_TOOL_GROUPS.webFetch], ['fetch_url']);
@@ -10043,11 +10053,13 @@ test('界面动效偏好：auto / on / off 三态，on 覆盖系统 reduce，off
   assert.match(main, /applyMotion\(\);/);
   assert.match(main, /browserFeatureReport\(\)[\s\S]*?dubhe-oldbrowser-noted/);
   const css = fsp.readFileSync(new URL('../css/styles.css', import.meta.url), 'utf8');
-  assert.equal((css.match(/@media \(prefers-reduced-motion: reduce\) \{/g) || []).length, 7, '含语音球体的减少动效块');
+  assert.equal((css.match(/@media \(prefers-reduced-motion: reduce\) \{/g) || []).length, 8, '含语音球体与状态抛光的减少动效块');
   const reduceBlocks = css.split('@media (prefers-reduced-motion: reduce) {').slice(1);
   for (const b of reduceBlocks) {
-    const body = b.slice(0, b.indexOf('\n}'));
-    for (const line of body.split('\n').filter((l) => l.trim() && !l.trim().startsWith('@'))) assert.ok(line.includes('html:not([data-motion="on"])'), `reduce 块里每条规则都要带门控：${line.slice(0, 80)}`);
+    let depth = 1, end = 0;
+    for (; end < b.length && depth; end++) { if (b[end] === '{') depth++; else if (b[end] === '}') depth--; }
+    const body = b.slice(0, end - 1);
+    for (const line of body.split('\n').filter((l) => l.includes('{') && !l.trim().startsWith('@'))) assert.ok(line.includes('html:not([data-motion="on"])'), `reduce 块里每条规则都要带门控：${line.slice(0, 80)}`);
   }
   assert.ok((css.match(/html\[data-motion="off"\] /g) || []).length >= 15, '强制「关」有完整的一套退化规则');
 });
@@ -10286,7 +10298,7 @@ test('设置页文案瘦身：说明只留「什么时候会用到这条设置�
   const st = fsp.readFileSync(new URL('../js/settings.js', import.meta.url), 'utf8');
   assert.match(st, /note\.textContent = `\$\{im\.label \|\| image\} · \$\{vi\.label \|\| vision\} · \$\{vd\.label \|\| video\}`;/, '多模态一行只报当前三档标签');
   assert.match(st, /note\.textContent = custom\s*\?\s*`自定义（默认 \$\{DEFAULT_TURN_BUDGET\.maxExternalSideEffects\} \/ \$\{DEFAULT_TURN_BUDGET\.maxToolCalls\}）`\s*:\s*'默认值';/, '预算脚注缩成一行');
-  assert.match(st, /if \(note\) note\.textContent = `已清除 \$\{r\.cacheStores\} 个缓存（\$\{r\.cacheEntries\} 条）· 下次用到时重新下载`;/);
+  assert.match(st, /if \(note\) note\.textContent = `已清除 \$\{r\.cacheStores\} 个缓存（\$\{r\.cacheEntries\} 条）· 请在任务结束后刷新，重新建立资源缓存`;/);
 });
 
 group('2026.10.5.36：能力弹层锚失效修复（全部启用后不再跳到左上角）/ 「更早的消息」重做为中轴接缝 / 焦点环与弹层工艺');

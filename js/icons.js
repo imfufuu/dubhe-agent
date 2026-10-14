@@ -45,7 +45,7 @@ export const ICON = {
   copy: ico('<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M15 5.5A2.5 2.5 0 0 0 12.5 3H6a3 3 0 0 0-3 3v6.5A2.5 2.5 0 0 0 5.5 15"/>'),
   share: ico('<path d="M3.5 21C3.5 12.5 7.7 7 14 7V3l8 8-8 7v-5c-4.5 0-8 2.8-10.5 8Z"/>'),
   thumbUp: ico('<path d="M7 10v10H3V10zM7 10l4-7a3 3 0 0 1 2 3v4h5a2 2 0 0 1 2 2l-1 6a2 2 0 0 1-2 2H7"/>'),
-  thumbDown: ico('<g transform="rotate(180 12 12)"><path d="M7 10v10H3V10zM7 10l4-7a3 3 0 0 1 2 3v4h5a2 2 0 0 1 2 2l-1 6a2 2 0 0 1-2 2H7"/></g>'),
+  thumbDown: ico('<path d="M17 14V4h4v10zM17 14l-4 7a3 3 0 0 1-2-3v-4H6a2 2 0 0 1-2-2l1-6a2 2 0 0 1 2-2h10"/>'),
   rollback: ico('<path d="M4 9h11.5a4.5 4.5 0 0 1 0 9H9"/><path d="m8 5-4 4 4 4"/>'),
   regen: ico('<path d="M20.5 12a8.5 8.5 0 1 1-2.6-6.1"/><path d="M20.5 4.2V9h-4.8"/>'),
   pencil: ico('<path d="M4 20h4.2l10-10a2.1 2.1 0 0 0-3-3l-10 10Z"/><path d="m14.5 5.5 4 4"/>'),

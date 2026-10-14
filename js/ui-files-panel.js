@@ -1,3 +1,4 @@
+import { staticPreviewDocument } from './file-preview.js?v=2026.10.11.1';
 import { sandboxProject, sandboxBrowserRequest, probeLocalBrowser } from './localbrowser.js?v=2026.10.11.1';
 // Dubhe Agent · 侧栏沙箱文件面板（从 ui.js 的 mountUI 拆出，V1.7.1）
 // 职责：文件树渲染（容量条 / 折叠目录 / 行内操作）、单文件与整包 ZIP 下载、文件预览窗。
@@ -287,13 +288,29 @@ export function installFilesPanel({ store, agent, toast, fmtSize, highlightCode,
         </div>
       </div>`;
     }
+    const dualPreview = /\.(?:html?|svg)$/i.test(lower) && byteLen <= FV_TEXT_MAX;
+    let previewSource = rawStr;
+    if (dualPreview && /^data:/i.test(rawStr)) {
+      try { previewSource = /^data:[^,]*;base64,/i.test(rawStr) ? new TextDecoder().decode(fileBytesFromValue(rawStr).bytes) : decodeURIComponent(rawStr.slice(rawStr.indexOf(',') + 1)); } catch { /* fallback */ }
+    }
+    if (dualPreview) {
+      bodyHtml = `<div class="fv-dual" data-mode="split"><div class="fv-code"><pre><code class="hljs">${highlightCode(previewSource, lower.endsWith('.svg') ? 'xml' : 'html', esc)}</code></pre></div><div class="fv-static"><div class="fv-static-note">${localeText('静态预览 · 脚本与外网已禁用', 'Static preview · scripts and network disabled')}</div><iframe sandbox="" referrerpolicy="no-referrer" title="${esc(path)} preview"></iframe></div></div>`;
+    }
     stopViewerMedia();
-    viewer.innerHTML = `<div class="file-viewer-head mono">${esc(path)}<span class="fv-size">${fmtSize(byteLen)}</span><span class="fv-actions">`
+    viewer.innerHTML = `<div class="file-viewer-head mono"><span class="fv-path">${esc(path)}</span><span class="fv-size">${fmtSize(byteLen)}</span><span class="fv-actions">`
+      + (dualPreview ? `<span class="fv-modes" role="group" aria-label="${localeText('显示模式', 'View mode')}">${[['code', localeText('代码', 'Code')], ['preview', localeText('预览', 'Preview')], ['split', localeText('并排', 'Split')]].map(([mode, label]) => `<button type="button" data-view-mode="${mode}" aria-pressed="${mode === 'split'}">${label}</button>`).join('')}</span>` : '')
       + `<button id="fv-dl" type="button" title="下载此文件">${ICON.download}<span>下载</span></button>`
       + (/\.html?$/i.test(lower) ? `<button id="fv-run" type="button" title="在本地沙箱服务运行并用 Chromium 调试">${ICON.terminal || ICON.tool}<span>运行网页</span></button>` : '')
       + `<button id="fv-close" type="button" title="关闭">${ICON.x}</button></span></div>`
       + bodyHtml;
     viewer.classList.add('open');
+    if (dualPreview) {
+      viewer.querySelector('.fv-static iframe').srcdoc = staticPreviewDocument(previewSource, path, agent.fs);
+      viewer.querySelectorAll('[data-view-mode]').forEach(button => button.addEventListener('click', () => {
+        viewer.querySelector('.fv-dual').dataset.mode = button.dataset.viewMode;
+        viewer.querySelectorAll('[data-view-mode]').forEach(b => b.setAttribute('aria-pressed', String(b === button)));
+      }));
+    }
     if (videoUrl) {
       // 关闭 / 切换文件时释放 blob，避免反复打开把内存吃满
       const vid = $('.fv-video video', viewer);
@@ -317,7 +334,12 @@ export function installFilesPanel({ store, agent, toast, fmtSize, highlightCode,
         const old = viewer.querySelector('.fv-web'); if (old) old.remove();
         const box = document.createElement('div'); box.className = 'fv-web';
         box.innerHTML = `<div class="fv-web-note">本地网页预览 · 与 Agent 调试会话独立 · HTTP 资源仅限当前项目 <a href="${esc(r.preview_path)}" target="_blank" rel="noopener noreferrer">新标签页</a></div><iframe sandbox="allow-scripts" title="沙箱网页 ${esc(path)}" src="${esc(r.preview_path)}"></iframe>`;
-        viewer.appendChild(box); viewer.querySelector('.fv-code')?.setAttribute('hidden', '');
+        const staticBox = viewer.querySelector('.fv-static');
+        if (staticBox) {
+          staticBox.replaceChildren(box);
+          viewer.querySelector('.fv-dual').dataset.mode = 'split';
+          viewer.querySelectorAll('[data-view-mode]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.viewMode === 'split')));
+        } else { viewer.appendChild(box); viewer.querySelector('.fv-code')?.setAttribute('hidden', ''); }
       } catch (err) { toast(String(err.message || err), 'warn', 8000); }
       finally { if (generation === viewerGeneration && button.isConnected) button.disabled = false; }
     });
@@ -334,6 +356,7 @@ export function installFilesPanel({ store, agent, toast, fmtSize, highlightCode,
     const viewer = $('#file-viewer');
     if (!viewer) return;
     viewer.querySelector('.fv-web')?.remove();
+    viewer.querySelectorAll('.fv-static iframe').forEach(frame => frame.remove());
     for (const m of viewer.querySelectorAll('video, audio')) {
       try { m.pause(); } catch { /* noop */ }
       try { m.removeAttribute('src'); m.load(); } catch { /* noop */ }

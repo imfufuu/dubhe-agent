@@ -1,4 +1,4 @@
-import { ICON } from './icons.js?v=2026.10.11.1';
+import { ICON } from './icons.js';
 import { buildShareDocument } from './share-document.js?v=2026.10.11.1';
 import { captureShare } from './share-capture.js';
 import { createZip } from './zip.js';

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // 自动版本号（只在 Pages 部署时运行，仓库源码里不用手动改版本号）。
 // 版本 = 北京时间日期 + 当天第 N 个提交，例如 2026.10.12.3。
-// 替换范围：js/config.js 的 APP_VERSION，以及 *.html / js/*.js 里所有 ?v=2026.x.x.x 查询参数。
+// 部署时更新展示版本与 SW 版本；移除全局日期 query，避免未改动模块逐版本重下载。
 //   node tools/stamp-version.mjs            # 原地改写
 //   node tools/stamp-version.mjs --print    # 只打印将使用的版本号
 import { execSync } from 'node:child_process';
@@ -38,7 +38,14 @@ function htmlAndJsFiles(root) {
 }
 
 export function stampFiles(version, root = ROOT) {
+  if (!/^\d+\.\d+\.\d+\.\d+$/.test(version)) throw new Error('Invalid deployment version');
   const changed = [];
+  const swPath = path.join(root, 'sw.js');
+  if (fs.existsSync(swPath)) {
+    const sw = fs.readFileSync(swPath, 'utf8');
+    const next = sw.replace(/(const DEPLOY_VERSION = ')[^']*(')/, `$1${version}$2`);
+    if (next !== sw) { fs.writeFileSync(swPath, next); changed.push('sw.js'); }
+  }
   const cfgPath = path.join(root, 'js/config.js');
   const cfg = fs.readFileSync(cfgPath, 'utf8');
   const cfgNext = cfg.replace(/(APP_VERSION = ')[^']*(')/, `$1${version}$2`);
@@ -47,7 +54,7 @@ export function stampFiles(version, root = ROOT) {
     const p = path.join(root, rel);
     const src = fs.readFileSync(p, 'utf8');
     const next = src
-      .replace(/\?v=2026\.\d+\.\d+\.\d+/g, `?v=${version}`)
+      .replace(/\?v=2026\.\d+\.\d+\.\d+/g, '')
       .replace(/(<meta name="app-version" content=")[^"]*(")/, `$1${version}$2`);
     if (next !== src) { fs.writeFileSync(p, next); changed.push(rel); }
   }

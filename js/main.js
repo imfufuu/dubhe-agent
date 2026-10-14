@@ -1,3 +1,4 @@
+import { registerOfflineCache } from './register-cache.js';
 import { installDeviceControls } from './ui-devices.js';
 import { effectiveModeration } from './ui-moderation-setting.js';
 import { installLanguage } from './ui-language.js?v=2026.10.11.1';
@@ -178,12 +179,8 @@ if (store.hydrateBlobs) {
 
 console.log(`%c◐ Dubhe Agent ${APP_RELEASE}`, 'font-weight:800;font-size:16px', '· TeamoRouter Gateway');
 
-// 审核资源离线缓存：首次下载后持久化（stale-while-revalidate），之后会话零网络直读
-try {
-  if ('serviceWorker' in navigator && (location.protocol === 'https:' || ['localhost', '127.0.0.1'].includes(location.hostname))) {
-    navigator.serviceWorker.register('./sw.js', { scope: './' }).catch(() => {});
-  }
-} catch { /* SW 不可用不影响应用 */ }
+// 站内脚本按哈希增量预缓存，大型依赖按需缓存；更新不强制中断当前标签页。
+registerOfflineCache();
 
 probeLocalBrowser().then(() => { if (ui) ui.syncWeb(); }).catch(() => {});
 

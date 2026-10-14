@@ -1,6 +1,6 @@
 # ◐ Dubhe Agent — 基于 TeamoRouter 的网页端智能体
 
-> **Dubhe Agent V1.7** · 架构 **Dubhe Helix 3.0 · DC（Dubhe Cambrian，天枢·寒武）** · 构建 `2026.10.11.1` · [线上介绍](https://imfufuu.github.io/dubhe-agent/) · 对话 [app.html](./app.html) · [CHANGELOG](./CHANGELOG.md)
+> **Dubhe Agent V1.8 Stable** · 架构 **Dubhe Helix 3.0 · DC（Dubhe Cambrian，天枢·寒武）** · 构建以 [部署清单](https://imfufuu.github.io/dubhe-agent/build.json) 为准 · [线上介绍](https://imfufuu.github.io/dubhe-agent/) · 对话 [app.html](./app.html) · [CHANGELOG](./CHANGELOG.md)
 
 [![CI](https://github.com/imfufuu/dubhe-agent/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/imfufuu/dubhe-agent/actions/workflows/ci.yml)
 [![Pages](https://github.com/imfufuu/dubhe-agent/actions/workflows/pages.yml/badge.svg?branch=main)](https://github.com/imfufuu/dubhe-agent/actions/workflows/pages.yml)
@@ -17,6 +17,25 @@ npm ci && npm test   # 一条命令跑完 tests/ 下全部 .mjs + Python 护栏�
 - Key 只存在本机 localStorage，请求直发网关
 - 网页检索走显式工具：本地 `server.py` 提供单页 `fetch_url`，新版 Cloudflare Worker 另提供 `search_web` 与同源 `crawl_site`；不向模型请求注入原生网页搜索字段，Worker 能力由 `/api/health` 探测
 - 下面先「快速开始」。协议表和架构图是排错用的，日常对话不必先读完
+
+## V1.8：按需扩展技能、文档与音频
+
+- **技能按需探索**：`skill_library` 先返回小目录，再读取一篇指南。12 项中英技能覆盖 Word、演示文稿、PDF 页面/表单/水印、文本识别、音频、数据报告及交付验收；全文位于 `assets/skills/`，不会自动注入提示词。
+- **本地文档工具**：`document_tool` 使用有超时/取消和体积上限的独立 Worker。DOCX 支持读取、标题/段落/列表/表格/页眉页脚/插图生成；PPTX 支持按页读取、可编辑文字/表格/插图/备注生成；PDF 支持结构检查、合并、提取/重排、旋转、水印、AcroForm 检查/填写/扁平化、元数据修改。保留原件，默认另存至 `outputs/`。
+- **如实披露边界**：旧版 `.doc` 请先在本机另存 `.docx`；不把改后缀当转换。不提供 Office 保真渲染、任意旧稿无损编辑、PDF 安全涂黑、动态 XFA、密码破解或证书签名。PDF 内置字体目前为 Latin，非 Latin 水印/表单/新建正文可能报错。结构检查不是视觉排版验收。
+- **音频分析**：支持 MP3/WAV/M4A/AAC/OGG/FLAC/WebM Audio，单份≤16MB。设置中独立选择 Gemini 3.5 Flash Lite、3.8 Flash 或 3.1 Pro；`analyze_audio` 与视频一样发送 `file: {filename,file_data}`，返回全文并存入 `internal/ocr/*.audio.md`。时间点/说话人标签为近似分析，不是强制对齐或真实身份认证。
+- **隐私与费用**：文档解析/生成在本地，并不代表整个 Agent 对话离线：提取文字作为工具结果会进入后续网关对话。音频原件及启用视觉识别的 PDF 页图会上传网关。没有本地语音内容审核。音频请求做了协议与流程回归，未冒充真实付费模型质量评测；网关不回传完整用量时明确标记，而非编造每分钟价格。
+- **模型目录**：以本次账户可见目录为依据更新；推荐是应用精选，低价是公开标价阈值，新收录是本站新增。两个 Kimi 选项已停用，旧会话自动回到默认路由；保留历史计价记录，不宣称账户目录等于全平台目录。
+
+### 浏览器增量资源缓存
+
+部署先更新展示/SW 版本，再生成 `build.json`。常规站内脚本、样式、页面预缓存；大型模型、Office/PDF 库、字体等首次使用才下载。已缓存文件与新清单 SHA-256 相同则直接复用；只获取新增/改变的文件，下载后校验大小与哈希。已有旧资源缓存的一次性迁移也会先核验字节。
+
+新版本完整准备后等待旧标签页关闭，避免运行中的 Agent 混用模块。界面提示关闭所有应用标签页再打开；激活时才删除本应用旧版本与废弃资源缓存，不清理其他应用的新缓存。更新失败保留旧版。固定版本 Pyodide CDN 资源按需缓存，版本变化不复用旧 URL；非白名单第三方包只依赖浏览器自身 HTTP 缓存，不冒充清单哈希管理。
+
+缓存不收集 API 请求/响应、密钥、聊天记录或工作区文件。SW 版本/部署清单检查仍会联网；首次安装、配额不足、存储被浏览器回收或隐私模式下不保证永久离线。开发目录未生成部署清单时保持普通网络加载。设置中清缓存后，应完成任务再刷新，以重新建立缓存。
+
+浏览器回归可在本地 HTTP 服务上运行：`node tools/check-cache-ui.mjs`、`node tools/check-document-ui.mjs`、`node tools/check-home-navigation.mjs`、`node tools/check-v18-ui.mjs`。需要另装 Playwright 及浏览器；WebKit 测试不等同于具体 iPad 真机测试。
 
 ## 快速开始
 

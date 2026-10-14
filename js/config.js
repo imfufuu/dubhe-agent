@@ -1,3 +1,4 @@
+import { MODEL_CATALOG, MODEL_CATALOG_BY_ID } from './model-catalog.js?v=2026.10.11.1';
 import { coreSystemPrompt } from './prompt-core.js';
 import { getLanguage } from './locale.js';
 import { systemPromptEnglish, OUTPUT_SPEC_EN } from './prompt-en.js';
@@ -22,7 +23,7 @@ import { reasoningControlFor } from './reasoning.js?v=2026.10.11.1';
 // 发布版本号：index.html 用 ?v= 挂在入口样式/脚本上，用来穿透 GitHub Pages 对静态资源
 // 的 ~10 分钟缓存。每次改动样式或入口逻辑都要 bump 一次（有单测校验二者一致）。
 // 发布版本（正式版标识，界面/文档都读它）与构建戳（每次改动递增，用于 ?v= 缓存击穿）
-export const APP_RELEASE = 'V1.7';
+export const APP_RELEASE = 'V1.8';
 export const APP_VERSION = '2026.10.11.1';
 export const ANTHROPIC_VERSION = '2023-06-01';
 // 思考链加密（不返回可见思考正文）的模型模式：菜单显示「思考链已加密」。
@@ -43,61 +44,11 @@ export const STORAGE_KEY = 'dubhe-agent-state-v1';
 export const SMART_ROUTER_ID = '__smart_router__';
 export const SMART_ROUTER_PROVIDER = 'TeamoRouter';
 
-// 兜底模型列表（GET /v1/models 失败时使用，来源：官方文档 2026-09-30 复核调研）
+// 2026-10-14 实际目录快照；仅作未取得实时目录时的兜底，不代表所有账户的可用性。
+// 生图入口仍在设置页；福利档保持隐藏。推荐为应用预设，低价按网关标价阈值判定。
 export const FALLBACK_MODELS = [
-  // 智能路由器：虚拟元模型，永远置顶（客户端根据任务类型自行路由）
   { id: SMART_ROUTER_ID, provider: SMART_ROUTER_PROVIDER, hot: true },
-  // Anthropic —— 走 /v1/messages 原生协议
-  // 标签（2026-09-30 复核调研）：热门 = 当季常用/榜单常客/官方头图主推；低价 = 约 ≤$1/M 输入或网关免费档。
-  // 排序规则：组内按「热度（hot 优先）→ 版本号降序（5.5 > 5.1 > 5.0 > 4.8 > 4.7 > 4.6 > 4.5）→ 档位权重（Opus > Sonnet > Fable > Haiku）」排列。
-  // Opus 5.5 与 Sonnet 5.5：9 月末最新双旗舰，Terminal-Bench 4.0 与 SWE-bench 领先 → 热门置顶。
-  { id: 'claude-opus-5-5',            provider: 'Anthropic', hot: true },
-  { id: 'claude-sonnet-5-5',          provider: 'Anthropic', hot: true },
-  { id: 'claude-fable-5-1',           provider: 'Anthropic', hot: true },
-  { id: 'claude-opus-5',              provider: 'Anthropic', hot: true },
-  { id: 'claude-sonnet-5',            provider: 'Anthropic', hot: true },
-  { id: 'claude-fable-5',             provider: 'Anthropic' },
-  { id: 'claude-opus-4-8',            provider: 'Anthropic' },
-  { id: 'claude-opus-4-7',            provider: 'Anthropic' },
-  { id: 'claude-opus-4-6',            provider: 'Anthropic' },
-  { id: 'claude-sonnet-4-6',          provider: 'Anthropic' },
-  { id: 'claude-haiku-4-5',           provider: 'Anthropic', cheap: true },
-  { id: 'claude-haiku-4-5-20251001',  provider: 'Anthropic', cheap: true },
-  // OpenAI —— 走 /v1/chat/completions
-  // GPT-6.1 Sol（最新 6.1 主力推理模型，官方头图主推）、GPT-6 Astra（超旗舰）、GPT-6 Sol（6.0 主力）、GPT-5.6 Sol → 热门置顶；
-  // GPT-6 Luna 为最新 6.0 高通量超低价档（$0.1/$0.5）。
-  { id: 'gpt-6.1-sol',                provider: 'OpenAI', hot: true },
-  { id: 'gpt-6-astra',                provider: 'OpenAI', hot: true },
-  { id: 'gpt-6-sol',                  provider: 'OpenAI', hot: true },
-  { id: 'gpt-5.6-sol',                provider: 'OpenAI', hot: true },
-  { id: 'gpt-6-luna',                 provider: 'OpenAI', cheap: true },
-  { id: 'gpt-5.6-terra',              provider: 'OpenAI' },
-  { id: 'gpt-5.6-luna',               provider: 'OpenAI', cheap: true },
-  { id: 'gpt-5.5',                    provider: 'OpenAI' },
-  { id: 'gpt-5.4',                    provider: 'OpenAI' },
-  { id: 'gpt-5.4-mini',               provider: 'OpenAI', cheap: true },
-  // Google
-  { id: 'gemini-3.8-flash',           provider: 'Google', hot: true, cheap: true },
-  { id: 'gemini-3.7-flash',           provider: 'Google', cheap: true },
-  { id: 'gemini-3.6-flash',           provider: 'Google', cheap: true },
-  { id: 'gemini-3.5-flash',           provider: 'Google', cheap: true },
-  { id: 'gemini-3.5-flash-lite',      provider: 'Google', cheap: true },
-  { id: 'gemini-3.1-pro-preview',     provider: 'Google' },
-  // DeepSeek
-  { id: 'deepseek-v4-flash',          provider: 'DeepSeek', hot: true, cheap: true },
-  { id: 'deepseek-flash',             provider: 'DeepSeek', hot: true, cheap: true },
-  { id: 'deepseek-v4-pro',            provider: 'DeepSeek' },
-  { id: 'deepseek-v4-pro-260425',     provider: 'DeepSeek' },
-  { id: 'deepseek-v4-flash-vision-exp', provider: 'DeepSeek' },  // 多模态（vision）
-  // Kimi（月之暗面）——网关 GET /v1/models 已上线 kimi-k3（含 1M 上下文变体）
-  { id: 'kimi-k3',                    provider: 'Kimi', hot: true },
-  { id: 'kimi-k3[1M]',                provider: 'Kimi' },
-  // GLM（智谱）
-  { id: 'glm-5.3-flash',              provider: 'GLM', hot: true, cheap: true },
-  { id: 'glm-5.3',                    provider: 'GLM' },
-  { id: 'glm-5.2',                    provider: 'GLM' },
-  // xAI
-  { id: 'grok-4.6',                   provider: 'Grok', hot: true },
+  ...MODEL_CATALOG.filter(m => m.channel === 'chat' && !m.hidden).map(m => ({ ...m })),
 ];
 
 export const PROVIDER_ORDER = [SMART_ROUTER_PROVIDER, 'Anthropic', 'OpenAI', 'Google', 'DeepSeek', 'GLM', 'Kimi', 'Grok', '其他'];
@@ -184,19 +135,25 @@ export const DEFAULT_IMAGE_MODEL = 'gpt-image-2';
 // 视频档位只收录 2026-10-06 用 11.5s 测试视频在网关实测能真正收到视频（usage 含 VIDEO modality）的模型；
 // Claude / GPT / DeepSeek / GLM / Kimi / Grok 经网关要么剥掉视频部件、要么上游 400，不列入。
 export const VISION_MODELS = [
-  { id: 'deepseek-v4-flash-vision-exp', label: 'DeepSeek V4 Vision', tag: '默认 · 最便宜', note: '实验价 $0.22/M 输入 · OCR 稳，长文档首选', tagEn: 'Default · Cheapest', noteEn: 'Experimental $0.22/M input · steady OCR, best for long documents' },
-  { id: 'gemini-3.5-flash-lite',        label: 'Gemini 3.5 Flash Lite',    tag: '便宜 · 极快',   note: '$0.09/M 输入 · 简单截图 / 票据 / 快速看一眼', tagEn: 'Cheap · Fast', noteEn: '$0.09/M input · quick look at simple screenshots and receipts' },
-  { id: 'gemini-3.8-flash',             label: 'Gemini 3.8 Flash',         tag: '均衡',          note: '$0.19/M 输入 · 图表 / 多图 / 中文手写更稳', tagEn: 'Balanced', noteEn: '$0.19/M input · steadier on charts, multiple images and handwriting' },
-  { id: 'gemini-3.1-pro-preview',       label: 'Gemini 3.1 Pro',           tag: '效果最好',      note: '$0.57/M 输入 · 复杂版面、公式、细节描述', tagEn: 'Best quality', noteEn: '$0.57/M input · complex layouts, formulas, fine detail' },
-  { id: 'claude-sonnet-5-5',            label: 'Claude Sonnet 5.5',        tag: '文档 / 代码截图', note: '$0.56/M 输入 · 架构图、代码截图、UI 截图理解强', tagEn: 'Docs / code shots', noteEn: '$0.56/M input · strong on architecture diagrams, code and UI screenshots' },
+  {"id": "deepseek-v4-flash-vision-exp", "label": "DeepSeek V4 Vision", "tag": "默认 · 实验", "tagEn": "Default · Experimental", "note": "网关标价 $0.22/M 输入；实际账单以网关为准", "noteEn": "Gateway list price $0.22/M input; actual billing may vary"},
+  {"id": "gemini-3.5-flash-lite", "label": "Gemini 3.5 Flash Lite", "tag": "低价", "tagEn": "Low cost", "note": "网关标价 $0.3/M 输入；实际账单以网关为准", "noteEn": "Gateway list price $0.3/M input; actual billing may vary"},
+  {"id": "gemini-3.8-flash", "label": "Gemini 3.8 Flash", "tag": "通用", "tagEn": "General", "note": "网关标价 $0.75/M 输入；实际账单以网关为准", "noteEn": "Gateway list price $0.75/M input; actual billing may vary"},
+  {"id": "gemini-3.1-pro-preview", "label": "Gemini 3.1 Pro", "tag": "预览版", "tagEn": "Preview", "note": "网关标价 $2/M 输入；实际账单以网关为准", "noteEn": "Gateway list price $2/M input; actual billing may vary"},
+  {"id": "claude-sonnet-5-5", "label": "Claude Sonnet 5.5", "tag": "文档 / 代码截图", "tagEn": "Docs / code shots", "note": "网关标价 $2/M 输入；实际账单以网关为准", "noteEn": "Gateway list price $2/M input; actual billing may vary"},
 ];
 export const DEFAULT_VISION_MODEL = 'deepseek-v4-flash-vision-exp';
 export const VIDEO_MODELS = [
-  { id: 'gemini-3.5-flash-lite',  label: 'Gemini 3.5 Flash Lite', tag: '便宜 · 最快 · 默认', note: '约 $0.0004 / 分钟视频 · 实测 11s 短片 6 秒出结果', tagEn: 'Cheap · Fastest · Default', noteEn: '~$0.0004 per video minute · an 11s clip returned in 6 seconds' },
-  { id: 'gemini-3.8-flash',       label: 'Gemini 3.8 Flash',      tag: '均衡',          note: '约 $0.0008 / 分钟视频 · 动作时间线 + 字幕转录都稳', tagEn: 'Balanced', noteEn: '~$0.0008 per video minute · steady action timelines and subtitle transcription' },
-  { id: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro',        tag: '效果最好',      note: '约 $0.0024 / 分钟视频 · 带时间轴的细致描述、语音线索更全', tagEn: 'Best quality', noteEn: '~$0.0024 per video minute · timestamped detail and fuller audio cues' },
+  {"id": "gemini-3.5-flash-lite", "label": "Gemini 3.5 Flash Lite", "tag": "默认 · 低价", "tagEn": "Default · Low cost", "note": "已验证视频输入；按实际 token 计费，不保证固定每分钟价", "noteEn": "Video input previously verified; token-based billing, not a fixed per-minute price"},
+  {"id": "gemini-3.8-flash", "label": "Gemini 3.8 Flash", "tag": "通用", "tagEn": "General", "note": "已验证视频输入；按实际 token 计费，不保证固定每分钟价", "noteEn": "Video input previously verified; token-based billing, not a fixed per-minute price"},
+  {"id": "gemini-3.1-pro-preview", "label": "Gemini 3.1 Pro", "tag": "预览版", "tagEn": "Preview", "note": "已验证视频输入；按实际 token 计费，不保证固定每分钟价", "noteEn": "Video input previously verified; token-based billing, not a fixed per-minute price"},
 ];
 export const DEFAULT_VIDEO_MODEL = 'gemini-3.5-flash-lite';
+// Audio uses the same three Gemini IDs, with independent user selection.
+// File-part protocol is shared with video; audio quality is not claimed live-benchmarked.
+export const AUDIO_MODELS = VIDEO_MODELS.map(m => ({ ...m, note: '音频使用 file 部件；按网关实际用量计费', noteEn: 'Audio via file input; billed by gateway usage' }));
+export const DEFAULT_AUDIO_MODEL = DEFAULT_VIDEO_MODEL;
+export function resolveAudioModel(id) { return AUDIO_MODELS.some(m => m.id === id) ? id : DEFAULT_AUDIO_MODEL; }
+
 export function resolveVisionModel(id) {
   return VISION_MODELS.some((m) => m.id === id) ? id : DEFAULT_VISION_MODEL;
 }
@@ -293,10 +250,7 @@ export function protocolOf(modelId) {
   return providerOf(modelId) === 'Anthropic' ? 'anthropic' : 'openai';
 }
 
-// 模型别名：已废弃/关闭/改名的模型自动转到仍可用的接替模型。
-// 用户选择了旧名字也能继续工作，UI 无需强制切换（避免破坏历史会话）。
-// 2026-10-03：Google GitHub Copilot 等网关在 10-02 起将 gemini-3.5-flash / 3.6-flash
-// 从可用名单里下掉，新请求 404；统一转发到 3.8-flash（官方建议的替代）。
+// 历史别名仅作用于当前目录未列出的 ID；已重新出现在目录中的型号保持用户所选 ID。
 const MODEL_ALIASES = {
   'gemini-3.5-flash':      'gemini-3.8-flash',
   'gemini-3.6-flash':      'gemini-3.8-flash',
@@ -306,7 +260,7 @@ const MODEL_ALIASES = {
 };
 export function resolveModelAlias(modelId) {
   const id = String(modelId || '');
-  return MODEL_ALIASES[id] || id;
+  return MODEL_CATALOG_BY_ID.has(id) ? id : (MODEL_ALIASES[id] || id);
 }
 
 export function isFreeModel(modelId) {

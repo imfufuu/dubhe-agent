@@ -455,7 +455,7 @@ console.log('\n⑩ 操作条：输出结束才出现，复制按钮带 SVG 图�
   ui.onAssistantDone(partial);
   ok('输出完成后操作条出现', !wrapOf(partial.id).classList.contains('actions-pending'));
   const acts = [...wrapOf(partial.id).querySelectorAll('.act')];
-  ok('复制按钮是 SVG 图标 + 中文文字', acts.some((b) => b.dataset.act === 'copy' && b.querySelector('svg') && /复制/.test(b.textContent)),
+  ok('复制按钮是无文字 SVG 图标，保留可访问名称', acts.some((b) => b.dataset.act === 'copy' && b.querySelector('svg') && !b.textContent.trim() && /复制/.test(b.getAttribute('aria-label') || b.title)),
     acts.map((b) => b.innerHTML.slice(0, 24)).join(' | '));
   ok('回滚/重新生成同样带 SVG（同一视觉语言）',
     acts.filter((b) => b.dataset.act !== 'copy').every((b) => b.querySelector('svg')));
@@ -542,7 +542,7 @@ console.log('\n⑯ 移动端布局：根因修复 + 密度重排（源码级护�
     && /\.sidebar\s*\{[^}]*grid-area:\s*side/.test(css) && /#sandbox-panel\s*\{[^}]*grid-area:\s*panel/.test(css));
   const m720 = [...css.matchAll(/@media \(max-width: 720px\) \{([\s\S]*?)^\}/gm)].map((m) => m[1]).join('\n');
   ok('存在 ≤720px 的移动端排布层', m720.length > 400, `${m720.length} 字节`);
-  ok('顶栏胶囊横滑而不是挤成多行', /\.topbar-right\s*\{[^}]*flex-wrap: nowrap/.test(m720) && /\.topbar-right\s*\{[^}]*overflow-x: auto/.test(m720));
+  ok('顶栏胶囊右对齐换行，面板入口保持可见', /\.topbar-right\s*\{[^}]*flex-wrap: wrap/.test(m720) && /\.topbar-right\s*\{[^}]*justify-content: flex-end/.test(m720));
   ok('输入框字号 16px（低于它 iOS 会放大整页）', /#composer-input\s*\{[^}]*font-size: 16px/.test(m720));
   ok('消息区左右留白收窄，操作条保持紧凑并可横向滚动', /\.msg\s*\{[^}]*padding: 0 14px/.test(m720) && /\.msg-actions\s*\{[^}]*flex-wrap: nowrap/.test(m720) && /\.msg-actions\s*\{[^}]*overflow-x: auto/.test(m720));
   ok('长链接/代码块各自滚动不撑宽页面', /\.md-body pre\s*\{[^}]*font-size/.test(m720) && /\.md-body a\s*\{[^}]*overflow-wrap: anywhere/.test(m720));

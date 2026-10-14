@@ -225,11 +225,11 @@ export function subagentTools(sandboxEnabled, def, { remoteCpp = true } = {}) {
   // 但读写文件之类不执行任意代码的工具仍应留给子智能体（旧写法直接给了 null，
   // 等于一关沙箱就把所有子智能体退化成纯推理）。
   const allow = new Set(toolsFor(sandboxEnabled, { remoteCpp }).map((t) => t.name));
-  const list = TOOL_DEFS.filter((t) => (t.name === 'knowledge_search' || def.tools.includes(t.name)) && t.name !== 'dispatch_subagent' && allow.has(t.name));
+  const list = TOOL_DEFS.filter((t) => (t.name === 'knowledge_search' || t.name === 'skill_library' || def.tools.includes(t.name)) && t.name !== 'dispatch_subagent' && allow.has(t.name));
   return list.length ? list : null;
 }
 
-export async function runSubagent(def, task, { apiKey, model, thinking, reasoningLevel, sandboxEnabled, remoteCpp = true, webEnabled, fs, signal, onThinkingFallback, onWebFallback, imageModel, visionModel, videoModel, onSubagentUsage, memory }) {
+export async function runSubagent(def, task, { apiKey, model, thinking, reasoningLevel, sandboxEnabled, remoteCpp = true, webEnabled, fs, signal, onThinkingFallback, onWebFallback, imageModel, visionModel, videoModel, audioModel, onSubagentUsage, memory }) {
   const subTools = subagentTools(sandboxEnabled, def, { remoteCpp });
   const memBlock = formatMemory(memory);
   const messages = [
@@ -276,7 +276,7 @@ export async function runSubagent(def, task, { apiKey, model, thinking, reasonin
     messages.push({ role: 'assistant', text, toolCalls: calls, ...(blocks.length ? { thinkingBlocks: blocks } : {}) });
     for (const c of calls) {
       // imageModel 要透传：否则子智能体出图会绕开用户在模型菜单里选定的生图模型
-      const res = await executeTool(c.name, c.args, { fs, onUi: () => {}, apiKey, imageModel: imageModel || null, visionModel: visionModel || null, videoModel: videoModel || null, sandboxEnabled, remoteCpp, signal });
+      const res = await executeTool(c.name, c.args, { fs, onUi: () => {}, apiKey, imageModel: imageModel || null, visionModel: visionModel || null, videoModel: videoModel || null, audioModel: audioModel || null, sandboxEnabled, remoteCpp, signal });
       messages.push({ role: 'tool', toolCallId: c.id, name: c.name, content: res });
     }
   }
@@ -676,6 +676,7 @@ export function createAgent(store, hooks = {}) {
         // 识图 / 视频识别模型：设置页「多模态模型」全局生效（不随会话）
         visionModel: settings.visionModel || null,
         videoModel: settings.videoModel || null,
+        audioModel: settings.audioModel || null,
         subagentReports: [],
       };
       iterations = 0;
@@ -1322,7 +1323,7 @@ export function createAgent(store, hooks = {}) {
               ? 'pyodide-wasm'
               : call.name === 'execute_javascript'
                 ? 'worker-8ms'
-                : (call.name === 'dispatch_subagent' || call.name === 'generate_image' || call.name === 'analyze_image' || call.name === 'analyze_pdf' || call.name === 'analyze_video')
+                : (call.name === 'dispatch_subagent' || call.name === 'generate_image' || call.name === 'analyze_image' || call.name === 'analyze_pdf' || call.name === 'analyze_video' || call.name === 'analyze_audio')
                   ? 'gateway-api'
                   : 'browser-0ms';
             telemetry.recordTool(call.name, Math.round(waveMs / Math.max(1, toolCalls.length)), { engine, ok: !isErr });

@@ -1,5 +1,5 @@
 import { feedbackTarget, normalizeFeedback } from './feedback.js';
-import { ICON } from './icons.js?v=2026.10.11.1';
+import { ICON } from './icons.js';
 const svg = (down) => down ? ICON.thumbDown : ICON.thumbUp;
 export function installFeedback({ store, agent, getBusy, root, toast }) {
   const refresh = () => {

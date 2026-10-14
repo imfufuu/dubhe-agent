@@ -423,13 +423,16 @@ export const CORE_TOOLS = CORE_TOOL_NAMES;
 export const TOOL_MOUNT_RULES = REG_TOOL_MOUNT_RULES;
 
 const ATTACHMENT_KIND_RE = Object.freeze({
-  pdf: /\.pdf$/i, video: /\.(?:mp4|webm|mov|m4v)$/i, zip: /\.zip$/i, csv: /\.(?:csv|tsv)$/i,
+  audio: /\.(?:mp3|mpga|wav|m4a|aac|ogg|oga|opus|flac|weba)$/i, office: /\.(?:docx|pptx|doc)$/i, pdf: /\.pdf$/i, video: /\.(?:mp4|webm|mov|m4v)$/i, zip: /\.zip$/i, csv: /\.(?:csv|tsv)$/i,
 });
 /** 附件 → 挂载规则认识的类型（pdf / video / zip / csv / image / text / other），只看名字、kind、source、dataUrl 前缀。 */
 export function attachmentKindOf(a) {
   if (!a || typeof a !== 'object') return 'other';
   const name = String(a.name || '');
+  if (a.source === 'audio' || /^data:audio\//.test(String(a.dataUrl || ''))) return 'audio';
+
   for (const [kind, re] of Object.entries(ATTACHMENT_KIND_RE)) if (re.test(name)) return kind;
+  if (a.source === 'office' || /\.(docx|pptx|doc)$/i.test(String(a.name || ''))) return 'office';
   if (a.source === 'video' || /^data:video\//.test(String(a.dataUrl || ''))) return 'video';
   if (/^data:application\/pdf/.test(String(a.dataUrl || ''))) return 'pdf';
   if (a.kind === 'image' || /^data:image\//.test(String(a.dataUrl || ''))) return 'image';

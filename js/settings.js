@@ -2,7 +2,7 @@ import { installModerationSetting } from './ui-moderation-setting.js';
 import { text as localeText } from './locale.js';
 import { getLanguage, onLanguageChange } from './locale.js';
 // 设置弹窗：API Key / 中继地址 / 主题 / 字号 / 沙箱 / 联网 / 快速 / 思考 / 识图·视频识别模型 / 清空数据 / 关于
-import { APP_RELEASE, APP_VERSION, STORAGE_KEY, VISION_MODELS, VIDEO_MODELS, IMAGE_MODELS, DEFAULT_IMAGE_MODEL, isImageGenModel, imageModelLabel, resolveVisionModel, resolveVideoModel } from './config.js?v=2026.10.11.1';
+import { APP_RELEASE, APP_VERSION, STORAGE_KEY, VISION_MODELS, VIDEO_MODELS, AUDIO_MODELS, IMAGE_MODELS, DEFAULT_IMAGE_MODEL, isImageGenModel, imageModelLabel, resolveVisionModel, resolveVideoModel, resolveAudioModel } from './config.js?v=2026.10.11.1';
 import { currentRelay, resetRelayProbe, RELAY_OVERRIDE_KEY } from './net.js';
 import { DEFAULT_TURN_BUDGET } from './execution.js?v=2026.10.11.1';
 import { NEXUS_ARCHITECTURE_SPEC } from './nexus.js';
@@ -93,6 +93,7 @@ function syncMultimodalSelects(store) {
   fillModelSelect($('#set-image-model'), IMAGE_MODELS, image);
   fillModelSelect($('#set-vision-model'), VISION_MODELS, vision);
   fillModelSelect($('#set-video-model'), VIDEO_MODELS, video);
+  fillModelSelect($('#set-audio-model'), AUDIO_MODELS, resolveAudioModel(settings.audioModel));
   const note = $('#set-mm-note');
   if (note) {
     const vi = VISION_MODELS.find((m) => m.id === vision) || {};
@@ -332,9 +333,10 @@ export function mountSettings(store, { onRelayChanged, onKeySaved, onSettingChan
   });
   bindModelSelect('#set-vision-model', 'visionModel', resolveVisionModel);
   bindModelSelect('#set-video-model', 'videoModel', resolveVideoModel);
+  bindModelSelect('#set-audio-model', 'audioModel', resolveAudioModel);
   // 语言切换：模型档位的 tag/note 有中英两版，切换后立刻重排（面板开着时也生效）
   onLanguageChange(() => {
-    for (const sel of ['#set-image-model', '#set-vision-model', '#set-video-model']) { const el = $(sel); if (el) el._lang = ''; }
+    for (const sel of ['#set-image-model', '#set-vision-model', '#set-video-model', '#set-audio-model']) { const el = $(sel); if (el) el._lang = ''; }
     syncMultimodalSelects(store);
   });
 
@@ -348,7 +350,7 @@ export function mountSettings(store, { onRelayChanged, onKeySaved, onSettingChan
     try {
       const r = await clearTransientCaches();
       const note = $('#set-cache-note');
-      if (note) note.textContent = `已清除 ${r.cacheStores} 个缓存（${r.cacheEntries} 条）· 下次用到时重新下载`;
+      if (note) note.textContent = `已清除 ${r.cacheStores} 个缓存（${r.cacheEntries} 条）· 请在任务结束后刷新，重新建立资源缓存`;
       toast(`✓ 临时缓存已清除（${r.cacheStores} 个离线缓存 · ${r.cacheEntries} 条资源）`, 'ok', 4200);
       onRelayChanged && onRelayChanged();
     } catch (err) {
@@ -361,9 +363,20 @@ export function mountSettings(store, { onRelayChanged, onKeySaved, onSettingChan
 // 临时缓存清理（纯函数化，便于单测）：返回清掉了什么。任何一项不可用（非 https / 旧浏览器）都跳过而不是报错。
 export async function clearTransientCaches() {
   const out = { cacheStores: 0, cacheEntries: 0, sessionKeys: 0, relayProbeReset: false };
+  // Forget the in-memory manifest as well, and let the next visit rebuild the cache.
+  try {
+    const scope = new URL('../', import.meta.url).href;
+    const reg = await globalThis.navigator?.serviceWorker?.getRegistration(scope);
+    if (reg?.scope === scope) {
+      for (const worker of [reg.active, reg.waiting, reg.installing]) worker?.postMessage({ type: 'dubhe-cache-cleared' });
+      await reg.unregister();
+    }
+  } catch { /* unavailable in private/unsupported environments */ }
+
   if (typeof caches !== 'undefined' && caches && typeof caches.keys === 'function') {
     const names = await caches.keys();
-    for (const n of names) {
+    const prefix = 'dubhe-static-v3:' + encodeURIComponent(new URL('../', import.meta.url).pathname) + ':';
+    for (const n of names.filter(n => n.startsWith(prefix) || /^dubhe-(?:assets|static|moderation)-v[12]$/.test(n))) {
       try { out.cacheEntries += (await (await caches.open(n)).keys()).length; } catch { /* 数不出来就不数 */ }
       try { if (await caches.delete(n)) out.cacheStores += 1; } catch { /* 单个失败不影响其它 */ }
     }

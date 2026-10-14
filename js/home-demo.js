@@ -3,7 +3,7 @@ import { syncMessageRhythm } from './ui-message-rhythm.js?v=2026.10.11.1';
 // Use the conversation's diff model and stable renderer to keep both views aligned.
 import { buildFileEditPreview } from './editpreview.js?v=2026.10.11.1';
 import { paintEditFoldContent } from './ui-editpreview.js?v=2026.10.11.1';
-import { ICON } from './icons.js?v=2026.10.11.1';
+import { ICON } from './icons.js';
 import { animateMessageSend } from './ui-send-animation.js?v=2026.10.11.1';
 
 const PROMPT = '把 date_utils.py 的时区转换改成支持 Asia/Shanghai，处理夏令时和无时区输入，补上单元测试，最后跑一遍 lint';

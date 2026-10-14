@@ -1,0 +1,29 @@
+[
+  {
+    "name": "docx",
+    "version": "9.5.1",
+    "file": "docx-9.5.1.js",
+    "license": "MIT",
+    "source": "https://registry.npmjs.org/docx/-/docx-9.5.1.tgz",
+    "npm_integrity": "sha512-ABDI7JEirFD2+bHhOBlsGZxaG1UgZb2M/QMKhLSDGgVNhxDesTCDcP+qoDnDGjZ4EOXTRfUjUgwHVuZ6VSTfWQ==",
+    "sha256": "aee5cf06c948263b7489f7e1bd08f4b8f612bb845275d6b931c6ef5b0d0a20de"
+  },
+  {
+    "name": "pptxgenjs",
+    "version": "3.12.0",
+    "file": "pptxgenjs-3.12.0.js",
+    "license": "MIT",
+    "source": "https://registry.npmjs.org/pptxgenjs/-/pptxgenjs-3.12.0.tgz",
+    "npm_integrity": "sha512-ZozkYKWb1MoPR4ucw3/aFYlHkVIJxo9czikEclcUVnS4Iw/M+r+TEwdlB3fyAWO9JY1USxJDt0Y0/r15IR/RUA==",
+    "sha256": "cd078ca9e91c6f9e061ee0a3c310d6ff157c3a71b1dea7f40fd53818017266ff"
+  },
+  {
+    "name": "pdf-lib",
+    "version": "1.17.1",
+    "file": "pdf-lib-1.17.1.js",
+    "license": "MIT",
+    "source": "https://registry.npmjs.org/pdf-lib/-/pdf-lib-1.17.1.tgz",
+    "npm_integrity": "sha512-V/mpyJAoTsN4cnP31vc0wfNA1+p20evqqnap0KLoRUN0Yk/p3wN52DOEsL4oBFcLdb76hlpKPtzJIgo67j/XLw==",
+    "sha256": "0f9a5cad07941f0826586c94e089d89b918c46e5c17cf2d5a3c6f666e3bc694f"
+  }
+]

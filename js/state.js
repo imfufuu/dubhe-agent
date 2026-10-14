@@ -1,3 +1,4 @@
+import { isRetiredModel } from './model-catalog.js?v=2026.10.11.1';
 import { normalizeFeedback } from './feedback.js';
 // ─── 会话状态：多会话记录、消息、检查点（回滚）、持久化 ────────────────
 // 侧栏展示「会话记录」；回滚操作全部发生在对话区（消息级按钮 + 撤销浮条）
@@ -171,7 +172,7 @@ export function createStore(onChange) {
     models: [],
     // webEnabled：联网开关。控制模型原生联网格式与已探测到的 Worker 搜索/抓取工具；
     // fetch_url/search_web/crawl_site 仍须存在相应 relay capability 才会进入工具表。
-    settings: { sandboxEnabled: true, fastMode: false, theme: 'light', thinking: true, reasoningLevel: 'medium', webEnabled: true, jevEnabled: true, visionModel: 'deepseek-v4-flash-vision-exp', videoModel: 'gemini-3.5-flash-lite', imageRemoteReview: true },
+    settings: { sandboxEnabled: true, fastMode: false, theme: 'light', thinking: true, reasoningLevel: 'medium', webEnabled: true, jevEnabled: true, visionModel: 'deepseek-v4-flash-vision-exp', videoModel: 'gemini-3.5-flash-lite', audioModel: 'gemini-3.5-flash-lite', imageRemoteReview: true },
     sessions: [newSession()],
     activeSessionId: null,
     // 根级字段 = 活动会话的实时引用（由 hydrate/commit 同步，其余代码零改动）
@@ -241,7 +242,7 @@ export function createStore(onChange) {
     // 模型属于会话属性：切换会话时恢复该会话自己的模型，而不是沿用全局当前选择
     state.model = sessionModel(s) || state.model;
     // 生图模型只能由 generate_image 工具调用：历史数据若存着它，回落到默认对话模型
-    if (isImageModel(state.model) || isJevModel(state.model)) state.model = DEFAULT_CHAT_MODEL;
+    if (isImageModel(state.model) || isJevModel(state.model) || isRetiredModel(state.model)) state.model = DEFAULT_CHAT_MODEL;
     s.model = state.model;
     // 生图模型同样按会话记忆；缺失或非法值回落到默认
     const wantImage = s.imageModel || state.imageModel;
@@ -413,7 +414,7 @@ export function createStore(onChange) {
       const parsed = JSON.parse(raw);
       Object.assign(state, parsed);
       // 旧快照里没有的开关要补上默认值（整块 settings 被 parsed 覆盖时不能留下 undefined）
-      state.settings = Object.assign({ sandboxEnabled: true, remoteCppEnabled: true, fastMode: false, theme: 'light', thinking: true, reasoningLevel: 'medium', webEnabled: true, jevEnabled: true, visionModel: 'deepseek-v4-flash-vision-exp', videoModel: 'gemini-3.5-flash-lite', imageRemoteReview: true }, state.settings || {});
+      state.settings = Object.assign({ sandboxEnabled: true, remoteCppEnabled: true, fastMode: false, theme: 'light', thinking: true, reasoningLevel: 'medium', webEnabled: true, jevEnabled: true, visionModel: 'deepseek-v4-flash-vision-exp', videoModel: 'gemini-3.5-flash-lite', audioModel: 'gemini-3.5-flash-lite', imageRemoteReview: true }, state.settings || {});
       state.memory = pruneMemoryFacts(Array.isArray(state.memory) ? state.memory : []);
       state.learnedSkills = pruneLearnedSkills(Array.isArray(state.learnedSkills) ? state.learnedSkills : []);
       normalizeP1State(); // 旧快照没有这些键 → 补默认；坏形状 → 丢弃而不是带着跑

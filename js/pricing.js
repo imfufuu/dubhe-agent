@@ -1,4 +1,5 @@
 // ─── 模型官方价格表与费用预估（USD）──────────────────────────────────────
+// 2026-10-14 复核；展示网关 list_cost 标价，不写入账户折扣或声称供应商实测。
 // 数据来源：TeamoRouter 官方定价接口（GET /v1/models/pricing 的 list_cost 字段与 per_call_tiers）
 // 独立模块：不修改 config.js / api.js 的既有导出列表，避免 Pages 混版缓存下 ESM link 失败。
 
@@ -6,6 +7,8 @@ export const VISION_MODEL_ID = 'deepseek-v4-flash-vision-exp';
 
 // 对话/推理模型官方价格（USD / 1M tokens）
 export const MODEL_PRICING = {
+  'gemini-4-argon': { input: 2.0, output: 10.0, cachedInput: 0.1, cacheCreation: 2.0 },
+  'claude-haiku-5-5': { input: 0.1, output: 0.5, cachedInput: 0.01, cacheCreation: 0.125 },
   // Anthropic Claude
   'claude-opus-5-5':          { input: 4.0,   output: 20.0,  cachedInput: 0.2,   cacheCreation: 5.0 },
   'claude-sonnet-5-5':        { input: 2.0,   output: 10.0,  cachedInput: 0.2,   cacheCreation: 2.5 },
@@ -41,8 +44,8 @@ export const MODEL_PRICING = {
   'gemini-3.1-pro-preview':   { input: 2.0,   output: 12.0,  cachedInput: 0.2 },
 
   // DeepSeek
-  'deepseek-flash':           { input: 0.3,   output: 1.2,   cachedInput: 0.006 },
-  'deepseek-v4-pro':          { input: 1.32,  output: 3.96,  cachedInput: 0.044 },
+  'deepseek-flash':           { input: 0.15,   output: 0.6,   cachedInput: 0.003 },
+  'deepseek-v4-pro':          { input: 0.66,  output: 1.98,  cachedInput: 0.022 },
   'deepseek-v4-pro-260425':   { input: 1.74,  output: 3.48,  cachedInput: 0.145 },
   'deepseek-v4-flash':        { input: 0.44,  output: 1.32,  cachedInput: 0.014 },
 
@@ -69,9 +72,9 @@ export const VISION_MODEL_PRICING = {
   'deepseek-v4-flash-vision-exp': {
     id: 'deepseek-v4-flash-vision-exp',
     label: 'DeepSeek V4 Flash Vision Exp',
-    input: 0.44,
-    output: 1.32,
-    cachedInput: 0.014,
+    input: 0.22,
+    output: 0.66,
+    cachedInput: 0.007,
     defaultTokensPerImage: 1500,
   },
 };
@@ -221,6 +224,7 @@ export function estimateVisionCost({
   outputTokens = 0,
   imageCount = 1,
   textChars = 0,
+  inputUnavailable = false,
 } = {}) {
   const { base } = normalizeModelKey(model);
   // 识图 / 视频识别模型可在设置里换成 Gemini / Claude：没有专表时用对话价目表（同一模型的多模态输入按文本 token 计）
@@ -242,7 +246,8 @@ export function estimateVisionCost({
     imageCount: imgs,
     inputTokens: inTok,
     outputTokens: outTok,
-    estimated: !hasExact,
+    estimated: !hasExact || inputUnavailable,
+    inputUnavailable,
     inRate: p.input,
     outRate: p.output,
     costUsd,
@@ -391,10 +396,11 @@ export function summarizeTurnCost(arg1, opts = {}) {
     if (b.kind === 'vision') {
       const vc = estimateVisionCost({
         model: b.model || VISION_MODEL_ID,
-        inputTokens: b.input || b.inputTokens || 0,
-        outputTokens: b.output || b.outputTokens || 0,
+        inputTokens: b.usage?.input ?? b.input ?? b.inputTokens ?? 0,
+        outputTokens: b.usage?.output ?? b.output ?? b.outputTokens ?? 0,
         imageCount: b.imageCount || 1,
         textChars: b.textChars || 0,
+        inputUnavailable: !!b.inputUnavailable,
       });
       visionCostUsd += vc.costUsd;
       visionItems.push(vc);
@@ -454,10 +460,11 @@ export function summarizeTurnCost(arg1, opts = {}) {
       if (b && b.kind === 'vision') {
         const vc = b.costUsd != null ? b : estimateVisionCost({
           model: b.model || VISION_MODEL_ID,
-          inputTokens: b.input || b.inputTokens || 0,
-          outputTokens: b.output || b.outputTokens || 0,
+          inputTokens: b.usage?.input ?? b.input ?? b.inputTokens ?? 0,
+          outputTokens: b.usage?.output ?? b.output ?? b.outputTokens ?? 0,
           imageCount: b.imageCount || 1,
           textChars: b.textChars || 0,
+        inputUnavailable: !!b.inputUnavailable,
         });
         visionCostUsd += Number(vc.costUsd) || 0;
         visionItems.push(vc);
@@ -530,6 +537,7 @@ export function summarizeTurnCost(arg1, opts = {}) {
     if (jc) jevCostUsd += jc.costUsd;
   }
 
+  const incomplete = visionItems.some(v => v.inputUnavailable);
   const totalCostUsd = chatCostUsd + subagentCostUsd + jevCostUsd + visionCostUsd + imageCostUsd;
   const hasAny = hasChatUsage || visionItems.length > 0 || imageItems.length > 0 || jevCostUsd > 0;
   if (!hasAny && !isConfigObj) return null;
@@ -542,6 +550,7 @@ export function summarizeTurnCost(arg1, opts = {}) {
     : `≈ ${formatUsd(totalCostUsd)}`;
 
   const tooltipLines = [`本轮官方预估总价：${formatUsd(totalCostUsd)}`];
+  if (incomplete) tooltipLines.push('音频输入用量未完整回传，以上费用不完整；以网关账单为准。');
   if (hasChatUsage) {
     const mName = [...chatModels].join(', ') || defaultModel;
     const p = estimateChatCost(mName, { input: inputTokens, output: outputTokens }, { fastMode });
@@ -550,7 +559,7 @@ export function summarizeTurnCost(arg1, opts = {}) {
   if (visionItems.length) {
     const imgs = visionItems.reduce((s, x) => s + (Number(x.imageCount) || 1), 0);
     const vModels = [...new Set(visionItems.map((x) => x.model || VISION_MODEL_ID))].join(' / ');
-    tooltipLines.push(`· 识图/视频模型（${vModels}）：${formatUsd(visionCostUsd)}（共 ${imgs} 项 · ${visionItems[0].rateLabel || '官方价 输入 $0.44/M · 输出 $1.32/M'}）`);
+    tooltipLines.push(`· 识图/视频/音频模型（${vModels}）：${formatUsd(visionCostUsd)}（共 ${imgs} 项 · ${visionItems[0].rateLabel || '官方价 输入 $0.44/M · 输出 $1.32/M'}）`);
   }
   if (imageItems.length) {
     const imgs = imageItems.reduce((s, x) => s + (Number(x.count) || 1), 0);
@@ -574,7 +583,8 @@ export function summarizeTurnCost(arg1, opts = {}) {
     imageUsd: imageCostUsd,
     totalCostUsd,
     totalUsd: totalCostUsd,
-    formatted: formatUsd(totalCostUsd),
+    incomplete,
+    formatted: incomplete ? '用量不完整' : formatUsd(totalCostUsd),
     visionCount: visionItems.length,
     imageCount: imageItems.length,
     badgeText,

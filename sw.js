@@ -1,63 +1,207 @@
-/* Dubhe Agent 审核资源离线缓存 Service Worker（构建 2026.10.2.15）
- * 策略：stale-while-revalidate —— 命中缓存立即返回（零网络），后台静默更新。
- * 覆盖：assets/vendor、assets/moderation、assets/katex、assets/pdfjs、assets/hljs、assets/icons、assets/geo（地图边界）、fonts。
- * 效果：模型/运行时/厂商图标只在首次使用时下载一次，之后所有会话（含隔天重开）直接读本地缓存，
- *       连 304 协商都不发生。版本号变更时改 CACHE 名即可整体失效。
+/* Dubhe Agent: manifest-verified incremental static cache.
+ * Core scripts/styles/pages are prepared atomically; large assets (including
+ * assets/geo, audio, PDF/OCR models) and pinned Pyodide dependencies stay lazy.
+ * No API responses, credentials, conversations or user workspace files are cached.
+ * Waiting workers never interrupt active tabs; old caches are removed on activation.
  */
-const CACHE = 'dubhe-assets-v2';
-const SCOPE_RE = /\/assets\/(vendor|moderation|katex|pdfjs|hljs|fonts|icons|audio|geo|knowledge)\//;
-
-// 厂商图标安装即预热（.19）：模型菜单/消息头第一次画就有缓存，不发起可见网络加载。
-// 注意必须相对 registration.scope 解析（.20 修正）：Pages 部署在 /dubhe-agent/ 子路径下，
-// 绝对路径 /assets/... 会打到源根 404，预热静默全灭。
-const PRECACHE_ICONS = [
-  'anthropic.svg', 'openai.svg', 'gemini.svg', 'deepseek.svg',
-  'zhipu.svg', 'kimi.svg', 'grok.svg', 'github.svg',
-].map((f) => new Request(new URL(`assets/icons/${f}`, self.registration.scope), { cache: 'reload' }));
-
-self.addEventListener('install', (e) => {
-  self.skipWaiting();
-  e.waitUntil((async () => {
-    try {
-      const cache = await caches.open(CACHE);
-      // 单个失败不影响整体（新图标上线途中旧 SW 也能装上）
-      await Promise.all(PRECACHE_ICONS.map((r) => cache.add(r).catch(() => {})));
-    } catch { /* 无缓存环境忽略 */ }
-  })());
+const DEPLOY_VERSION = 'source'; // stamped only in the deployment artifact
+const SCOPE = self.registration.scope;
+const ORIGIN = new URL(SCOPE).origin;
+const PREFIX = 'dubhe-static-v3:' + encodeURIComponent(new URL(SCOPE).pathname) + ':';
+const CACHE = PREFIX + DEPLOY_VERSION;
+const META = new URL('__dubhe_cache_manifest__', SCOPE).href;
+const PYODIDE_BASE = 'https://cdn.jsdelivr.net/pyodide/v0.26.4/full/';
+let manifestPromise;
+let cacheDisabled = false;
+let lastRecovery = 0;
+self.addEventListener('message', event => {
+  if (event.data?.type === 'dubhe-cache-cleared') { cacheDisabled = true; manifestPromise = null; }
 });
-self.addEventListener('activate', (e) => {
-  e.waitUntil((async () => {
-    for (const k of await caches.keys()) if (k !== CACHE) await caches.delete(k);
+const inflight = new Map();
+
+function staticPath(path) {
+  if (!path || path.includes('\\') || path.split('/').some(p => !p || p === '.' || p === '..')) return false;
+  return /^(?:js|css|assets|fonts|demo)\//.test(path) || /^(?:index|app|docs)\.html$/.test(path) || path === 'manifest.webmanifest';
+}
+function corePath(path) {
+  return /^js\/.*\.m?js$/.test(path) || /^css\/.*\.css$/.test(path)
+    || /^(?:index|app|docs)\.html$/.test(path) || /^demo\/.*\.(?:html|css)$/.test(path)
+    || /^assets\/(?:md|hljs|katex)\/.*\.(?:js|css)$/.test(path);
+}
+function relativePath(url) {
+  const u = new URL(url);
+  if (u.origin !== ORIGIN || !u.pathname.startsWith(new URL(SCOPE).pathname)) return '';
+  const path = u.pathname.slice(new URL(SCOPE).pathname.length) || 'index.html';
+  return staticPath(path) ? path : '';
+}
+function lazyExternal(url) {
+  const u = new URL(url);
+  return !u.search && u.href.startsWith(PYODIDE_BASE) && !u.pathname.includes('..');
+}
+function validateManifest(m) {
+  if (m?.schema !== 'dubhe-build-manifest/1' || !m.files || typeof m.files !== 'object') throw Error('Invalid build manifest');
+  if (DEPLOY_VERSION !== 'source' && m.version !== DEPLOY_VERSION) throw Error('Deployment is not ready');
+  for (const [path, entry] of Object.entries(m.files)) {
+    if (!/^[^?#\s]+$/.test(path) || path.startsWith('/') || path.includes('\\') || path.split('/').some(p => p === '.' || p === '..')) throw Error('Invalid manifest path');
+    if (!/^[a-f0-9]{64}$/.test(entry.sha256) || !Number.isSafeInteger(entry.size) || entry.size < 0) throw Error('Invalid manifest entry');
+  }
+  if (!m.files['app.html'] || !m.files['index.html']) throw Error('Missing entrypoints');
+  return m;
+}
+async function timedFetch(url, options = {}) {
+  const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 20000);
+  try { return await fetch(url, { ...options, signal: controller.signal }); } finally { clearTimeout(timer); }
+}
+async function matches(response, entry) {
+  if (!response.ok || response.type === 'opaque') return false;
+  const bytes = await response.clone().arrayBuffer();
+  if (bytes.byteLength !== entry.size) return false;
+  const hash = [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map(b => b.toString(16).padStart(2, '0')).join('');
+  return hash === entry.sha256;
+}
+async function verified(path, entry) {
+  const url = new URL(path, SCOPE);
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (attempt) url.searchParams.set('__asset_hash', entry.sha256);
+    const res = await timedFetch(url.href, { cache: attempt ? 'reload' : 'force-cache', credentials: 'omit' });
+    if (await matches(res, entry)) return res;
+  }
+  throw Error('Static asset integrity mismatch: ' + path);
+}
+async function metadata(cache) {
+  try { return await (await cache.match(META))?.json(); } catch { return null; }
+}
+function currentManifest() {
+  return manifestPromise ||= caches.open(CACHE).then(metadata).then(async m => {
+    if (m) return m;
+    // Browser storage may be evicted independently of SW registration. Rebuild
+    // once, with backoff on quota/network failure; never use a different build.
+    if (!cacheDisabled && Date.now() - lastRecovery > 60000) {
+      lastRecovery = Date.now();
+      try { await prepare(); return await metadata(await caches.open(CACHE)); } catch { /* online fallback */ }
+    }
+    manifestPromise = null;
+    return null;
+  });
+}
+async function prepare() {
+  const response = await timedFetch(new URL('build.json', SCOPE).href, { cache: 'no-store', credentials: 'omit' });
+  if (!response.ok) throw Error('No deployment manifest; leave development pages uncached');
+  const next = validateManifest(await response.json());
+  const prior = [];
+  for (const name of (await caches.keys()).filter(n => n.startsWith(PREFIX) && n !== CACHE).reverse()) {
+    const cache = await caches.open(name), manifest = await metadata(cache);
+    if (manifest) prior.push({ cache, manifest });
+  }
+  // One-time migration of the former shared asset cache: hash-check its bytes,
+  // so unchanged OCR models/audio need not be downloaded again.
+  if ((await caches.keys()).includes('dubhe-assets-v2')) {
+    const cache = await caches.open('dubhe-assets-v2'), keys = new Map();
+    for (const req of await cache.keys()) { const p = relativePath(req.url); if (p) keys.set(p, req.url); }
+    prior.push({ cache, legacy: true, keys });
+  }
+  if (cacheDisabled) throw Error('Cache cleared');
+  const cache = await caches.open(CACHE);
+  const wanted = new Set(Object.keys(next.files).filter(corePath));
+  const external = new Set();
+  for (const old of prior) for (const request of await old.cache.keys()) {
+    const path = relativePath(request.url);
+    if (path && next.files[path]) wanted.add(path); // keep used lazy assets, but not deleted files
+    else if (lazyExternal(request.url)) external.add(request.url);
+  }
+  const jobs = [...wanted]; let cursor = 0, failure;
+  const run = async () => {
+    while (cursor < jobs.length && !failure) {
+      const path = jobs[cursor++], key = new URL(path, SCOPE).href;
+      try {
+        let hit;
+        for (const old of prior) if (old.legacy || old.manifest.files[path]?.sha256 === next.files[path].sha256) {
+          hit = await old.cache.match(old.keys?.get(path) || key);
+          if (hit && (!old.legacy || await matches(hit, next.files[path]))) break;
+          hit = null;
+        }
+        if (cacheDisabled) throw Error('Cache cleared');
+        await cache.put(key, hit || await verified(path, next.files[path]));
+      } catch (error) { failure = error; }
+    }
+  };
+  await Promise.all(Array.from({ length: 4 }, run));
+  if (failure) { await caches.delete(CACHE); throw failure; }
+  try {
+    for (const url of external) for (const old of prior) {
+      const hit = await old.cache.match(url); if (hit) { await cache.put(url, hit); break; }
+    }
+    // Ready marker goes LAST. A partial install can never replace the previous version.
+    if (cacheDisabled) throw Error('Cache cleared');
+    await cache.put(META, new Response(JSON.stringify(next), { headers: { 'Content-Type': 'application/json' } }));
+  } catch (error) { await caches.delete(CACHE); throw error; }
+}
+self.addEventListener('install', event => { event.waitUntil(prepare()); });
+function olderVersion(name) {
+  const version = name.slice(PREFIX.length);
+  if (!/^\d+\.\d+\.\d+\.\d+$/.test(version)) return version === 'source';
+  const a = version.split('.').map(Number), b = DEPLOY_VERSION.split('.').map(Number);
+  for (let i = 0; i < 4; i++) if (a[i] !== b[i]) return a[i] < b[i];
+  return false;
+}
+self.addEventListener('activate', event => {
+  event.waitUntil((async () => {
+    for (const name of await caches.keys()) {
+      if (name !== CACHE && name.startsWith(PREFIX) && olderVersion(name)) await caches.delete(name);
+      if (name === 'dubhe-assets-v2') {
+        const legacy = await caches.open(name);
+        for (const req of await legacy.keys()) if (relativePath(req.url)) await legacy.delete(req);
+        if (!(await legacy.keys()).length) await caches.delete(name);
+      }
+    }
     await self.clients.claim();
   })());
 });
-
-self.addEventListener('fetch', (e) => {
-  const req = e.request;
-  if (req.method !== 'GET' || new URL(req.url).origin !== self.location.origin) return;
-  if (!SCOPE_RE.test(new URL(req.url).pathname)) return;
-  e.respondWith((async () => {
-    const cache = await caches.open(CACHE);
-    const hit = await cache.match(req);
-    const net = fetch(req).then((res) => {
-      if (res && res.ok) cache.put(req, res.clone());
-      return res;
-    }).catch(() => null);
-    if (hit) { e.waitUntil(net); return hit; }
-    const fresh = await net;
-    return fresh || new Response('', { status: 504 });
-  })());
+function singleFlight(key, work) {
+  if (!inflight.has(key)) inflight.set(key, work().finally(() => inflight.delete(key)));
+  return inflight.get(key).then(response => response.clone());
+}
+self.addEventListener('fetch', event => {
+  const req = event.request;
+  if (cacheDisabled || req.method !== 'GET' || req.headers.has('Authorization') || req.headers.has('Range')) return;
+  const path = relativePath(req.url), external = lazyExternal(req.url);
+  if ((!path && !external) || (external && req.credentials === 'include')) return;
+  event.respondWith((async () => {
+    let manifest = await currentManifest();
+    // Storage eviction / manual clearing: recover via network, never treat APIs as static.
+    if (!manifest) return fetch(req, { cache: 'no-store' });
+    if (path && !manifest.files[path]) return fetch(req);
+    const key = external ? req.url : new URL(path, SCOPE).href;
+    let cache = await caches.open(CACHE);
+    const hit = await cache.match(key);
+    if (hit) return hit; // no conditional request and no background re-download
+    if (!await cache.match(META)) {
+      manifestPromise = null; manifest = await currentManifest();
+      if (!manifest) return fetch(req, { cache: 'no-store' });
+      cache = await caches.open(CACHE);
+      const recovered = await cache.match(key); if (recovered) return recovered;
+    }
+    return singleFlight(key, async () => {
+      const response = external
+        ? await fetch(req.url, { mode: 'cors', credentials: 'omit', cache: 'force-cache' }).catch(() => fetch(req))
+        : await verified(path, manifest.files[path]);
+      if (!cacheDisabled && response.ok && response.type !== 'opaque') {
+        try { await cache.put(key, response.clone()); } catch { /* quota/eviction: current use remains available */ }
+      }
+      return response;
+    });
+  })().catch(() => new Response('Offline asset unavailable or integrity verification failed.', { status: 503 })));
 });
 
 // Optional local completion alerts. No push service, analytics or prompt content.
-self.addEventListener('notificationclick', (event) => {
+self.addEventListener('notificationclick', event => {
   event.notification.close();
   event.waitUntil((async () => {
     const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-    const app = windows.find((c) => new URL(c.url).pathname === new URL('app.html', self.registration.scope).pathname);
+    const app = windows.find(c => new URL(c.url).pathname === new URL('app.html', SCOPE).pathname);
     if (app) { await app.focus(); app.postMessage({ type: 'dubhe-notification-open', sessionId: event.notification.data?.sessionId || '' }); }
     else {
-      const url = new URL('app.html', self.registration.scope);
+      const url = new URL('app.html', SCOPE);
       if (event.notification.data?.sessionId) url.searchParams.set('session', event.notification.data.sessionId);
       await self.clients.openWindow(url.href);
     }

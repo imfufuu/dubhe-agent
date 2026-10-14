@@ -1,3 +1,5 @@
+import { retrieveSkill } from './skill-library.js';
+import { AUDIO_EXT_RE, normalizeAudioData } from './audio-format.js';
 import { retrieveKnowledge } from './knowledge.js?v=2026.10.11.1';
 import { text } from './locale.js';
 import { prepareCommandArgs, retainCommandSource, commandRepairNote } from './commandsource.js?v=2026.10.11.1';
@@ -6,10 +8,10 @@ import { sandboxProject, sandboxBrowserRequest } from './localbrowser.js?v=2026.
 import { CODE_TOOL_NAMES as REG_CODE_TOOL_NAMES, LEGACY_TOOL_ALIASES as REG_LEGACY_TOOL_ALIASES } from './capabilities.js';
 import { runJavaScript, runPython, runCpp, pythonAvailable, persistenceNote } from './sandbox.js';
 import { generateImage, editImage, bytesToDataUrl, dataUrlToBytes, sniffImage } from './api.js?v=2026.10.11.1';
-import { analyzeImage, analyzeVideo, VISION_TOOL_MODEL, VIDEO_TOOL_MODEL } from './vision.js';
+import { analyzeImage, analyzeVideo, analyzeAudio, VISION_TOOL_MODEL, VIDEO_TOOL_MODEL } from './vision.js';
 import { pdfToImages, pdfExtractText } from './pdfpages.js';
 import { SUBAGENTS } from './subagents.js';
-import { DEFAULT_IMAGE_MODEL, IMAGE_SIZES, IMAGE_QUALITIES, IMAGE_FORMATS, IMAGE_BACKGROUNDS, IMAGE_MODEL_IDS, resolveImageModel, resolveVisionModel, resolveVideoModel } from './config.js?v=2026.10.11.1';
+import { DEFAULT_IMAGE_MODEL, IMAGE_SIZES, IMAGE_QUALITIES, IMAGE_FORMATS, IMAGE_BACKGROUNDS, IMAGE_MODEL_IDS, resolveImageModel, resolveVisionModel, resolveVideoModel, resolveAudioModel } from './config.js?v=2026.10.11.1';
 import { fetchPage, gitRun, relaySearch, relayCrawl, relayDownload, fileNameFromUrl, RELAY_FILE_MAX_BYTES } from './net.js';
 import { createZip, fileBytesFromValue } from './zip.js';
 import { unpackZip, unpackZipFromDataUrl } from './unzip.js';
@@ -50,6 +52,8 @@ export const TOOL_DEFS = [
     }, required: ['action'] },
   },
 
+  { name: 'skill_library', description: 'Discover built-in extension skills on demand (Word/DOCX, PPTX, advanced PDF, audio and document workflows). Search returns a small directory; read loads only one guide. Skill bodies are not preloaded into prompts. Does not execute documents.', parameters: { type: 'object', properties: { action: { type: 'string', enum: ['search','read'] }, query: { type: 'string' }, id: { type: 'string', description: 'ID returned by search' }, offset: { type: 'integer' } } } },
+  { name: 'document_tool', description: 'Browser-local DOCX/PPTX/PDF operations in a bounded Worker. Use skill_library first for action-specific data examples and limitations. Inspect/create DOCX or PPTX; PDF inspect/create/merge/extract/rotate/watermark/form_fields/fill_form/metadata. No document upload, no macros, no Office renderer, no legacy .doc conversion. Defaults to new outputs/ files; pages are 1-based.', parameters: { type: 'object', properties: { format: { type: 'string', enum: ['docx','pptx','pdf'] }, action: { type: 'string', enum: ['inspect','create','merge','extract','rotate','watermark','form_fields','fill_form','metadata'] }, path: { type: 'string' }, paths: { type: 'array', items: { type: 'string' } }, out: { type: 'string' }, pages: { type: 'array', items: { type: 'integer' } }, angle: { type: 'integer', enum: [90,180,270] }, data: { type: 'object', description: 'Structured content/options; retrieve the relevant skill for its schema and examples' }, offset: { type: 'integer' }, overwrite: { type: 'boolean' } }, required: ['action'] } },
   { name: 'knowledge_search', description: 'Search the bundled bilingual project knowledge for exact rendering grammar, tool/runtime details and product/file policies. No external search; retrieve only needed sections. 核心规则/实时能力优先于历史参考。', parameters: { type:'object', properties: { query:{type:'string',description:'Topic keywords / 关键词'}, topic:{type:'string',enum:['runtime','rendering'],description:'Optional topic filter'}, language:{type:'string',enum:['zh','en']}, offset:{type:'number',description:'Continue a long matched section at this character offset'} }, required:['query'] } },
   {
     name: 'execute_javascript',
@@ -199,6 +203,11 @@ export const TOOL_DEFS = [
         prompt: { type: 'string', description: '分析要求，如「逐字转录字幕」「描述 0:10 前后发生了什么」「这是什么运动」；缺省为全面描述 + 转录' },
       },
     },
+  },
+  {
+    name: 'analyze_audio',
+    description: '分析 uploads/ 中的音频：转录、语言、近似时间点、说话人 A/B、摘要和声音事件。原音频通过与视频相同的 file 部件上传网关，使用用户配置的三个 Gemini 模型之一，不传 model。仅凭声音不确定真实身份；时间点不是强制对齐。≤16MB；结果全文写入 internal/ocr/*.audio.md。',
+    parameters: { type: 'object', properties: { path: { type: 'string', description: '音频沙箱路径；省略时取最近音频' }, prompt: { type: 'string', description: '转录或分析要求' } } },
   },
   {
     name: 'analyze_pdf',
@@ -779,6 +788,12 @@ async function executeToolBody(outerName, outerArgs, ctx) {
         emit({ status: 'ok', fsChange: false, note: `读取 ${path}` });
         return `── ${path} ──\n${content}`;
       }
+      case 'skill_library': return retrieveSkill(args, { signal: ctx.signal });
+      case 'document_tool': {
+        emit({ status: 'running', note: '本地文档处理…' });
+        const { runDocumentTool } = await import('./document-tools.js');
+        return await runDocumentTool(args, { fs, signal: ctx.signal, onUi: emit });
+      }
       case 'knowledge_search': return retrieveKnowledge(args, { signal: ctx.signal });
       case 'list_files': {
         const list = fs.list();
@@ -935,7 +950,7 @@ async function executeToolBody(outerName, outerArgs, ctx) {
           emit({ status: 'error', error: { message: err.message } });
           return `download_file 失败：写入 ${path} 出错：${err.message}`;
         }
-        const kind = /^image\//.test(mime) ? '图片（可 analyze_image）' : /^video\//.test(mime) ? '视频（可 analyze_video）' : /pdf/.test(mime) ? 'PDF（可 analyze_pdf）' : /zip/.test(mime) ? 'ZIP（可 unzip_file）' : textual ? '文本（可 read_file）' : '二进制';
+        const kind = /^image\//.test(mime) ? '图片（可 analyze_image）' : /^video\//.test(mime) ? '视频（可 analyze_video）' : /^audio\//.test(mime) ? '音频（可 analyze_audio）' : /pdf/.test(mime) ? 'PDF（可 analyze_pdf）' : /zip/.test(mime) ? 'ZIP（可 unzip_file）' : textual ? '文本（可 read_file）' : '二进制';
         const sizeMb = (r.bytes.length / 1024 / 1024).toFixed(2);
         emit({ status: 'ok', fsChange: true, note: `${sizeMb} MB → ${path}` });
         return `[下载完成] ${r.finalUrl || url}\n保存：${path}${persistenceNote(fs, path)} · ${mime} · ${sizeMb} MB · ${kind}${r.via === 'direct' ? '（目标站允许 CORS，浏览器直连）' : '（经中继）'}`;
@@ -1223,6 +1238,72 @@ async function executeToolBody(outerName, outerArgs, ctx) {
           if (err && (err.name === 'AbortError' || ctx.signal && ctx.signal.aborted)) throw err;
           emit({ status: 'error', error: { message: err.message } });
           return `analyze_video 失败：${err.message}`;
+        }
+      }
+      case 'analyze_audio': {
+        // 逻辑照搬 analyze_image：取路径 → 读 data URL → 交给音频识别模型 → 全文落盘 internal/ocr/*.audio.md → 计费事件
+        if (!ctx.apiKey) {
+          emit({ status: 'error', error: { message: '未配置 API Key' } });
+          return '未配置 TeamoRouter API Key，无法调用音频识别模型。';
+        }
+        const listAudio = () => fs.list().filter((f) => (AUDIO_EXT_RE.test(f.path) || /^data:audio\//i.test(String(fs.read(f.path)).slice(0, 80)))).map((f) => f.path);
+        let path = normalizeFsPath(args.path || '');
+        if (!path) {
+          const tracks = listAudio();
+          if (tracks.length === 1) path = tracks[0];
+          else if (!tracks.length) return 'analyze_audio 缺少 path：沙箱里还没有音频（用户上传会进 uploads/，支持 mp3/wav/m4a/aac/ogg/flac/weba）。';
+          else path = tracks[tracks.length - 1];
+        }
+        let dataUrl = '';
+        try { dataUrl = fs.read(path); } catch { return `analyze_audio 失败：找不到 ${path}（现有音频：${listAudio().join('、') || '无'}）`; }
+        let bytes;
+        try { const media = normalizeAudioData(dataUrl, path); dataUrl = media.dataUrl; bytes = media.bytes; }
+        catch (err) { return `analyze_audio 失败：${err.message}`; }
+        const prompt = String(args.prompt || '').trim();
+        const audioModel = resolveAudioModel(ctx.audioModel);
+        try {
+          const t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+          let vIn = 0;
+          let vOut = 0;
+          let inputUnavailable = false;
+          emit({ status: 'running', note: `音频识别中（${audioModel} · ${path} · ${(bytes / 1024 / 1024).toFixed(1)} MB）…` });
+          const text = await analyzeAudio({
+            apiKey: ctx.apiKey,
+            prompt,
+            dataUrl,
+            filename: path.split('/').pop(),
+            model: audioModel,
+            signal: ctx.signal,
+            onUsage: (u) => {
+              if (u) {
+                vIn += Number(u.input || 0);
+                inputUnavailable ||= !!u.inputUnavailable;
+                vOut += Number(u.output || 0);
+              }
+            },
+          });
+          const ms = Math.round(((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()) - t0);
+          const outPath = `internal/ocr/${path.replace(/^(uploads|outputs|internal)\//, '').replace(/\.[^.]+$/, '')}.audio.md`;
+          let saved = false;
+          try { fs.write(outPath, text); saved = true; } catch { /* Return the transcript; never repeat a charged call just to save it. */ }
+          emit({
+            status: 'ok',
+            note: `已分析 ${path}`,
+            durationMs: ms,
+            fsChange: saved,
+            billing: {
+              kind: 'vision',
+              model: audioModel,
+              usage: { input: vIn, output: vOut },
+              audioCount: 1,
+              inputUnavailable,
+            },
+          });
+          return `[音频识别完成] 模型 ${audioModel} · 文件 ${path} · 全文 ${text.length} 字${saved ? `已写入 ${outPath}` : '未存盘，请保留下方全文，不要重复上传'}\n\n${text}`;
+        } catch (err) {
+          if (err && (err.name === 'AbortError' || ctx.signal && ctx.signal.aborted)) throw err;
+          emit({ status: 'error', error: { message: err.message } });
+          return `analyze_audio 失败：${err.message}`;
         }
       }
       case 'analyze_pdf': {

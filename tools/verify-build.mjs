@@ -13,7 +13,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { buildManifest } from './build-manifest.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -63,6 +63,12 @@ async function main() {
   } catch (err) {
     console.error(`✗ 本地仓库里没有提交 ${remote.commit}（先 git fetch），或导出失败：${String(err && err.stderr || err).slice(0, 200)}`);
     process.exit(2);
+  }
+  // Reproduce this commit's own deployment transform, not today's stamping rules.
+  const stamp = path.join(tmp, 'tools/stamp-version.mjs');
+  if (fs.existsSync(stamp)) {
+    const { stampFiles } = await import(pathToFileURL(stamp).href);
+    stampFiles(remote.version, tmp);
   }
   const local = buildManifest({ root: tmp, commit: remote.commit, now: new Date(remote.built_at || Date.now()) });
   const problems = diffManifests(remote, local);

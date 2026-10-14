@@ -83,6 +83,7 @@ export function toolAccessSet(call) {
       return { reads: strList(a.path), writes: [] };
     case 'csv_tool': case 'text_tool':
       return { reads: strList(a.path), writes: strList(a.out) };
+    case 'document_tool': return { reads: [ACCESS_ANY], writes: ['inspect', 'form_fields'].includes(a.action) ? [] : outOrAny([ACCESS_ANY]) };
     case 'data_tool': // P6 伞工具：kind=qr 不传 out 时写 outputs/qr-NNN.svg（路径未知 → ANY）
       return { reads: strList(a.path), writes: a.kind === 'qr' ? outOrAny([ACCESS_ANY]) : strList(a.out) };
     case 'render_mermaid': case 'render_dot':
@@ -90,7 +91,7 @@ export function toolAccessSet(call) {
     case 'diff_text': return { reads: [...strList(a.left_path), ...strList(a.right_path)], writes: [] };
     case 'analyze_image': return { reads: [...strList(a.path), ...pathList(a.paths)], writes: [] };
     case 'analyze_pdf': return { reads: a.path ? strList(a.path) : [ACCESS_ANY], writes: [] };
-    case 'analyze_video': return { reads: a.path ? strList(a.path) : [ACCESS_ANY], writes: [] };
+    case 'analyze_audio': case 'analyze_video': return { reads: a.path ? strList(a.path) : [ACCESS_ANY], writes: [] };
     case 'fetch_url': return { reads: [], writes: strList(a.save_path) };
     case 'browser_sandbox': return { reads: [ACCESS_ANY], writes: [ACCESS_ANY] };
     case 'download_file': return { reads: [], writes: a.path ? strList(a.path) : [ACCESS_ANY] };
@@ -187,6 +188,7 @@ export function createToolRunner({ store, emit, getFs, runSubagent } = {}) {
       imageModel: turn.imageModel,
       visionModel: turn.visionModel,
       videoModel: turn.videoModel,
+      audioModel: turn.audioModel,
       sandboxEnabled: turn.sandboxEnabled,
       remoteCpp: turn.remoteCpp !== false,
       allowDispatch: !!turn.canDispatch,
@@ -218,6 +220,7 @@ export function createToolRunner({ store, emit, getFs, runSubagent } = {}) {
           imageModel: turn.imageModel,
           visionModel: turn.visionModel,
           videoModel: turn.videoModel,
+      audioModel: turn.audioModel,
           memory: store.state.memory,
           onThinkingFallback: (m) => emit('onThinkingFallback', m),
           onWebFallback: (m, why) => emit('onWebFallback', m, why),

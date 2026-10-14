@@ -13,8 +13,8 @@
      · 'wasm-unsafe-eval' 为 Pyodide 在 Worker 内编译 WebAssembly 所需 -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' 'sha256-KWAlpbtB4R45zBOqEtLM+90JdLvHqoOyoaQRSGS6uBs=' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; img-src 'self' data: blob: https:; media-src 'self' blob: data:; font-src 'self' data: https://fonts.gstatic.com https://cdn.jsdelivr.net; connect-src 'self' https://api.teamorouter.com https://api.teamorouter.cn https://godbolt.org https://cdn.jsdelivr.net https://*.workers.dev; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'" />
 <meta name="app-version" content="2026.10.11.1" />
-<meta name="app-release" content="V1.7" />
-<title>Dubhe Agent V1.7 — 网页端智能体</title>
+<meta name="app-release" content="V1.8" />
+<title>Dubhe Agent V1.8 — 网页端智能体</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2032%2032'%20aria-hidden%3D'true'%3E%3Ccircle%20cx%3D'16'%20cy%3D'16'%20r%3D'15'%20fill%3D'%230a0a0a'%2F%3E%3Ccircle%20cx%3D'16'%20cy%3D'16'%20r%3D'13'%20fill%3D'none'%20stroke%3D'%23f4f4f4'%20stroke-opacity%3D'0.18'%20stroke-width%3D'1.3'%2F%3E%3Cpath%20d%3D'M22.128%2021.142%20A8.000%208.000%200%200%201%209.872%2021.142'%20fill%3D'none'%20stroke%3D'%23f4f4f4'%20stroke-opacity%3D'0.55'%20stroke-width%3D'2.2'%20stroke-linecap%3D'round'%2F%3E%3Cpath%20d%3D'M8.482%2018.736%20A8.000%208.000%200%200%201%2014.611%208.122'%20fill%3D'none'%20stroke%3D'%23f4f4f4'%20stroke-opacity%3D'0.55'%20stroke-width%3D'2.2'%20stroke-linecap%3D'round'%2F%3E%3Cpath%20d%3D'M17.389%208.122%20A8.000%208.000%200%200%201%2023.518%2018.736'%20fill%3D'none'%20stroke%3D'%23f4f4f4'%20stroke-opacity%3D'0.55'%20stroke-width%3D'2.2'%20stroke-linecap%3D'round'%2F%3E%3Ccircle%20cx%3D'16'%20cy%3D'16'%20r%3D'2.7'%20fill%3D'%23f4f4f4'%2F%3E%3Ccircle%20cx%3D'16.000'%20cy%3D'24.000'%20r%3D'1.8'%20fill%3D'%23f4f4f4'%2F%3E%3Ccircle%20cx%3D'9.072'%20cy%3D'12.000'%20r%3D'1.8'%20fill%3D'%23f4f4f4'%2F%3E%3Ccircle%20cx%3D'22.928'%20cy%3D'12.000'%20r%3D'1.8'%20fill%3D'%23f4f4f4'%2F%3E%3C%2Fsvg%3E" />
 <link rel="manifest" href="manifest.webmanifest" />
 <link rel="apple-touch-icon" href="assets/app-icon-192.png" />
@@ -56,7 +56,7 @@
   </div>
     </div>
     <div class="boot-title">DUBHE<i>AGENT</i></div>
-    <div class="boot-sub">V1.7 · 网页端智能体</div>
+    <div class="boot-sub">V1.8 · 网页端智能体</div>
     <ol class="boot-steps" id="boot-steps" aria-hidden="true">
       <li data-step="assets"><b></b><span>载入资源</span></li>
       <li data-step="modules"><b></b><span>加载模块</span></li>
@@ -270,7 +270,7 @@
     <div class="logo">
       <a class="logo-mark" href="./index.html?view=nav" title="返回导航页" aria-label="返回导航页"><svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="16" r="13" fill="none" stroke="currentColor" stroke-opacity="0.18" stroke-width="1.3"/><path d="M22.128 21.142 A8.000 8.000 0 0 1 9.872 21.142" fill="none" stroke="currentColor" stroke-opacity="0.55" stroke-width="2.2" stroke-linecap="round"/><path d="M8.482 18.736 A8.000 8.000 0 0 1 14.611 8.122" fill="none" stroke="currentColor" stroke-opacity="0.55" stroke-width="2.2" stroke-linecap="round"/><path d="M17.389 8.122 A8.000 8.000 0 0 1 23.518 18.736" fill="none" stroke="currentColor" stroke-opacity="0.55" stroke-width="2.2" stroke-linecap="round"/><circle cx="16" cy="16" r="2.7" fill="currentColor"/><circle cx="16.000" cy="24.000" r="1.8" fill="currentColor"/><circle cx="9.072" cy="12.000" r="1.8" fill="currentColor"/><circle cx="22.928" cy="12.000" r="1.8" fill="currentColor"/></svg></a>
       <a class="logo-text" href="./index.html?view=nav" title="返回导航页">DUBHE<i>AGENT</i></a>
-      <span class="ver-badge" title="Dubhe Agent V1.7">V1.7</span>
+      <span class="ver-badge" title="Dubhe Agent V1.8">V1.8</span>
       <button id="sidebar-toggle" class="icon-btn" type="button" title="收起侧栏" aria-label="收起侧栏"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 6 8.5 12l6 6"/><path d="M19 4v16"/></svg></button>
     </div>
 
@@ -354,7 +354,7 @@
           </div>
         </div>
         <input id="camera-input" type="file" hidden accept="image/*" capture="environment" aria-label="拍摄照片" />
-        <input id="attach-input" type="file" multiple hidden accept="image/*,video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov,.m4v,application/pdf,.pdf,application/zip,.zip,.txt,.md,.js,.mjs,.cjs,.ts,.tsx,.jsx,.py,.java,.c,.cpp,.h,.hpp,.cc,.cxx,.cs,.go,.rs,.rb,.php,.swift,.kt,.scala,.dart,.m,.r,.jl,.sh,.bash,.zsh,.ps1,.bat,.cmd,.json,.jsonc,.csv,.log,.html,.htm,.css,.scss,.less,.xml,.yaml,.yml,.toml,.ini,.env,.conf,.sql,.vue,.svelte,.tex,.latex,.lua,.hs,.erl,.ex,.exs,.clj,.cljs,.fs,.fsx,.ml,.mli,.asm,.diff,.patch,.svg,.bmp,.ico,.tiff,.tif,.avif,.heic,.heif,.apng" />
+        <input id="attach-input" type="file" multiple hidden accept="image/*,audio/*,.mp3,.wav,.m4a,.aac,.ogg,.opus,.flac,.weba,.doc,.docx,.pptx,video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov,.m4v,application/pdf,.pdf,application/zip,.zip,.txt,.md,.js,.mjs,.cjs,.ts,.tsx,.jsx,.py,.java,.c,.cpp,.h,.hpp,.cc,.cxx,.cs,.go,.rs,.rb,.php,.swift,.kt,.scala,.dart,.m,.r,.jl,.sh,.bash,.zsh,.ps1,.bat,.cmd,.json,.jsonc,.csv,.log,.html,.htm,.css,.scss,.less,.xml,.yaml,.yml,.toml,.ini,.env,.conf,.sql,.vue,.svelte,.tex,.latex,.lua,.hs,.erl,.ex,.exs,.clj,.cljs,.fs,.fsx,.ml,.mli,.asm,.diff,.patch,.svg,.bmp,.ico,.tiff,.tif,.avif,.heic,.heif,.apng" />
         <textarea id="composer-input" rows="1" aria-label="消息输入框" placeholder="你出想法，Duhbe来实现"></textarea>
         <button id="voice-btn" type="button" aria-describedby="voice-privacy" title="语音输入" aria-label="语音输入" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3M8 22h8"/></svg></button>
         <button id="send-btn" type="button" title="发送 (Enter)" aria-label="发送"><span id="send-ico">↑</span></button>
@@ -524,6 +524,10 @@
         <div class="set-row">
           <div class="set-lbl"><div class="set-title">视频识别模型</div><div class="set-sub">仅 Gemini 系可收视频</div></div>
           <div class="set-ctl"><select id="set-video-model" class="set-select" aria-label="视频识别模型"></select></div>
+        </div>
+        <div class="set-row">
+          <div class="set-lbl"><div class="set-title">音频分析模型</div><div class="set-sub">同视频的三个 Gemini 模型 · 原音频上传网关</div></div>
+          <div class="set-ctl"><select id="set-audio-model" class="set-select" aria-label="音频分析模型"></select></div>
         </div>
         <div class="set-row"><div class="set-lbl"><div class="set-sub" id="set-mm-note">—</div></div></div>
         <div class="set-row" id="row-image-review"><div class="set-lbl"><div class="set-title">灰区图片远程复核</div><div class="set-sub">本地拿不准时交 Gemini 3.5 Flash Lite 复核 · 每轮 ≤ 3 张</div></div><div class="set-ctl"><label class="sw"><input type="checkbox" id="set-image-review"/><span></span></label></div></div>

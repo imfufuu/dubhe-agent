@@ -207,9 +207,8 @@ html { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
   .logo .ver-badge { display: none; }
   #sidebar-toggle { min-width: 36px; min-height: 36px; padding: 6px; }
 }
-/* 中等宽度起面板改浮层，避免侧栏+面板同时挤占主栏导致顶栏胶囊错位。
-   桌面端仍从右侧展开；只有手机窄屏才用自底部上滑的全屏面板。 */
-@media (max-width: 1180px) {
+/* 宽屏 iPad 与桌面停靠；仅 760px 及以下使用抽屉，720px 以下全屏。 */
+@media (max-width: 760px) {
   .app { --pnw: 0px; }
   #sandbox-panel {
     position: fixed; right: 0; left: auto; top: 0; bottom: 0;
@@ -518,7 +517,8 @@ html { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
 .pill.relay-checking { opacity: .78; cursor: progress; }
 .pill.relay-checking::after { content: ""; width: 9px; height: 9px; border: 1.5px solid currentColor; border-left-color: transparent; border-radius: 50%; animation: relayProbeSpin .8s linear infinite; }
 @keyframes relayProbeSpin { to { transform: rotate(360deg); } }
-.topbar-right { display: flex; gap: 8px; }
+.topbar-right { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; min-width: 0; }
+.topbar-right .pill { flex: 0 0 auto; white-space: nowrap; }
 .think-picker { position: relative; flex: 0 0 auto; }
 .think-menu { padding: 6px; }
 .think-item {
@@ -734,7 +734,7 @@ html { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
 .chip { border: none; }
 .chip:hover { color: var(--fg-2); }
 .chip, .ran-commands, .reasoning, .md-fold, .edited-files, .explored-files {
-  border: none; background: transparent; padding: 3px 0; margin: 0;
+  border: none; background: transparent; padding: 5px 0; margin: 0;
   display: flex; align-items: center; column-gap: 8px; row-gap: 0; flex-wrap: wrap; cursor: pointer;
   font-size: var(--ui-fs-12px, 12px); color: var(--fg-2); line-height: 1.6;
   transition: color .2s var(--ease);
@@ -781,10 +781,10 @@ html { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
 .chip-state.bad { font-weight: 400; }
 .chip-state.bad .chip-time { font-weight: 400; }
 .chip-detail {
-  display: grid; grid-template-rows: 0fr; opacity: 0;
+  display: grid; grid-template-rows: 0fr; opacity: 0; visibility: hidden;
   width: 100%; flex-basis: 100%; font-size: var(--ui-fs-11_5px, 11.5px); color: var(--fg-2);
   padding-left: 21px; line-height: 1.65; box-sizing: border-box; overflow: hidden;
-  transition: grid-template-rows .22s var(--ease), opacity .16s var(--pop-out-ease);
+  transition: grid-template-rows .28s cubic-bezier(.22,1,.36,1), opacity .2s ease, visibility 0s .28s;
 }
 /* 折叠面板展开：高度用 grid-rows 过渡，内容本体再做一次极轻的气泡弹入（只动 transform / opacity） */
 .chip-detail > .fold-inner { transform: translate3d(0, -4px, 0) scale(.985); transform-origin: top left; transition: transform var(--pop-out-dur) var(--pop-out-ease); }
@@ -797,8 +797,8 @@ html { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
 .ran-commands.live > .chip-detail,
 .reasoning.live > .chip-detail,
 .chip.live > .chip-detail {
-  grid-template-rows: 1fr; opacity: 1;
-  transition: grid-template-rows var(--pop-dur) var(--pop-ease), opacity .18s ease-out;
+  grid-template-rows: 1fr; opacity: 1; visibility: visible;
+  transition: grid-template-rows .3s cubic-bezier(.22,1,.36,1), opacity .2s ease, visibility 0s;
 }
 .chip.expanded > .chip-detail > .fold-inner,
 .reasoning.expanded > .chip-detail > .fold-inner,
@@ -929,7 +929,7 @@ html { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
   display: flex; flex-direction: column; gap: 3px; width: max-content; min-width: 176px; padding: 6px;
   border: 1px solid var(--line-2); border-radius: 12px; background: var(--bg);
   box-shadow: var(--shadow-lg);
-  animation: bubbleIn var(--pop-dur) var(--pop-ease) both; transform-origin: bottom left; --pop-dy: 14px;
+  transform-origin: bottom left; --pop-dy: 14px;
 }
 .attach-menu-item {
   display: flex; align-items: center; gap: 10px; width: 100%; min-height: 40px; padding: 8px 10px;
@@ -2480,7 +2480,7 @@ html[data-motion="off"] .md-chart-map-loading, html[data-motion="off"] .md-chart
 /* One header rhythm. A zero-height flex detail must not leave a flex row-gap. */
 :is(.chip, .ran-commands, .edited-files, .explored-files, .reasoning, .md-fold) > .chip-detail > .fold-inner { min-height: 0; }
 :is(.chip, .ran-commands, .edited-files, .explored-files, .reasoning, .md-fold):not(.expanded):not(.live) > .chip-detail {
-  grid-template-rows: 0fr; height: 0; min-height: 0; margin-block: 0; padding-block: 0; visibility: hidden;
+  grid-template-rows: 0fr; min-height: 0; margin-block: 0; padding-block: 0;
 }
 .message-tail { display: block; margin-top: 8px; }
 .file-read-stream { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 320px; overflow: auto; margin: 8px 0 0; padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-soft); font-size: 12px; line-height: 1.65; color: var(--fg); }
@@ -2512,7 +2512,6 @@ html[data-motion="off"] .md-chart-map-loading, html[data-motion="off"] .md-chart
 .feedback-btn[aria-pressed="true"]::after{animation:fb-ripple .75s var(--ease-out) both}
 @keyframes fb-pop{0%{scale:.78}45%{scale:1.18}100%{scale:1}}
 @keyframes fb-ripple{0%{opacity:.26;scale:.4}100%{opacity:0;scale:1.9}}
-.feedback-btn[data-vote="down"] svg{transform:rotate(180deg)}
 html[data-motion="off"] .feedback-btn svg, html[data-motion="off"] .feedback-btn::after, html:not([data-motion="on"]) .feedback-btn[aria-pressed="true"] svg, html:not([data-motion="on"]) .feedback-btn[aria-pressed="true"]::after{animation:none}
 html[data-motion="off"] .feedback-btn, html[data-motion="off"] .feedback-btn svg path{transition:none}
 .language-toggle {font-family:var(--mono);min-width:36px;justify-content:center}
@@ -2583,7 +2582,7 @@ html[data-ui-language="en"] .side-label { text-transform: none; letter-spacing: 
 ::view-transition-new(root) { animation-name: vt-in-soft; }
 @keyframes vt-out-soft { to { opacity: 0; transform: scale(.985); } }
 @keyframes vt-in-soft { from { opacity: 0; transform: scale(1.012); } }
-@media (prefers-reduced-motion: reduce) { ::view-transition-old(root), ::view-transition-new(root) { animation: none; } }
+@media (prefers-reduced-motion: reduce) { html:not([data-motion="on"])::view-transition-old(root), html:not([data-motion="on"])::view-transition-new(root) { animation: none; } }
 /* 语音输入球体：录音时替换麦克风图标，--lvl 由 ui-speech.js 按音量写入 */
 /* 语音球：无论有没有麦克风音量，都持续动画（呼吸缩放 + 内部渐变旋转 + 外圈波纹）；音量只叠加在缩放上 */
 .voice-orb { display: none; position: relative; width: 20px; height: 20px; border-radius: 50%; pointer-events: none; isolation: isolate;
@@ -2603,12 +2602,18 @@ html[data-ui-language="en"] .side-label { text-transform: none; letter-spacing: 
 @keyframes voice-spin { to { transform: rotate(360deg); } }
 @keyframes voice-ripple { 0% { transform: scale(.8); opacity: .7; } 100% { transform: scale(1.9); opacity: 0; } }
 
-/* Shared by the conversation and homepage demo. Activity is independent of folding. */
-.is-working > :is(.chip-name, .chip-state),
-.edited-files.is-working .edit-path, .explored-files.is-working li {
-  /* Animate opaque ink, not transparent glyphs / moving background clips. */
-  color: var(--fg-2); background: none;
-  animation: tool-ink-polish 2.4s linear infinite;
+/* Only operation labels/progress shimmer, never tool names or file paths. */
+:is(.ran-commands, .edited-files, .explored-files).is-working > .chip-name,
+.is-working > .chip-state { color: var(--fg-2); }
+@supports ((background-clip: text) or (-webkit-background-clip: text)) {
+  :is(.ran-commands, .edited-files, .explored-files).is-working > .chip-name,
+  .is-working > .chip-state {
+    background-color: var(--fg-2);
+    background-image: linear-gradient(105deg, var(--polish-ink) 30%, var(--polish-shine) 48%, var(--polish-ink) 65%);
+    background-repeat: repeat; background-size: 260% 100%;
+    background-clip: text; -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    animation: tool-ink-polish 2.3s linear infinite;
+  }
 }
 .edited-files .edit-path {
   border: 0; padding: 0; background: none; color: inherit; font: inherit;
@@ -2625,22 +2630,33 @@ html[data-ui-language="en"] .side-label { text-transform: none; letter-spacing: 
 .edit-preview .ep-hunk-start { margin-top: 9px; border-top: 1px dashed var(--line); }
 [data-theme="dark"] :is(.diff-add, .edit-preview .ep-add) { color: #70d99b; }
 [data-theme="dark"] :is(.diff-del, .edit-preview .ep-del) { color: #ff9090; }
-html[data-motion="off"] .is-working > :is(.chip-name, .chip-state),
-html[data-motion="off"] :is(.edited-files, .explored-files).is-working :is(.edit-path, li) {
-  animation: none; background: none; color: var(--fg-2);
+/* Opaque grayscale stops + solid fallback cover every glyph for the entire sweep. */
+:root { --polish-ink: #252525; --polish-shine: #707070; }
+html[data-theme="dark"] { --polish-ink: #aaaaaa; --polish-shine: #ffffff; }
+@keyframes tool-ink-polish { from { background-position: 120% 0; } to { background-position: -120% 0; } }
+html[data-motion="off"] .is-working > :is(.chip-name, .chip-state) {
+  animation: none; background: none; -webkit-text-fill-color: currentColor; color: var(--fg-2);
 }
 @media (prefers-reduced-motion: reduce) {
-  html:not([data-motion="on"]) .is-working > :is(.chip-name, .chip-state),
-  html:not([data-motion="on"]) :is(.edited-files, .explored-files).is-working :is(.edit-path, li) {
-    animation: none; background: none; color: var(--fg-2);
+  html:not([data-motion="on"]) .is-working > :is(.chip-name, .chip-state) {
+    animation: none; background: none; -webkit-text-fill-color: currentColor; color: var(--fg-2);
   }
 }
-
-/* Opaque, high-contrast ink: never mask text with transparent glyphs. */
-:root { --tool-polish-a: #2563eb; --tool-polish-b: #7c3aed; --tool-polish-c: #087f68; }
-html[data-theme="dark"] { --tool-polish-a: #83b9ff; --tool-polish-b: #c4a2ff; --tool-polish-c: #5ee5cc; }
-@keyframes tool-ink-polish {
-  0%, 100% { color: var(--tool-polish-a); }
-  33% { color: var(--tool-polish-b); }
-  66% { color: var(--tool-polish-c); }
+@media (min-width: 761px) {
+  .app:has(#sandbox-panel:not(.collapsed) .file-viewer.open) { --pnw: clamp(420px, 52vw, 820px); }
 }
+.file-viewer { container-type: inline-size; }
+.file-viewer-head { flex-wrap: wrap; gap: 8px; flex-shrink: 0; }
+.fv-path { overflow-wrap: anywhere; min-width: 0; flex: 1; }
+.fv-actions { flex-wrap: wrap; }
+.fv-modes { display: inline-flex; gap: 2px; }
+.fv-modes button[aria-pressed="true"] { background: var(--fg); color: var(--bg); }
+.fv-dual { display: grid; grid-template-columns: 1fr 1fr; flex: 1; min-height: 0; overflow: hidden; }
+.fv-dual > * { min-width: 0; min-height: 0; }
+.fv-dual .fv-code { border-right: 1px solid var(--line); }
+.fv-static { display: flex; flex-direction: column; overflow: hidden; }
+.fv-static iframe { border: 0; width: 100%; flex: 1; min-height: 0; background: white; }
+.fv-static-note { padding: 6px 10px; font-size: 10px; color: var(--fg-3); border-bottom: 1px solid var(--line); }
+.fv-dual[data-mode="code"], .fv-dual[data-mode="preview"] { grid-template-columns: 1fr; }
+.fv-dual[data-mode="code"] .fv-static, .fv-dual[data-mode="preview"] .fv-code { display: none; }
+@container (max-width: 560px) { .fv-dual[data-mode="split"] { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; } }

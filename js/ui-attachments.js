@@ -1,3 +1,5 @@
+import { AUDIO_EXT_RE, AUDIO_MIME_RE, AUDIO_MAX_BYTES, audioMimeOf } from './audio-format.js';
+import { animatedPopover } from './ui-motion.js?v=2026.10.11.1';
 // Dubhe Agent · 附件（从 ui.js 的 mountUI 拆出，V1.7.1）
 // 按钮 / 相机 / 拖拽 / 粘贴 四个入口 → 统一 addFiles：图片缩放与 MIME 白名单、文本 / PDF（原样入沙箱，交给 analyze_pdf）/ ZIP（解包进沙箱）、
 // 大小上限与芯片渲染。对外只暴露 { hasPending, takePending, addFiles }，发送逻辑取走后自动清空。
@@ -191,6 +193,18 @@ export function installAttachments({ composer, toast, safeImgSrc, fmtSize }) {
             originalName: f.name,
           });
           toast(`${f.name}：已作为 PDF 附件加入${pages ? `（约 ${pages} 页）` : ''}，发送后 Agent 会调用 analyze_pdf 识别`, 'ok', 4200);
+        } else if (AUDIO_EXT_RE.test(f.name) || AUDIO_MIME_RE.test(f.type)) {
+          if (f.size > AUDIO_MAX_BYTES) { toast(`${f.name}：音频超过 16MB，请裁剪或压缩`, 'err'); continue; }
+          const mime = AUDIO_MIME_RE.test(f.type) ? f.type : audioMimeOf(f.name);
+          const dataUrl = String(await readAs('dataURL', f)).replace(/^data:[^;]*;base64,/, `data:${mime};base64,`);
+          pending.push({ id: Math.random().toString(36).slice(2), kind: 'file', source: 'audio', name: f.name, mime, size: f.size, dataUrl });
+          toast(localeText(`${f.name}：已加入音频；发送分析时会上传网关，未做本地语音内容审核`, `${f.name}: audio attached; analysis uploads it to the gateway. No local speech-content moderation.`), 'ok', 5000);
+        } else if (/\.(docx|pptx|doc)$/i.test(f.name)) {
+          if (f.size > 16 * 1024 * 1024) { toast(`${f.name}：Office 文件超过 16MB`, 'err'); continue; }
+          const ext = f.name.split('.').pop().toLowerCase();
+          const mime = ext === 'docx' ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : ext === 'pptx' ? 'application/vnd.openxmlformats-officedocument.presentationml.presentation' : 'application/msword';
+          pending.push({ id: Math.random().toString(36).slice(2), kind: 'file', source: 'office', name: f.name, mime, size: f.size, dataUrl: String(await readAs('dataURL', f)).replace(/^data:[^;]*;base64,/, `data:${mime};base64,`) });
+          if (ext === 'doc') toast(localeText('旧版 .doc 可保存，但暂不能在浏览器解析；请先另存为 .docx', 'Legacy .doc can be stored, but must be converted to .docx for local parsing.'), 'warn', 5000);
         } else if (VIDEO_RE.test(f.name) || VIDEO_MIME_RE.test(f.type)) {
           if (f.size > MAX_VIDEO) { toast(`${f.name}：视频超过 16MB，请裁剪或压缩后再传`, 'err'); continue; }
           const ext = (f.name.toLowerCase().split('.').pop() || 'mp4');
@@ -251,7 +265,7 @@ export function installAttachments({ composer, toast, safeImgSrc, fmtSize }) {
       const imgSrc = a.kind === 'image' ? safeImgSrc(a.dataUrl) : (a.source === 'video' && a.poster ? safeImgSrc(a.poster) : '');
       chip.innerHTML = (imgSrc
         ? `<span class="attach-chip-thumb${a.source === 'video' ? ' is-video' : ''}"><img src="${esc(imgSrc)}" alt=""></span>`
-        : `<span class="attach-chip-ico">${a.source === 'video' ? '🎬' : '📄'}</span>`)
+        : `<span class="attach-chip-ico">${a.source === 'video' ? '🎬' : a.source === 'audio' ? '♫' : '📄'}</span>`)
         + `<span class="attach-chip-name mono">${esc(a.originalName || a.name)}</span><span class="attach-chip-size">${fmtSize(a.size)}</span><button class="attach-chip-x" type="button" aria-label="移除附件">${ICON.x}</button>`;
       $('.attach-chip-x', chip).addEventListener('click', () => {
         pending = pending.filter((x) => x.id !== a.id);
@@ -264,12 +278,9 @@ export function installAttachments({ composer, toast, safeImgSrc, fmtSize }) {
   const attachWrap = $('#attach-menu-wrap');
   const attachMenu = $('#attach-menu');
   const attachButton = $('#attach-btn');
-  function setAttachMenuOpen(open) {
-    if (!attachMenu || !attachButton) return;
-    attachMenu.hidden = !open;
-    attachButton.setAttribute('aria-expanded', open ? 'true' : 'false');
-  }
-  attachButton?.addEventListener('click', () => setAttachMenuOpen(attachMenu?.hidden));
+  const attachPopover = attachMenu && attachButton ? animatedPopover(attachMenu, attachButton) : null;
+  const setAttachMenuOpen = (open) => attachPopover?.set(open);
+  attachButton?.addEventListener('click', () => attachPopover?.toggle());
   $('#attach-file-action')?.addEventListener('click', () => {
     setAttachMenuOpen(false);
     fileInput.click();
