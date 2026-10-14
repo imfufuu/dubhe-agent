@@ -56,10 +56,10 @@ export const headingSlug = (text) => {
     .slice(0, 80);
   return s || 'section';
 };
-// Full editing preview HTML for static/export consumers; live UI uses stable DOM patches.
+// Changed-lines preview HTML for static/export consumers; live UI uses stable DOM patches.
 export const editPreviewMeta = (preview) => [
   preview.modeLabel,
-  preview.lineCount ? `${preview.lineCount} 行` : '',
+  preview.added != null ? `+${preview.added} / -${preview.removed} 行 · 仅显示改动` : '差异不可用',
   preview.chars ? `${preview.chars} ${preview.unit || '字符'}` : '',
   preview.fromDisk ? '来自已落盘文件' : '',
   preview.provisional ? '预览，尚未写入' : '',
@@ -69,11 +69,11 @@ export const editPreviewFoot = (preview) => preview.writes > 1
   : '';
 export const editPreviewHtml = (preview, live) => {
   if (!preview) return '';
-  const rows = (preview.lines || []).map((l) => `<div class="ep-line"><span class="ep-no">${esc(String(l.no))}</span><span class="ep-tx">${esc(l.text) || '&nbsp;'}</span></div>`).join('');
+  const rows = (preview.changes || []).map((l) => `<div class="ep-line ${l.kind === 'del' ? 'ep-del' : 'ep-add'}"><span class="ep-no">${esc(String(l.no))}</span><span class="ep-sign">${l.kind === 'del' ? '−' : '+'}</span><span class="ep-tx">${esc(l.text) || '&nbsp;'}</span></div>`).join('');
   const meta = editPreviewMeta(preview), foot = editPreviewFoot(preview);
   return `<div class="edit-preview" data-policy="${esc(preview.policyVersion || '')}" data-status="${esc(preview.status || '')}">`
     + `<div class="ep-head mono"><span class="ep-path">${esc(preview.path || '(路径未定)')}</span>${meta ? `<span class="ep-meta">${esc(meta)}</span>` : ''}</div>`
-    + `<div class="ep-body">${rows || '<div class="ep-line"><span class="ep-tx ep-empty">（还没有内容）</span></div>'}${live && !preview.complete ? '<span class="ep-caret" aria-hidden="true"></span>' : ''}</div>`
+    + `<div class="ep-body">${rows || '<div class="ep-line"><span class="ep-tx ep-empty">（无可显示的行改动）</span></div>'}${live && !preview.complete ? '<span class="ep-caret" aria-hidden="true"></span>' : ''}</div>`
     + (foot ? `<div class="ep-foot mono">${esc(foot)}</div>` : '')
     + '</div>';
 };

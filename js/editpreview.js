@@ -1,7 +1,9 @@
+import { changedLines } from './editdiff.js?v=2026.10.11.1';
+
 // Editing previews decode partial JSON without touching the filesystem. Full source
 // (including long lines) is available; the DOM renderer patches it at most every 50ms.
 // tailLines remains an explicit legacy utility, NOT the editing display policy.
-export const EDIT_PREVIEW_POLICY_VERSION = 'edit-preview-3.0.1';
+export const EDIT_PREVIEW_POLICY_VERSION = 'edit-preview-4.0.0';
 export const EDIT_PREVIEW_SCHEMA_VERSION = 'edit-preview-schema-2';
 export const PREVIEW_LINES = 10;
 export const PREVIEW_SCAN_CHARS = 4000;
@@ -200,7 +202,7 @@ export function buildEditPreview(toolCalls = [], { now = () => Date.now(), conte
 export function captureEditPreviewBase(call, fs, { refresh = false } = {}) {
   if (call?.name !== 'write_file') return null;
   const edit = extractEditCall(call);
-  if (!edit?.pathComplete || edit.mode === 'overwrite') return null;
+  if (!edit?.pathComplete) return null;
   if (refresh || call.editPreviewBase?.path !== edit.path) {
     let content = '';
     try { content = fs.read(edit.path); } catch { /* append may create a file */ }
@@ -221,7 +223,7 @@ export function captureEditPreviewSnapshot(call, fs, { path, refresh = false } =
 }
 
 /** Full candidate while streaming; after success, this call's own actual file snapshot. */
-export function buildFileEditPreview(toolCalls, fs, { preferDisk = true } = {}) {
+function fullFileEditPreview(toolCalls, fs, { preferDisk = true } = {}) {
   const preview = buildEditPreview(toolCalls);
   if (!preview) return null;
   const call = [...toolCalls].reverse().find((c) => c?.name === 'write_file'
@@ -235,13 +237,39 @@ export function buildFileEditPreview(toolCalls, fs, { preferDisk = true } = {}) 
   }
   const base = call?.status === 'ok' ? call.editPreviewBase : captureEditPreviewBase(call, fs);
   if (edit && base?.path === edit.path) {
-    let content = base.content;
+    let content = edit.mode === 'overwrite' ? edit.content : base.content;
     if (edit.mode === 'append') content += edit.content;
     else if (edit.mode === 'replace' && edit.replaceHint && content.includes(edit.replaceHint))
       content = content.replace(edit.replaceHint, edit.content); // matches write_file's $ substitution semantics
     return { ...buildEditPreview(toolCalls, { content }), provisional: call.status !== 'ok' };
   }
   return { ...preview, provisional: call?.status !== 'ok' };
+}
+
+/** Net changes per path, based on immutable pre-write and post-write snapshots.
+ * Old sessions without a baseline are explicitly unknown, never fabricated as +all.
+ */
+export function buildFileEditPreview(toolCalls, fs, options = {}) {
+  const preview = fullFileEditPreview(toolCalls, fs, options);
+  if (!preview) return null;
+  const groups = new Map();
+  for (const call of toolCalls) {
+    const edit = call?.name === 'write_file' && extractEditCall(call);
+    if (!edit?.path) continue;
+    if (!groups.has(edit.path)) groups.set(edit.path, []);
+    groups.get(edit.path).push(call);
+  }
+  const files = [];
+  for (const [path, calls] of groups) {
+    const first = calls[0], last = calls.at(-1);
+    const file = fullFileEditPreview(calls, fs, options);
+    const base = first.editPreviewBase || (first.status !== 'ok' && captureEditPreviewBase(first, fs));
+    const diff = base?.path === path ? changedLines(base.content, file.content)
+      : { changes: [], added: null, removed: null, diffUnavailable: true };
+    files.push({ ...file, ...diff, path, failed: last.status === 'error' });
+  }
+  const current = files.find((f) => f.path === preview.path);
+  return { ...preview, ...(current || {}), paths: preview.paths, writes: preview.writes, files };
 }
 
 /** 一行摘要（面板头部 / 报告用）。 */

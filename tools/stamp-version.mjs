@@ -29,6 +29,10 @@ export function computeVersion(now = new Date(), commitsToday = null, root = ROO
 function htmlAndJsFiles(root) {
   const out = [];
   for (const f of fs.readdirSync(root)) if (f.endsWith('.html')) out.push(f);
+  // Embedded homepage demo has its own module/CSS entrypoints, stamped with the app.
+  if (fs.existsSync(path.join(root, 'demo'))) {
+    for (const f of fs.readdirSync(path.join(root, 'demo'))) if (f.endsWith('.html')) out.push(path.join('demo', f));
+  }
   for (const f of fs.readdirSync(path.join(root, 'js'))) if (f.endsWith('.js')) out.push(path.join('js', f));
   return out;
 }

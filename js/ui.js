@@ -1248,6 +1248,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     if (label) label.textContent = allDone ? (total === 1 ? 'Ran command' : `Ran commands ${total}`) : (total === 1 ? 'Running command' : `Running commands ${total}`);
     fold.classList.toggle('done', allDone);
     fold.classList.toggle('live', getBusy() && anyRunning && fold._userToggle !== false);
+    fold.classList.toggle('is-working', getBusy() && anyRunning && !cancelled);
     fold.classList.toggle('ok', allDone && !failed && !cancelled);
     fold.classList.toggle('fail', allDone && failed);
     // 失败条数 + 总耗时（各命令耗时之和；拿不到耗时的不计）
@@ -1298,6 +1299,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     chip.classList.toggle('done', allDone);
     chip.classList.toggle('live', getBusy() && !allDone && chip._userToggle !== false);
     chip.classList.toggle('running', !allDone && !!running);
+    chip.classList.toggle('is-working', getBusy() && !allDone && chip.dataset.cancelled !== 'true');
     chip.classList.toggle('ok', allDone && !failed && chip.dataset.cancelled !== 'true');
     chip.classList.toggle('fail', allDone && failed);
     const state = $('.chip-state', chip);
@@ -1657,7 +1659,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       } else if (node) node.remove();
       return $(`.${cls}`, wrap) || afterEl;
     };
-    // Editing shows full content. Its stable shell is never rebuilt for a parameter delta.
+    // Editing shows only changed lines. Its stable shell is never rebuilt for a parameter delta.
     const paintEditFold = (afterEl, liveNow) => {
       const edited = mergedPaths('write_file', pathsOfEdit);
       const tempCommit = liveNow ? null : findTurnTempCommit(msgsAll, idxA, pathsOfEdit);
@@ -1718,12 +1720,8 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     const readNode = $('.explored-files', wrap);
     if (read && readNode) {
       const tm = toolResults(m.id).get(String(read.id));
-      const value = tm ? String(tm.content || '') : String(read.liveOutput?.stdout || '');
       const active = currentTurn && getBusy() && !m.cancelled && !tm && (read.status === 'running' || live);
       const label = $('.chip-name', readNode); if (active && label) label.textContent = read.status === 'running' ? 'Reading file' : 'Preparing read';
-      let pre = $('.file-read-stream', readNode);
-      if (!pre) { pre = el('pre', 'file-read-stream mono'); $('.fold-inner', readNode)?.appendChild(pre); }
-      pre.textContent = value.slice(-65536) || (active ? '读取中…' : '（空文件）');
       syncFileFold(readNode);
     }
     syncCancelledTail(wrap, m);

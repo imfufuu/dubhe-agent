@@ -45,6 +45,9 @@ jobs:
       - name: tests/dom-smoke.mjs · DOM 冒烟
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/dom-smoke.mjs
+      - name: tests/edit-demo.test.mjs · 文件差异与导航演示回归
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/edit-demo.test.mjs
       - name: '汇总测试计数（::notice:: + job summary）'
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs --summary

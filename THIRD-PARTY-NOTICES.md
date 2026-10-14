@@ -7,6 +7,7 @@ Dubhe Agent 本体以 MIT 许可发布（见 [LICENSE](./LICENSE)）。
 
 | 组件 | 版本 | 许可 | 用途 |
 |---|---|---|---|
+| [jsdiff](https://github.com/kpdecker/jsdiff) | 9.0.0 | BSD-3-Clause | 文件增删行比较；仅打包 line/base/params ESM（`assets/vendor/jsdiff/`，含 LICENSE） |
 | [markdown-it](https://github.com/markdown-it/markdown-it) | 14.3.2 | MIT | Markdown 渲染（`assets/md/markdown-it.min.js`） |
 | [KaTeX](https://katex.org/) | 0.16.21 | MIT | LaTeX 公式渲染（`assets/katex/`，含其 OFL/MIT 双许可字体） |
 | [ONNX Runtime Web](https://github.com/microsoft/onnxruntime) | 1.30.0 | MIT | 浏览器本地 NudeNet 图片审核运行时（`assets/vendor/ort.min.js`、`ort-wasm-simd-threaded.mjs/.wasm`） |

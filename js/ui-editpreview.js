@@ -9,7 +9,12 @@ const make = (tag, cls, text) => {
 };
 const text = (node, value) => { const next = String(value || ''); if (node.textContent !== next) node.textContent = next; };
 
-export function paintEditFoldContent(node, { icon = '', label, paths, discarded, preview, live, state = '' }) {
+export function paintEditFoldContent(node, options) {
+  const { icon = '', label, paths, discarded, live, state = '' } = options;
+  let { preview } = options;
+  node._editOptions = options;
+  const files = preview?.files || (preview ? [preview] : []);
+  preview = files.find((f) => f.path === node._selectedPath) || preview;
   let dom = node._editDom;
   if (!dom) {
     const ico = make('span', 'chip-ico think-ico'); ico.innerHTML = icon;
@@ -31,12 +36,24 @@ export function paintEditFoldContent(node, { icon = '', label, paths, discarded,
   paths.forEach((path, index) => {
     let row = dom.pathRows[index];
     if (!row) {
-      const item = make('li', 'mono'), name = make('span', 'edit-path'), tag = make('span', 'fold-tag');
-      item.append(name, tag); dom.list.appendChild(item);
-      row = { item, name, tag }; dom.pathRows.push(row);
+      const item = make('li', 'mono'), name = make('button', 'edit-path'), tag = make('span', 'fold-tag');
+      const stats = make('span', 'edit-stats'), add = make('span', 'diff-add'), del = make('span', 'diff-del');
+      name.type = 'button';
+      name.addEventListener('click', (event) => {
+        event.stopPropagation(); node._selectedPath = item.dataset.path;
+        paintEditFoldContent(node, node._editOptions);
+      });
+      stats.append(add, del); item.append(name, stats, tag); dom.list.appendChild(item);
+      row = { item, name, tag, stats, add, del }; dom.pathRows.push(row);
     }
     const dropped = discarded.has(path);
     text(row.name, path); row.item.dataset.path = path;
+    const file = files.find((f) => f.path === path);
+    const known = file && file.added != null && file.removed != null;
+    text(row.add, known ? `+${file.added}` : '+—');
+    text(row.del, known ? `-${file.removed}` : '-—');
+    row.stats.title = known ? `新增 ${file.added} 行，删除 ${file.removed} 行${file.failed ? '（写入失败，仅为拟议改动）' : ''}` : '缺少原始快照或差异计算超时';
+    row.name.setAttribute('aria-pressed', String(preview?.path === path));
     row.item.classList.toggle('fold-discarded', dropped);
     row.item.title = dropped ? '回合结束时最终回答没有提到这个文件，临时沙箱已把它丢弃；在回答里写出路径或文件名即可保留' : '';
     text(row.tag, dropped ? '已丢弃 · 回答未引用' : ''); row.tag.hidden = !dropped;
@@ -54,14 +71,20 @@ export function paintEditFoldContent(node, { icon = '', label, paths, discarded,
   const pathChanged = dom.previewPath !== preview.path;
   const follow = pathChanged || (live && dom.body.scrollHeight - dom.body.scrollTop - dom.body.clientHeight < 32);
   const scrollTop = dom.body.scrollTop, scrollLeft = dom.body.scrollLeft;
-  const incoming = preview.lines || [], added = document.createDocumentFragment();
+  const incoming = preview.changes || [], added = document.createDocumentFragment();
+  text(dom.empty.firstChild, preview.diffUnavailable || !preview.changes ? '（无法比较：缺少原始快照或差异计算超时）' : live && !preview.complete ? '（等待改动…）' : '（无行改动）');
   incoming.forEach((line, index) => {
     let row = dom.lines[index];
     if (!row) {
       const item = make('div', 'ep-line'), number = make('span', 'ep-no'), value = make('span', 'ep-tx');
-      item.append(number, value); added.appendChild(item);
-      row = { item, number, value, numberText: null, content: null }; dom.lines.push(row);
+      const sign = make('span', 'ep-sign');
+      item.append(number, sign, value); added.appendChild(item);
+      row = { item, number, value, sign, numberText: null, content: null }; dom.lines.push(row);
     }
+    row.item.classList.toggle('ep-add', line.kind === 'add');
+    row.item.classList.toggle('ep-del', line.kind === 'del');
+    row.item.classList.toggle('ep-hunk-start', index > 0 && line.hunk !== incoming[index - 1].hunk);
+    text(row.sign, line.kind === 'del' ? '−' : '+');
     if (row.numberText !== line.no) { row.number.textContent = String(line.no); row.numberText = line.no; }
     if (row.content !== line.text) { row.value.textContent = String(line.text); row.content = line.text; }
   });
@@ -87,6 +110,9 @@ export function syncEditingFold(node, { messages, visibleMessages, resultIds, bu
   const current = owner && messages.indexOf(owner) > lastUser;
   node._active = !!(current && busy && !owner.cancelled
     && node._activeCalls?.some((call) => !presentationCallSettled(call, resultIds)));
+  node.classList.toggle('live', node._active);
+  node.classList.toggle('is-working', node._active);
+  node.setAttribute('aria-busy', String(node._active));
   const autoOpen = node._active || !turnHasAssistantText(visibleMessages, node.dataset.ownerId);
   node.classList.toggle('expanded', node._userToggle == null ? autoOpen : node._userToggle);
 }
