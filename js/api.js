@@ -4,13 +4,15 @@
 
 import { text as localeText } from './locale.js';
 import { ANTHROPIC_VERSION, MAX_TOKENS, REQUEST_TIMEOUT_MS, protocolOf, thinkingParamsFor, resolveModelAlias } from './config.js?v=2026.10.11.1';
-import { claudeThinkingBudget, normalizeReasoningLevel, reasoningEffortFor } from './reasoning.js';
+import { claudeThinkingBudget, normalizeReasoningLevel, reasoningEffortFor, withReasoningStrategy } from './reasoning.js?v=2026.10.11.1';
 import { gatewayBase, setGatewayBase, otherGatewayBase, isNetworkError } from './endpoint.js';
 import { webCapFor, injectWeb, buildResponsesInput, createResponsesStream } from './websearch.js';
 import { resolveTemperature, canSendTemperature } from './temperature.js';
 
 // 实测不支持思考参数的模型（400 降级后记录，会话内不再尝试）
 const thinkingUnsupported = new Set();
+const effortUnsupported = new Set();
+export function effortDisabledFor(model) { return effortUnsupported.has(model); }
 const temperatureUnsupported = new Set();
 export function thinkingDisabledFor(model) { return thinkingUnsupported.has(model); }
 // 原生联网被拒过的模型（400 降级后记录，会话内不再尝试）
@@ -19,7 +21,7 @@ const responsesUnsupported = new Set();
 export function webFallbackFor(model) { return webUnsupported.has(model); }
 export function responsesFallbackFor(model) { return responsesUnsupported.has(model); }
 // 仅测试用：清空降级记录，保证用例互相独立
-export function __resetThinkingFallbackForTests() { thinkingUnsupported.clear(); temperatureUnsupported.clear(); }
+export function __resetThinkingFallbackForTests() { thinkingUnsupported.clear(); effortUnsupported.clear(); temperatureUnsupported.clear(); }
 export function __resetWebFallbackForTests() { webUnsupported.clear(); responsesUnsupported.clear(); }
 
 let transport = 'direct'; // 'direct' | 'proxy'
@@ -347,11 +349,12 @@ function userTextParts(m) {
   return parts;
 }
 
-export function buildOpenAIMessages(messages) {
+export function buildOpenAIMessages(messages, { includeReasoning = false } = {}) {
   return messages.map((m) => {
     if (m.role === 'assistant' && m.toolCalls && m.toolCalls.length) {
       return {
         role: 'assistant',
+        ...(includeReasoning && typeof m.reasoning === 'string' ? { reasoning_content: m.reasoning } : {}),
         content: m.text || null,
         tool_calls: m.toolCalls.map((t) => ({
           id: t.id, type: 'function',
@@ -365,7 +368,7 @@ export function buildOpenAIMessages(messages) {
     if (m.role === 'user' && m.attachments && m.attachments.length) {
       return { role: 'user', content: userTextParts(m) };
     }
-    return { role: m.role, content: m.text };
+    return { role: m.role, content: m.text, ...(includeReasoning && m.role === 'assistant' && typeof m.reasoning === 'string' ? { reasoning_content: m.reasoning } : {}) };
   });
 }
 
@@ -436,6 +439,7 @@ export async function streamChat({ model, apiKey, messages, tools, fastMode = fa
   const protocol = protocolOf(model);
   const level = normalizeReasoningLevel(reasoningLevel);
   const wantThinking = thinking && !thinkingUnsupported.has(model);
+  const requestMessages = withReasoningStrategy(messages, { thinking, level });
   const tempInfo = typeof temperature === 'number'
     ? { temperature, profile: 'custom', label: `T=${temperature}` }
     : resolveTemperature({ messages, plan, iteration, phase, subagentId });
@@ -454,12 +458,12 @@ export async function streamChat({ model, apiKey, messages, tools, fastMode = fa
     if (endpoint === 'responses') {
       // OpenAI Responses API：网关文档 4.4 —— /v1/responses 仅 GPT 系列，Claude/Gemini 会 400
       // 思考等级与对话类型均不限制输出 token
-      const { instructions, input } = buildResponsesInput(messages);
+      const { instructions, input } = buildResponsesInput(requestMessages);
       body = { model, stream: true, input };
       if (instructions) body.instructions = instructions;
       const fnTools = tools && tools.length ? toOpenAITools(tools) : [];
       if (fnTools.length) body.tools = fnTools.map((t) => ({ type: 'function', ...t.function }));
-      if (withThinking) body.reasoning = { effort: reasoningEffortFor(model, level) };
+      if (withThinking && !effortUnsupported.has(model)) body.reasoning = { effort: reasoningEffortFor(model, level) };
       if (allowTemp) body.temperature = tempInfo.temperature;
       if (fastMode) body.service_tier = 'fast';
       if (withWeb) injectWeb(body, webCap);
@@ -467,7 +471,7 @@ export async function streamChat({ model, apiKey, messages, tools, fastMode = fa
     }
     if (protocol === 'anthropic') {
       // 思考关闭的请求不能夹带历史 thinking 块（API 会拒收）
-      const p = buildAnthropicPayload(messages, { includeThinking: withThinking });
+      const p = buildAnthropicPayload(requestMessages, { includeThinking: withThinking });
       // Anthropic 协议必填 max_tokens 且思考模式要求 max_tokens > budget_tokens；
       // 思考等级只决定 budget_tokens 深度，不按思考等级或对话类型压缩正文输出空间
       const budget = withThinking ? claudeThinkingBudget(level) : 0;
@@ -477,11 +481,12 @@ export async function streamChat({ model, apiKey, messages, tools, fastMode = fa
       if (p.system) body.system = p.system;
       if (allowTemp) body.temperature = tempInfo.temperature;
     } else {
-      body = { model, stream: true, stream_options: { include_usage: true }, messages: buildOpenAIMessages(messages) };
+      body = { model, stream: true, stream_options: { include_usage: true }, messages: buildOpenAIMessages(requestMessages, { includeReasoning: thinking && /^(deepseek|glm)/i.test(model) }) };
       if (allowTemp) body.temperature = tempInfo.temperature;
       if (fastMode) body.service_tier = 'fast'; // TeamoRouter Fast mode（GPT 系列）
     }
     if (withThinking) Object.assign(body, thinkingParamsFor(model, level));
+    if (effortUnsupported.has(model)) delete body.reasoning_effort;
     if (tools && tools.length) {
       body.tools = protocol === 'anthropic' ? toAnthropicTools(tools) : toOpenAITools(tools);
     }
@@ -521,13 +526,23 @@ export async function streamChat({ model, apiKey, messages, tools, fastMode = fa
         err.status = r.status; err.retryable = true;
         throw err;
       }
+      // Rejecting an effort enum is not the same as rejecting thinking itself.
+      // Keep the toggle and tier policy, strip only effort, then retry once.
+      if (r.status === 400 && bodyThinking && !effortUnsupported.has(model)
+        && (body.reasoning_effort || body.reasoning?.effort) && /reasoning_effort|reasoning[. ]effort|effort/i.test(text)) {
+        effortUnsupported.add(model);
+        try { onThinkingFallback?.(model, { kind: 'effort' }); } catch { /* UI */ }
+        body = buildBody(bodyThinking, bodyWeb, bodyTemp);
+        const err = new Error(httpErrorMessage(r.status, text));
+        err.status = 400; err.retryable = true; throw err;
+      }
       // ② 思考参数不被该模型支持 → 记录并去掉思考参数重试（对模型家族级降级）。
       // 必须排在联网降级前面：上游文案常是 "thinking is not supported"，会同时命中
       // 联网分支那条过于宽泛的 /not support/ —— 旧顺序会把思考 400 误判成联网被拒。
       // 通过 onThinkingFallback 告知上层，避免「思考被静默关闭」用户无感知。
       if (r.status === 400 && bodyThinking && /thinking|reasoning|extended/i.test(text)) {
         thinkingUnsupported.add(model);
-        try { onThinkingFallback && onThinkingFallback(model); } catch { /* noop */ }
+        try { onThinkingFallback && onThinkingFallback(model, { kind: 'thinking' }); } catch { /* noop */ }
         // 只去掉思考参数，联网字段必须原样保留（旧写法 buildBody(false) 把 withWeb 默认为假，
         // 思考 400 会把本轮联网一并关掉，表现为「开了思考的模型突然不会检索」）。
         body = buildBody(false, bodyWeb, bodyTemp);

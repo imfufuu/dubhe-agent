@@ -69,7 +69,7 @@ const hooks = {
     // 回合结束后让 Agent 给这次会话起个标题（用户手改过的不会被覆盖；失败静默退回兜底标题）
     ui && ui.autoTitle && ui.autoTitle();
   },
-  onThinkingFallback: (model) => toast(`${model} 不支持思考参数，本次会话已为其自动关闭思考模式`, 'warn', 5200),
+  onThinkingFallback: (model, details) => toast(details?.kind === 'effort' ? `${model} 拒绝原生努力档位，已保留思考开关与分级验证引导` : `${model} 拒绝原生思考参数，已保留分级验证引导（软控制）`, 'warn', 5200),
   // 兼容旧网关回传的服务端搜索进度/来源事件；当前网页查询走 health 声明的 Worker 工具。
   onWebSearch: (m, web) => ui && ui.onWebSearch && ui.onWebSearch(m, web),
   onRelayStatus: () => { if (ui && ui.syncWeb) ui.syncWeb(); },

@@ -1,3 +1,4 @@
+import { syncMessageRhythm } from './ui-message-rhythm.js?v=2026.10.11.1';
 // The homepage is an explicitly simulated, replayable turn, not a second agent.
 // Use the conversation's diff model and stable renderer to keep both views aligned.
 import { buildFileEditPreview } from './editpreview.js?v=2026.10.11.1';
@@ -19,8 +20,8 @@ const make = (tag, cls, text) => {
 
 // Deterministic micro-pauses make replay/test behavior reproducible, not a fast ticker.
 export function demoCharacterDelay(char, index, inputMode = false) {
-  const base = inputMode ? 65 + (index % 5) * 12 : 52 + (index % 4) * 16;
-  return base + (/[。！？.!?]/.test(char) ? 500 : /[，、,;；:：\n]/.test(char) ? 230 : 0);
+  const base = inputMode ? 48 + (index % 5) * 9 : 38 + (index % 4) * 12;
+  return base + (/[。！？.!?]/.test(char) ? 200 : /[，、,;；:：\n]/.test(char) ? 90 : 0);
 }
 
 export function mountHomeDemo(root, { autoStart = true, delay = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
@@ -28,7 +29,7 @@ export function mountHomeDemo(root, { autoStart = true, delay = (ms) => new Prom
   const status = root.querySelector('#demo-status'), replay = root.querySelector('#demo-replay');
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
   let generation = 0, animation = null, visible = true, started = false, follow = true;
-  const scroll = () => { if (follow) messages.scrollTop = messages.scrollHeight; };
+  const scroll = () => { syncMessageRhythm(messages); if (follow) messages.scrollTop = messages.scrollHeight; };
   messages.addEventListener('scroll', () => {
     follow = messages.scrollHeight - messages.scrollTop - messages.clientHeight < 60;
   });
@@ -85,7 +86,7 @@ export function mountHomeDemo(root, { autoStart = true, delay = (ms) => new Prom
     };
     const say = async (text) => {
       const n = assistant(), body = make('div', 'md-body'), p = make('p', ''); body.append(p); n.append(body);
-      await wait(650); await stream(p, text); await wait(500); return n;
+      await wait(220); await stream(p, text); await wait(180); return n;
     };
     const edit = async (specs) => {
       const n = make('div', 'edited-files expanded'); assistant().append(n);

@@ -1009,7 +1009,7 @@ export function createAgent(store, hooks = {}) {
                 reasoningLevel: streamThinking ? turn.reasoningLevel : 'off',
                 plan: turnPlan,
                 iteration: iterations,
-                onThinkingFallback: (m) => emit('onThinkingFallback', m), // 思考参数 400 降级 → 提示用户（不再静默）
+                onThinkingFallback: (m, details) => emit('onThinkingFallback', m, details), // 思考参数 400 降级 → 提示用户（不再静默）
                 webEnabled: turn.webEnabled, // 联网：注入模型 API 自带的网页搜索请求格式
                 onWebFallback: (m, why) => emit('onWebFallback', m, why), // 被拒 → 剥掉字段重试并说明
                 messages: buildMessages(model, relayOk, jevNote, turnPlan, iterations, nexusState),

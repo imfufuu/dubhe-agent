@@ -623,7 +623,8 @@ html { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
 /* 流式中的数学块：弱化阴影 */
 .katex-display-block[data-state="streaming"] { opacity: 0.95; filter: saturate(0.9); }
 .msg { max-width: 760px; margin: 0 auto 16px; padding: 0 28px; overflow-x: hidden; max-width: min(760px, 100%); }
-.msg-assistant:has(+ .msg-assistant) { margin-bottom: 4px; }
+.msg-assistant:has(+ .msg-assistant) { margin-bottom: 8px; }
+.msg-assistant.tools-continue { margin-bottom: 0; }
 .msg-assistant + .msg-assistant { margin-top: 0; }
 .msg-assistant.msg-collapsed { display: none !important; margin: 0 !important; padding: 0 !important; }
 .msg.enter { animation: fadeUp .45s var(--ease) both; }
@@ -734,7 +735,7 @@ html { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
 .chip:hover { color: var(--fg-2); }
 .chip, .ran-commands, .reasoning, .md-fold, .edited-files, .explored-files {
   border: none; background: transparent; padding: 3px 0; margin: 0;
-  display: flex; align-items: center; gap: 8px; flex-wrap: wrap; cursor: pointer;
+  display: flex; align-items: center; column-gap: 8px; row-gap: 0; flex-wrap: wrap; cursor: pointer;
   font-size: var(--ui-fs-12px, 12px); color: var(--fg-2); line-height: 1.6;
   transition: color .2s var(--ease);
   -webkit-tap-highlight-color: transparent;
@@ -768,7 +769,7 @@ html { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
 .ran-command-items { display: flex; flex-direction: column; gap: 0; width: 100%; }
 .ran-command-items > .tool-call-chip { width: 100%; }
 .chip-name { font-weight: 600; }
-.chip.running { opacity: .85; }
+.chip.running { opacity: 1; }
 .chip-state {
   color: var(--fg-3); font-family: var(--mono);
   max-width: 58%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -788,9 +789,7 @@ html { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
 /* 折叠面板展开：高度用 grid-rows 过渡，内容本体再做一次极轻的气泡弹入（只动 transform / opacity） */
 .chip-detail > .fold-inner { transform: translate3d(0, -4px, 0) scale(.985); transform-origin: top left; transition: transform var(--pop-out-dur) var(--pop-out-ease); }
 .chip.expanded > .chip-detail,
-.chip.expanded .chip-detail,
 .reasoning.expanded > .chip-detail,
-.reasoning.expanded .chip-detail,
 .md-fold.expanded > .chip-detail,
 .edited-files.expanded > .chip-detail,
 .explored-files.expanded > .chip-detail,
@@ -801,8 +800,8 @@ html { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
   grid-template-rows: 1fr; opacity: 1;
   transition: grid-template-rows var(--pop-dur) var(--pop-ease), opacity .18s ease-out;
 }
-.chip.expanded > .chip-detail > .fold-inner, .chip.expanded .chip-detail > .fold-inner,
-.reasoning.expanded > .chip-detail > .fold-inner, .reasoning.expanded .chip-detail > .fold-inner,
+.chip.expanded > .chip-detail > .fold-inner,
+.reasoning.expanded > .chip-detail > .fold-inner,
 .md-fold.expanded > .chip-detail > .fold-inner, .edited-files.expanded > .chip-detail > .fold-inner,
 .explored-files.expanded > .chip-detail > .fold-inner, .ran-commands.expanded > .chip-detail > .fold-inner,
 .ran-commands.live > .chip-detail > .fold-inner, .reasoning.live > .chip-detail > .fold-inner, .chip.live > .chip-detail > .fold-inner {
@@ -2472,9 +2471,17 @@ html[data-motion="off"] .ran-commands > .chip-ico, html[data-motion="off"] .md-f
 html[data-motion="off"] .md-chart-map-loading, html[data-motion="off"] .md-chart-map[data-map-state="ready"] .md-chart-svg {animation: none !important; }
 
 /* Ordered assistant fragments have no independent message gaps/headers. */
-.assistant-flow { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.assistant-flow { display: flex; flex-direction: column; gap: 0; min-width: 0; }
 .assistant-flow > .assistant-fragment { margin: 0 !important; padding: 0 !important; min-width: 0; }
 .assistant-fragment.fold-shell { margin: 0 !important; }
+.assistant-flow > .assistant-fragment + .assistant-fragment { margin-top: 8px !important; }
+.assistant-flow > .assistant-fragment:not([data-family="text"]) + .assistant-fragment:not([data-family="text"]) { margin-top: 0 !important; }
+.tool-chips:empty { display: none; }
+/* One header rhythm. A zero-height flex detail must not leave a flex row-gap. */
+:is(.chip, .ran-commands, .edited-files, .explored-files, .reasoning, .md-fold) > .chip-detail > .fold-inner { min-height: 0; }
+:is(.chip, .ran-commands, .edited-files, .explored-files, .reasoning, .md-fold):not(.expanded):not(.live) > .chip-detail {
+  grid-template-rows: 0fr; height: 0; min-height: 0; margin-block: 0; padding-block: 0; visibility: hidden;
+}
 .message-tail { display: block; margin-top: 8px; }
 .file-read-stream { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 320px; overflow: auto; margin: 8px 0 0; padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-soft); font-size: 12px; line-height: 1.65; color: var(--fg); }
 .fv-web { display: flex; flex-direction: column; min-height: 420px; flex: 1; }
@@ -2601,7 +2608,7 @@ html[data-ui-language="en"] .side-label { text-transform: none; letter-spacing: 
 .edited-files.is-working .edit-path, .explored-files.is-working li {
   /* Animate opaque ink, not transparent glyphs / moving background clips. */
   color: var(--fg-2); background: none;
-  animation: tool-ink-polish 2.1s ease-in-out infinite;
+  animation: tool-ink-polish 2.4s linear infinite;
 }
 .edited-files .edit-path {
   border: 0; padding: 0; background: none; color: inherit; font: inherit;
@@ -2629,8 +2636,11 @@ html[data-motion="off"] :is(.edited-files, .explored-files).is-working :is(.edit
   }
 }
 
+/* Opaque, high-contrast ink: never mask text with transparent glyphs. */
+:root { --tool-polish-a: #2563eb; --tool-polish-b: #7c3aed; --tool-polish-c: #087f68; }
+html[data-theme="dark"] { --tool-polish-a: #83b9ff; --tool-polish-b: #c4a2ff; --tool-polish-c: #5ee5cc; }
 @keyframes tool-ink-polish {
-  0%, 100% { color: var(--fg-2); }
-  45% { color: var(--fg); }
-  70% { color: var(--fg-2); }
+  0%, 100% { color: var(--tool-polish-a); }
+  33% { color: var(--tool-polish-b); }
+  66% { color: var(--tool-polish-c); }
 }

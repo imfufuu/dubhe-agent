@@ -1,3 +1,4 @@
+import { syncMessageRhythm } from './ui-message-rhythm.js?v=2026.10.11.1';
 import { animateMessageSend } from './ui-send-animation.js?v=2026.10.11.1';
 import { installCaretEffect } from './ui-caret.js';
 import { publicPlanHtml } from './ui-publicplan.js';
@@ -13,7 +14,7 @@ import { adjacentToolMessages, appendToolStream, toolFamily } from './toolflow.j
 // ─── UI 层：渲染 / 交互 / 动画 ─────────────────────────────────────────
 import { providerOf, supportsFastMode, DEFAULT_IMAGE_MODEL, APP_VERSION, APP_RELEASE } from './config.js?v=2026.10.11.1';
 import { isSmartRouter, ROUTER_ICON_SVG, SMART_ROUTER_LABEL, modelDisplayName } from './smartrouter.js?v=2026.10.11.1';
-import { REASONING_LEVELS, normalizeReasoningLevel, reasoningLevelLabel, reasoningLevelHint } from './reasoning.js';
+import { REASONING_LEVELS, normalizeReasoningLevel, reasoningLevelLabel, reasoningLevelHint, reasoningControlHint } from './reasoning.js?v=2026.10.11.1';
 import { fileBytesFromValue, withExtension, mimeFromPath } from './zip.js';
 import { getTransport } from './api.js?v=2026.10.11.1';
 import { gatewayBase, gatewayChosenBy, setGatewayBase, otherGatewayBase } from './endpoint.js';
@@ -352,9 +353,9 @@ export function mountUI(store, agent) {
     if (!thinkMenu) return;
     const on = store.state.settings.thinking !== false;
     const cur = normalizeReasoningLevel(store.state.settings.reasoningLevel);
-    const rows = [`<button type="button" class="think-item${on ? '' : ' active'}" data-think="off"><span class="think-lab">Off</span><span class="think-hint">不发送思考参数</span></button>`];
+    const rows = [`<button type="button" class="think-item${on ? '' : ' active'}" data-think="off"><span class="think-lab">Off</span><span class="think-hint">不发送思考参数；模型原生思考可能仍开启</span></button>`];
     for (const lv of REASONING_LEVELS) {
-      rows.push(`<button type="button" class="think-item${on && cur === lv ? ' active' : ''}" data-think="${lv}"><span class="think-lab">${reasoningLevelLabel(lv)}</span><span class="think-hint">${reasoningLevelHint(lv)}</span></button>`);
+      rows.push(`<button type="button" class="think-item${on && cur === lv ? ' active' : ''}" data-think="${lv}"><span class="think-lab">${reasoningLevelLabel(lv)}</span><span class="think-hint">${reasoningLevelHint(lv)} · ${esc(reasoningControlHint(store.state.model, lv))}</span></button>`);
     }
     thinkMenu.innerHTML = rows.join('');
   };
@@ -1989,6 +1990,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       if (regen) regen.style.display = show && lastOverall && lastOverall.id === m.id ? '' : 'none';
       if (m.role === 'assistant') syncAssistantShell(wrap);
     }
+    syncMessageRhythm(msgList);
   }
   function appendMessage(m, { scroll = true } = {}) {
     syncPresentationScope();

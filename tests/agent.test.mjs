@@ -503,8 +503,9 @@ test('GPT/Gemini/Grok → reasoning_effort', () => {
   assert.equal(thinkingParamsFor('gemini-3.5-flash').reasoning_effort, 'medium');
   assert.equal(thinkingParamsFor('grok-4.6').reasoning_effort, 'medium');
 });
-test('DeepSeek → reasoning；GLM → thinking.type', () => {
-  assert.equal(thinkingParamsFor('deepseek-v4-pro').reasoning, true);
+test('DeepSeek v4 / GLM → native thinking + effort', () => {
+  assert.equal(thinkingParamsFor('deepseek-v4-pro').thinking.type, 'enabled');
+  assert.equal(thinkingParamsFor('deepseek-v4-pro').reasoning_effort, 'high');
   assert.equal(thinkingParamsFor('glm-5.3').thinking.type, 'enabled');
 });
 test('推理级别 Mini/Low/Medium/High/Max/Ultra 映射到各协议', async () => {

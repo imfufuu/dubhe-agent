@@ -17,7 +17,7 @@ export { OUTPUT_SPEC_EN };
 //   · 官方建议: Claude 模型务必走 Anthropic 原生协议，其余模型走 OpenAI 兼容协议
 
 // 接入点不在这里写死：运行时由 js/endpoint.js 在 .com / .cn 之间择路（见 GATEWAY_HOSTS）。
-import { claudeThinkingBudget, reasoningEffortFor } from './reasoning.js';
+import { reasoningControlFor } from './reasoning.js?v=2026.10.11.1';
 
 // 发布版本号：index.html 用 ?v= 挂在入口样式/脚本上，用来穿透 GitHub Pages 对静态资源
 // 的 ~10 分钟缓存。每次改动样式或入口逻辑都要 bump 一次（有单测校验二者一致）。
@@ -337,15 +337,11 @@ export function supportsFastMode(modelId) {
 
 // ── 思考模式参数（按模型家族路由到各自协议的思考字段）──────────────────
 // Claude: thinking.budget_tokens（需 max_tokens > budget）
-// GPT/Gemini/Grok: reasoning_effort；DeepSeek: reasoning；GLM: thinking.type
+// 型号能力表见 reasoning.js：原生 budget / effort / 开关；未知模型仅分级软引导。
 // 级别 Mini/Low/Medium/High/Max/Ultra 见 js/reasoning.js
 // 不支持思考的模型若返回 400，api.js 会自动降级重试并记住该模型
 export function thinkingParamsFor(modelId, level) {
-  const m = String(modelId || '').toLowerCase();
-  if (m.startsWith('claude')) return { thinking: { type: 'enabled', budget_tokens: claudeThinkingBudget(level) } };
-  if (m.startsWith('deepseek')) return { reasoning: true };
-  if (m.startsWith('glm')) return { thinking: { type: 'enabled' } };
-  return { reasoning_effort: reasoningEffortFor(modelId, level) };
+  return reasoningControlFor(modelId, level).params;
 }
 
 // 输出规范：主 Agent 与全部子智能体共用（客户端支持完整 Markdown + KaTeX）

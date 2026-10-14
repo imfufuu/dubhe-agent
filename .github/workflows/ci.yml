@@ -51,6 +51,9 @@ jobs:
       - name: tests/ui-runtime.test.mjs · 演示动效与 Python 按需依赖
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/ui-runtime.test.mjs
+      - name: tests/reasoning-rhythm.test.mjs · 模型努力映射与消息间距
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/reasoning-rhythm.test.mjs
       - name: '汇总测试计数（::notice:: + job summary）'
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs --summary

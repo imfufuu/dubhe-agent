@@ -56,9 +56,9 @@ test('real Python AST skips strings/comments/stdlib and detects multiple/dotted 
   assert.deepEqual(JSON.parse(run.stdout), ['dubhe_missing_a', 'dubhe_missing_b', 'dubhe_missing_c']);
 });
 test('demo pace includes human pauses and is slower than previous 2 chars / 28ms', () => {
-  assert.ok(demoCharacterDelay('中', 0) >= 52);
-  assert.ok(demoCharacterDelay('。', 0) > demoCharacterDelay('中', 0) + 400);
-  assert.ok(demoCharacterDelay('，', 0, true) > 200);
+  assert.ok(demoCharacterDelay('中', 0) >= 38);
+  assert.ok(demoCharacterDelay('。', 0) > demoCharacterDelay('中', 0) + 180);
+  assert.ok(demoCharacterDelay('，', 0, true) > 100);
 });
 test('shared send flight uses real composer origin, honors reduced motion, cancels safely', async () => {
   const dom = new JSDOM('<body><div id="bubble">hello</div></body>');
