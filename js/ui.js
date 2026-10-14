@@ -1651,7 +1651,13 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
           afterEl.after(node);
         }
         const label = paths.length === 1 ? one : `${many} ${paths.length}`;
-        node.innerHTML = `<span class="chip-ico think-ico">${icon || ''}</span><span class="mono chip-name">${esc(label)}</span><div class="chip-detail"><div class="fold-inner"><ul>${paths.map((x) => `<li class="mono">${esc(x)}</li>`).join('')}</ul></div></div>`;
+        // Keep the reading header/list alive during output deltas; rebuilding them
+        // would restart the text-polish animation on every streamed chunk.
+        const pathSig = JSON.stringify(paths);
+        if (node._pathSig !== pathSig) {
+          node.innerHTML = `<span class="chip-ico think-ico">${icon || ''}</span><span class="mono chip-name">${esc(label)}</span><div class="chip-detail"><div class="fold-inner"><ul>${paths.map((x) => `<li class="mono">${esc(x)}</li>`).join('')}</ul></div></div>`;
+          node._pathSig = pathSig;
+        } else $('.chip-name', node).textContent = label;
         node.dataset.ownerId = m.id;
         node._activeCalls = fileCluster(name).flatMap((x) => x.toolCalls || []).filter((c) => toolFamily(c) === 'explored');
         syncFileFold(node);
