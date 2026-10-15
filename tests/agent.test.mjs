@@ -8372,7 +8372,7 @@ test('analyze_video 工具：定义 / 契约 / 并行与访问表 / 执行路径
   assert.match(def.description, /不要传 model/);
   assert.match(def.description, /16MB/);
   assert.deepEqual(Object.keys(def.parameters.properties).sort(), ['path', 'prompt']);
-  assert.equal(TOOL_DEFS.length, 37, '37工具：新增按需技能、本地文档与音频分析，登记/契约必须同步');
+  assert.equal(TOOL_DEFS.length, 38, '38工具：新增媒体格式转换 convert_file，登记/契约必须同步');
   const c = ex.getToolContract('analyze_video');
   assert.equal(c.sideEffect, 'remote');
   assert.equal(c.external, true);
@@ -9965,13 +9965,13 @@ test('能力登记处：TOOL_DEFS ↔ 登记表 ↔ execution.js 契约三方一
   const ex = await import('../js/execution.js');
   const problems = reg.auditCapabilityRegistry({ toolDefs: TOOL_DEFS, getContract: ex.getToolContract });
   assert.deepEqual(problems, [], `登记处自检应为空：${JSON.stringify(problems)}`);
-  assert.equal(reg.REGISTERED_TOOL_NAMES.length, TOOL_DEFS.length, '登记数 = 工具数（32）');
+  assert.equal(reg.REGISTERED_TOOL_NAMES.length, TOOL_DEFS.length, '登记数 = 工具数');
   // 派生表（集合）必须与 Helix 2.5 手抄的清单一致——登记处是重构不是改行为
   const same = (a, b) => assert.deepEqual([...a].sort(), [...b].sort());
   same(reg.PARALLEL_TOOL_NAMES, ['skill_library', 'knowledge_search', 'read_file', 'list_files', 'search_files', 'get_current_time', 'get_browser_environment', 'fetch_url', 'search_web', 'regex', 'hash', 'codec', 'unicode', 'evaluate_expression', 'diff_text', 'json_tool', 'date_calc', 'convert_units', 'analyze_image', 'text_tool']);
   same(reg.NETWORK_TOOL_NAMES, ['fetch_url', 'search_web', 'crawl_site', 'download_file']);
   same(reg.READ_ONLY_TOOL_NAMES, ['skill_library', 'knowledge_search', 'read_file', 'list_files', 'search_files', 'get_current_time', 'regex', 'hash', 'codec', 'unicode', 'evaluate_expression', 'diff_text', 'json_tool', 'csv_tool', 'date_calc', 'text_tool', 'convert_units', 'data_tool']);
-  same(reg.HEAVY_TOOL_NAMES, ['document_tool', 'browser_sandbox', 'write_file', 'delete_file', 'copy_file', 'zip_files', 'unzip_file', 'execute_javascript', 'execute_python', 'execute_cpp', 'generate_image', 'dispatch_subagent', 'fetch_url', 'run_git', 'analyze_image', 'render_mermaid', 'render_dot', 'execute_sql']);
+  same(reg.HEAVY_TOOL_NAMES, ['document_tool', 'browser_sandbox', 'write_file', 'delete_file', 'copy_file', 'zip_files', 'unzip_file', 'convert_file', 'execute_javascript', 'execute_python', 'execute_cpp', 'generate_image', 'dispatch_subagent', 'fetch_url', 'run_git', 'analyze_image', 'render_mermaid', 'render_dot', 'execute_sql']);
   assert.deepEqual([...reg.CORE_TOOL_NAMES], ['execute_javascript', 'execute_python', 'execute_cpp', 'write_file', 'read_file', 'list_files', 'delete_file', 'copy_file', 'fetch_url', 'search_web', 'analyze_image', 'dispatch_subagent', 'knowledge_search', 'skill_library'], '原核心顺序不变，末尾增加只读知识检索');
   assert.deepEqual(Object.keys(reg.CAPABILITY_GATED_TOOL_GROUPS), ['invariantCore', 'webFetch', 'workerSearch', 'siteCrawler', 'fileDownload', 'codeSandbox', 'localBrowser', 'subagentSwarm']);
   assert.deepEqual([...reg.CAPABILITY_GATED_TOOL_GROUPS.codeSandbox], ['execute_javascript', 'execute_python', 'execute_cpp']);

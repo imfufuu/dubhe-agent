@@ -14,6 +14,7 @@ import { SUBAGENTS } from './subagents.js';
 import { DEFAULT_IMAGE_MODEL, IMAGE_SIZES, IMAGE_QUALITIES, IMAGE_FORMATS, IMAGE_BACKGROUNDS, IMAGE_MODEL_IDS, resolveImageModel, resolveVisionModel, resolveVideoModel, resolveAudioModel } from './config.js?v=2026.10.11.1';
 import { fetchPage, gitRun, relaySearch, relayCrawl, relayDownload, fileNameFromUrl, RELAY_FILE_MAX_BYTES } from './net.js';
 import { createZip, fileBytesFromValue } from './zip.js';
+import { planConversion, runConversion, convertProgressNote, MAX_CONVERT_INPUT } from './convert.js';
 import { readableFileText } from './file-text.js';
 import { unpackZip, unpackZipFromDataUrl } from './unzip.js';
 import { runRegex, runHash, runCodec, runUnicode } from './codetools.js';
@@ -250,7 +251,34 @@ export const TOOL_DEFS = [
       },
       required: ['path'],
     },
+  },  {
+    name: 'convert_file',
+    description: '沙箱媒体文件格式互转，结果写回虚拟文件系统。to=目标扩展名：图片 png/jpg/webp（含把 SVG 光栅化，走浏览器本地图像管线）；音频 mp3/wav/m4a/aac/ogg/opus/flac（转 wav 走本地解码）；视频 mp4/webm/mov/gif，以及从视频提取音轨、按 start/duration 剪辑、抽单帧图片（走固定版本 ffmpeg.wasm，首次按需下载引擎，可能耗时数十秒到几分钟）。options 可给 quality(1-100)/width/height/bitrate(kbps)/start/duration(秒)/fps/mute。只处理媒体文件；文本、Office 文档、图片内容分析不要用本工具。',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: '沙箱内源文件，如 uploads/clip.mp4' },
+        to: { type: 'string', description: '目标扩展名：png/jpg/webp/mp3/wav/m4a/aac/ogg/opus/flac/mp4/webm/mov/gif' },
+        out: { type: 'string', description: '输出路径；默认 outputs/<原名>.<to>' },
+        options: {
+          type: 'object',
+          description: '可选：quality/width/height/bitrate/start/duration/fps/mute',
+          properties: {
+            quality: { type: 'number', description: '质量 1-100（图片/视频编码）' },
+            width: { type: 'number', description: '目标宽（像素）' },
+            height: { type: 'number', description: '目标高（像素）' },
+            bitrate: { type: 'number', description: '视频/音频码率 kbps' },
+            start: { type: 'number', description: '起剪点（秒）' },
+            duration: { type: 'number', description: '时长（秒）' },
+            fps: { type: 'number', description: '输出帧率（视频/GIF）' },
+            mute: { type: 'boolean', description: '去掉音轨' },
+          },
+        },
+      },
+      required: ['path', 'to'],
+    },
   },
+
   {
     name: 'search_web',
     description:
@@ -1437,6 +1465,38 @@ async function executeToolBody(outerName, outerArgs, ctx) {
         emit({ status: 'ok', fsChange: true, editedPath: out, note: `已打包 ${entries.length} → ${out}` });
         const miss = missing.length ? `\n未找到：${missing.join('、')}` : '';
         return `已写入 ${out}（${entries.length} 个文件，${buf.length} 字节）${miss}`;
+      }
+      case 'convert_file': {
+        const path = normalizeFsPath(args.path);
+        if (!path) return 'convert_file 缺少 path。';
+        const to = String(args.to || '').toLowerCase().replace(/^\./, '');
+        if (!/^[a-z0-9]{1,5}$/.test(to)) return 'convert_file：`to` 必须是目标扩展名（png/jpg/webp/mp3/wav/m4a/aac/ogg/opus/flac/mp4/webm/mov/gif）。';
+        let raw; try { raw = fs.read(path); } catch { return `convert_file 失败：找不到 ${path}`; }
+        const { bytes, mime } = fileBytesFromValue(raw);
+        if (!bytes.length) return `convert_file 失败：${path} 是空文件。`;
+        if (bytes.length > MAX_CONVERT_INPUT) return `convert_file 失败：输入 ${(bytes.length / 1048576).toFixed(1)} MB 超过 ${MAX_CONVERT_INPUT / 1048576} MB 上限。`;
+        const fromExt = (path.includes('.') ? path.split('.').pop() : '').toLowerCase();
+        const plan = planConversion({ fromExt, mime, to });
+        if (!plan) return `convert_file：${fromExt || mime || '?'} → ${to} 不在支持范围（图片 png/jpg/webp；音频 mp3/wav/m4a/aac/ogg/opus/flac；视频 mp4/webm/mov/gif；支持提取音轨 / 剪辑 / 抽帧；不支持产出 SVG 或 Office）。`;
+        const base = path.replace(/\.[^.]+$/, '').split('/').pop() || 'converted';
+        const out = normalizeFsPath(args.out) || `outputs/${base}.${plan.outExt}`;
+        const opts = args.options && typeof args.options === 'object' ? args.options : {};
+        emit({ status: 'running', note: plan.mode === 'ffmpeg' ? '转换中（ffmpeg.wasm，首次使用会按需下载引擎）…' : plan.mode === 'canvas' ? '图像转换中…' : 'WAV 解码中…' });
+        let lastPct = -1;
+        try {
+          const done = await runConversion({
+            bytes, mime, plan, opts,
+            onProgress: (p) => { const pct = Math.round(Number(p) || 0); if (pct !== lastPct && pct % 10 === 0) { lastPct = pct; emit({ status: 'running', note: convertProgressNote(pct + '%') }); } },
+          });
+          fs.write(out, `data:${done.outMime};base64,${u8ToB64(done.bytes)}`);
+          emit({ status: 'ok', fsChange: true, editedPath: out, note: `${fromExt || 'media'} → ${to} · ${done.mode}` });
+          return `已转换 ${path} → ${out}
+${to} · ${done.bytes.length} 字节${done.mode === 'ffmpeg' ? ' · ffmpeg.wasm（同页面内后续转换会复用引擎）' : ''}`;
+        } catch (err) {
+          const msg = String((err && err.message) || err).slice(0, 300);
+          emit({ status: 'error', error: { message: msg } });
+          return `convert_file 失败：${msg}`;
+        }
       }
       case 'search_files': {
         const r = searchFiles(fs, args || {});

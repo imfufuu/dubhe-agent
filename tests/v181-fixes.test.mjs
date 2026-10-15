@@ -428,3 +428,43 @@ test('光标：1.2em 高、下沉 2px、左移 1px', () => {
   assert.equal(CARET_EM, 1.2);
   assert.deepEqual(CARET_NUDGE, { x: -1, y: 2 });
 });
+
+test('convert_file：三条通路计划、ffmpeg 参数、注册表/契约/挂载规则同步', async () => {
+  const c = await import('../js/convert.js');
+  assert.deepEqual(c.planConversion({ fromExt: 'svg', mime: 'image/svg+xml', to: 'png' }), { mode: 'canvas', outExt: 'png', outMime: 'image/png' });
+  assert.equal(c.planConversion({ fromExt: 'mp3', mime: 'audio/mpeg', to: 'wav' }).mode, 'wav', '音频转 WAV 走 WebAudio，不碰 ffmpeg');
+  assert.deepEqual(c.planConversion({ fromExt: 'mp4', mime: 'video/mp4', to: 'mp3' }), { mode: 'ffmpeg', outExt: 'mp3', outMime: 'audio/mpeg', audioOnly: true });
+  assert.equal(c.planConversion({ fromExt: 'mov', mime: 'video/quicktime', to: 'gif' }).mode, 'ffmpeg');
+  assert.equal(c.planConversion({ fromExt: 'mp4', mime: 'video/mp4', to: 'jpg' }).frame, true, '视频抽帧走 ffmpeg');
+  assert.equal(c.planConversion({ fromExt: 'md', mime: 'text/markdown', to: 'png' }), null, '文本不是媒体，拒绝');
+  assert.equal(c.planConversion({ fromExt: 'png', mime: 'image/png', to: 'svg' }), null, '不产出 SVG');
+  const a1 = c.ffmpegArgs({ outExt: 'mp3', opts: { start: 5, duration: 3 }, audioOnly: true });
+  assert.deepEqual(a1.slice(0, 8), ['-hide_banner', '-loglevel', 'error', '-y', '-ss', '5', '-i', 'in.bin']);
+  assert.ok(a1.includes('-t') && a1.includes('-vn') && a1[a1.length - 1] === 'out.mp3');
+  const a2 = c.ffmpegArgs({ outExt: 'webm', opts: { mute: true, width: 640 } });
+  assert.ok(a2.includes('libvpx') && a2.includes('-an') && !a2.includes('-c:a'), '静音视频不再挂音频编码器');
+  assert.ok(a2.some((x) => String(x).startsWith('scale=640')), '宽度进滤镜');
+  const wav = c.encodeWav({ numberOfChannels: 1, sampleRate: 8000, length: 2, getChannelData: () => new Float32Array([0.5, -0.5]) });
+  assert.equal(wav.length, 48);
+  assert.equal(String.fromCharCode(wav[0], wav[1], wav[2], wav[3]), 'RIFF');
+  const { TOOL_DEFS } = await import('../js/tools.js');
+  assert.ok(TOOL_DEFS.some((t) => t.name === 'convert_file' && /ffmpeg\.wasm/.test(t.description)));
+  assert.equal(TOOL_DEFS.length, 38);
+  const caps = await import('../js/capabilities.js');
+  assert.ok(caps.CAPABILITY_REGISTRY.convert_file, '能力登记');
+  assert.ok(caps.TOOL_MOUNT_RULES.convert_file, '按需挂载规则（no-rule 会全量下发）');
+  const ex = await import('../js/execution.js?v=2026.10.11.1');
+  assert.equal(ex.TOOL_CONTRACTS.convert_file.sideEffect, 'filesystem');
+  const mountSrc = read('../js/capabilities-mount.js');
+  assert.match(mountSrc, /convert_file: \{ text: /);
+});
+
+test('convert.js：进度事件（含 0%）不终结任务；只有 ok/error 消息结算（真机踩过：首帧进度被当失败）', () => {
+  const src = read('../js/convert.js');
+  assert.match(src, /if \(m\.progress != null\) \{ p\.onProgress\?\.\(m\.progress\); return; \}/);
+  assert.doesNotMatch(src, /if \(m\.progress\) \{/);
+  const w = read('../js/worker-convert.js');
+  assert.match(w, /ffmpeg-core\.wasm/);
+  assert.match(w, /wasmBinary/);
+  assert.match(w, /Invalid|magic word|head\[1\] === 0x61/, 'wasm 响应先验魔数，防代理把 HTML 页当二进制喂给实例化');
+});

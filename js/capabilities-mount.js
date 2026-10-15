@@ -14,6 +14,7 @@ export const TOOL_MOUNT_RULES_SOURCE = Object.freeze({
   analyze_pdf: { text: /\bpdf\b|论文|扫描件/i, attachments: ['pdf'] },
   zip_files: { text: /压缩|打包|\bzip\b|归档|\barchive\b/i, attachments: ['zip'] },
   unzip_file: { text: /解压|\bunzip\b|\bextract\b|压缩包|打开.{0,4}zip/i, attachments: ['zip'] },
+  convert_file: { text: /格式转换|转换格式|转码|转成|转为|导出为|压缩(?:成|为)|提取音频|提取音轨|音轨|转 ?(?:mp4|webm|mov|mkv|gif|mp3|wav|m4a|aac|ogg|opus|flac|png|jpe?g|webp)|convert|transcode|\bffmpeg\b|\bgif\b|动图|压缩.{0,6}(?:视频|图片|音频)|(?:视频|图片|音频).{0,4}(?:格式|转换)/i, attachments: ['image', 'audio', 'video'] },
   crawl_site: { text: /爬(?:取|虫|一下)|抓取.{0,6}(?:站|网站|整站|文档|所有页)|整站|\bcrawl\b|站点地图|\bsitemap\b|多页/i },
   download_file: { text: /下载|拉取|\bdownload\b|保存.{0,6}(?:到沙箱|文件)|另存/i },
   browser_sandbox: { text: /网页|网站|页面|截图|截屏|预览|调试|\bhtml\b|\bcss\b|\bchromium\b|\bpuppeteer\b|\blocalhost\b|\bweb(?:site|page)?\b|\bpreview\b/i },
