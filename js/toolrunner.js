@@ -301,7 +301,7 @@ export function createToolRunner({ store, emit, getFs, runSubagent } = {}) {
     const recordBlocked = (call, { reason, failure, risk, idempotencyKey, notes = [] }) => {
       // 调用前被拦截也算失败：写回 call，界面重建芯片后仍显示 ✗（而不是按结果文本猜）
       call.status = 'error';
-      call.errorNote = String(reason || (failure && failure.label) || '调用前被拦截').slice(0, 200);
+      call.errorNote = String(reason || '调用前被拦截').slice(0, 200);
       if (call.durationMs == null) call.durationMs = 1;
       const run = exec.machine.beginToolRun({ callId: call.id, name: call.name, args: call.args, reason, risk, idempotencyKey });
       const closed = exec.machine.endToolRun(run, { status: 'blocked', failure, notes });
@@ -643,7 +643,7 @@ export function createToolRunner({ store, emit, getFs, runSubagent } = {}) {
       // 把结论写回 call 本身：工具芯片重建（合并到同轮最后一条消息 / 刷新页面）后仍能显示 成功 / 失败 与耗时
       call.status = status === 'failed' ? 'error' : 'ok';
       call.durationMs = Math.max(1, Date.now() - t0);   // 本地小工具常在 1ms 内结束：记 1ms 而不是 0，界面上才有耗时可显示
-      if (status === 'failed') call.errorNote = String((execError && execError.message) || (failure && failure.label) || '').slice(0, 200);
+      if (status === 'failed') call.errorNote = String((execError && execError.message) || '').slice(0, 200); // 不把失败归类标签当提示
       const closed = exec.machine.endToolRun(run, {
         status,
         failure,

@@ -5,6 +5,7 @@ import { buildFileEditPreview } from './editpreview.js?v=2026.10.11.1';
 import { paintEditFoldContent } from './ui-editpreview.js?v=2026.10.11.1';
 import { ICON } from './icons.js';
 import { animateMessageSend } from './ui-send-animation.js?v=2026.10.11.1';
+import { readThemePreference } from './theme.js';
 
 const PROMPT = '把 date_utils.py 的时区转换改成支持 Asia/Shanghai，处理夏令时和无时区输入，补上单元测试，最后跑一遍 lint';
 const SUMMARY = '已完成。时区转换支持 Asia/Shanghai，并处理无时区输入与夏令时间隙。发现的 DST 测试失败已修复：12/12 测试通过，ruff 无告警。';
@@ -178,7 +179,19 @@ export function mountHomeDemo(root, { autoStart = true, delay = (ms) => new Prom
   return { play, destroy() { generation++; animation?.cancel(); observer?.disconnect(); replay.removeEventListener('click', play); } };
 }
 
+// V1.8.1：演示卡片跟随首页主题（以前 iframe 固定浅色：深色首页里输出文字与卡片底色几乎重合、看不见）
+export function syncDemoTheme(doc = document, host = (typeof window !== 'undefined' && window.parent !== window) ? window.parent : null) {
+  let theme = '';
+  try { theme = host?.document?.documentElement?.dataset?.theme || ''; } catch { /* 跨源嵌入：退回存储偏好 */ }
+  if (!theme) theme = readThemePreference('light');
+  doc.documentElement.dataset.theme = theme === 'dark' ? 'dark' : 'light';
+  return doc.documentElement.dataset.theme;
+}
+
 if (typeof document !== 'undefined') {
+  syncDemoTheme();
+  try { new MutationObserver(() => syncDemoTheme()).observe(window.parent.document.documentElement, { attributes: true, attributeFilter: ['data-theme'] }); } catch { /* 非同源父页 */ }
+  window.addEventListener('storage', () => syncDemoTheme());
   const root = document.querySelector('.card-root');
   if (root) mountHomeDemo(root);
 }

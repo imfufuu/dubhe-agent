@@ -41,7 +41,8 @@ export function publicTaskPlan(userText, { language = /[\u3400-\u9fff]/.test(Str
   };
 }
 export function publicPlanMarkdown(plan) {
-  if (!plan?.direction) return '';
+  // V1.8.1：日常对话 / 简单问答（没有步骤的计划）不再导出「收到任务 / 任务方向」
+  if (!plan?.direction || !plan.steps?.length) return '';
   const zh = plan.language === 'zh';
   const title = zh ? '任务方向' : 'Direction', steps = zh ? '计划' : 'Plan';
   // 第一行是回执：用户要的是「接到任务第一时间在正文说一句收到了、准备怎么做」，而不是上来先甩命令。

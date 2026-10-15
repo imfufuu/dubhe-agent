@@ -1272,3 +1272,41 @@ html[data-theme="dark"] .hero::after { background: radial-gradient(560px circle 
 .faq summary, .faq details { -webkit-tap-highlight-color: transparent; }
 .faq summary:focus { outline: none; }
 .faq summary:focus-visible { outline: 2px solid color-mix(in srgb, var(--fg) 40%, transparent); outline-offset: 2px; border-radius: 10px; }
+
+/* ── V1.8.1 移动端首页 ──────────────────────────────────────────────
+   · 顶栏不再挤没：完整「DUBHE AGENT」字标 + 主题图标键 + 打开对话；能力 / 流程 / 边界 / 文档 落到第二行
+   · 演示卡片紧跟「打开工作台 / 播放介绍片」两个按钮，三条要点放到卡片之后
+   · 杜绝横向溢出：装饰轨道环被裁切，栅格列允许收缩到视口宽度 */
+.site { overflow-x: clip; }
+.nav-doc-m { display: none; }
+@media (max-width: 820px) {
+  .hero { display: flex; flex-direction: column; align-items: center; gap: 0; }
+  .hero-copy { display: contents; }
+  .hero-copy > .kicker { order: 1; }
+  .hero-copy > h1 { order: 2; }
+  .hero-copy > .lede { order: 3; }
+  .hero-copy > .hero-actions { order: 4; }
+  .hero-run { order: 5; width: min(360px, 100%); margin: 34px auto 0; }
+  .hero-copy > .hero-proof { order: 6; width: 100%; margin: 44px auto 0; }
+}
+@media (max-width: 560px) {
+  .nav { flex-wrap: wrap; row-gap: 2px; column-gap: 10px; padding: 12px 16px 6px; }
+  .nav .brand { order: 1; flex: 1 1 auto; min-width: 0; width: auto; gap: 9px; }
+  .nav .brand .logo-text { display: block; font-size: 14px; letter-spacing: .16em; }
+  .nav .brand i { display: inline; margin-left: .38em; }
+  .nav .nav-actions { order: 2; flex: 0 0 auto; gap: 6px; margin-left: auto; }
+  .nav-actions #theme-toggle { width: 34px; min-width: 34px; height: 34px; padding: 0; justify-content: center; border-radius: 999px; }
+  .nav-actions #theme-toggle .home-theme-ico { width: 17px; height: 17px; margin: 0; }
+  .nav .nav-actions .cta { font-size: 12px; padding: 9px 14px; }
+  .nav .nav-focus { order: 3; flex: 1 0 100%; margin: 0 0 0 -10px; gap: 2px; justify-content: flex-start; overflow-x: auto; scrollbar-width: none; }
+  .nav .nav-focus::-webkit-scrollbar { display: none; }
+  .nav .nav-focus .nav-link { font-size: 12.5px; padding: 6px 10px; }
+  .nav-focus a[href="#flow"], .nav .nav-boundary, .nav .nav-doc-m { display: inline-flex; }
+  .hero { padding-inline: 0; }
+}
+@media (max-width: 360px) {
+  .nav .brand { width: auto; min-width: 0; }
+  .nav .brand .logo-text { display: block; font-size: 12.5px; letter-spacing: .12em; }
+  .nav .nav-actions .cta { padding-inline: 12px; }
+}
+

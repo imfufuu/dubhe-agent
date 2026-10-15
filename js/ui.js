@@ -1963,7 +1963,13 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     for (const m of store.state.messages) if (m.role === 'tool') attachToolResult(m);
     settleTurnToolbars();
     refreshActionVisibility();
-    scrollToBottom(true);
+    jumpToBottom();
+  }
+  // V1.8.1：重建（进入旧会话 / 回滚 / 展开更早消息）直接落到最新处——不再从顶部平滑滑下来
+  function jumpToBottom() {
+    msgList.style.scrollBehavior = 'auto';
+    msgList.scrollTop = msgList.scrollHeight;
+    requestAnimationFrame(() => { msgList.scrollTop = msgList.scrollHeight; requestAnimationFrame(() => { msgList.style.scrollBehavior = ''; }); });
   }
 
   function attachToolResult(toolMsg) {

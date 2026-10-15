@@ -1597,15 +1597,10 @@ export function detectSilentFailure({ toolRuns = [], answerText = '' } = {}) {
 export function formatSilentFailureDisclosure({ failedTools = [], toolRuns = [] } = {}) {
   const names = [...new Set((Array.isArray(failedTools) ? failedTools : []).filter(Boolean))];
   if (!names.length) return '';
-  const detail = (Array.isArray(toolRuns) ? toolRuns : [])
-    .filter((r) => r && r.failure && names.includes(r.name))
-    .slice(0, 3)
-    .map((r) => `${r.name}（${r.failure.label}：${String(r.failure.handling || '').slice(0, 40)}）`)
-    .join('；');
+  void toolRuns; // V1.8.1：失败归类不再进入面向用户的文本
   return [
     '',
     `> ⚠️ 执行内核披露：本轮有 ${names.length} 次工具调用未取得成功（${names.join('、')}），上述结论不包含它们的贡献。`,
-    detail ? `> 失败归类：${detail}。` : '',
     '> 如需继续，可让我先核验状态再重试，或调整为不依赖该工具的方案。',
   ].filter(Boolean).join('\n');
 }

@@ -1261,11 +1261,8 @@ export function createAgent(store, hooks = {}) {
             });
             exec.silentFailure = fin.silentFailure;
             exec.finalized = true;
-            if (fin.disclosure) {
-              // 工具失败但回答未披露 → 由内核补一条披露（界面与后续上下文都能看到）
-              text = fin.finalText;
-              store.updateMessage(assistantMsg.id, { text });
-            }
+            // V1.8.1：不再往回答末尾追加「执行内核披露 / 失败归类」——工具失败很常见，追加文案只会加重信息负荷。
+            // 静默失败仍记入执行记录与轨迹指标（silentFailure），模型上下文里也保留着原始失败结果。
             exec.record = summarizeExecutionRecord({
               machine: exec.machine, budget: exec.budgetGov,
               toolRuns: exec.machine.toolRuns, silentFailure: fin.silentFailure,

@@ -4774,7 +4774,8 @@ test('打开会话强制滚到最新；忙时只禁删当前会话', async () =>
   const fsp = await import('node:fs');
   const ui = readUiSource();
   const rb = ui.slice(ui.indexOf('function rebuildMessages'), ui.indexOf('function attachToolResult'));
-  assert.match(rb, /scrollToBottom\(true\)/);
+  assert.match(rb, /jumpToBottom\(\)/); // V1.8.1：瞬时落到最新，不再平滑滑动一次
+  assert.match(rb, /function jumpToBottom\(\) \{\s*msgList\.style\.scrollBehavior = 'auto';\s*msgList\.scrollTop = msgList\.scrollHeight;/);
   assert.match(ui, /getBusy\(\) && wasActive/);
   assert.match(ui, /不能删这一条/);
 });
@@ -6899,7 +6900,7 @@ test('2026.10.1.12：P0-5 预算与风险治理——六路资源预算实时扣
   assert.match(req, /files\/config\.json/);
 });
 
-test('2026.10.1.12：P0-6 端到端——工具失败但最终回答未披露时，内核补披露并提交可重放的执行记录', async () => {
+test('2026.10.1.12：P0-6 端到端——工具失败但最终回答未披露时，记为静默失败并提交可重放的执行记录（V1.8.1 起不在回答里追加披露）', async () => {
   const ex = await import('../js/execution.js');
   const calls = [];
   mockFetch([
@@ -6921,10 +6922,10 @@ test('2026.10.1.12：P0-6 端到端——工具失败但最终回答未披露时
     assert.match(toolMsg.content, /失败归类/);
     assert.match(toolMsg.content, /文件不存在|失败/, '工具自身的失败信息必须原样回喂，不能被吞掉');
 
-    // 静默失败：回答没提失败 → 内核补披露（界面与后续上下文都看得到）
+    // 静默失败：V1.8.1 起不再往回答里追加「执行内核披露 / 失败归类」（信息负荷 + 工具失败很常见），只记入执行记录
     const last = store.state.messages[store.state.messages.length - 1];
-    assert.match(last.text, /^根据我的分析，答案是 42。/);
-    assert.match(last.text, /执行内核披露/, '回答未披露工具失败时必须由内核补披露');
+    assert.equal(last.text, '根据我的分析，答案是 42。');
+    assert.doesNotMatch(last.text, /执行内核披露|失败归类/, '失败归类不再出现在回答里');
     assert.equal(last.execution.state, 'COMMITTED');
     assert.match(last.execution.auditDigest, /^[0-9a-f]{64}$/);
 

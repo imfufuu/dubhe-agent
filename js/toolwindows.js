@@ -34,8 +34,10 @@ export function commandWindowText(args) {
  * · 以 `[error] ` 开头的控制台行 → STDERR（沙箱里 console.error / 错误输出的级别）；
  * · 其余 → STDOUT（保留「── 控制台输出 ──」「── 返回值 ──」等分段标题，便于对照原文）。
  */
+// V1.8.1：「[执行内核] 失败归类：…」只回喂模型，工具窗口里不显示（工具失败很常见，归类文案只会加重信息负荷）
+export const stripFailureClassNote = (body) => String(body == null ? '' : body).replace(/\n*\[执行内核\] 失败归类：[^\n]*/g, '');
 export function splitToolStreams(body) {
-  const text = String(body == null ? '' : body);
+  const text = stripFailureClassNote(body);
   const mark = text.includes(WINDOW_ERROR_MARK) ? WINDOW_ERROR_MARK : '── Error ──';
   const at = text.indexOf(mark);
   const errorBlock = at >= 0 ? text.slice(at + mark.length).replace(/^\n/, '') : '';
@@ -89,7 +91,7 @@ export function toolWindowsOf(chip) {
       commands.push(commandWindowText(item.args !== undefined ? item.args : chip._args));
       const state = (chip._toolStates && chip._toolStates[id]) || {};
       if (chip._outs && Object.hasOwn(chip._outs, id)) {
-        const body = String(chip._outs[id] == null ? '' : chip._outs[id]);
+        const body = stripFailureClassNote(chip._outs[id]);
         const split = splitToolStreams(body);
         let stdout = split.stdout;
         let stderr = split.stderr;

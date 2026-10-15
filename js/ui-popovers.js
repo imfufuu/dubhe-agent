@@ -14,8 +14,28 @@ import { modelDisplayName } from './smartrouter.js?v=2026.10.11.1';
 export function installPopovers({ store }) {
   function hideTokPop() {
     const pop = $('#tok-pop');
-    if (pop) { pop.hidden = true; delete pop.dataset.sheet; }
+    if (!pop) return;
+    if (pop._exitAnim) return; // 收起动画进行中：别叠加
+    if (pop.hidden) { delete pop.dataset.sheet; syncTokScrim(false); return; }
+    const doc = pop.ownerDocument;
+    const reduce = doc.documentElement.dataset.motion === 'off'
+      || (doc.documentElement.dataset.motion !== 'on' && doc.defaultView?.matchMedia?.('(prefers-reduced-motion: reduce)').matches);
     syncTokScrim(false);
+    if (reduce || !pop.animate) { pop.hidden = true; delete pop.dataset.sheet; return; }
+    // V1.8.1：收起也有动画——气泡沿 bubbleIn 原路缩回，手机抽屉向下滑出，与思考菜单同一种手感
+    const cs = doc.defaultView.getComputedStyle(pop);
+    const dy = (cs.getPropertyValue('--pop-dy') || '').trim() || '12px';
+    const scale = (cs.getPropertyValue('--pop-scale') || '').trim() || '.78';
+    const sheet = !!pop.dataset.sheet;
+    const to = sheet ? { opacity: 0, transform: 'translate3d(0, 100%, 0)' } : { opacity: 0, transform: `translate3d(0, ${dy}, 0) scale(${scale})` };
+    const a = pop.animate([{ opacity: 1, transform: 'none' }, to], {
+      duration: sheet ? 220 : 150, easing: sheet ? 'cubic-bezier(.4, 0, 1, 1)' : 'cubic-bezier(.4, 0, .9, .6)',
+    });
+    pop._exitAnim = a;
+    a.finished.then(() => {
+      if (pop._exitAnim !== a) return;
+      pop._exitAnim = null; pop.hidden = true; delete pop.dataset.sheet;
+    }).catch(() => { if (pop._exitAnim === a) pop._exitAnim = null; });
   }
   // 2026.10.9.1（第 3 条）：窄屏（≤720px）的能力表 = 底部抽屉（data-sheet + 遮罩）；其它弹层保持锚定气泡。
   // 抽屉不跟锚点定位：placeTokPop 直接返回；窗口从宽变窄时，下一次 follow() 会自动切进抽屉。
@@ -48,6 +68,7 @@ export function installPopovers({ store }) {
   function placeTokPop(anchor) {
     const pop = $('#tok-pop');
     if (!pop || pop.hidden) return;
+    if (pop._exitAnim) { pop._exitAnim.cancel(); pop._exitAnim = null; } // 收起未播完就重开：取消收起
     if (syncTokSheet(pop)) { pop.style.left = ''; pop.style.top = ''; pop.style.removeProperty('--pop-arrow-x'); return; }
     const target = resolveAnchor(anchor, pop.dataset.kind);
     const fellBack = target !== anchor; // 锚已失效 → 退到整条能力行 / 统计栏

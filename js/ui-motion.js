@@ -17,10 +17,15 @@ export function animatedPopover(menu, button) {
     menu.inert = !open;
     if (motionReduced(menu.ownerDocument) || !menu.animate) { menu.hidden = !open; return; }
     const wasHidden = menu.hidden; menu.hidden = false;
+    // V1.8.1：与思考菜单（.dd-menu）共用同一套气泡语言：--pop-dy / --pop-scale，spring 弹出、快抽回
+    const gcs = menu.ownerDocument.defaultView.getComputedStyle;
+    const dy = gcs(menu).getPropertyValue('--pop-dy').trim() || '12px';
+    const scale = gcs(menu).getPropertyValue('--pop-scale').trim() || gcs(menu.ownerDocument.documentElement).getPropertyValue('--pop-scale').trim() || '.78';
+    const closedT = `translate3d(0, ${dy}, 0) scale(${scale})`;
     const a = menu.animate([
-      { opacity: wasHidden ? 0 : opacity, transform: wasHidden ? 'translateY(5px) scale(.97)' : transform },
-      { opacity: open ? 1 : 0, transform: open ? 'translateY(0) scale(1)' : 'translateY(5px) scale(.97)' },
-    ], { duration: open ? 240 : 200, easing: 'cubic-bezier(.22,1,.36,1)' });
+      { opacity: wasHidden ? 0 : opacity, transform: wasHidden ? closedT : transform },
+      { opacity: open ? 1 : 0, transform: open ? 'translate3d(0, 0, 0) scale(1)' : closedT },
+    ], { duration: open ? 440 : 150, easing: open ? 'cubic-bezier(.18, 1.42, .28, 1)' : 'cubic-bezier(.4, 0, .9, .6)' });
     animation = a;
     a.onfinish = () => { if (animation !== a) return; menu.hidden = !open; animation = null; };
   };

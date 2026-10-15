@@ -334,3 +334,97 @@ test('read_file：data URL 存放的 SVG / 文本解码成原文；二进制只�
   const latin = readableFileText(`data:text/plain;base64,${Buffer.from([0xff, 0xfe, 0x00, 0xd8]).toString('base64')}`, 'x.txt');
   assert.equal(latin.binary, true, '不是合法 UTF-8 的「文本」按二进制说明处理，不回 base64');
 });
+
+// ── V1.8.1 收尾：失败归类不显示、日常对话免回执、重建落底、连接呼吸点、弹层收起动画、光标与查看器 ──
+import { stripFailureClassNote, splitToolStreams, toolWindowsOf } from '../js/toolwindows.js?v=2026.10.11.1';
+import { publicTaskPlan, publicPlanMarkdown } from '../js/publicplan.js';
+import { CARET_EM, CARET_NUDGE } from '../js/ui-caret.js';
+let panel0 = '';
+import {
+  dualViewKind, csvTableHtml, VIEW_MODES, FV_ART, viewModesHtml, DUAL_VIEW_MAX,
+} from '../js/ui-file-viewer.js';
+
+test('失败归类：窗口/回答都不显示，模型上下文仍保留；silent 披露不再追加进正文', () => {
+  const note = '文件不存在：x.txt\n\n[执行内核] 失败归类：文件不存在（不重试同参数：先 list_files 探测）。指引\n[执行耗时 3ms]';
+  assert.equal(stripFailureClassNote(note).includes('失败归类'), false);
+  const split = splitToolStreams(note);
+  assert.doesNotMatch(split.stdout + split.stderr, /失败归类/, 'STDOUT/STDERR 窗口过滤归类行');
+  const chip = {
+    dataset: { callIds: 'k1' }, _items: [{ id: 'k1', name: 'read_file', args: { path: 'x.txt' } }],
+    _outs: { k1: note }, _toolStates: { k1: { status: 'error', settled: true } },
+  };
+  assert.doesNotMatch(toolWindowsOf(chip).stderr, /失败归类/, '失败提示同样不带归类');
+  const uiSrc = read('../js/agent.js');
+  assert.doesNotMatch(uiSrc, /text = fin\.finalText/, '回答末尾不再追加执行内核披露');
+  const ex = read('../js/execution.js');
+  assert.doesNotMatch(ex, /`> 失败归类：\$\{detail\}`,?`/, '披露文案本身去掉归类行');
+});
+
+test('日常对话不再打「收到任务 / 方向与计划」回执；多步任务保留', () => {
+  assert.equal(publicPlanMarkdown(publicTaskPlan('你好')), '');
+  assert.equal(publicPlanMarkdown(publicTaskPlan('今天天气怎么样？')), '');
+  const plan = publicTaskPlan('帮我写一个 Python 脚本统计 CSV 里的销售额并输出图表文件');
+  const md = publicPlanMarkdown(plan);
+  assert.match(md, /收到任务/); assert.match(md, /计划/);
+  const core = read('../js/prompt-core.js');
+  assert.match(core, /不写「收到任务」「任务方向」「计划」之类的回执标题/);
+  assert.doesNotMatch(core, /接到任务第一时间先在正文回执/);
+});
+
+test('重建消息（进入旧会话 / 回滚 / 展开更早）瞬时落底，不再平滑滑一次', () => {
+  const ui = read('../js/ui.js');
+  const rb = ui.slice(ui.indexOf('function rebuildMessages'), ui.indexOf('function attachToolResult'));
+  assert.match(rb, /jumpToBottom\(\);/);
+  assert.match(ui, /msgList\.style\.scrollBehavior = 'auto';\s*msgList\.scrollTop = msgList\.scrollHeight;/);
+});
+
+test('连接模型：气泡里是 12px 深色呼吸点，圆环退场；状态栏维持原状（三点跳动还在）', () => {
+  const ui = read('../js/ui.js');
+  assert.match(ui, /class="connect-dot"/);
+  assert.doesNotMatch(ui, /connect-ring/);
+  const css = read('../css/styles.css');
+  assert.match(css, /\.connect-dot \{ width: 12px; height: 12px;[^}]*animation: connectBreathe/);
+  assert.match(css, /\.dot\.busy\.connecting \{ background: #7d8aa0; animation: pulse \.7s ease-in-out infinite, halo 1\.4s ease-out infinite; \}/);
+  assert.match(css, /\.sdots i \{[^}]*bounce/);
+});
+
+test('Token 构成 / 能力表与附件菜单：收起有同套气泡动画，重开会取消收起', () => {
+  const pop = read('../js/ui-popovers.js');
+  assert.match(pop, /pop\._exitAnim = a;/);
+  assert.match(pop, /translate3d\(0, \$\{dy\}, 0\) scale\(\$\{scale\}\)/);
+  assert.match(pop, /if \(pop\._exitAnim\) \{ pop\._exitAnim\.cancel\(\); pop\._exitAnim = null; \}/);
+  const motion = read('../js/ui-motion.js');
+  assert.match(motion, /getPropertyValue\('--pop-dy'\)/);
+  assert.match(motion, /duration: open \? 440 : 150/);
+  const css = read('../css/styles.css');
+  assert.match(css, /@media \(max-width: 760px\)[\s\S]*?#sandbox-panel \{\s*\/\* V1\.8\.1：抽屉开合动画[^\n]*\n\s*transition: transform \.32s var\(--ease\)/);
+});
+
+test('查看器：只剩代码/预览两档；md/csv 双视图；提示插画没有 emoji；文件切换器在源码里', () => {
+  assert.deepEqual(VIEW_MODES, ['code', 'preview']);
+  const modes = viewModesHtml('preview');
+  assert.equal((modes.match(/data-view-mode="/g) || []).length, 2, '只有代码/预览两档');
+  assert.doesNotMatch(modes, /split|并排/);
+  assert.match(modes, /fv-modes-thumb/);
+  assert.match(modes, /data-view-mode="preview" aria-pressed="true"/);
+  assert.equal(dualViewKind('a.md'), 'md');
+  assert.equal(dualViewKind('a.csv'), 'table');
+  assert.equal(dualViewKind('a.tsv'), 'table');
+  assert.equal(dualViewKind('a.svg'), 'web');
+  assert.equal(dualViewKind('a.png'), '');
+  assert.match(panel0 = read('../js/ui-files-panel.js'), /byteLen <= DUAL_VIEW_MAX\[dualKind\]/, '超过体积上限不再做双视图');
+  const table = csvTableHtml('region,n\n华东,1\n华南,2\n');
+  assert.match(table, /<th[^>]*>region<\/th>/); assert.match(table, /fv-rn/);
+  assert.deepEqual(Object.keys(FV_ART).sort(), ['binary', 'pdf', 'tooBig']);
+  assert.doesNotMatch(FV_ART.binary, /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u, '插画是线稿 SVG，不是 emoji');
+  const panel = read('../js/ui-files-panel.js');
+  assert.doesNotMatch(panel.replace(/fv-split|'split'/g, ''), /📦|️|📄/);
+  assert.doesNotMatch(panel, /fv-split|'split'/);
+  assert.match(panel, /openFileSwitcher/);
+  assert.match(panel, /class="fv-path"/);
+});
+
+test('光标：1.2em 高、下沉 2px、左移 1px', () => {
+  assert.equal(CARET_EM, 1.2);
+  assert.deepEqual(CARET_NUDGE, { x: -1, y: 2 });
+});
