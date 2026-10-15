@@ -165,6 +165,8 @@ ui.js     渲染 / 动画 / 回滚交互 / 沙箱面板
 **工具集**：`execute_javascript`（Worker 隔离 + console 捕获 + files 快照）、`execute_python`（Pyodide WASM 常驻 Worker，运行时只加载一次；经典 Worker 中必须显式传 `indexURL`）、`execute_cpp`（Compiler Explorer 公共 API 远程编译执行，g++ -O2 -std=c++20，请求需 `compilerOptions.executorRequest: true`，编译器按 `semver` 字段选择——ID 数字大小≠版本）、`write_file` / `read_file` / `list_files`（虚拟 FS，随会话持久化）、`get_current_time`、`remember`（跨会话长效记忆）、`dispatch_subagent`（子智能体委派）、
 `fetch_url`（本地中继或 Worker + 联网开关）、`search_web` / `crawl_site` / `download_file`（新版 Worker + 联网开关；`download_file` 把任意 http(s) 文件原始字节拉进沙箱 `uploads/`，≤ 16 MB）、`run_git`（本地中继 `workspace/` 内 git）。
 另有本地工作台：`text_tool`（文本统计 / 去重 / 排序 / 大小写 / 折行，`action=regex|hash|codec|unicode` 分别承接原 `regex` / `hash` / `codec` / `unicode`）/ `data_tool`（`kind=csv` CSV 预览 / 过滤 / 排序 / 聚合 / 转 JSON；`kind=date` 日期差、加减、工作日；`kind=units` 长度、质量、温度、速度、面积、体积、数据、时间换算；`kind=qr` 本地二维码 SVG，Version 1–20，写入 `outputs/`）/ `search_files` / `diff_text` / `json_tool` / `zip_files` / `unzip_file` / `generate_image` / `analyze_image` / `analyze_video`，实现仍在 `js/utiltools.js` / `js/worktools.js`，纯本地、零依赖。构建 .26 起工具表 32 个、分两层下发：核心 12 个每轮必带，其余按用户消息 / 附件类型 / 近几轮用量按需挂载（模型点名未挂载工具时内核当场挂载并回执）。
+
+V1.8.1 起工具表 38 个：新增 `convert_file`（媒体格式互转——图片 png/jpg/webp 含 SVG 光栅化走浏览器 canvas、音频转 WAV 走 WebAudio、其余音视频/容器/GIF/剪辑/抽帧走按需加载的固定版本 ffmpeg.wasm，全程本地）；附件菜单新增「扫描文档」入口（仅在有摄像头且 Permissions-Policy 允许的设备出现）：自动四角检测、拖拽微调、透视矫正与黑白增强，多页合成一个本地生成的 PDF，取景画面绝不上传。
 没有 `web_search` 工具，也不再注入模型原生网页搜索字段。
 
 ## Dubhe Helix 3.0 · DC（Dubhe Cambrian，天枢·寒武）
