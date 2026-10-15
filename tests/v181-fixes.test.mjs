@@ -468,3 +468,55 @@ test('convert.js：进度事件（含 0%）不终结任务；只有 ok/error 消
   assert.match(w, /wasmBinary/);
   assert.match(w, /Invalid|magic word|head\[1\] === 0x61/, 'wasm 响应先验魔数，防代理把 HTML 页当二进制喂给实例化');
 });
+
+test('文档扫描：算法核（合成纸面检出四角）、PDF 结构、入口按钮只随真实相机出现', async () => {
+  const m = await import('../js/doc-scanner.js');
+  const w = 200; const h = 200; const data = new Uint8ClampedArray(w * h * 4);
+  const quad = [{ x: 40, y: 30 }, { x: 170, y: 45 }, { x: 160, y: 170 }, { x: 30, y: 155 }];
+  const inside = (x, y) => {
+    let c = false;
+    for (let i = 0, j = 3; i < 4; j = i++) {
+      const xi = quad[i].x; const yi = quad[i].y; const xj = quad[j].x; const yj = quad[j].y;
+      if (((yi > y) !== (yj > y)) && (x < ((xj - xi) * (y - yi)) / (yj - yi) + xi)) c = !c;
+    }
+    return c;
+  };
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const p = (y * w + x) * 4; const v = inside(x, y) ? 235 : 40;
+    data[p] = data[p + 1] = data[p + 2] = v; data[p + 3] = 255;
+  }
+  const det = m.detectDocCorners({ width: w, height: h, data });
+  assert.ok(det, '检出四边形');
+  for (let i = 0; i < 4; i++) {
+    assert.ok(Math.abs(det[i].x - quad[i].x) <= 2 && Math.abs(det[i].y - quad[i].y) <= 2, `角点 ${i} 偏差过大`);
+  }
+  assert.equal(m.detectDocCorners({ width: w, height: h, data: new Uint8ClampedArray(w * h * 4).fill(200) }), null, '低对比（纯色）不乱猜');
+  const H = m.computeHomography(det, 200, 200);
+  assert.ok(H && H.length === 9);
+  const warp = m.warpImageData({ width: w, height: h, data }, H, 120, 120);
+  assert.ok(warp.data[(60 * 120 + 60) * 4] > 200, '矫正后中心是纸面');
+  assert.equal(m.applyScanFilter(warp, 'mono').data[(60 * 120 + 60) * 4] % 255, 0, '黑白滤镜输出纯色');
+  const fakeJpeg = new Uint8Array([255, 216, 255, 225, 1, 2, 3, 255, 217]);
+  const pdf = Buffer.from(m.jpegPagesToPdf([{ bytes: fakeJpeg, width: 100, height: 80 }, { bytes: fakeJpeg, width: 100, height: 80 }]));
+  const str = pdf.toString('latin1');
+  assert.match(str, /^%PDF-1\.4/);
+  assert.match(str, /\/Count 2/);
+  assert.ok(str.trimEnd().endsWith('%%EOF'));
+  const xrefAt = Number(/startxref\n(\d+)/.exec(str)[1]);
+  assert.equal(str.slice(xrefAt, xrefAt + 4), 'xref');
+  for (const mo of str.slice(xrefAt).matchAll(/^(\d{10}) 00000 n /gm)) {
+    assert.match(str.slice(Number(mo[1]), Number(mo[1]) + 12), /^\d+ 0 obj/, 'xref 偏移必须指向对象行');
+  }
+  // 入口与门控
+  const html = read('../app.html');
+  assert.match(html, /id="scan-btn"[^>]*hidden/);
+  assert.match(html, /扫描文档/);
+  const dev = read('../js/ui-devices.js');
+  assert.match(dev, /scan\.hidden = !\(allowed\('camera'\) && state\.camera === true\)/);
+  const att = read('../js/ui-attachments.js');
+  assert.match(att, /import\('\.\/ui-scanner\.js'\)/);
+  assert.match(att, /addFiles\(files\)/);
+  const ui = read('../js/ui-scanner.js');
+  assert.match(ui, /仅本地处理/);
+  assert.doesNotMatch(ui, /fetch\(|XMLHttpRequest/); // 相机画面绝不外发
+});

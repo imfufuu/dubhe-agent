@@ -316,6 +316,18 @@ export function installAttachments({ composer, toast, safeImgSrc, fmtSize }) {
     });
   }
 
+  const scanBtn = $('#scan-btn');
+  if (scanBtn) {
+    scanBtn.addEventListener('click', async () => {
+      setAttachMenuOpen(false);
+      try {
+        const { openScanner } = await import('./ui-scanner.js');
+        const files = await openScanner();
+        if (files && files.length) await addFiles(files); // 扫描产物走同一条附件流水线（审核、缩略图、沙箱落盘）
+      } catch (error) { toast(localeText(`文档扫描不可用：${error.message}`, `Document scanner unavailable: ${error.message}`), 'err', 5000); }
+    });
+  }
+
   const mainEl = $('.main');
   ['dragenter', 'dragover'].forEach((ev) => mainEl.addEventListener(ev, (e) => { e.preventDefault(); mainEl.classList.add('drag-over'); }));
   ['dragleave', 'drop'].forEach((ev) => mainEl.addEventListener(ev, (e) => {

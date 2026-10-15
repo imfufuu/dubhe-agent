@@ -1042,6 +1042,22 @@ html { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
 .photo-overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 .photo-editor-modal[data-mode="crop"] .photo-canvas { cursor: crosshair; }
 
+/* ── V1.8.1 文档扫描（复用照片编辑器弹层壳）────────────────────────────── */
+.scan-video, .scan-modal .scan-canvas { display: block; width: auto; height: auto; max-width: min(100%, calc(100vw - 92px)); max-height: min(52dvh, 560px); margin: 0 auto; background: #000; border-radius: 10px; }
+.scan-modal .scan-video[hidden], .scan-modal .scan-canvas[hidden] { display: none; }
+.scan-overlay { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; }
+.scan-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 14px; border-top: 1px solid var(--line); }
+.scan-filters { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
+.scan-f { border: 0; background: none; padding: 6px 12px; font-size: var(--ui-fs-12px, 12px); color: var(--fg-2); cursor: pointer; transition: background .16s var(--ease), color .16s var(--ease); }
+.scan-f.on { background: var(--fg); color: var(--bg); }
+.scan-actions { display: inline-flex; gap: 8px; margin-left: auto; }
+.scan-shutter { border-radius: 999px; padding-left: 18px; padding-right: 18px; }
+.scan-pages { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.scan-page-chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 8px; padding: 3px 6px 3px 9px; font-size: var(--ui-fs-11_5px, 11.5px); color: var(--fg-2); }
+.scan-page-chip button { border: 0; background: none; color: var(--fg-3); cursor: pointer; font-size: 13px; line-height: 1; padding: 2px 3px; transition: color .16s var(--ease); }
+.scan-page-chip button:hover { color: #dc2626; }
+@media (max-width: 720px) { .scan-video, .scan-modal .scan-canvas { max-height: min(46dvh, 460px); } }
+
 /* 上下文面板：裁剪 / 画笔，从画布下方滑入 */
 .photo-context {
   display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
