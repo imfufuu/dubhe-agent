@@ -162,7 +162,7 @@ test('retired gate has no click or keyboard route; language changes use viewport
   assert.doesNotMatch(home, /openGate\(|classList\.add\('gate'\)|gateSkip/);
   assert.match(home, /openSite\(true\);\s*pinTop\(\);/);
   const language = fs.readFileSync(new URL('../js/ui-language.js', import.meta.url), 'utf8');
-  assert.match(language, /whiteFade\(doc, \(\) => preserveLanguageViewport\(doc, run\)\)/);
+  assert.match(language, /veilFade\(doc, \(\) => preserveLanguageViewport\(doc, run\)\)/, 'V1.8.2：整页遮罩改为 page-fx.js 的 veilFade（配色在 CSS 里，深色渐黑）');
   assert.match(language, /else preserveLanguageViewport\(doc, run\)/);
   const scroll = fs.readFileSync(new URL('../js/language-scroll.js', import.meta.url), 'utf8');
   assert.match(scroll, /overflow-anchor/); assert.match(scroll, /pointerdown/); assert.match(scroll, /'instant'/);

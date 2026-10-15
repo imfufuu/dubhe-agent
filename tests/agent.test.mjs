@@ -10054,7 +10054,7 @@ test('界面动效偏好：auto / on / off 三态，on 覆盖系统 reduce，off
   assert.match(main, /applyMotion\(\);/);
   assert.match(main, /browserFeatureReport\(\)[\s\S]*?dubhe-oldbrowser-noted/);
   const css = fsp.readFileSync(new URL('../css/styles.css', import.meta.url), 'utf8');
-  assert.equal((css.match(/@media \(prefers-reduced-motion: reduce\) \{/g) || []).length, 8, '含语音球体与状态抛光的减少动效块');
+  assert.equal((css.match(/@media \(prefers-reduced-motion: reduce\) \{/g) || []).length, 7, '含语音球体与状态抛光的减少动效块（跨页过渡那条已移到 css/page-fx.css）');
   const reduceBlocks = css.split('@media (prefers-reduced-motion: reduce) {').slice(1);
   for (const b of reduceBlocks) {
     let depth = 1, end = 0;

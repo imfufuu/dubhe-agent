@@ -1,4 +1,5 @@
 import { preserveLanguageViewport } from './language-scroll.js';
+import { motionAllowed, veilFade } from './page-fx.js';
 import { getLanguage, languagePreference, setLanguagePreference, onLanguageChange, setLanguageTransition } from './locale.js';
 import { UI_STRINGS } from './ui-strings.js?v=2026.10.11.1';
 // Only UI chrome is translated. Message bodies, code, file names, model output and user content retain their exact values.
@@ -62,27 +63,15 @@ export function installLanguage(root = document) {
     for (const r of records) { if (r.type === 'childList') for (const n of r.addedNodes) pending.add(n); else pending.add(r.target); }
     if (!queued && pending.size) { queued = true; queueMicrotask(flush); }
   });
-  // 语言切换：整页慢慢渐白 → 全白时执行所有语言回调（替换文案）→ 缓缓隐出界面。
-  // 遮罩先出现、回调放在全白时执行：卡顿发生在看不见的时候，而不是点击后画面冻住。
-  // 白色遮罩盖住整个视口（含弹层），动画结束即移除；关闭动效时直接执行回调。
-  const whiteFade = (doc, run) => {
-    const veil = doc.createElement('div');
-    veil.setAttribute('aria-hidden', 'true');
-    veil.style.cssText = 'position:fixed;inset:0;z-index:2147483000;background:#fff;opacity:0;pointer-events:none;will-change:opacity;';
-    doc.body.appendChild(veil);
-    const ease = 'cubic-bezier(.45,0,.25,1)';
-    const fadeIn = veil.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 1000, easing: ease, fill: 'forwards' });
-    fadeIn.finished.then(() => {
-      run(); // 全白时执行回调（替换文案、刷新各面板）
-      return veil.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 1300, easing: ease, fill: 'forwards' }).finished;
-    }).catch(() => {}).finally(() => veil.remove());
-  };
+  // 语言切换：整页先渐隐到「主题底色」（浅色渐白、深色渐黑到底）→ 全盖住时执行所有语言回调 → 缓缓渐显。
+  // 遮罩先出现、回调放在全盖住时执行：卡顿发生在看不见的时候，而不是点击后画面冻住。
+  // 定位与配色全部来自 css/page-fx.css：落地页 CSP 是 style-src 'self'，早先用 style 属性写遮罩在首页会被整条丢掉。
   setLanguageTransition((run, changed) => {
     const doc = root.ownerDocument || root;
-    const reduce = doc.defaultView?.matchMedia?.('(prefers-reduced-motion: reduce)').matches && doc.documentElement.dataset.motion !== 'on';
-    const motionOn = doc.documentElement.dataset.motion !== 'off' && !reduce;
-    if (changed && motionOn && doc.body) whiteFade(doc, () => preserveLanguageViewport(doc, run));
-    else preserveLanguageViewport(doc, run);
+    if (changed && motionAllowed(doc) && doc.body) {
+      // transition() is intentionally fire-and-forget; veilFade still cleans up if an observer callback throws.
+      void veilFade(doc, () => preserveLanguageViewport(doc, run)).catch(() => {});
+    } else preserveLanguageViewport(doc, run);
   });
   const sync = () => {
     const doc = root.ownerDocument || root; doc.documentElement.lang = getLanguage() === 'en' ? 'en' : 'zh-CN';

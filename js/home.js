@@ -42,6 +42,14 @@ const soundBtn = document.getElementById('film-sound');
 const pauseFlash = document.getElementById('film-pause-flash');
 const nav = document.querySelector('.nav');
 const themeBtn = document.getElementById('theme-toggle');
+
+// 移动端系统状态栏取色：js/theme-boot.js 已按保存的偏好写好首帧值，这里跟随手动切换
+function syncThemeColorMeta(theme) {
+  try {
+    const meta = document.querySelector('meta[name="theme-color"]:not([media])');
+    if (meta) meta.setAttribute('content', theme === 'dark' ? '#0c0c0b' : '#f6f4ef');
+  } catch { /* 无此 meta 时忽略 */ }
+}
 const bill = document.getElementById('bill-text');
 const billboard = document.getElementById('billboard');
 const curtain = document.getElementById('curtain');
@@ -669,12 +677,14 @@ function syncThemeBtn() {
 function flipTheme() {
   root.dataset.theme = root.dataset.theme === 'dark' ? 'light' : 'dark';
   writeThemePreference(root.dataset.theme);
+  syncThemeColorMeta(root.dataset.theme);
   syncThemeBtn();
 }
 syncThemeBtn();
 window.addEventListener('storage', (event) => {
   if (event.key !== THEME_STORAGE_KEY && event.key !== LEGACY_HOME_THEME_KEY) return;
   root.dataset.theme = readThemePreference(event.newValue || root.dataset.theme);
+  syncThemeColorMeta(root.dataset.theme);
   syncThemeBtn();
 });
 

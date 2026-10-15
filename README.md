@@ -18,6 +18,12 @@ npm ci && npm test   # 一条命令跑完 tests/ 下全部 .mjs + Python 护栏�
 - 网页检索走显式工具：本地 `server.py` 提供单页 `fetch_url`，新版 Cloudflare Worker 另提供 `search_web` 与同源 `crawl_site`；不向模型请求注入原生网页搜索字段，Worker 能力由 `/api/health` 探测
 - 下面先「快速开始」。协议表和架构图是排错用的，日常对话不必先读完
 
+## V1.8.2：主题首帧与页面转场
+
+- 深色主题在首页、文档页、对话页及首页示例卡均于首次绘制前应用，不再先闪浅色页面；语言切换在主题底色（深色纯黑 / 浅色纯白）完全遮住时换文案，再渐显。
+- 站内页面跳转使用一致的扫场转场，外链 / 新标签 / 同页锚点照常工作；减少动效与应用内「关闭」设置会跳过动画。文档页内分区采用同文档 View Transition。
+- 可选浏览器回归：`node tools/check-page-fx.mjs`（需已有 Playwright 浏览器；本机 HTTP 服务可通过 `BASE_URL=http://127.0.0.1:8787` 指定）。
+
 ## V1.8：按需扩展技能、文档与音频
 
 - **技能按需探索**：`skill_library` 先返回小目录，再读取一篇指南。12 项中英技能覆盖 Word、演示文稿、PDF 页面/表单/水印、文本识别、音频、数据报告及交付验收；全文位于 `assets/skills/`，不会自动注入提示词。
@@ -35,7 +41,7 @@ npm ci && npm test   # 一条命令跑完 tests/ 下全部 .mjs + Python 护栏�
 
 缓存不收集 API 请求/响应、密钥、聊天记录或工作区文件。SW 版本/部署清单检查仍会联网；首次安装、配额不足、存储被浏览器回收或隐私模式下不保证永久离线。开发目录未生成部署清单时保持普通网络加载。设置中清缓存后，应完成任务再刷新，以重新建立缓存。
 
-浏览器回归可在本地 HTTP 服务上运行：`node tools/check-cache-ui.mjs`、`node tools/check-document-ui.mjs`、`node tools/check-home-navigation.mjs`、`node tools/check-v18-ui.mjs`。需要另装 Playwright 及浏览器；WebKit 测试不等同于具体 iPad 真机测试。
+浏览器回归可在本地 HTTP 服务上运行：`node tools/check-cache-ui.mjs`、`node tools/check-document-ui.mjs`、`node tools/check-home-navigation.mjs`、`node tools/check-v18-ui.mjs`、`node tools/check-page-fx.mjs`。需要另装 Playwright 及浏览器；WebKit 测试不等同于具体 iPad 真机测试。
 
 ## 快速开始
 

@@ -6,6 +6,8 @@
 <meta name="app-version" content="2026.10.11.1" />
 <meta name="app-release" content="V1.8" />
 <meta name="robots" content="noindex" />
+<meta name="theme-color" content="#f6f4ef" />
+<script src="js/theme-boot.js?v=2026.10.11.1" data-theme-fallback="system"></script>
 <title>文档 · Dubhe Agent V1.8</title>
 <style>
   /* 主题变量经 @property 注册（与主页一致）→ 切换外观时颜色插值平滑过渡 */
@@ -175,6 +177,7 @@
 .release-overview{display:flex;align-items:center;justify-content:space-between;gap:20px;border:1px solid var(--line);background:var(--card);padding:26px;border-radius:16px;margin:24px 0}.release-label,.change-grid article>span{font:10px var(--mono);letter-spacing:.1em;color:var(--fg-2)}.release-overview h3{font:600 24px var(--mono);margin:10px 0}.release-overview p,.change-grid p,.archive-heading p{color:var(--fg-2);font-size:13px;line-height:1.8}.change-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.change-grid article{padding:23px;border:1px solid var(--line);border-radius:14px;background:var(--card)}.change-grid h3{margin:12px 0;font-size:18px}.archive-heading{margin:38px 0 18px}.release-archive{border-top:1px solid var(--line);padding:18px 0}.release-archive summary{display:flex;align-items:center;gap:18px;cursor:pointer;list-style:none}.release-archive summary>span{flex:0 0 140px;font:11px var(--mono);color:var(--fg-2)}.release-archive summary>b{font-size:14px;flex:1}.release-archive summary>small{font-size:10px;color:var(--fg-3)}.release-archive ul{margin:18px 0 0 158px;font-size:13px;line-height:1.9;color:var(--fg-2)}
 @media(max-width:720px){.change-grid{grid-template-columns:1fr}.release-overview{padding:20px}.release-archive summary{flex-wrap:wrap;gap:7px}.release-archive summary>span{flex-basis:100%}.release-archive summary>b{flex-basis:70%}.release-archive ul{margin-left:18px}}
 </style>
+<link rel="stylesheet" href="css/page-fx.css?v=2026.10.11.1" />
 </head>
 <body>
 <div class="glow"></div>
@@ -398,16 +401,16 @@
   (function () {
     var root = document.documentElement;
 
-    // ── 外观：与主页同一偏好；@property 注册的颜色变量 + html transition 带来平滑插值切换 ──
-    var saved = null;
-    try { saved = localStorage.getItem('dubhe-theme') || localStorage.getItem('dubhe-home-theme'); } catch (e) {}
-    if (saved !== 'dark' && saved !== 'light') {
-      saved = (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
-    }
-    root.dataset.theme = saved;
-    document.getElementById('theme-toggle').addEventListener('click', function () {
+    // ── 外观：与主页 / 应用同一偏好（首帧由 js/theme-boot.js 写好，这里只管切换）──
+    // @property 注册的颜色变量 + html transition 带来平滑插值；theme-boot 期间插值是锁住的，所以载入不会先闪浅色。
+    var themeBtn = document.getElementById('theme-toggle');
+    if (themeBtn) themeBtn.addEventListener('click', function () {
       root.dataset.theme = root.dataset.theme === 'dark' ? 'light' : 'dark';
-      try { localStorage.setItem('dubhe-theme', root.dataset.theme); } catch (e) {}
+      try { document.querySelector('meta[name="theme-color"]:not([media])')?.setAttribute('content', root.dataset.theme === 'dark' ? '#0c0c0b' : '#f6f4ef'); } catch (e) {}
+      try {
+        localStorage.setItem('dubhe-theme', root.dataset.theme);
+        localStorage.removeItem('dubhe-home-theme'); // 与 js/theme.js writeThemePreference 一致：不留两份偏好
+      } catch (e) {}
     });
 
     // ── 分页路由：hash → 页面；切换时 nav 高亮 + 页面 fadeUp，并重触发滚动展开 ──
@@ -440,7 +443,8 @@
       var cur = document.getElementById('page-' + name);
       if (cur) {
         revealWithin(cur);
-        if (scrollReset) window.scrollTo({ top: 0, behavior: 'smooth' });
+        // 过渡进行中要瞬间归位：平滑滚动会和新状态快照错位，化开效果就散了
+        if (scrollReset) window.scrollTo({ top: 0, behavior: inVt ? 'instant' : 'smooth' });
       }
     }
 
@@ -463,7 +467,21 @@
     function fromHash() {
       return (location.hash || '').replace('#', '');
     }
-    window.addEventListener('hashchange', function () { show(fromHash(), true); });
+    // 分区切换用同文档 View Transition：旧内容化开、新内容轻轻推近（关键帧在 css/page-fx.css）。
+    // 只在 startViewTransition 真的可用且动效没关时用，否则照常换页 —— 功能永远优先于动画。
+    var inVt = false;
+    function swapWithTransition(mutate) {
+      var allow = false;
+      try {
+        var flag = root.dataset.motion;
+        allow = typeof document.startViewTransition === 'function'
+          && flag !== 'off' && (flag === 'on' || !matchMedia('(prefers-reduced-motion: reduce)').matches);
+      } catch (e) { allow = false; }
+      if (!allow) { mutate(); return; }
+      try { inVt = true; document.startViewTransition(function () { mutate(); inVt = false; }); }
+      catch (e) { inVt = false; mutate(); }
+    }
+    window.addEventListener('hashchange', function () { swapWithTransition(function () { show(fromHash(), true); }); });
     show(fromHash(), false);
 
     // ── 滚动后导航描边（与主页 .nav.scrolled 一致）──

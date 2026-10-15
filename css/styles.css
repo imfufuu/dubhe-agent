@@ -2604,14 +2604,7 @@ html[data-motion="off"] .rb-caret{animation:none}
 /* 分享页：带 display 的类会覆盖 [hidden]，这里显式恢复隐藏 */
 .share-latest[hidden] { display: none !important; }
 html[data-ui-language="en"] .side-label { text-transform: none; letter-spacing: .02em; font-size: 12px; }
-/* 页面切换：跨文档 View Transition（落地页 ↔ 应用页）。不支持的浏览器直接正常跳转 */
-@view-transition { navigation: auto; }
-::view-transition-old(root), ::view-transition-new(root) { animation-duration: .45s; animation-timing-function: cubic-bezier(.22,.61,.36,1); }
-::view-transition-old(root) { animation-name: vt-out-soft; }
-::view-transition-new(root) { animation-name: vt-in-soft; }
-@keyframes vt-out-soft { to { opacity: 0; transform: scale(.985); } }
-@keyframes vt-in-soft { from { opacity: 0; transform: scale(1.012); } }
-@media (prefers-reduced-motion: reduce) { html:not([data-motion="on"])::view-transition-old(root), html:not([data-motion="on"])::view-transition-new(root) { animation: none; } }
+/* 页面切换：V1.8.2 跨页扫场 / 语言遮罩 / 同文档 View Transition 统一在 css/page-fx.css */
 /* 语音输入球体：录音时替换麦克风图标，--lvl 由 ui-speech.js 按音量写入 */
 /* 语音球：无论有没有麦克风音量，都持续动画（呼吸缩放 + 内部渐变旋转 + 外圈波纹）；音量只叠加在缩放上 */
 .voice-orb { display: none; position: relative; width: 20px; height: 20px; border-radius: 50%; pointer-events: none; isolation: isolate;

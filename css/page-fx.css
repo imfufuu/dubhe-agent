@@ -1,0 +1,82 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   V1.8.2 · 跨页 / 跨主题过渡层（index.html、docs.html、app.html、demo 卡片共用）
+
+   ① theme-boot：首帧锁死颜色插值 —— 深色偏好「传递」到另一页时不再出现浅色底缓慢变暗。
+   ② 整页遮罩两层同源：语言切换 = 渐隐到主题底色再渐显（深色渐黑到底）；
+      页面切换 = 同一块遮罩做斜向扫场，前进从左往右盖住、揭开，后退方向相反。
+   ③ 为什么跨页不用 @view-transition{navigation:auto}：
+      落地页与应用页都在 <meta http-equiv="Content-Security-Policy"> 里下发 CSP（P1-4 加固），
+      而 Chromium 对「用 meta 下发 CSP 的文档」直接拒绝 view-transition meta 的跨文档 opt-in，
+      过渡会被 abort 并在控制台抛 "Transition was aborted because of invalid state.
+      ViewTransition opt-in disabled"（实测：删掉 CSP meta 立刻恢复）。
+      所以跨页统一走本文件的扫场，四页观感一致；@view-transition 那条规则不写，
+      ::view-transition 系列样式保留给「同文档」过渡（文档页四个分区）使用。
+   本文件必须在 home.css / styles.css 之后加载（同权重时以本文件为准）。
+   ───────────────────────────────────────────────────────────────────────────── */
+:root {
+  --fx-veil: #ffffff;
+  --fx-edge: rgba(154, 140, 240, .55);
+  --fx-wipe-out: .3s;                               /* 离开：扫场盖满 */
+  --fx-wipe-in: .52s;                               /* 入场：扫场揭开 */
+  --fx-vt: .46s;                                    /* 同文档 View Transition 时长 */
+  --fx-ease: cubic-bezier(.32, .72, 0, 1);
+  --fx-film: cubic-bezier(.16, 1, .3, 1);
+}
+html[data-theme="dark"] { --fx-veil: #000000; --fx-edge: rgba(150, 138, 245, .4); }   /* 深色：渐黑到底 */
+
+/* ① 首帧不插值：js/theme-boot.js 加类，两帧后移除（之后手动切外观依旧是平滑的颜色插值） */
+html.theme-boot, html.theme-boot *, html.theme-boot *::before, html.theme-boot *::after {
+  transition: none !important;
+}
+
+/* ② 语言切换用的真实遮罩：定位与配色都写在 CSS 里（落地页 CSP 是 style-src 'self'，
+      用 style 属性设遮罩会被整条丢掉，于是切换变成硬切 —— 这是本次修的根因之一） */
+.page-veil {
+  position: fixed; inset: 0; z-index: 2147483000;
+  background: var(--fx-veil); pointer-events: none; opacity: 0; will-change: opacity;
+}
+
+/* ② 页面切换用的扫场：<html> 的 ::before，零 JS、首帧即可播放，
+      所以新页面不会先露出一帧再被盖住。比视口左右各宽 20vw，柔光边留在视口外，
+      扫到正中时整屏是不透明的主题色（换页过程完全看不见）。 */
+html.fx-leaving::before, html.fx-entering::before {
+  content: ""; position: fixed; top: 0; bottom: 0; left: -20vw; right: -20vw;
+  z-index: 2147483000; pointer-events: none; will-change: transform;
+  background: linear-gradient(to right, var(--fx-veil) 0 calc(100% - 16vw), var(--fx-edge) calc(100% - 7vw), transparent 100%);
+}
+html.fx-leaving::before { transform: translateX(-101%); animation: fx-wipe-cover var(--fx-wipe-out) var(--fx-ease) forwards; }
+html.fx-entering::before { animation: fx-wipe-reveal var(--fx-wipe-in) var(--fx-film) forwards; }
+html.fx-leaving.fx-back::before, html.fx-entering.fx-back::before {
+  background: linear-gradient(to left, var(--fx-veil) 0 calc(100% - 16vw), var(--fx-edge) calc(100% - 7vw), transparent 100%);
+}
+html.fx-leaving.fx-back::before { transform: translateX(101%); animation-name: fx-wipe-cover-rev; }
+html.fx-entering.fx-back::before { animation-name: fx-wipe-reveal-rev; }
+html.fx-leaving { cursor: progress; }
+@keyframes fx-wipe-cover { from { transform: translateX(-101%); } to { transform: translateX(0); } }
+@keyframes fx-wipe-reveal { from { transform: translateX(0); } to { transform: translateX(101%); } }
+@keyframes fx-wipe-cover-rev { from { transform: translateX(101%); } to { transform: translateX(0); } }
+@keyframes fx-wipe-reveal-rev { from { transform: translateX(0); } to { transform: translateX(-101%); } }
+
+/* ③ 同文档 View Transition（文档页四个分区）：旧内容轻轻化开，新内容由远及近。
+      混合模式必须改回 normal：默认的 plus-lighter 会在深底上闪出一片白。 */
+::view-transition-image-pair(root) { isolation: auto; }
+::view-transition-old(root), ::view-transition-new(root) {
+  mix-blend-mode: normal; animation-duration: var(--fx-vt); animation-timing-function: var(--fx-ease);
+}
+::view-transition-old(root) { z-index: 2; transform-origin: 50% 44%; animation-name: fx-vt-out; }
+::view-transition-new(root) { z-index: 1; transform-origin: 50% 56%; animation-name: fx-vt-in; }
+@keyframes fx-vt-out {
+  from { opacity: 1; transform: none; filter: blur(0); }
+  to { opacity: 0; transform: scale(.978); filter: blur(4px); }
+}
+@keyframes fx-vt-in { from { transform: scale(1.022); } to { transform: none; } }
+
+/* 减弱动效：系统偏好或应用内「关」——遮罩与快照全部定格，跳转照常完成 */
+@media (prefers-reduced-motion: reduce) {
+  html:not([data-motion="on"]) .page-veil { display: none; }
+  html:not([data-motion="on"])::view-transition-old(root), html:not([data-motion="on"])::view-transition-new(root) { animation: none; }
+  html:not([data-motion="on"]).fx-leaving::before, html:not([data-motion="on"]).fx-entering::before { animation: none; opacity: 0; }
+}
+html[data-motion="off"] .page-veil { display: none; }
+html[data-motion="off"]::view-transition-old(root), html[data-motion="off"]::view-transition-new(root) { animation: none; }
+html[data-motion="off"].fx-leaving::before, html[data-motion="off"].fx-entering::before { animation: none; opacity: 0; }

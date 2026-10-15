@@ -13,7 +13,7 @@
     "test:server": "python3 tests/server_checks.py",
     "test:all": "node tools/run-tests.mjs"
   },
-  "version": "1.8.1",
+  "version": "1.8.2",
   "dependencies": {
     "html2canvas": "1.4.1",
     "jsdom": "^29.1.1"
