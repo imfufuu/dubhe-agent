@@ -351,12 +351,43 @@ function userTextParts(m) {
   return parts;
 }
 
-export function buildOpenAIMessages(messages, { includeReasoning = false } = {}) {
+// 请求体里不能出现「空 assistant」。agent 先 push 一条占位 assistant 供流式回填，再构建请求——
+// 旧版把这条占位原样发出，于是每个请求都以 `{role:'assistant', content:''}` 结尾。
+// DeepSeek V4（TeamoRouter 实测）会把它当作「预填续写」，直接跳过思考：reasoning_tokens 恒为 0，
+// 第一轮、第二轮都看不到思考过程；Claude 也会把末尾 assistant 当 prefill。
+// 判定：无正文、无工具调用、无思考产出 → 不进请求；末尾无正文且无工具调用的 assistant 也一并去掉
+// （末尾 assistant 只可能是占位，续写路径会在其后追加 user 提示）。
+export function isEmptyAssistantMessage(m) {
+  return !!m && m.role === 'assistant'
+    && !(Array.isArray(m.toolCalls) && m.toolCalls.length)
+    && !String(m.text == null ? '' : m.text).trim()
+    && !(typeof m.reasoning === 'string' && m.reasoning.trim())
+    && !(Array.isArray(m.thinkingBlocks) && m.thinkingBlocks.length);
+}
+export function stripEmptyAssistantMessages(messages) {
+  const out = (Array.isArray(messages) ? messages : []).filter((m) => !isEmptyAssistantMessage(m));
+  while (out.length) {
+    const last = out[out.length - 1];
+    if (!last || last.role !== 'assistant' || (Array.isArray(last.toolCalls) && last.toolCalls.length) || String(last.text == null ? '' : last.text).trim()) break;
+    out.pop();
+  }
+  return out;
+}
+
+// includeReasoning：DeepSeek / GLM 思考模式需要回传历史 reasoning_content。
+// fillMissingReasoning：DeepSeek 官方文档要求「带 tools 的请求必须回传全部历史轮次的 reasoning_content」，
+// 缺字段会 400；历史里没有思考的 assistant（本轮模型自主未思考、旧会话、换过模型）补空字符串占位。
+export function buildOpenAIMessages(messages, { includeReasoning = false, fillMissingReasoning = false } = {}) {
+  const reasoningOf = (m) => {
+    if (!includeReasoning) return {};
+    if (typeof m.reasoning === 'string') return { reasoning_content: m.reasoning };
+    return fillMissingReasoning ? { reasoning_content: '' } : {};
+  };
   return messages.map((m) => {
     if (m.role === 'assistant' && m.toolCalls && m.toolCalls.length) {
       return {
         role: 'assistant',
-        ...(includeReasoning && typeof m.reasoning === 'string' ? { reasoning_content: m.reasoning } : {}),
+        ...reasoningOf(m),
         content: m.text || null,
         tool_calls: m.toolCalls.map((t) => ({
           id: t.id, type: 'function',
@@ -370,7 +401,7 @@ export function buildOpenAIMessages(messages, { includeReasoning = false } = {})
     if (m.role === 'user' && m.attachments && m.attachments.length) {
       return { role: 'user', content: userTextParts(m) };
     }
-    return { role: m.role, content: m.text, ...(includeReasoning && m.role === 'assistant' && typeof m.reasoning === 'string' ? { reasoning_content: m.reasoning } : {}) };
+    return { role: m.role, content: m.text, ...(m.role === 'assistant' ? reasoningOf(m) : {}) };
   });
 }
 
@@ -441,7 +472,7 @@ export async function streamChat({ model, apiKey, messages, tools, fastMode = fa
   const protocol = protocolOf(model);
   const level = normalizeReasoningLevel(reasoningLevel);
   const wantThinking = thinking && !thinkingUnsupported.has(model);
-  const requestMessages = withReasoningStrategy(messages, { thinking, level });
+  const requestMessages = withReasoningStrategy(stripEmptyAssistantMessages(messages), { thinking, level });
   const tempInfo = typeof temperature === 'number'
     ? { temperature, profile: 'custom', label: `T=${temperature}` }
     : resolveTemperature({ messages, plan, iteration, phase, subagentId });
@@ -483,7 +514,7 @@ export async function streamChat({ model, apiKey, messages, tools, fastMode = fa
       if (p.system) body.system = p.system;
       if (allowTemp) body.temperature = tempInfo.temperature;
     } else {
-      body = { model, stream: true, stream_options: { include_usage: true }, messages: buildOpenAIMessages(requestMessages, { includeReasoning: thinking && /^(deepseek|glm)/i.test(model) }) };
+      body = { model, stream: true, stream_options: { include_usage: true }, messages: buildOpenAIMessages(requestMessages, { includeReasoning: thinking && /^(deepseek|glm)/i.test(model), fillMissingReasoning: withThinking && /^deepseek/i.test(model) && !!(tools && tools.length) }) };
       if (allowTemp) body.temperature = tempInfo.temperature;
       if (fastMode) body.service_tier = 'fast'; // TeamoRouter Fast mode（GPT 系列）
     }

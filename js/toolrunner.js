@@ -21,12 +21,14 @@ import {
 import { buildCheckpoint, diffFileState, digestArtifact } from './recovery.js?v=2026.10.11.1';
 import { operationKey, planReplay, digestResultText } from './idempotency.js?v=2026.10.11.1';
 import { toolName } from './executionContext.js?v=2026.10.11.1';
+import { skillToolsFromResult } from './skill-library.js';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // 一次委派最多并发几个子智能体（再高就是自己跟自己抢网关并发额度了）
 const DISPATCH_CONCURRENCY = 3;
 // 只读 / 无共享可变状态的工具可以并发（Hermes ThreadPoolExecutor 的浏览器等价物）。
 // 写沙箱、跑代码、生图、git 仍串行，避免交错后说不清基于哪一版文件。
+export const SKILL_CALLS_PER_TURN = 6;
 export const PARALLEL_TOOLS = new Set(PARALLEL_TOOL_NAMES); // Helix 3.0：由能力登记处派生（capabilities.js parallel 位 + 旧别名）
 const hasBadArgs = (call) => !!(call && call.args && typeof call.args === 'object' && '__raw' in call.args);
 
@@ -258,6 +260,39 @@ export function createToolRunner({ store, emit, getFs, runSubagent } = {}) {
     const out = new Array(calls.length);
     const waveRuns = [];
     const toolDefByName = new Map(exec.toolList.map((t) => [t.name, t]));
+    // 技能库防死循环：读完技能 → 把它列出的工具挂进本轮工具表并给出明确下一步；只读调用同轮重复时回放完整结果
+    // （旧版只回「幂等复用 + 摘要」，模型拿不到技能正文，于是反复 search / read 同一技能、始终不动手）。
+    exec.skillsRead ||= new Map();
+    exec.pureResults ||= new Map();
+    const skillFollowUp = (result) => {
+      const info = skillToolsFromResult(result);
+      if (!info) {
+        const read = [...exec.skillsRead.keys()];
+        return read.length ? `\n\n[执行内核] 本轮已读取过技能 ${read.join('、')}（正文在上文，所需工具已挂载）；不要重复检索，直接调用工具完成任务。` : '';
+      }
+      exec.skillsRead.set(info.id, info.tools);
+      const mounted = [];
+      for (const name of info.tools) {
+        const def = !toolDefByName.has(name) && exec.deferredTools instanceof Map ? exec.deferredTools.get(name) : null;
+        if (!def) continue; // 能力掩码裁掉的工具不在 deferredTools 里：绝不复活
+        exec.deferredTools.delete(name);
+        if (!exec.toolList.some((t) => t && t.name === name)) exec.toolList.push(def);
+        toolDefByName.set(name, def);
+        const pending = exec.toolSelection && exec.toolSelection.deferred;
+        const at = Array.isArray(pending) ? pending.findIndex((d) => d && d.name === name) : -1;
+        if (at >= 0) pending.splice(at, 1);
+        mounted.push(name);
+      }
+      if (mounted.length) exec.machine.audit.record('tool-skill-mount', { skill: info.id, tools: mounted });
+      const usable = info.tools.filter((n) => toolDefByName.has(n));
+      return usable.length ? `\n\n[执行内核] 技能 ${info.id} 已加载${mounted.length ? `，所需工具 ${mounted.join('、')} 已挂载到本轮工具表` : ''}。下一步直接调用 ${usable[0]} 完成任务，不要再检索或重复读取本技能。` : '';
+    };
+    const rememberPure = (key, result, fsAfterDigest) => {
+      const text = String(result == null ? '' : result);
+      if (text.length > 24000) return;
+      exec.pureResults.set(key, { text, fs: fsAfterDigest });
+      while (exec.pureResults.size > 48) exec.pureResults.delete(exec.pureResults.keys().next().value);
+    };
     if (exec.machine.canTransition(EXECUTION_STATES.TOOL_PENDING)) {
       exec.machine.transition(EXECUTION_STATES.TOOL_PENDING, `模型请求 ${calls.length} 次工具调用`, { tools: calls.map((c) => c.name) });
     }
@@ -299,6 +334,18 @@ export function createToolRunner({ store, emit, getFs, runSubagent } = {}) {
           risk: { level: 'L0', levelLabel: '未执行', reasons: ['工具本轮未启用'], hasExternalSideEffect: false, irreversible: false, requiresConfirmation: false },
         });
         return `该工具本轮未启用，可用 execute_javascript 完成；内核已临时挂载 ${call.name}，如确需也可直接重试一次。`;
+      }
+
+      // ①b 技能库调用上限：技能正文都在上文，第 7 次起不再执行，逼模型动手或如实说明阻碍
+      if (call.name === 'skill_library' && (exec.skillCalls = (exec.skillCalls || 0) + 1) > SKILL_CALLS_PER_TURN) {
+        emit('onToolEvent', call, { status: 'error', note: '技能检索次数已达上限' });
+        recordBlocked(call, {
+          reason: `本轮 skill_library 已调用 ${SKILL_CALLS_PER_TURN} 次`,
+          failure: { kind: 'PERMISSION', label: '检索次数上限', handling: '不执行：技能内容已在上文', retryable: false, maxRetries: 0, verifyFirst: false, guidance: '停止检索，直接调用已挂载的工具完成任务。' },
+          risk: { level: 'L0', levelLabel: '未执行', reasons: ['技能检索次数上限'], hasExternalSideEffect: false, irreversible: false, requiresConfirmation: false },
+        });
+        const read = [...exec.skillsRead.entries()].map(([id, tools]) => `${id}（${tools.join('、') || '-'}）`).join('；');
+        return `⛔ 执行内核：本轮 skill_library 已调用 ${SKILL_CALLS_PER_TURN} 次，不再执行。${read ? `已读取：${read}，正文都在上文。` : ''}停止检索/读取，直接调用工具完成任务；确实无法完成就向用户说明阻碍。`;
       }
 
       // ① 参数 JSON 都没解析出来 → 回喂纠错，绝不产生副作用（不进契约层）
@@ -375,6 +422,13 @@ export function createToolRunner({ store, emit, getFs, runSubagent } = {}) {
         exec.machine.audit.record('idempotency-replay', {
           name: call.name, key: pre.idempotencyKey, entryStatus: ledgerEntry.status, decision: replay.decision, reason: replay.reason,
         });
+        // 只读调用的同轮复用以「文件系统没变」为前提：中途有写入（如先 read 再改再 read）→ 当作新调用重跑，不回放旧内容
+        const pureHit = replay.decision === 'reuse' && ledgerEntry.status !== 'in-flight' && exec.pureResults.get(opKey);
+        if (pureHit && pureHit.fs !== fsDigest(fs.export()).digest) {
+          exec.pureResults.delete(opKey);
+          replay.decision = 'allow';
+          replay.reason = '同轮只读调用之后文件系统已变化，按新调用重新执行';
+        }
         if (replay.decision === 'reuse' && ledgerEntry.status === 'in-flight' && exec.inflight.has(opKey)) {
           const shared = await exec.inflight.get(opKey);
           const run0 = exec.machine.beginToolRun({ callId: call.id, name: call.name, args: call.args, reason: `并发同键调用：复用同一次执行（${replay.reason}）`, risk, idempotencyKey: pre.idempotencyKey });
@@ -387,6 +441,10 @@ export function createToolRunner({ store, emit, getFs, runSubagent } = {}) {
           const run1 = exec.machine.beginToolRun({ callId: call.id, name: call.name, args: call.args, reason: `幂等复用：${replay.reason}`, risk, idempotencyKey: pre.idempotencyKey });
           exec.machine.endToolRun(run1, { status: 'succeeded', notes: ['idempotent-reuse'] });
           waveRuns.push(run1);
+          const cached = pre.contract && pre.contract.sideEffect === 'none' ? exec.pureResults.get(opKey) : null;
+          if (cached) {
+            return `[执行内核 · 幂等复用] 同一轮内已执行过完全相同的只读调用，下面原样附上次结果；不要再次调用，直接进入下一步。\n${cached.text}${call.name === 'skill_library' ? skillFollowUp(cached.text) : ''}`;
+          }
           return `[执行内核 · 幂等复用] ${replay.reason}。${replay.guidance || ''}${ledgerEntry.resultDigest ? `（上次结果摘要 ${ledgerEntry.resultDigest}）` : ''}`;
         }
         if (replay.decision === 'verify-first' || replay.decision === 'block') {
@@ -650,6 +708,8 @@ export function createToolRunner({ store, emit, getFs, runSubagent } = {}) {
       }
       if (risk.level === 'L3') notes += `\n\n[执行内核] 本次操作风险等级 L3（${risk.levelLabel}）：${risk.reasons.join('；')}`;
       if (retryNote) notes += retryNote;
+      if (status === 'succeeded' && pre.contract && pre.contract.sideEffect === 'none') rememberPure(opKey, result, fsAfter.digest);
+      if (status === 'succeeded' && call.name === 'skill_library') notes += skillFollowUp(result);
       const left = exec.budgetGov.remaining('toolCalls');
       if (Number.isFinite(left) && left <= 1) notes += `\n\n⚠️ 执行内核：本轮工具调用预算即将用尽（剩余 ${left}），后续调用会被拒绝，请尽快收敛结论。`;
       return `${String(result)}${notes}`;

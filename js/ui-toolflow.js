@@ -25,7 +25,7 @@ export function paintOrderedAssistant(wrap, m, { paintPart, paintMeta, paintFoot
         row.dataset.ownerId = m.id;
         row.dataset.family = part.kind;
         const last = index === rows.length - 1;
-        paintPart(row, { ...m, ...part, _displayFragment: true,
+        paintPart(row, { ...m, ...part, _displayFragment: true, _partIndex: index,
           done: last ? m.done : true, thinkDone: m.done, cancelled: last && m.cancelled, error: last ? m.error : null,
           publicPlan: index === 0 ? m.publicPlan : null,
           reasoning: index === 0 ? m.reasoning : '', thoughtHidden: index === 0 && m.thoughtHidden,

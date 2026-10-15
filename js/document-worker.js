@@ -77,14 +77,15 @@ async function createDocx(data, files) {
   load('docx-9.5.1.js'); const d = self.docx;
   const children = [];
   if (data.title) children.push(new d.Paragraph({ text: safeText(data.title), heading: d.HeadingLevel.TITLE }));
+  const table = (t) => new d.Table({ width: { size: 100, type: d.WidthType.PERCENTAGE }, rows: array(t.rows, 200).map((row, i) => new d.TableRow({ tableHeader: i === 0, children: array(row, 20).map(cell => new d.TableCell({ children: [new d.Paragraph({ children: [new d.TextRun({ text: safeText(cell, 5000), bold: i === 0 })] })] })) })) });
+  let inlineTables = 0;
   for (const p of array(data.paragraphs || [], 1000)) {
     const v = typeof p === 'string' ? { text: p } : p;
+    // 段落里内联的表格：落在所在小节下面，而不是统一堆到文末
+    if (v && v.table && typeof v.table === 'object') { if (++inlineTables > 30) throw Error('At most 30 inline tables'); children.push(table(v.table), new d.Paragraph({ text: '' })); continue; }
     children.push(new d.Paragraph({ children: [new d.TextRun({ text: safeText(v.text), bold: !!v.bold })], ...(v.heading ? { heading: d.HeadingLevel['HEADING_' + Math.max(1, Math.min(3, Number(v.heading) || 1))] } : {}), ...(v.bullet ? { bullet: { level: 0 } } : {}), spacing: { after: 140 } }));
   }
-  for (const t of array(data.tables || [], 30)) {
-    const rows = array(t.rows, 200);
-    children.push(new d.Table({ width: { size: 100, type: d.WidthType.PERCENTAGE }, rows: rows.map((row, i) => new d.TableRow({ tableHeader: i === 0, children: array(row, 20).map(cell => new d.TableCell({ children: [new d.Paragraph({ children: [new d.TextRun({ text: safeText(cell, 5000), bold: i === 0 })] })] })) })) }));
-  }
+  for (const t of array(data.tables || [], 30)) children.push(table(t));
   for (const spec of array(data.images || [], 20)) {
     const img = image(files, spec);
     children.push(new d.Paragraph({ children: [new d.ImageRun({ type: img.type, data: img.bytes, transformation: { width: Math.max(1, Math.min(600, Number(spec.width) || 450)), height: Math.max(1, Math.min(700, Number(spec.height) || 300)) }, altText: { title: safeText(spec.alt || 'Image'), description: safeText(spec.alt || 'Image'), name: spec.path } })] }));

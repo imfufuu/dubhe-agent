@@ -10,7 +10,8 @@ import { installSpeechInput } from './ui-speech.js';
 import { createToolPresentation, presentationCallSettled, turnToolResults } from './toolpresentation.js?v=2026.10.11.1';
 import { paintEditFoldContent, syncEditingFold } from './ui-editpreview.js?v=2026.10.11.1';
 import { paintOrderedAssistant, renderToolChipDetail, paintCommandRows, ownerOfTool, paintVisibleTurn, activeToolOwner } from './ui-toolflow.js?v=2026.10.11.1';
-import { adjacentToolMessages, appendToolStream, toolFamily } from './toolflow.js?v=2026.10.11.1';
+import { adjacentToolMessages, appendToolStream, toolFamily, commandRunFor } from './toolflow.js?v=2026.10.11.1';
+import { createRollbackFx } from './ui-rollback-fx.js?v=2026.10.11.1';
 // ─── UI 层：渲染 / 交互 / 动画 ─────────────────────────────────────────
 import { providerOf, supportsFastMode, DEFAULT_IMAGE_MODEL, APP_VERSION, APP_RELEASE } from './config.js?v=2026.10.11.1';
 import { isSmartRouter, ROUTER_ICON_SVG, SMART_ROUTER_LABEL, modelDisplayName } from './smartrouter.js?v=2026.10.11.1';
@@ -753,13 +754,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
   // ── 回滚撤销浮条（对话区内，回滚后出现 8 秒）+ 粒子粉碎动画（Requirement 6）──
   const undoPill = $('#undo-pill');
   let undoTimer = null;
-  let activeRollbackAnim = null;
-  function cancelRollbackAnim() {
-    if (activeRollbackAnim && typeof activeRollbackAnim.cancel === 'function') {
-      activeRollbackAnim.cancel();
-    }
-    activeRollbackAnim = null;
-  }
+  const { disintegrateMessageNodes, cancel: cancelRollbackAnim } = createRollbackFx(msgList);
   function showUndoPill() {
     undoPill.classList.add('show');
     clearTimeout(undoTimer);
@@ -770,146 +765,6 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     undoPill.classList.remove('show');
     if (store.undoRollback()) { rebuildMessages(); renderSessions(); updateStats(); toast('已撤销回滚'); }
   });
-  function disintegrateMessageNodes(nodes, onDone) {
-    cancelRollbackAnim();
-    const list = (nodes || []).filter((n) => n && n.isConnected);
-    const reduced = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (!list.length || reduced || typeof HTMLCanvasElement === 'undefined') {
-      onDone && onDone();
-      return;
-    }
-    const hostRect = msgList.getBoundingClientRect();
-    if (!(hostRect.width > 0 && hostRect.height > 0)) {
-      onDone && onDone();
-      return;
-    }
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
-    const canvas = document.createElement('canvas');
-    canvas.className = 'rollback-particle-canvas';
-    canvas.style.cssText = `position:fixed;left:${hostRect.left}px;top:${hostRect.top}px;width:${hostRect.width}px;height:${hostRect.height}px;pointer-events:none;z-index:60;`;
-    canvas.width = Math.round(hostRect.width * dpr);
-    canvas.height = Math.round(hostRect.height * dpr);
-    document.body.appendChild(canvas);
-    const ctx = canvas.getContext && canvas.getContext('2d');
-    if (!ctx) {
-      canvas.remove();
-      onDone && onDone();
-      return;
-    }
-    ctx.scale(dpr, dpr);
-    const dark = document.documentElement.dataset.theme === 'dark';
-    // 小黑色微粒调色盘：高精细度墨黑/炭黑/石墨微尘（深色模式下混入少量深灰炭粒保证清晰层次）
-    const BLACK_MICRO_PALETTE = dark
-      ? ['#09090b', '#111110', '#18181b', '#27272a', '#3f3f46', '#52525b', '#71717a']
-      : ['#050505', '#09090b', '#111110', '#18181b', '#27272a', '#3f3f46', '#52525b'];
-    const particles = [];
-    for (const node of list) {
-      const r = node.getBoundingClientRect();
-      node.style.height = `${r.height}px`;
-      node.classList.add('msg-disintegrating');
-      const relX = r.left - hostRect.left;
-      const relY = r.top - hostRect.top;
-      const w = Math.max(40, Math.min(r.width, hostRect.width));
-      const h = Math.max(24, Math.min(r.height, hostRect.height));
-      if (relY + r.height < -40 || relY > hostRect.height + 40) continue;
-      const area = w * h;
-      // 提升粒子密度与空间采样精细度（分层网格抖动采样 + 微米级墨粒尺寸 0.65px ~ 2.2px）
-      const count = Math.max(260, Math.min(720, Math.round(area / 92)));
-      const cols = Math.max(12, Math.round(Math.sqrt(count * (w / Math.max(1, h)))));
-      const rowsGrid = Math.max(6, Math.ceil(count / cols));
-      const cellW = w / cols;
-      const cellH = h / rowsGrid;
-      for (let i = 0; i < count; i++) {
-        const gx = i % cols;
-        const gy = Math.floor(i / cols) % rowsGrid;
-        const px = relX + (gx + 0.15 + Math.random() * 0.7) * cellW;
-        const py = Math.max(0, Math.min(hostRect.height, relY + (gy + 0.15 + Math.random() * 0.7) * cellH));
-        const wave = ((px - relX) / Math.max(1, w)) * 0.44 + ((py - relY) / Math.max(1, h)) * 0.2;
-        const angle = (Math.random() - 0.5) * Math.PI * 1.35 - Math.PI * 0.32;
-        const speed = 22 + Math.random() * 84;
-        particles.push({
-          x: px,
-          y: py,
-          vx: Math.cos(angle) * speed + (Math.random() - 0.34) * 36,
-          vy: Math.sin(angle) * speed - (16 + Math.random() * 42),
-          size: 0.65 + Math.random() * 1.55,
-          rot: Math.random() * Math.PI * 2,
-          vrot: (Math.random() - 0.5) * 11,
-          phase: Math.random() * Math.PI * 2,
-          delay: wave * 210 + Math.random() * 55,
-          life: 460 + Math.random() * 260,
-          color: BLACK_MICRO_PALETTE[i % BLACK_MICRO_PALETTE.length],
-          grainKind: i % 4, // 0,1: 极细圆点墨尘；2: 微矩炭粒；3: 锐利微晶碎屑
-        });
-      }
-    }
-    const t0 = performance.now();
-    let lastT = t0;
-    let rafId = 0;
-    let finished = false;
-    const finish = (runCallback) => {
-      if (finished) return;
-      finished = true;
-      if (rafId) cancelAnimationFrame(rafId);
-      canvas.remove();
-      if (activeRollbackAnim && activeRollbackAnim.canvas === canvas) activeRollbackAnim = null;
-      if (runCallback && onDone) onDone();
-    };
-    activeRollbackAnim = { canvas, cancel: () => finish(false) };
-    const tick = (now) => {
-      if (finished) return;
-      const dt = Math.min(0.05, Math.max(0.001, (now - lastT) / 1000));
-      lastT = now;
-      const elapsed = now - t0;
-      ctx.clearRect(0, 0, hostRect.width, hostRect.height);
-      let alive = 0;
-      for (const p of particles) {
-        const local = elapsed - p.delay;
-        if (local < 0) { alive++; continue; }
-        const prog = local / p.life;
-        if (prog >= 1) continue;
-        alive++;
-        // 微湍流旋涡扰动 + 轻盈上浮墨尘感
-        const turbX = Math.sin(prog * 8.5 + p.phase) * 20;
-        const turbY = Math.cos(prog * 6.5 + p.phase) * 12;
-        p.x += (p.vx + turbX) * dt;
-        p.y += (p.vy + turbY) * dt;
-        p.vy -= 24 * dt;
-        p.vx *= (1 - 1.05 * dt);
-        p.rot += p.vrot * dt;
-        const alpha = Math.max(0, (1 - prog) * (1 - prog * 0.58));
-        const s = Math.max(0.35, p.size * (1 - prog * 0.42));
-        ctx.save();
-        ctx.globalAlpha = alpha;
-        ctx.translate(p.x, p.y);
-        ctx.fillStyle = p.color;
-        if (p.grainKind <= 1) {
-          ctx.beginPath();
-          ctx.arc(0, 0, s * 0.68, 0, Math.PI * 2);
-          ctx.fill();
-        } else if (p.grainKind === 2) {
-          ctx.rotate(p.rot);
-          ctx.fillRect(-s * 0.55, -s * 0.55, s * 1.1, s * 1.1);
-        } else {
-          ctx.rotate(p.rot);
-          ctx.beginPath();
-          ctx.moveTo(-s * 0.85, -s * 0.45);
-          ctx.lineTo(s * 0.95, -s * 0.15);
-          ctx.lineTo(s * 0.3, s * 0.9);
-          ctx.lineTo(-s * 0.65, s * 0.55);
-          ctx.closePath();
-          ctx.fill();
-        }
-        ctx.restore();
-      }
-      if (alive > 0 && elapsed < 780) {
-        rafId = requestAnimationFrame(tick);
-      } else {
-        finish(true);
-      }
-    };
-    rafId = requestAnimationFrame(tick);
-  }
   function doRollback(m) {
     if (getBusy()) return toast('请等待当前回合结束');
     if (!confirm('回滚到本轮对话之前？该轮及其后的消息将被移除（可撤销）。')) return;
@@ -1198,6 +1053,10 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     if (m.toolCalls && m.toolCalls.length) { foot.hidden = true; foot.textContent = ''; return; }
     const bits = [];
     if (m.reasoningLevel && m.reasoningLevel !== 'off') bits.push(reasoningLevelLabel(m.reasoningLevel));
+    // 发了思考参数、整轮却没有任何思考产出（DeepSeek V4 等会对简单任务自主跳过）：如实标注，不让人以为参数没发
+    const all = store.state.messages, at = all.findIndex((x) => x.id === m.id), [lo] = turnRange(all, at < 0 ? all.length - 1 : at);
+    const noThought = bits.length && !all.slice(lo, at + 1).some((x) => x.role === 'assistant' && (x.reasoning || x.thoughtHidden || x.usage?.reasoning || x.thinkingBlocks?.length));
+    if (noThought) bits.push('未思考');
     const clock = m.durationMs != null ? fmtClock(m.durationMs) : '';
     const ago = m.ts ? fmtAgo(m.ts) : '';
     const time = [clock, ago].filter(Boolean).join(' | ');
@@ -1207,7 +1066,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     if (!line) { foot.hidden = true; foot.textContent = ''; return; }
     foot.hidden = false;
     foot.textContent = line;
-    foot.title = m.reasoningLevel === 'off' ? '本轮思考 Off' : (m.ts ? new Date(m.ts).toLocaleString() : '');
+    foot.title = m.reasoningLevel === 'off' ? '本轮思考 Off' : (noThought ? '已发送思考参数，模型本轮自主判定无需思考' : (m.ts ? new Date(m.ts).toLocaleString() : ''));
   }
   const BUDGET_CHANNEL_LABEL = { toolCalls: '工具调用', retries: '重试次数', durationMs: '墙钟时长', parallelTasks: '并发任务', memoryWrites: '记忆写入', externalSideEffects: '外部副作用', tokens: 'Token 消耗' };
 
@@ -1335,6 +1194,9 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
 
   // 2026.10.9.1（第 4 条）：详情 = COMMAND / STDOUT / STDERR 三窗口（见 toolwindows.js），每个窗口右上角一枚复制按钮。
   // 一条命令一个芯片（不再按工具名合并）；chip._win 保存三段原文，复制按钮直接读它，不从 DOM 里抠文本。
+  // 消息顶部是否会出现思考折叠行（与下方 showThink / hiddenThink / thinkPending 同口径）——它是命令合并的分隔
+  const reasoningVisible = (x) => x.reasoningLevel !== 'off' && !!(x.reasoning || x.thoughtHidden || x.usage?.reasoning || x.thinkingBlocks?.length
+    || (!(x.thinkDone ?? x.done) && getBusy() && !x.cancelled));
   function paintAssistant(wrap, m) {
     if (!m._displayFragment) {
       syncPresentationScope();
@@ -1360,7 +1222,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     const hiddenThink = thinkOn && !m.reasoning && (m.thoughtHidden || (m.usage && m.usage.reasoning) || (m.thinkingBlocks && m.thinkingBlocks.length));
     if (live && noOutputYet && !thinkOn) {
       // 连接动画：请求已发出但首字未到（网关排队 / TTFB 慢），明确提示当前状态
-      html += `<div class="connect-line"><span class="connect-ring" aria-hidden="true"></span><span>正在连接 <b class="mono">${esc(modelDisplayName(m.model || store.state.model))}</b>，等待首个响应…</span></div>`;
+      html += `<div class="connect-line"><span class="connect-dot" aria-hidden="true"></span><span>正在连接 <b class="mono">${esc(modelDisplayName(m.model || store.state.model))}</b>，等待首个响应…</span></div>`;
     }
     html += m.model === '__system__' ? sysReplyHtml(m.text) : renderMarkdown(m.text || '');
     if (live && !noOutputYet) html += '<span class="cursor"></span>';
@@ -1452,12 +1314,13 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     const chips = $('.tool-chips', wrap);
     const msgsAll = displayedMessages();
     const idxA = msgsAll.findIndex((x) => x.id === m.id);
-    const commandCallsOf = (msg) => ((msg && msg.toolCalls) || []).filter((t) => t && !FILE_FOLD_TOOLS.has(t.name));
-    const commandCluster = m._displayFragment ? [m] : adjacentToolMessages(msgsAll, m.id, (t) => !FILE_FOLD_TOOLS.has(t.name));
-    const laterHasCommands = commandCluster.length && commandCluster[commandCluster.length - 1].id !== m.id;
-    const mergedCalls = laterHasCommands ? [] : (commandCluster.length ? commandCluster : [m]).flatMap(commandCallsOf);
-    if (!m._displayFragment && !laterHasCommands) for (const x of commandCluster.slice(0, -1)) {
-      const w = msgNodes.get(x.id), oldChips = w && $('.tool-chips', w);
+    // 分开但连续的 Ran command 块（跨消息、中间没有任何可见内容）合并成一块，由最后一段承载
+    const ownCalls = ((m && m.toolCalls) || []).filter((t) => t && !FILE_FOLD_TOOLS.has(t.name));
+    const run = ownCalls.length ? commandRunFor(msgsAll, m.id, m._displayFragment ? (m._partIndex || 0) : 0, { reasoningVisible }) : null;
+    const mergedCalls = !run ? ownCalls : (run.isHost ? run.calls.filter((t) => t && !FILE_FOLD_TOOLS.has(t.name)) : []);
+    if (run?.isHost) for (const seg of run.segments.slice(0, -1)) {
+      const w = msgNodes.get(seg.id), frag = w && [...w.querySelectorAll('.assistant-fragment')].find((n) => n.dataset.part === String(seg.part));
+      const oldChips = w && $('.tool-chips', frag || w);
       if (oldChips?.firstChild) { oldChips.innerHTML = ''; oldChips.dataset.sig = ''; syncAssistantShell(w); }
     }
     // 2026.10.9.1（第 4 条）：每条调用各占一行、逐条可展开，不再合并成「某工具 ×N」
@@ -1742,7 +1605,15 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     if (!w || !w.classList.contains('msg-assistant')) return;
     const hasHead = !!$('.msg-head', w);
     const bodyEl = $('.md-body', w);
-    const hasFlow = !!w.querySelector(':scope > .assistant-flow');
+    // 流式分段：命令块被合并到后续消息后，原分段会变空——空分段隐藏，整条都空时与普通空壳一样折叠
+    let hasFlow = false;
+    for (const frag of w.querySelector(':scope > .assistant-flow')?.children || []) {
+      const b = frag.querySelector(':scope > .md-body');
+      const empty = !frag.querySelector(':scope > .reasoning, :scope > .explored-files, :scope > .edited-files')
+        && !frag.querySelector(':scope > .tool-chips')?.children.length && !(b && !b.classList.contains('empty') && b.innerHTML.trim());
+      frag.classList.toggle('frag-empty', empty);
+      hasFlow ||= !empty;
+    }
     const hasBody = hasFlow || !!(bodyEl && !bodyEl.classList.contains('empty') && String(bodyEl.innerHTML || '').trim());
     const hasReason = !!$('.reasoning', w);
     const chipsEl = $('.tool-chips', w);

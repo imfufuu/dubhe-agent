@@ -63,6 +63,9 @@ jobs:
       - name: Discoverable document skills and audio analysis
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/document-skills.test.mjs
+      - name: V1.8.1 fixes — thinking, command merge, skill loop, file tools
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/v181-fixes.test.mjs
 
       - name: '汇总测试计数（::notice:: + job summary）'
         if: ${{ !cancelled() }}

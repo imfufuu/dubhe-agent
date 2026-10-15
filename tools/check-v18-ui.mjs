@@ -101,14 +101,16 @@ for (const engine of (process.env.BROWSERS || 'chromium,webkit').split(',')) {
     assert.equal(await page.locator('.fv-static iframe').getAttribute('sandbox'),'');
     const frame=page.frameLocator('.fv-static iframe');await frame.locator('#safe').waitFor();assert.equal(await frame.locator('#safe').evaluate(n=>getComputedStyle(n).color),'rgb(20, 40, 60)');
     assert.equal(await frame.locator('script,iframe,[onclick]').count(),0);assert.equal(await page.evaluate(()=>globalThis.__pwned),undefined);checks++;
-    for(const mode of ['code','preview','split']){
-      await page.locator(`[data-view-mode="${mode}"]`).click();assert.equal(await page.locator('.fv-dual').getAttribute('data-mode'),mode);
-      assert.equal(await page.locator('.fv-code').isVisible(),mode!=='preview');assert.equal(await page.locator('.fv-static').isVisible(),mode!=='code');checks++;
+    // V1.8.1：并排模式已移除，只剩「代码 / 预览」，默认预览；两层交叉淡入（隐藏层 visibility:hidden）
+    assert.equal(await page.locator('[data-view-mode="split"]').count(),0);assert.equal(await page.locator('.fv-dual').getAttribute('data-mode'),'preview');
+    for(const mode of ['code','preview']){
+      await page.locator(`[data-view-mode="${mode}"]`).click();await page.waitForTimeout(350);assert.equal(await page.locator('.fv-dual').getAttribute('data-mode'),mode);
+      assert.equal(await page.locator('.fv-code').isVisible(),mode==='code');assert.equal(await page.locator('.fv-static').isVisible(),mode==='preview');checks++;
     }
     await page.screenshot({path:`/home/user/task4-${engine}-viewer.png`});
     await page.locator('#fv-close').click();await page.waitForFunction(()=>Math.abs(document.querySelector('#sandbox-panel').getBoundingClientRect().width-320)<.1);assert.equal(await page.locator('.fv-static iframe').count(),0);assert.ok(Math.abs(await page.locator('#sandbox-panel').evaluate(n=>n.getBoundingClientRect().width)-narrow)<.1);checks++;
     for (const path of ['shape.svg','encoded.svg']) {
-      await page.locator(`.ft-row[data-path="${path}"]`).click();await page.frameLocator('.fv-static iframe').locator('svg').waitFor();assert.match(await page.locator('.fv-code').innerText(),/<svg/);await page.locator('#fv-close').click();checks++;
+      await page.locator(`.ft-row[data-path="${path}"]`).click();await page.frameLocator('.fv-static iframe').locator('svg').waitFor();assert.match(await page.locator('.fv-code').textContent(),/<svg/);await page.locator('#fv-close').click();checks++;
     }
     for(const path of ['notes.txt','large.html']){await page.locator(`.ft-row[data-path="${path}"]`).click();assert.equal(await page.locator('.fv-modes').count(),0);assert.equal(await page.locator('.fv-static iframe').count(),0);await page.locator('#fv-close').click();checks++;}
     await page.locator('.ft-row[data-path="preview.html"]').click();await page.locator('[data-panel-tab="memory"]').click();assert.equal(await page.locator('#file-viewer').evaluate(n=>n.classList.contains('open')),false);assert.equal(await page.locator('.fv-static iframe').count(),0);checks++;

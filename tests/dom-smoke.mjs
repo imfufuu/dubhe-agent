@@ -207,7 +207,7 @@ click($('#attach-btn'));
 ok('点击附件按钮展开附件菜单', $('#attach-menu')?.hidden === false && $('#attach-btn')?.getAttribute('aria-expanded') === 'true');
 click($('#attach-btn'));
 ok('再次点击附件按钮收起附件菜单', $('#attach-menu')?.hidden === true && $('#attach-btn')?.getAttribute('aria-expanded') === 'false');
-const readUiSrc = () => ['js/ui.js', 'js/ui-common.js', 'js/ui-choices.js', 'js/ui-toolflow.js', 'js/ui-editpreview.js', 'js/ui-markdown.js', 'js/ui-model-picker.js', 'js/ui-popovers.js', 'js/ui-command-palette.js', 'js/ui-system-commands.js', 'js/ui-files-panel.js', 'js/ui-lightbox.js', 'js/ui-attachments.js', 'js/ui-capability.js', 'js/quickviz.js'].map((f) => fs.readFileSync(path.join(ROOT, f), 'utf8')).join('\n');
+const readUiSrc = () => ['js/ui.js', 'js/ui-common.js', 'js/ui-choices.js', 'js/ui-toolflow.js', 'js/ui-editpreview.js', 'js/ui-markdown.js', 'js/ui-model-picker.js', 'js/ui-popovers.js', 'js/ui-command-palette.js', 'js/ui-system-commands.js', 'js/ui-files-panel.js', 'js/ui-lightbox.js', 'js/ui-attachments.js', 'js/ui-capability.js', 'js/quickviz.js', 'js/ui-rollback-fx.js', 'js/ui-file-viewer.js'].map((f) => fs.readFileSync(path.join(ROOT, f), 'utf8')).join('\n');
 const photoEditorSource = readUiSrc();
 ok('保存后的相机照片回到 addFiles，普通附件 change 路径独立', /openPhotoEditor\(photo\)[\s\S]*?addFiles\(\[edited\]\)/.test(photoEditorSource) && /fileInput\.addEventListener\('change', \(\) => \{ addFiles\(fileInput\.files\)/.test(photoEditorSource));
 const photoMath = await import(path.join(ROOT, 'js/photo-editor.js'));
@@ -330,7 +330,7 @@ const waitMsg = store.pushMessage({ role: 'assistant', text: '', model: 'claude-
 ui.onAssistantStart(waitMsg);
 const waitWrap = window.document.querySelector(`.msg[data-id="${waitMsg.id}"]`);
 ok('显示「正在连接 claude-opus-5」', waitWrap.querySelector('.connect-line')?.textContent.includes('正在连接 claude-opus-5'), waitWrap.querySelector('.md-body')?.textContent);
-ok('首字等待提示恢复原始旋转圆环', !!waitWrap.querySelector('.connect-ring') && !waitWrap.querySelector('.connect-mark'));
+ok('首字等待提示为深色呼吸点', !!waitWrap.querySelector('.connect-dot') && !waitWrap.querySelector('.connect-ring, .connect-mark'));
 store.updateMessage(waitMsg.id, { text: '你好！', done: true });
 ui.onAssistantDone(waitMsg);
 ok('收到内容后连接动画消失', !waitWrap.querySelector('.connect-line'));
@@ -411,8 +411,8 @@ ui.rebuildMessages();
 console.log('\n④ 侧栏 Logo 不再自转');
 const logoRule = /\.logo-mark\s*\{[^}]*\}/.exec(cssText)?.[0] || '';
 ok('.logo-mark 无 animation', !/animation/.test(logoRule), logoRule.trim());
-ok('产品 Logo 全部静止，只有连接环旋转', /\.empty-logo svg\s*\{[^}]*animation: none/.test(cssText)
-  && /\.connect-ring\s*\{[^}]*animation: spin/.test(cssText)
+ok('产品 Logo 全部静止，只有连接呼吸点在动', /\.empty-logo svg\s*\{[^}]*animation: none/.test(cssText)
+  && /\.connect-dot\s*\{[^}]*animation: connectBreathe/.test(cssText)
   && !/@keyframes halfspin/.test(cssText));
 ok('index.html 侧栏 Logo 无内联动画', !/logo-mark[^>]*style="[^"]*animation/.test(html));
 

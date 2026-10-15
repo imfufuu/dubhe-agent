@@ -10,6 +10,9 @@ import { SANDBOX_STORAGE_CAP, sandboxQuotaLabel } from './storagefmt.js';
 import { pdfToImages } from './pdfpages.js';
 import { contentByteSize } from './sandbox.js';
 import { text as localeText } from './locale.js';
+import { renderMarkdown } from './ui-markdown.js?v=2026.10.11.1';
+import { readableFileText } from './file-text.js';
+import { fvNoticeHtml, csvTableHtml, dualViewKind, DUAL_VIEW_MAX, viewModesHtml, applyViewMode, openFileSwitcher } from './ui-file-viewer.js';
 
 // data:video/… → blob URL（与 ui.js 气泡播放同一做法；独立实现以免 split 模块反向 import ui.js）
 function videoBlobUrl(dataUrl) {
@@ -232,6 +235,8 @@ export function installFilesPanel({ store, agent, toast, fmtSize, highlightCode,
 
   let webPreviewId = '';
   let viewerGeneration = 0;
+  let viewMode = 'preview'; // 双视图默认「预览」；用户切过之后本页会话内沿用
+  let closeSwitcher = null; // 文件名下拉（沙箱文件目录）
   const FV_TEXT_MAX = 1 * 1024 * 1024; // 沙箱预览：文本类文件上限 1MB（超出请下载后在本地编辑器查看）
   function openFileViewer(path) {
     const viewer = $('#file-viewer');
@@ -251,6 +256,9 @@ export function installFilesPanel({ store, agent, toast, fmtSize, highlightCode,
     // 代码/文本文件扩展名白名单
     const isCode = /\.(js|mjs|cjs|ts|jsx|tsx|py|java|c|cpp|h|hpp|cc|cxx|cs|go|rs|rb|php|swift|kt|scala|dart|m|matlab|sh|bash|zsh|ps1|bat|cmd|sql|json|jsonc|yml|yaml|toml|ini|conf|xml|html|htm|css|scss|less|md|markdown|r|jl|pyi|vue|svelte|tex|latex|lua|hs|erl|ex|exs|clj|cljs|fs|fsx|ml|mli|asm|s|vhd|v|sv|cu|sol|graphql|gql|hbs|jinja|j2|dockerfile|mk|nginx|diff|patch|log|csv|tsv|txt|text)$/i.test(lower);
     const isTextual = isCode || /^text\//.test(lower);
+    // 上传的文本文件（SVG / Markdown / CSV / 代码）可能以 data URL 存放：代码视图与预览都用解码后的原文
+    const textView = isTextual || /\.svg$/i.test(lower) ? readableFileText(rawStr, path) : null;
+    const textStr = textView && !textView.binary ? textView.text : rawStr;
     let bodyHtml = '';
     // 视频（uploads/*.mp4 等 data:video/…）：转 blob URL 交给 <video controls>（CSP media-src 放行 blob:）
     const videoUrl = /^data:video\//i.test(rawStr) ? videoBlobUrl(rawStr) : '';
@@ -263,54 +271,58 @@ export function installFilesPanel({ store, agent, toast, fmtSize, highlightCode,
     } else if (isTextual) {
       if (byteLen > FV_TEXT_MAX) {
         // 超过 1MB：不直接渲染（hljs 处理超大文本会卡主线程），只显示提示 + 下载按钮
-        bodyHtml = `<div class="fv-too-big">
-          <div class="fv-too-big-ico">⚠️</div>
-          <div class="fv-too-big-text">
-            <div>此文本文件大小为 <strong>${fmtSize(byteLen)}</strong>，超过预览上限 1MB。</div>
-            <div class="fv-too-big-sub">为避免界面卡顿，已禁用内联预览，请点击下方按钮下载后用本地编辑器查看。</div>
-          </div>
-        </div>`;
+        bodyHtml = fvNoticeHtml('tooBig', `此文本文件大小为 <strong>${fmtSize(byteLen)}</strong>，超过预览上限 1MB。`,
+          '为避免界面卡顿，已禁用内联预览，请点右上角「下载」后用本地编辑器查看。');
       } else {
         const lang = (lower.split('.').pop() || 'text');
         bodyHtml = isCode
-          ? `<div class="fv-code"><pre><code class="hljs">${highlightCode(rawStr, lang, esc)}</code></pre></div>`
-          : `<div class="fv-code"><pre>${esc(rawStr)}</pre></div>`;
+          ? `<div class="fv-code"><pre><code class="hljs">${highlightCode(textStr, lang, esc)}</code></pre></div>`
+          : `<div class="fv-code"><pre>${esc(textStr)}</pre></div>`;
       }
     } else if (/\.pdf$/i.test(lower) || /^data:application\/pdf/i.test(rawStr)) {
       // PDF：用 pdf.js 把前几页画成图预览（不走 iframe，避免放宽 CSP frame-src）
       bodyHtml = `<div class="fv-pdf" data-path="${esc(path)}"><div class="fv-pdf-loading">正在渲染 PDF 预览…</div></div>`;
     } else {
-      bodyHtml = `<div class="fv-too-big">
-        <div class="fv-too-big-ico">📦</div>
-        <div class="fv-too-big-text">
-          <div>二进制文件 · <strong>${fmtSize(byteLen)}</strong></div>
-          <div class="fv-too-big-sub">该文件无法在浏览器内预览，请下载后用对应程序打开。</div>
-        </div>
-      </div>`;
+      bodyHtml = fvNoticeHtml('binary', `二进制文件 · <strong>${fmtSize(byteLen)}</strong>`, '该文件无法在浏览器内预览，请下载后用对应程序打开。');
     }
-    const dualPreview = /\.(?:html?|svg)$/i.test(lower) && byteLen <= FV_TEXT_MAX;
-    let previewSource = rawStr;
-    if (dualPreview && /^data:/i.test(rawStr)) {
-      try { previewSource = /^data:[^,]*;base64,/i.test(rawStr) ? new TextDecoder().decode(fileBytesFromValue(rawStr).bytes) : decodeURIComponent(rawStr.slice(rawStr.indexOf(',') + 1)); } catch { /* fallback */ }
-    }
+    // 双视图（V1.8.1）：HTML / SVG 静态预览、Markdown 渲染、CSV / TSV 表格；只有「代码 / 预览」两态（并排已移除），默认预览
+    const dualKind = dualViewKind(lower);
+    const dualPreview = !!dualKind && byteLen <= DUAL_VIEW_MAX[dualKind] && !(textView && textView.binary);
+    const previewSource = textStr;
     if (dualPreview) {
-      bodyHtml = `<div class="fv-dual" data-mode="split"><div class="fv-code"><pre><code class="hljs">${highlightCode(previewSource, lower.endsWith('.svg') ? 'xml' : 'html', esc)}</code></pre></div><div class="fv-static"><div class="fv-static-note">${localeText('静态预览 · 脚本与外网已禁用', 'Static preview · scripts and network disabled')}</div><iframe sandbox="" referrerpolicy="no-referrer" title="${esc(path)} preview"></iframe></div></div>`;
+      const codeLang = dualKind === 'web' ? (lower.endsWith('.svg') ? 'xml' : 'html') : dualKind === 'md' ? 'markdown' : 'plaintext';
+      const previewPane = dualKind === 'web'
+        ? `<div class="fv-pane fv-static" data-pane="preview"><div class="fv-static-note">${localeText('静态预览 · 脚本与外网已禁用', 'Static preview · scripts and network disabled')}</div><iframe sandbox="" referrerpolicy="no-referrer" title="${esc(path)} preview"></iframe></div>`
+        : dualKind === 'md'
+          ? `<div class="fv-pane fv-rendered" data-pane="preview"><div class="md-body fv-md">${renderMarkdown(previewSource)}</div></div>`
+          : `<div class="fv-pane fv-rendered fv-table" data-pane="preview">${csvTableHtml(previewSource, { delimiter: lower.endsWith('.tsv') ? '\t' : ',' })}</div>`;
+      bodyHtml = `<div class="fv-dual" data-kind="${dualKind}" data-mode="${viewMode}"><div class="fv-pane fv-code" data-pane="code"><pre><code class="hljs">${highlightCode(previewSource, codeLang, esc)}</code></pre></div>${previewPane}</div>`;
     }
     stopViewerMedia();
-    viewer.innerHTML = `<div class="file-viewer-head mono"><span class="fv-path">${esc(path)}</span><span class="fv-size">${fmtSize(byteLen)}</span><span class="fv-actions">`
-      + (dualPreview ? `<span class="fv-modes" role="group" aria-label="${localeText('显示模式', 'View mode')}">${[['code', localeText('代码', 'Code')], ['preview', localeText('预览', 'Preview')], ['split', localeText('并排', 'Split')]].map(([mode, label]) => `<button type="button" data-view-mode="${mode}" aria-pressed="${mode === 'split'}">${label}</button>`).join('')}</span>` : '')
+    viewer.innerHTML = `<div class="file-viewer-head mono"><button type="button" class="fv-path" aria-haspopup="dialog" aria-expanded="false" title="${localeText('点击切换沙箱文件', 'Click to switch sandbox file')}"><span class="fv-path-text">${esc(path)}</span>${ICON.chevRight}</button><span class="fv-size">${fmtSize(byteLen)}</span><span class="fv-actions">`
+      + (dualPreview ? viewModesHtml(viewMode) : '')
       + `<button id="fv-dl" type="button" title="下载此文件">${ICON.download}<span>下载</span></button>`
       + (/\.html?$/i.test(lower) ? `<button id="fv-run" type="button" title="在本地沙箱服务运行并用 Chromium 调试">${ICON.terminal || ICON.tool}<span>运行网页</span></button>` : '')
       + `<button id="fv-close" type="button" title="关闭">${ICON.x}</button></span></div>`
       + bodyHtml;
     viewer.classList.add('open');
     if (dualPreview) {
-      viewer.querySelector('.fv-static iframe').srcdoc = staticPreviewDocument(previewSource, path, agent.fs);
+      const frame = viewer.querySelector('.fv-static iframe');
+      if (frame) frame.srcdoc = staticPreviewDocument(previewSource, path, agent.fs);
+      applyViewMode(viewer, viewMode);
       viewer.querySelectorAll('[data-view-mode]').forEach(button => button.addEventListener('click', () => {
-        viewer.querySelector('.fv-dual').dataset.mode = button.dataset.viewMode;
-        viewer.querySelectorAll('[data-view-mode]').forEach(b => b.setAttribute('aria-pressed', String(b === button)));
+        viewMode = applyViewMode(viewer, button.dataset.viewMode); // 记住选择：切到下一个文件沿用
       }));
     }
+    const pathBtn = $('.fv-path', viewer);
+    // 点文件名：弹出沙箱文件目录，直接切换要预览的文件（不必回到文件树）
+    pathBtn.addEventListener('click', () => {
+      if (closeSwitcher) { closeSwitcher(); return; }
+      const isInternal = (p) => typeof agent.fs.isInternalPath === 'function' && agent.fs.isInternalPath(p);
+      closeSwitcher = openFileSwitcher({ viewer, anchor: pathBtn, current: path, fmtSize,
+        files: agent.fs.list().filter((f) => !isInternal(f.path)),
+        onPick: (next) => openFileViewer(next), onClose: () => { closeSwitcher = null; } });
+    });
     if (videoUrl) {
       // 关闭 / 切换文件时释放 blob，避免反复打开把内存吃满
       const vid = $('.fv-video video', viewer);
@@ -337,8 +349,7 @@ export function installFilesPanel({ store, agent, toast, fmtSize, highlightCode,
         const staticBox = viewer.querySelector('.fv-static');
         if (staticBox) {
           staticBox.replaceChildren(box);
-          viewer.querySelector('.fv-dual').dataset.mode = 'split';
-          viewer.querySelectorAll('[data-view-mode]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.viewMode === 'split')));
+          viewMode = applyViewMode(viewer, 'preview');
         } else { viewer.appendChild(box); viewer.querySelector('.fv-code')?.setAttribute('hidden', ''); }
       } catch (err) { toast(String(err.message || err), 'warn', 8000); }
       finally { if (generation === viewerGeneration && button.isConnected) button.disabled = false; }
@@ -351,6 +362,7 @@ export function installFilesPanel({ store, agent, toast, fmtSize, highlightCode,
   // 先把所有媒体元素停掉并卸载源，再收起；下一次 openFileViewer 会整体重建 innerHTML。
   function stopViewerMedia() {
     viewerGeneration += 1;
+    if (closeSwitcher) closeSwitcher();
     const id = webPreviewId; webPreviewId = '';
     if (id) sandboxBrowserRequest({ action: 'stop', preview_id: id }).catch(() => {});
     const viewer = $('#file-viewer');
@@ -379,7 +391,7 @@ export function installFilesPanel({ store, agent, toast, fmtSize, highlightCode,
       bytes = new Uint8Array(bin.length);
       for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
     } catch (err) {
-      box.innerHTML = `<div class="fv-too-big"><div class="fv-too-big-ico">📄</div><div class="fv-too-big-text"><div>无法预览此 PDF</div><div class="fv-too-big-sub">${esc(err.message || String(err))}，请下载后查看。</div></div></div>`;
+      box.innerHTML = fvNoticeHtml('pdf', '无法预览此 PDF', `${esc(err.message || String(err))}，请下载后查看。`);
       return;
     }
     let got;
@@ -388,7 +400,7 @@ export function installFilesPanel({ store, agent, toast, fmtSize, highlightCode,
     } catch (err) { got = { ok: false, error: err.message || String(err), images: [] }; }
     if (!box.isConnected) return;
     if (!got || !got.ok || !got.images.length) {
-      box.innerHTML = `<div class="fv-too-big"><div class="fv-too-big-ico">📄</div><div class="fv-too-big-text"><div>无法预览此 PDF</div><div class="fv-too-big-sub">${esc((got && got.error) || '渲染失败')}，请下载后查看。</div></div></div>`;
+      box.innerHTML = fvNoticeHtml('pdf', '无法预览此 PDF', `${esc((got && got.error) || '渲染失败')}，请下载后查看。`);
       return;
     }
     const more = got.truncated ? `<div class="fv-pdf-more">共 ${got.pages} 页，预览前 ${got.images.length} 页；完整内容请让 Agent 调用 analyze_pdf 或下载查看。</div>` : '';

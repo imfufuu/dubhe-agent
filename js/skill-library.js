@@ -27,6 +27,12 @@ export function searchSkills(records, query = '', language = 'zh') {
   }).filter(r => !tokens.length || r.score > 0).sort((a, b) => b.score - a.score || a.record.id.localeCompare(b.record.id)).slice(0, 12)
     .map(({ record }) => ({ id: record.id, title: record.title[language] || record.title.zh, summary: record.summary[language] || record.summary.zh, tools: record.tools }));
 }
+export const skillTools = (record) => (Array.isArray(record?.tools) ? record.tools : []).map(String).filter(t => /^[a-z_]{2,40}$/.test(t));
+/** 从 read 结果头部取回工具清单（纯函数，供执行内核挂载） */
+export function skillToolsFromResult(text) {
+  const m = /^\[Built-in extension skill: ([a-z0-9-]+); tools: ([^;\]]*);/.exec(String(text || ''));
+  return m ? { id: m[1], tools: m[2].split(',').map(t => t.trim()).filter(t => /^[a-z_]{2,40}$/.test(t)) } : null;
+}
 export async function retrieveSkill(args = {}, { signal } = {}) {
   const language = getLanguage() === 'en' ? 'en' : 'zh';
   const index = await asset('index.json', signal, true);
@@ -37,5 +43,7 @@ export async function retrieveSkill(args = {}, { signal } = {}) {
   if (!/^[a-z0-9-]{1,64}$/.test(id) || !index.skills.some(s => s.id === id)) throw Error('Unknown skill ID; search the library first');
   const body = await asset(`${id}.${language}.md`, signal);
   const offset = Math.max(0, Math.floor(Number(args.offset) || 0)), end = offset + SKILL_PAGE_CHARS;
-  return `[Built-in extension skill: ${id}; only requested content loaded]\n${body.slice(offset, end)}${end < body.length ? `\n[Continue: skill_library action=read id=${id} offset=${end}]` : '\n[End of skill]'} `;
+  const tools = skillTools(index.skills.find(s => s.id === id));
+  // 头部带上本技能的工具清单：执行内核据此把它们挂进本轮工具表（见 toolrunner mountSkillTools）
+  return `[Built-in extension skill: ${id}; tools: ${tools.join(', ') || '-'}; only requested content loaded]\n${body.slice(offset, end)}${end < body.length ? `\n[Continue: skill_library action=read id=${id} offset=${end}]` : `\n[End of skill] Next: call ${tools[0] || 'the named tool'} directly; do not search or re-read this skill again.`} `;
 }

@@ -8,6 +8,8 @@
 // 输入法合成期间、选中一段文字时隐藏自绘光标（保留原生选区高亮）。
 export const CARET_COLORS = Object.freeze(['#ef4444', '#eab308', '#3b82f6', '#22c55e', '#06b6d4', '#2563eb', '#a855f7']);
 export const CARET_HOLD_MS = 1100;
+export const CARET_EM = 1.2;
+export const CARET_NUDGE = Object.freeze({ x: -1, y: 2 });
 export const CARET_CYCLE_MS = CARET_HOLD_MS * CARET_COLORS.length;
 export function caretColorAt(ms) {
   const at = Math.max(0, Number(ms) || 0);
@@ -48,10 +50,14 @@ export function installCaretEffect(input, { doc = document } = {}) {
     marker.textContent = '\u200b';
     mirror.appendChild(marker);
     const ir = input.getBoundingClientRect(), hr = host.getBoundingClientRect();
-    const lh = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.4 || 20;
-    caret.style.height = `${lh}px`;
-    const x = ir.left - hr.left + marker.offsetLeft - input.scrollLeft;
-    const y = ir.top - hr.top + marker.offsetTop - input.scrollTop;
+    const fs = parseFloat(cs.fontSize) || 14;
+    const lh = parseFloat(cs.lineHeight) || fs * 1.4 || 20;
+    // V1.8.1：旧版高度取整行行高，比文字长出一截（上冒 2px、下拖 6px 多）。
+    // 改为约 1.2em（接近原生光标的字面高度），整体下沉 2px 对齐文字主体；
+    // 3px 宽的光标原本整条落在插入点右侧，左移 1px 让它骑在插入点上。
+    caret.style.height = `${Math.round(Math.min(lh, fs * CARET_EM))}px`;
+    const x = ir.left - hr.left + marker.offsetLeft - input.scrollLeft + CARET_NUDGE.x;
+    const y = ir.top - hr.top + marker.offsetTop - input.scrollTop + CARET_NUDGE.y;
     caret.style.transform = `translate(${x}px, ${y}px)`;
   };
   const update = () => {

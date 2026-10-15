@@ -14,6 +14,7 @@ import { SUBAGENTS } from './subagents.js';
 import { DEFAULT_IMAGE_MODEL, IMAGE_SIZES, IMAGE_QUALITIES, IMAGE_FORMATS, IMAGE_BACKGROUNDS, IMAGE_MODEL_IDS, resolveImageModel, resolveVisionModel, resolveVideoModel, resolveAudioModel } from './config.js?v=2026.10.11.1';
 import { fetchPage, gitRun, relaySearch, relayCrawl, relayDownload, fileNameFromUrl, RELAY_FILE_MAX_BYTES } from './net.js';
 import { createZip, fileBytesFromValue } from './zip.js';
+import { readableFileText } from './file-text.js';
 import { unpackZip, unpackZipFromDataUrl } from './unzip.js';
 import { runRegex, runHash, runCodec, runUnicode } from './codetools.js';
 import { searchFiles, diffText, jsonTool, formatSearch } from './worktools.js';
@@ -53,7 +54,7 @@ export const TOOL_DEFS = [
   },
 
   { name: 'skill_library', description: 'Discover built-in extension skills on demand (Word/DOCX, PPTX, advanced PDF, audio and document workflows). Search returns a small directory; read loads only one guide. Skill bodies are not preloaded into prompts. Does not execute documents.', parameters: { type: 'object', properties: { action: { type: 'string', enum: ['search','read'] }, query: { type: 'string' }, id: { type: 'string', description: 'ID returned by search' }, offset: { type: 'integer' } } } },
-  { name: 'document_tool', description: 'Browser-local DOCX/PPTX/PDF operations in a bounded Worker. Use skill_library first for action-specific data examples and limitations. Inspect/create DOCX or PPTX; PDF inspect/create/merge/extract/rotate/watermark/form_fields/fill_form/metadata. No document upload, no macros, no Office renderer, no legacy .doc conversion. Defaults to new outputs/ files; pages are 1-based.', parameters: { type: 'object', properties: { format: { type: 'string', enum: ['docx','pptx','pdf'] }, action: { type: 'string', enum: ['inspect','create','merge','extract','rotate','watermark','form_fields','fill_form','metadata'] }, path: { type: 'string' }, paths: { type: 'array', items: { type: 'string' } }, out: { type: 'string' }, pages: { type: 'array', items: { type: 'integer' } }, angle: { type: 'integer', enum: [90,180,270] }, data: { type: 'object', description: 'Structured content/options; retrieve the relevant skill for its schema and examples' }, offset: { type: 'integer' }, overwrite: { type: 'boolean' } }, required: ['action'] } },
+  { name: 'document_tool', description: 'Browser-local DOCX/PPTX/PDF operations in a bounded Worker. Common DOCX/PPTX create needs no skill lookup — call directly. DOCX create data: {title, author?, header?, footer?, paragraphs:["text" | {text, heading:1-3, bold, bullet} | {table:{rows:[["H1","H2"],["a","b"]]}}], tables?:[{rows}], images?:[{path,width,height,alt}]} (inline {table} keeps the table under its section). PPTX create data: {title, slides:[{title, body:"text"|["point"], table?:{rows}, notes?, images?:[{path,x,y,w,h,alt}]}]}. Read skill_library only for PDF form/markup workflows or limitations. Inspect/create DOCX or PPTX; PDF inspect/create/merge/extract/rotate/watermark/form_fields/fill_form/metadata. No document upload, no macros, no Office renderer, no legacy .doc conversion. Defaults to new outputs/ files; pages are 1-based.', parameters: { type: 'object', properties: { format: { type: 'string', enum: ['docx','pptx','pdf'] }, action: { type: 'string', enum: ['inspect','create','merge','extract','rotate','watermark','form_fields','fill_form','metadata'] }, path: { type: 'string' }, paths: { type: 'array', items: { type: 'string' } }, out: { type: 'string' }, pages: { type: 'array', items: { type: 'integer' } }, angle: { type: 'integer', enum: [90,180,270] }, data: { type: 'object', description: 'Structured content/options (DOCX/PPTX create schema in the tool description; PDF details in skill_library)' }, offset: { type: 'integer' }, overwrite: { type: 'boolean' } }, required: ['action'] } },
   { name: 'knowledge_search', description: 'Search the bundled bilingual project knowledge for exact rendering grammar, tool/runtime details and product/file policies. No external search; retrieve only needed sections. 核心规则/实时能力优先于历史参考。', parameters: { type:'object', properties: { query:{type:'string',description:'Topic keywords / 关键词'}, topic:{type:'string',enum:['runtime','rendering'],description:'Optional topic filter'}, language:{type:'string',enum:['zh','en']}, offset:{type:'number',description:'Continue a long matched section at this character offset'} }, required:['query'] } },
   {
     name: 'execute_javascript',
@@ -113,7 +114,7 @@ export const TOOL_DEFS = [
   },
   {
     name: 'read_file',
-    description: '读取会话虚拟文件系统中的文本文件内容。',
+    description: '读取会话虚拟文件系统中的文本文件内容（上传的 SVG / 代码 / CSV 等即使以 data URL 存放也会解码成原文；图片、音视频、PDF 等二进制只返回类型与大小说明）。',
     parameters: {
       type: 'object',
       properties: { path: { type: 'string', description: '文件路径' } },
@@ -778,14 +779,16 @@ async function executeToolBody(outerName, outerArgs, ctx) {
       case 'read_file': {
         const path = normalizeFsPath(args.path);
         if (!path) return 'read_file 缺少合法的 path 参数。可用 list_files 查看现有文件。';
-        const content = fs.read(path);
+        // 上传的 SVG / 代码等以 data URL 存放：解码成文本再返回；二进制只给一行说明（不把 base64 塞给模型）
+        const view = readableFileText(fs.read(path), path);
+        const content = view.text;
         emit({ status: 'running', note: `读取 ${path}…` });
         for (let at = 0; at < content.length; at += 8192) {
           if (ctx.signal?.aborted) throw new DOMException('Aborted', 'AbortError');
           emit({ stream: 'stdout', delta: content.slice(at, at + 8192), readPath: path });
           if (content.length > 8192) await new Promise((resolve) => setTimeout(resolve, 0));
         }
-        emit({ status: 'ok', fsChange: false, note: `读取 ${path}` });
+        emit({ status: 'ok', fsChange: false, note: view.binary ? `${path} 是二进制文件` : `读取 ${path}` });
         return `── ${path} ──\n${content}`;
       }
       case 'skill_library': return retrieveSkill(args, { signal: ctx.signal });

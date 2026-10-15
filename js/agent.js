@@ -19,7 +19,7 @@ import { getLanguage } from './locale.js';
 //   · 生图：不作为对话模型直接调用，统一由主智能体经 generate_image 工具发起
 
 import { CODE_TOOL_NAMES as REG_CODE_TOOL_NAMES } from './capabilities.js';
-import { streamChat, createToolCallAccumulator, createThinkingTracker, getTransport } from './api.js?v=2026.10.11.1';
+import { streamChat, createToolCallAccumulator, createThinkingTracker, getTransport, isEmptyAssistantMessage } from './api.js?v=2026.10.11.1';
 import { TOOL_DEFS, executeTool } from './tools.js';
 import { probeLocalBrowser, localBrowserAvailable } from './localbrowser.js?v=2026.10.11.1';
 import { recordOutputText, recordOutputTool } from './toolflow.js?v=2026.10.11.1';
@@ -329,7 +329,9 @@ export function createAgent(store, hooks = {}) {
   let turnMemoryPlan = null;
   function buildMessages(lockModel, relayOk = true, jevNote = '', plan = null, iteration = 1, nexusState = null) {
     // 审核拦截提示只用于界面反馈，绝不进入后续模型上下文。
-    const messages = (store.state.messages || []).filter((m) => !m.transientModeration);
+    // 流式占位的空 assistant（以及首包前就取消/报错、没有任何产出的 assistant）同样不进上下文：
+    // 以空 assistant 结尾的请求会被 DeepSeek V4 当成预填续写而跳过思考（见 api.js isEmptyAssistantMessage）。
+    const messages = (store.state.messages || []).filter((m) => !m.transientModeration && !isEmptyAssistantMessage(m));
     const model = lockModel || store.state.model;
     const budget = contextBudgetFor(model);
     const { messages: compacted, droppedCount, droppedDigest } = compactMessages(messages, budget, { preflight: true });
