@@ -50,6 +50,22 @@ for (const name of browsers) {
       await context.close();
     }
 
+    // 无保存主题时按系统深色默认：从文档页直达应用页仍继承同一深色，不闪浅色。
+    {
+      const context = await browser.newContext({ viewport: { width: 1100, height: 760 }, colorScheme: 'dark' });
+      const page = await context.newPage();
+      await page.addInitScript(() => { localStorage.setItem('dubhe-motion', 'on'); });
+      await page.goto(base + '/docs.html', { waitUntil: 'load' });
+      const docs = await page.evaluate(() => ({ theme: document.documentElement.dataset.theme, stored: localStorage.getItem('dubhe-theme') }));
+      pass(docs.theme === 'dark' && docs.stored === 'dark', `${name}: system-dark fallback is persisted on docs`);
+      await page.evaluate(() => document.querySelector('header.nav a.cta').click());
+      await page.waitForURL(/app\.html/, { timeout: 15000 });
+      const app = await page.evaluate(() => ({ theme: document.documentElement.dataset.theme, bg: getComputedStyle(document.documentElement).backgroundColor }));
+      pass(app.theme === 'dark', `${name}: app inherits the docs system-dark theme`);
+      pass(!/rgb\((?:2[4-5]\d|[1-9]\d{2}),/.test(app.bg || ''), `${name}: app never paints a light first frame`);
+      await context.close();
+    }
+
     // 深色语言切换先全黑盖满，再替换文案；最后渐显并清除遮罩。
     {
       const context = await browser.newContext({ viewport: { width: 1100, height: 760 } });
