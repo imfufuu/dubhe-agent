@@ -16,7 +16,7 @@ export function recordOutputTool(message, index) {
 }
 export function toolFamily(call) {
   if (call?.name === 'write_file') return 'edited';
-  if (['read_file', 'analyze_image', 'analyze_pdf', 'analyze_video', 'analyze_audio'].includes(call?.name)) return 'explored';
+  if (['read_file', 'analyze_image', 'analyze_pdf', 'analyze_svg', 'analyze_video', 'analyze_audio'].includes(call?.name)) return 'explored';
   return 'commands';
 }
 export function displayParts(message) {

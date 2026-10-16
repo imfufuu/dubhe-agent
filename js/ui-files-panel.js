@@ -13,6 +13,7 @@ import { text as localeText } from './locale.js';
 import { renderMarkdown } from './ui-markdown.js?v=2026.10.11.1';
 import { readableFileText } from './file-text.js';
 import { fvNoticeHtml, csvTableHtml, dualViewKind, DUAL_VIEW_MAX, viewModesHtml, applyViewMode, openFileSwitcher } from './ui-file-viewer.js';
+import { motionAllowed } from './page-fx.js?v=2026.10.11.1';
 
 // data:video/… → blob URL（与 ui.js 气泡播放同一做法；独立实现以免 split 模块反向 import ui.js）
 function videoBlobUrl(dataUrl) {
@@ -235,6 +236,7 @@ export function installFilesPanel({ store, agent, toast, fmtSize, highlightCode,
 
   let webPreviewId = '';
   let viewerGeneration = 0;
+  let viewerSwapTimer = 0;
   let viewMode = 'preview'; // 双视图默认「预览」；用户切过之后本页会话内沿用
   let closeSwitcher = null; // 文件名下拉（沙箱文件目录）
   const FV_TEXT_MAX = 1 * 1024 * 1024; // 沙箱预览：文本类文件上限 1MB（超出请下载后在本地编辑器查看）
@@ -298,6 +300,10 @@ export function installFilesPanel({ store, agent, toast, fmtSize, highlightCode,
           : `<div class="fv-pane fv-rendered fv-table" data-pane="preview">${csvTableHtml(previewSource, { delimiter: lower.endsWith('.tsv') ? '\t' : ',' })}</div>`;
       bodyHtml = `<div class="fv-dual" data-kind="${dualKind}" data-mode="${viewMode}"><div class="fv-pane fv-code" data-pane="code"><pre><code class="hljs">${highlightCode(previewSource, codeLang, esc)}</code></pre></div>${previewPane}</div>`;
     }
+    const animateSwap = viewer.classList.contains('open') && motionAllowed(document);
+    if (viewerSwapTimer) clearTimeout(viewerSwapTimer);
+    viewerSwapTimer = 0;
+    viewer.classList.remove('switching');
     stopViewerMedia();
     viewer.innerHTML = `<div class="file-viewer-head mono"><button type="button" class="fv-path" aria-haspopup="dialog" aria-expanded="false" title="${localeText('点击切换沙箱文件', 'Click to switch sandbox file')}"><span class="fv-path-text">${esc(path)}</span>${ICON.chevRight}</button><span class="fv-size">${fmtSize(byteLen)}</span><span class="fv-actions">`
       + (dualPreview ? viewModesHtml(viewMode) : '')
@@ -306,6 +312,10 @@ export function installFilesPanel({ store, agent, toast, fmtSize, highlightCode,
       + `<button id="fv-close" type="button" title="关闭">${ICON.x}</button></span></div>`
       + bodyHtml;
     viewer.classList.add('open');
+    if (animateSwap) {
+      viewer.classList.add('switching');
+      viewerSwapTimer = setTimeout(() => { viewer.classList.remove('switching'); viewerSwapTimer = 0; }, 380);
+    }
     if (dualPreview) {
       const frame = viewer.querySelector('.fv-static iframe');
       if (frame) frame.srcdoc = staticPreviewDocument(previewSource, path, agent.fs);

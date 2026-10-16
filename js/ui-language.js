@@ -1,5 +1,5 @@
 import { preserveLanguageViewport } from './language-scroll.js';
-import { motionAllowed, veilFade } from './page-fx.js';
+import { motionAllowed, veilFade } from './page-fx.js?v=2026.10.11.1';
 import { getLanguage, languagePreference, setLanguagePreference, onLanguageChange, setLanguageTransition } from './locale.js';
 import { UI_STRINGS } from './ui-strings.js?v=2026.10.11.1';
 // Only UI chrome is translated. Message bodies, code, file names, model output and user content retain their exact values.

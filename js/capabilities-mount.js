@@ -12,6 +12,7 @@ export const TOOL_MOUNT_RULES_SOURCE = Object.freeze({
   analyze_audio: { text: /音频|录音|语音|转录|听写|播客|\baudio\b|\btranscri|\bmp3\b|\bwav\b/i, attachments: ['audio'] },
   analyze_video: { text: /视频|影片|\bvideo\b|\.mp4\b|\.webm\b|\.mov\b/i, attachments: ['video'] },
   analyze_pdf: { text: /\bpdf\b|论文|扫描件/i, attachments: ['pdf'] },
+  analyze_svg: { text: /\bsvg\b|矢量图|矢量图片|图标源码/i, attachments: ['svg'] },
   zip_files: { text: /压缩|打包|\bzip\b|归档|\barchive\b/i, attachments: ['zip'] },
   unzip_file: { text: /解压|\bunzip\b|\bextract\b|压缩包|打开.{0,4}zip/i, attachments: ['zip'] },
   convert_file: { text: /格式转换|转换格式|转码|转成|转为|导出为|压缩(?:成|为)|提取音频|提取音轨|音轨|转 ?(?:mp4|webm|mov|mkv|gif|mp3|wav|m4a|aac|ogg|opus|flac|png|jpe?g|webp)|convert|transcode|\bffmpeg\b|\bgif\b|动图|压缩.{0,6}(?:视频|图片|音频)|(?:视频|图片|音频).{0,4}(?:格式|转换)/i, attachments: ['image', 'audio', 'video'] },

@@ -165,7 +165,8 @@ html { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
   /* grid-template-areas 不只是可读性：窄屏时 .sidebar / #sandbox-panel 变成 position:fixed
      脱离文档流，若没有命名区，唯一的在流子项 .main 会被自动排到第一列（--sbw 已收敛为 0px）
      → 主区宽度 0、全部内容横向溢出（这就是「移动端元素挤在一起」的根因）。 */
-  grid-template-columns: var(--sbw, 268px) minmax(0, 1fr) var(--pnw, 320px);
+  /* 默认沙箱面板略收窄；文件预览展开时由下方 clamp 单独加宽。 */
+  grid-template-columns: var(--sbw, 268px) minmax(0, 1fr) var(--pnw, 280px);
   grid-template-areas: "side main panel";
   height: 100vh;
   height: 100dvh; /* 移动 Safari：地址栏收起时不被底部工具栏遮住 */
@@ -229,7 +230,7 @@ html { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
   }
   #sandbox-panel.collapsed { transform: translateY(105%); }
 }
-.app:has(#sandbox-panel:not(.collapsed)) #panel-toggle { visibility: hidden; pointer-events: none; }
+.app:has(#sandbox-panel:not(.collapsed)) #panel-toggle { display: none; }
 
 /* ── 侧栏 ────────────────────────────────────────────────────────────── */
 .sidebar {
@@ -426,9 +427,9 @@ html { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
 }
 .mini-btn:hover { border-color: var(--fg); color: var(--fg); transform: translateY(-1px); }
 .mini-btn:disabled { opacity: .4; pointer-events: none; transform: none; }
-/* 管理员模式：底部按钮反色，一眼看出当前用的是管理员密钥（不显示任何密钥片段）*/
-.mini-btn.admin-mode { background: var(--fg); color: var(--bg); border-color: var(--fg); }
-.mini-btn.admin-mode:hover { color: var(--bg); opacity: .9; }
+/* API 配置态 / 管理员态：反色强调，不显示任何密钥片段；浅色下为黑底，深色下自动反白 */
+.mini-btn:is(.admin-mode, .configured-mode) { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.mini-btn:is(.admin-mode, .configured-mode):hover { color: var(--bg); opacity: .9; }
 /* 只留图标的 mini-btn（主题切换）：做成正方形、图标严格居中 */
 .mini-btn.icon-only { justify-content: center; padding: 3px 9px; min-width: 32px; }
 .mini-btn .pill-ico { width: 13px; height: 13px; flex-shrink: 0; }
@@ -454,7 +455,7 @@ html { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
   padding: 12px 24px; border-bottom: 1px solid var(--line);
   transition: background-color var(--theme-speed) var(--ease), border-color var(--theme-speed) var(--ease);
 }
-.status { display: flex; align-items: center; gap: 8px; font-size: var(--ui-fs-12_5px, 12.5px); color: var(--fg-2); flex: 1; min-width: 0; }
+.status { display: flex; align-items: center; gap: 8px; font-size: var(--ui-fs-12_5px, 12.5px); color: var(--fg-2); flex: 1 1 0; min-width: 0; white-space: nowrap; overflow: hidden; }
 /* 顶栏不确定进度条：本轮请求进行中（连接 / 生成 / 沙箱执行）*/
 .turn-bar { position: absolute; top: 0; left: 0; right: 0; height: 2px; z-index: 41; overflow: hidden; opacity: 0; transition: opacity .35s var(--ease); pointer-events: none; }
 .turn-bar.on { opacity: 1; }
@@ -466,7 +467,7 @@ html { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
 .turn-bar.connecting::after { animation-duration: .8s; background: linear-gradient(90deg, transparent, var(--fg-3) 45%, var(--fg) 50%, var(--fg-3) 55%, transparent); }
 @keyframes slide { to { transform: translateX(100%); } }
 .status span:empty { display: none; }
-.time-stats { color: var(--fg-3); font-size: var(--ui-fs-11px, 11px); }
+.time-stats { color: var(--fg-3); font-size: var(--ui-fs-11px, 11px); white-space: nowrap; flex: 0 0 auto; }
 /* LaTeX（KaTeX） */
 .md-body .katex { font-size: 1.06em; }
 .md-body .katex-display { overflow-x: auto; overflow-y: hidden; padding: 4px 0 6px; margin: 0 0 .7em; }
@@ -489,7 +490,7 @@ html { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
 @keyframes pulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: .35; transform: scale(.8); } }
 @keyframes halo { 0% { box-shadow: 0 0 0 0 var(--line-2); } 70% { box-shadow: 0 0 0 6px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
 /* 状态文案后的三点跳动 + 实时耗时 */
-#status-text { display: inline-flex; align-items: center; gap: 6px; }
+#status-text { display: inline-flex; align-items: center; gap: 6px; min-width: 0; white-space: nowrap; flex-shrink: 1; overflow: hidden; text-overflow: ellipsis; }
 .sdots { display: inline-flex; gap: 2px; }
 .sdots i { width: 3px; height: 3px; border-radius: 50%; background: var(--fg-3); animation: bounce 1.05s ease-in-out infinite; }
 .sdots i:nth-child(2) { animation-delay: .15s; }
@@ -524,7 +525,7 @@ html { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
 .pill.relay-checking { opacity: .78; cursor: progress; }
 .pill.relay-checking::after { content: ""; width: 9px; height: 9px; border: 1.5px solid currentColor; border-left-color: transparent; border-radius: 50%; animation: relayProbeSpin .8s linear infinite; }
 @keyframes relayProbeSpin { to { transform: rotate(360deg); } }
-.topbar-right { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; min-width: 0; }
+.topbar-right { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; min-width: 0; margin-left: auto; flex: 0 0 auto; }
 .topbar-right .pill { flex: 0 0 auto; white-space: nowrap; }
 .think-picker { position: relative; flex: 0 0 auto; }
 .think-menu { padding: 6px; }
@@ -1232,6 +1233,18 @@ html { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
   white-space: pre-wrap; word-break: break-word;
   font-family: inherit; font-size: inherit; color: inherit; line-height: inherit;
 }
+/* During generation the reasoning panel is a rolling 10-line viewport; after completion Markdown is unbounded and expandable. */
+.reasoning.live .think-stream {
+  max-height: calc(1.65em * 10); overflow-y: auto; overscroll-behavior: contain;
+  scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; scroll-behavior: auto;
+}
+.reasoning .think-stream .think-line { display: block; min-height: 1.65em; }
+@keyframes thinkLineEnter { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+.reasoning .think-stream .think-line.entered { animation: thinkLineEnter .22s cubic-bezier(.22,1,.36,1) both; }
+html[data-motion="off"] .reasoning .think-stream .think-line.entered { animation: none !important; }
+@media (prefers-reduced-motion: reduce) {
+  html:not([data-motion="on"]) .reasoning .think-stream .think-line.entered { animation: none !important; }
+}
 .reasoning .chip-state { color: var(--fg-3); font-family: var(--mono); }
 .md-fold .chip-name, .edited-files .chip-name, .explored-files .chip-name { color: var(--fg-3); font-weight: 500; }
 .md-fold .chip-ico { transition: transform .28s var(--ease); }
@@ -1333,10 +1346,16 @@ html { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
 .panel-tab {
   flex: 1; padding: 12px 16px; font-size: var(--ui-fs-12px, 12px); font-weight: 600; letter-spacing: .1em;
   color: var(--fg-3); border-bottom: 2px solid transparent; display: flex; align-items: center; justify-content: center;
-  background: transparent;
+  background: transparent; transition: color .22s var(--ease), border-color .3s var(--ease), background-color .22s var(--ease);
 }
 .panel-tab.on { color: var(--fg); border-bottom-color: var(--fg); }
 .panel-tab:hover { color: var(--fg); }
+.panel-body.panel-tab-enter { animation: panelTabEnter .34s cubic-bezier(.22,1,.36,1) both; }
+@keyframes panelTabEnter { from { opacity: 0; transform: translateY(8px) scale(.994); filter: blur(2px); } to { opacity: 1; transform: none; filter: none; } }
+html[data-motion="off"] .panel-body.panel-tab-enter { animation: none !important; }
+@media (prefers-reduced-motion: reduce) {
+  html:not([data-motion="on"]) .panel-body.panel-tab-enter { animation: none !important; }
+}
 .panel-tab-label { display: none; }
 #panel-close {
   flex: 0 0 auto; min-width: 44px; min-height: 44px; margin: 0 4px 0 0; align-self: center;
@@ -1440,6 +1459,12 @@ html { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
 .fv-video video { max-width: 100%; max-height: calc(100% - 28px); border-radius: 8px; border: 1px solid var(--line); background: #000; }
 .fv-video-meta { font-size: var(--ui-fs-11px, 11px); color: var(--fg-3); }
 .file-viewer.open { display: flex; animation: fadeUp .3s var(--ease) both; }
+.file-viewer.switching > :not(.file-viewer-head) { animation: fvContentSwap .34s cubic-bezier(.22,1,.36,1) both; }
+@keyframes fvContentSwap { from { opacity: 0; transform: translateY(8px) scale(.993); filter: blur(2px); } to { opacity: 1; transform: none; filter: none; } }
+html[data-motion="off"] .file-viewer.switching > :not(.file-viewer-head) { animation: none !important; }
+@media (prefers-reduced-motion: reduce) {
+  html:not([data-motion="on"]) .file-viewer.switching > :not(.file-viewer-head) { animation: none !important; }
+}
 .file-viewer-head { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--line); font-size: var(--ui-fs-12px, 12px); font-weight: 600; }
 .file-viewer pre { flex: 1; overflow: auto; padding: 12px 14px; font-family: var(--mono); font-size: var(--ui-fs-11_5px, 11.5px); white-space: pre; word-break: normal; overflow-x: auto; }
 .file-viewer pre code { white-space: pre; }
@@ -2605,8 +2630,7 @@ html[data-motion="off"] .rb-caret{animation:none}
 .share-latest[hidden] { display: none !important; }
 html[data-ui-language="en"] .side-label { text-transform: none; letter-spacing: .02em; font-size: 12px; }
 /* 页面切换：V1.8.2 跨页扫场 / 语言遮罩 / 同文档 View Transition 统一在 css/page-fx.css */
-/* 语音输入球体：录音时替换麦克风图标，--lvl 由 ui-speech.js 按音量写入 */
-/* 语音球：无论有没有麦克风音量，都持续动画（呼吸缩放 + 内部渐变旋转 + 外圈波纹）；音量只叠加在缩放上 */
+/* 语音输入球体：录音时替换麦克风图标，只用 CSS 呼吸动画，不额外申请麦克风分析流 */
 .voice-orb { display: none; position: relative; width: 20px; height: 20px; border-radius: 50%; pointer-events: none; isolation: isolate;
   transform: scale(calc(1 + var(--lvl, 0) * .35)); transition: transform .08s linear;
   animation: voice-breathe 1.6s ease-in-out infinite; }

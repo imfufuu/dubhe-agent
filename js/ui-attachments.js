@@ -7,6 +7,7 @@ import { text as localeText } from './locale.js';
 import { ICON } from './icons.js';
 import { openPhotoEditor } from './photo-editor.js?v=2026.10.11.1';
 import { relayDownload, relaySupports, relayAvailable, RELAY_FILE_MAX_BYTES } from './net.js';
+import { svgDataUrl } from './svg-safety.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -142,8 +143,13 @@ export function installAttachments({ composer, toast, safeImgSrc, fmtSize }) {
         const isImageByExt = IMG_EXT_RE.test(f.name);
         if (isImageByMime || isImageByExt) {
           if (globalThis.__dubhePrewarmImageModeration) globalThis.__dubhePrewarmImageModeration('attachment');
+          const isSvg = /svg/i.test(f.type) || /\.svg$/i.test(f.name);
           let dataUrl, finalMime, originalSize = f.size, didScale = false;
-          if (f.size > MAX_IMG) {
+          if (isSvg) {
+            if (f.size > 2_000_000) { toast(`${f.name}：SVG 超过 2MB 安全处理上限`, 'err'); continue; }
+            try { dataUrl = svgDataUrl(await readAs('text', f)); finalMime = 'image/svg+xml'; }
+            catch (err) { toast(`${f.name}：SVG 安全检查失败（${err.message}），已跳过`, 'err'); continue; }
+          } else if (f.size > MAX_IMG) {
             // 自动等比缩放到最长边 2048px 再上传
             try {
               const r = await downscaleImage(f, 2048, 0.85);
@@ -171,7 +177,9 @@ export function installAttachments({ composer, toast, safeImgSrc, fmtSize }) {
           const finalSize = comma > 0 && /;base64/i.test(dataUrl.slice(0, comma))
             ? Math.round((dataUrl.length - comma - 1) * 0.75)
             : originalSize;
-          pending.push({ id: Math.random().toString(36).slice(2), kind: 'image', name: f.name, mime: finalMime, size: finalSize, dataUrl, scaled: didScale ? true : undefined });
+          const storedName = isSvg && !/\.svg$/i.test(f.name) ? `${f.name}.svg` : f.name;
+          pending.push({ id: Math.random().toString(36).slice(2), kind: 'image', name: storedName, originalName: isSvg ? f.name : undefined, mime: finalMime, size: finalSize, dataUrl, source: isSvg ? 'svg' : undefined, scaled: didScale ? true : undefined });
+          if (isSvg) toast(`${f.name}：已安全清理并加入 SVG；发送后 Agent 可选 image / ocr / code`, 'ok', 4200);
         } else if (PDF_RE.test(f.name) || f.type === 'application/pdf') {
           if (f.size > MAX_PDF) { toast(`${f.name}：PDF 超过 12MB`, 'err'); continue; }
           // PDF 原样进沙箱 uploads/，由 Agent 调用 analyze_pdf（文本层 + 整批页图识图）；不再在发送前逐页转图

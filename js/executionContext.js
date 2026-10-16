@@ -15,7 +15,7 @@ import { CORE_TOOL_NAMES, TOOL_MOUNT_RULES as REG_TOOL_MOUNT_RULES } from './cap
 // 混版纪律：本文件不 import 任何其它 js/ 模块（能力约束对象由调用方注入），
 // 这样旧缓存下缺任何一侧都不会白屏，最坏情况是上下文退化成纯布尔掩码。
 
-export const EXECUTION_CONTEXT_VERSION = 'exec-context-2.5.0';
+export const EXECUTION_CONTEXT_VERSION = 'exec-context-2.5.1';
 
 /** 上下文的固定分区：报告/面板按这个顺序渲染，缺分区显示「未记录」而不是塌掉。 */
 export const CONTEXT_SECTIONS = Object.freeze([
@@ -365,7 +365,7 @@ export function describeExecutionContext(ctx) {
   const c = ctx.capability.constraints;
   const scope = [];
   if (c) {
-    if (c.sandbox && c.sandbox.enabled) scope.push(`沙箱网络${c.sandbox.network ? '允许' : '禁止'}·≤${Math.round(c.sandbox.maxRuntimeMs / 1000)}s`);
+    if (c.sandbox && c.sandbox.enabled) scope.push(`沙箱网络${c.sandbox.network ? '允许' : '禁止'}·默认${Math.round((c.sandbox.defaultRuntimeMs || 30000) / 1000)}s·单次上限${Math.round(c.sandbox.maxRuntimeMs / 1000)}s`);
     if (c.dispatch && c.dispatch.enabled) scope.push(`并发≤${c.dispatch.maxParallelTasks}`);
     if (c.filesystem && (c.filesystem.protectedPaths || []).length) scope.push(`保护路径 ${c.filesystem.protectedPaths.length}`);
   }
@@ -434,6 +434,7 @@ export function attachmentKindOf(a) {
   for (const [kind, re] of Object.entries(ATTACHMENT_KIND_RE)) if (re.test(name)) return kind;
   if (a.source === 'office' || /\.(docx|pptx|doc)$/i.test(String(a.name || ''))) return 'office';
   if (a.source === 'video' || /^data:video\//.test(String(a.dataUrl || ''))) return 'video';
+  if (a.source === 'svg' || /\.svg$/i.test(name) || /^data:image\/svg\+xml/i.test(String(a.dataUrl || ''))) return 'svg';
   if (/^data:application\/pdf/.test(String(a.dataUrl || ''))) return 'pdf';
   if (a.kind === 'image' || /^data:image\//.test(String(a.dataUrl || ''))) return 'image';
   if (a.kind === 'text') return 'text';

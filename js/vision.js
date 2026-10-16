@@ -3,6 +3,7 @@ import { normalizeAudioData } from './audio-format.js';
 // 模型由设置页「多模态模型」决定（config.js VISION_MODELS / VIDEO_MODELS），默认仍是 deepseek-v4-flash-vision-exp。
 // 独立文件，避免给 api.js 新增具名导出（Pages 混版缓存会白屏）。
 import { authHeaders } from './api.js?v=2026.10.11.1';
+import { svgDataUrl } from './svg-safety.js';
 import { gatewayBase, otherGatewayBase, setGatewayBase, isNetworkError } from './endpoint.js';
 import { DEFAULT_VISION_MODEL, DEFAULT_VIDEO_MODEL, resolveVisionModel, resolveVideoModel, DEFAULT_AUDIO_MODEL, resolveAudioModel } from './config.js?v=2026.10.11.1';
 
@@ -83,11 +84,17 @@ async function oneShot(body, apiKey, signal) {
 // 其它格式（bmp/ico/tiff/avif/heic/apng/svg）在此函数里先转成 image/png，避免 400。
 const VISION_COMPAT_MIME = /^image\/(jpe?g|png|gif|webp)$/i;
 async function normalizeForVision(u) {
-  if (!/^data:image\//i.test(String(u || ''))) return u; // http(s) URL 原样传
-  const mm = /^data:([^;]+);base64,/.exec(u);
+  let sourceUrl = String(u || '');
+  if (!/^data:image\//i.test(sourceUrl)) return sourceUrl; // http(s) URL 原样传
+  const mm = /^data:([^;,]+)(?:;[^,]*)?,/i.exec(sourceUrl);
   const mime = mm ? mm[1].toLowerCase() : '';
-  if (VISION_COMPAT_MIME.test(mime)) return u;
-  // 不在白名单里 → 画到 <img> 再导出成 PNG；SVG 也走这一条（SVG 里可以含外链，直接给模型风险）
+  const isSvg = mime === 'image/svg+xml';
+  if (isSvg) {
+    try { sourceUrl = svgDataUrl(sourceUrl); }
+    catch (err) { throw new Error(`SVG 安全检查失败：${err.message || err}`); }
+  }
+  if (VISION_COMPAT_MIME.test(mime)) return sourceUrl;
+  // 不在白名单里 → 先清理 SVG，再在本机栅格化为 PNG；绝不把原始 SVG 源码直接发给视觉模型。
   try {
     const dataURL = await new Promise((resolve, reject) => {
       const img = new Image();
@@ -103,20 +110,21 @@ async function normalizeForVision(u) {
           }
           canvas.width = Math.max(1, w); canvas.height = Math.max(1, h);
           const ctx = canvas.getContext('2d');
-          if (mime === 'image/svg+xml') ctx.fillStyle = '#fff'; // SVG 透明底填白，避免黑底
+          if (isSvg) ctx.fillStyle = '#fff'; // SVG 透明底填白，避免黑底
           ctx.fillRect(0, 0, canvas.width, canvas.height);
           ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
           resolve(canvas.toDataURL('image/png'));
         } catch (e) { reject(e); }
       };
       img.onerror = () => reject(new Error('图片无法解码为 PNG（可能是不支持的容器）'));
-      img.src = u;
+      img.src = sourceUrl;
     });
     return dataURL;
   } catch (err) {
-    // 兜底：解码失败就原样传（可能 400，但至少不拦流程）
+    if (isSvg) throw new Error(`SVG 安全栅格化失败：${err.message || err}`);
+    // 非 SVG 解码失败时保留既有兼容回退；SVG 从不以未栅格化的原文透传。
     console.warn('[vision] normalize image failed, fall through:', err);
-    return u;
+    return sourceUrl;
   }
 }
 

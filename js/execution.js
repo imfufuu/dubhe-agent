@@ -24,7 +24,7 @@ import { sha256Hex, GENESIS_TURN_DIGEST } from './nexus.js';
 // ── 0. 策略版本（一次执行的审计记录必须记录这些版本，否则无法归因退化来源）──
 export const EXECUTION_KERNEL_VERSION = '2.3.0';
 export const EXECUTION_POLICY_VERSION = 'policy-2.5.0';
-export const TOOL_CONTRACT_VERSION = 'tool-contract-2.4.1';
+export const TOOL_CONTRACT_VERSION = 'tool-contract-2.4.2';
 export const BUDGET_POLICY_VERSION = 'budget-policy-2.3.0';
 export const RISK_POLICY_VERSION = 'risk-policy-2.5.0';
 export const PROMISE_POLICY_VERSION = 'prompt-contract-2.3.0';
@@ -580,7 +580,7 @@ export function assertContextToolAlignment(ctx, tools = []) {
 // 单纯的布尔掩码只能表达「工具在不在」，表达不了「在什么条件下能用」。
 export const DEFAULT_CAPABILITY_CONSTRAINTS = Object.freeze({
   web: Object.freeze({ allowedHosts: [], maxFetchesPerTurn: 8 }),
-  sandbox: Object.freeze({ network: true, maxRuntimeMs: 120000, maxExecutionsPerTurn: 12, allowedPaths: [] }),
+  sandbox: Object.freeze({ network: true, defaultRuntimeMs: 30000, maxRuntimeMs: 600000, maxExecutionsPerTurn: 12, allowedPaths: [] }),
   dispatch: Object.freeze({ maxParallelTasks: 3, maxTotalTasks: 8 }),
   filesystem: Object.freeze({ writeOverwrite: 'allow', protectedPaths: ['uploads/'] }),
 });
@@ -612,7 +612,7 @@ export function describeCapabilityConstraints(c) {
   const bits = [
     `中继=${c.bits.relay ? 'on' : 'off'}`,
     `Web=${c.web.enabled ? (c.web.allowedHosts && c.web.allowedHosts.length ? `限 ${c.web.allowedHosts.length} 个域名` : '全开放') : 'off'}`,
-    `Sandbox=${c.sandbox.enabled ? `网络${c.sandbox.network ? '允许' : '禁止'}·≤${Math.round(c.sandbox.maxRuntimeMs / 1000)}s·远程C++${c.sandbox.remoteCpp === false ? 'off' : 'on'}` : 'off'}`,
+    `Sandbox=${c.sandbox.enabled ? `网络${c.sandbox.network ? '允许' : '禁止'}·默认${Math.round((c.sandbox.defaultRuntimeMs || 30000) / 1000)}s·单次≤${Math.round(c.sandbox.maxRuntimeMs / 1000)}s·远程C++${c.sandbox.remoteCpp === false ? 'off' : 'on'}` : 'off'}`,
     `Dispatch=${c.dispatch.enabled ? `并发≤${c.dispatch.maxParallelTasks}` : 'off'}`,
     `覆盖策略=${c.filesystem.writeOverwrite}`,
   ];
@@ -839,8 +839,8 @@ export const TOOL_CONTRACTS = Object.freeze({
   document_tool: contract({ sideEffect: 'filesystem', idempotent: false, timeoutMs: 70000, riskLevel: 'L2', verifyAfterRun: true, note: '本地 Worker 读写文档；保存为新输出，不上传原件' }),
   knowledge_search: contract({ sideEffect: 'none', idempotent: true, timeoutMs: 12000, riskLevel: 'L0', note: '按需检索项目内置知识，无外部副作用' }),
   browser_sandbox: contract({ sideEffect: 'sandbox', idempotent: false, timeoutMs: 75000, riskLevel: 'L2', verifyAfterRun: true, note: '只运行沙箱 HTML 项目；本机 Chromium 调试/截图，不接受公网 URL 或 shell 命令' }),
-  execute_javascript: contract({ sideEffect: 'sandbox', idempotent: false, timeoutMs: 22000, riskLevel: 'L2', verifyAfterRun: true, note: '代码可写沙箱文件，执行后需核验副作用' }),
-  execute_python: contract({ sideEffect: 'sandbox', idempotent: false, timeoutMs: 120000, riskLevel: 'L2', verifyAfterRun: true, note: 'Pyodide 首次加载慢，超时阈值按运行时常驻放宽' }),
+  execute_javascript: contract({ sideEffect: 'sandbox', idempotent: false, timeoutMs: 600000, riskLevel: 'L2', verifyAfterRun: true, note: '代码可写沙箱文件；默认 30 秒，可按 timeout_sec 设置至 600 秒，需核验副作用' }),
+  execute_python: contract({ sideEffect: 'sandbox', idempotent: false, timeoutMs: 600000, riskLevel: 'L2', verifyAfterRun: true, note: '用户代码默认 30 秒、可设至 600 秒；冷启动/装包另有 120 秒准备窗口' }),
   execute_cpp: contract({ sideEffect: 'remote', idempotent: true, retryPolicy: 'once', timeoutMs: 45000, riskLevel: 'L2', external: true, note: '远程 Compiler Explorer 调用' }),
   write_file: contract({ sideEffect: 'filesystem', idempotent: false, timeoutMs: 10000, riskLevel: 'L2', rollback: 'snapshot-fs', verifyAfterRun: true, note: '覆盖已有文件不可自动恢复' }),
   read_file: contract({ idempotent: true, retryPolicy: 'backoff', timeoutMs: 5000, riskLevel: 'L1' }),
@@ -854,6 +854,7 @@ export const TOOL_CONTRACTS = Object.freeze({
   generate_image: contract({ sideEffect: 'cost', idempotent: false, timeoutMs: 180000, riskLevel: 'L2', external: true, note: '外部生图调用（计费）' }),
   analyze_image: contract({ sideEffect: 'remote', idempotent: true, retryPolicy: 'once', timeoutMs: 60000, riskLevel: 'L1', external: true, note: '图片上行到网关做视觉分析' }),
   analyze_pdf: contract({ sideEffect: 'remote', idempotent: true, retryPolicy: 'once', timeoutMs: 180000, riskLevel: 'L1', external: true, note: 'PDF 文本层本地提取；页图整批上行到网关做视觉分析' }),
+  analyze_svg: contract({ sideEffect: 'remote', idempotent: true, retryPolicy: 'once', timeoutMs: 120000, riskLevel: 'L1', external: true, note: 'SVG 本地安全清理与栅格化后上行单张 PNG；ocr/code 为本地模式' }),
   analyze_audio: contract({ sideEffect: 'remote', idempotent: true, retryPolicy: 'once', timeoutMs: 240000, riskLevel: 'L1', external: true, note: '原音频通过 file 部件上传网关，Gemini 分析（≤16MB）' }),
   analyze_video: contract({ sideEffect: 'remote', idempotent: true, retryPolicy: 'once', timeoutMs: 240000, riskLevel: 'L1', external: true, note: '视频 base64 上行到网关交给 Gemini 做视频理解（≤16MB）' }),
   zip_files: contract({ sideEffect: 'filesystem', idempotent: false, timeoutMs: 15000, riskLevel: 'L2', verifyAfterRun: true }),
@@ -884,8 +885,24 @@ export const TOOL_CONTRACTS = Object.freeze({
   dispatch_subagent: contract({ sideEffect: 'cost', idempotent: false, timeoutMs: 600000, riskLevel: 'L2', external: true, note: '独立上下文子智能体，产生额外推理成本' }),
 });
 
-export function getToolContract(name) {
-  return TOOL_CONTRACTS[String(name)] || null;
+export function getToolContract(name, args = null) {
+  const key = String(name);
+  const base = TOOL_CONTRACTS[key] || null;
+  if (!base || !args || typeof args !== 'object') return base;
+  const mode = String(args.mode || 'image').toLowerCase();
+  const pdfTextOnly = key === 'analyze_pdf' && (mode === 'ocr' || Number(args.pages) === 0);
+  const svgLocal = key === 'analyze_svg' && (mode === 'ocr' || mode === 'code');
+  if (pdfTextOnly || svgLocal) {
+    return {
+      ...base,
+      sideEffect: 'none',
+      external: false,
+      note: key === 'analyze_pdf'
+        ? 'PDF 内嵌文本层本地提取，不上传页面图片'
+        : (mode === 'ocr' ? '本地提取 SVG 原生文本，不访问网关' : '仅将安全清理后的 SVG 源码交给 Agent，不执行、不上传'),
+    };
+  }
+  return base;
 }
 
 export function verifyToolContractCoverage(toolNames = []) {
@@ -969,6 +986,16 @@ export function validateToolArgs(args, parameters = null) {
       errors.push({ id: `type-mismatch:${key}`, detail: `${key} 期望 ${TYPEOF_LABEL[want] || want}，实际是 ${TYPEOF_LABEL[actual] || actual}` });
       continue;
     }
+    if (typeof val === 'number' && Number.isFinite(val)) {
+      if (Number.isFinite(spec.minimum) && val < spec.minimum) {
+        errors.push({ id: `below-minimum:${key}`, detail: `${key}=${val} 小于最小值 ${spec.minimum}` });
+        continue;
+      }
+      if (Number.isFinite(spec.maximum) && val > spec.maximum) {
+        errors.push({ id: `above-maximum:${key}`, detail: `${key}=${val} 超过最大值 ${spec.maximum}` });
+        continue;
+      }
+    }
     if (Array.isArray(spec.enum) && spec.enum.length && !spec.enum.includes(val)) {
       errors.push({ id: `enum-violation:${key}`, detail: `${key}=${String(val)} 不在允许值 [${spec.enum.map((x) => String(x)).slice(0, 8).join(', ')}] 内` });
       continue;
@@ -990,7 +1017,7 @@ export function validateToolCallPre({
   name = '', args = null, toolDef = null, tools = [], capabilities = null, budget = null, risk = null,
   seenIdempotency = null, turnBudget = null,
 } = {}) {
-  const contractDef = getToolContract(name);
+  const contractDef = getToolContract(name, args);
   const errors = [];
   const warnings = [];
   const names = (Array.isArray(tools) ? tools : []).map(toolNameOf).filter(Boolean);
@@ -1296,7 +1323,7 @@ export function formatBudgetLedger(gov) {
 // 「还剩几次、该怎么省」，耗尽的通道直接告知「这类调用不会再被放行」，让模型提前收敛而不是事后被拦。
 export const BUDGET_WARN_THRESHOLD = 2;
 // 计 1 次外部副作用的工具（与 classifyToolRisk 的 hasExternalSideEffect 判定一致：external / network / cost / remote）
-const EXTERNAL_TOOL_HINT = 'fetch_url / search_web / crawl_site / download_file / generate_image / analyze_image / analyze_pdf / analyze_video / analyze_audio / execute_cpp / run_git / dispatch_subagent';
+const EXTERNAL_TOOL_HINT = 'fetch_url / search_web / crawl_site / download_file / generate_image / analyze_image / analyze_pdf / analyze_svg / analyze_video / analyze_audio / execute_cpp / run_git / dispatch_subagent';
 
 export function formatBudgetForecast(gov, { tools = null } = {}) {
   if (!gov) return '';

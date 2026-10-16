@@ -449,7 +449,7 @@ test('convert_file：三条通路计划、ffmpeg 参数、注册表/契约/挂�
   assert.equal(String.fromCharCode(wav[0], wav[1], wav[2], wav[3]), 'RIFF');
   const { TOOL_DEFS } = await import('../js/tools.js');
   assert.ok(TOOL_DEFS.some((t) => t.name === 'convert_file' && /ffmpeg\.wasm/.test(t.description)));
-  assert.equal(TOOL_DEFS.length, 38);
+  assert.equal(TOOL_DEFS.length, 39, '含新增 analyze_svg 能力');
   const caps = await import('../js/capabilities.js');
   assert.ok(caps.CAPABILITY_REGISTRY.convert_file, '能力登记');
   assert.ok(caps.TOOL_MOUNT_RULES.convert_file, '按需挂载规则（no-rule 会全量下发）');

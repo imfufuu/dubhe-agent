@@ -325,6 +325,9 @@ function attachmentNote(a) {
     const pages = a.pages ? `，约 ${a.pages} 页` : '';
     return `【PDF 附件「${a.name}」已原样写入沙箱 uploads/${a.name}${pages}。对话模型不能直接读 PDF，请调用 analyze_pdf 工具（会提取文本层并整批识图）。】`;
   }
+  if (a.source === 'svg' || /\.svg$/i.test(String(a.name || ''))) {
+    return `【SVG 矢量图附件「${a.originalName || a.name}」已安全清理并写入沙箱 uploads/${a.name}。请按用户目标调用 analyze_svg：mode=image 视觉分析（清理后本地栅格化并上传）、mode=ocr 仅读原生文字、mode=code 查看安全源码；ocr/code 不调用外部模型。】`;
+  }
   if (a.source === 'video' || /^video\//i.test(String(a.mime || '')) || /\.(mp4|webm|mov|m4v)$/i.test(String(a.name || ''))) {
     const dur = a.durationSec ? `，约 ${Math.round(a.durationSec)} 秒` : '';
     return `【视频附件「${a.name}」已原样写入沙箱 uploads/${a.name}${dur}。对话模型不能直接看视频，请调用 analyze_video 工具（视频识别模型会描述画面、转录字幕与语音）。】`;
@@ -342,7 +345,7 @@ function userTextParts(m) {
   const parts = [];
   if (m.text) parts.push({ type: 'text', text: m.text });
   for (const a of m.attachments || []) {
-    if (a.kind === 'image') {
+    if (a.kind === 'image' && a.source !== 'svg') {
       const hint = a.name ? `uploads/${a.name}` : 'uploads/';
       parts.push({ type: 'text', text: `【图片附件「${a.name || 'image'}」已写入沙箱 ${hint}。对话模型是纯文本，请调用 analyze_image 工具查看。】` });
     } else if (a.kind === 'text' && a.text != null) parts.push({ type: 'text', text: `【附件：${a.name}】\n${a.text}` });
@@ -419,7 +422,7 @@ export function buildAnthropicPayload(messages, { maxTokens = MAX_TOKENS, includ
         const content = [];
         if (m.text) content.push({ type: 'text', text: m.text });
         for (const a of m.attachments) {
-          if (a.kind === 'image') {
+          if (a.kind === 'image' && a.source !== 'svg') {
             const hint = a.name ? `uploads/${a.name}` : 'uploads/';
             content.push({ type: 'text', text: `【图片附件「${a.name || 'image'}」已写入沙箱 ${hint}。对话模型是纯文本，请调用 analyze_image 工具查看。】` });
           } else if (a.kind === 'text' && a.text != null) {

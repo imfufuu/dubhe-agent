@@ -93,6 +93,14 @@ export function toolAccessSet(call) {
     case 'diff_text': return { reads: [...strList(a.left_path), ...strList(a.right_path)], writes: [] };
     case 'analyze_image': return { reads: [...strList(a.path), ...pathList(a.paths)], writes: [] };
     case 'analyze_pdf': return { reads: a.path ? strList(a.path) : [ACCESS_ANY], writes: [] };
+    case 'analyze_svg': {
+      const reads = a.path ? strList(a.path) : [ACCESS_ANY];
+      if (String(a.mode || 'image') === 'code') return { reads, writes: [] };
+      if (!a.path) return { reads, writes: [ACCESS_ANY] };
+      const source = String(a.path).trim().replace(/^\.\//, '');
+      const base = source.replace(/\.[^.]+$/, '').replace(/^internal\//, '').replace(/^uploads\//, '').replace(/^outputs\//, '');
+      return { reads, writes: [`internal/ocr/${base}.ocr.md`] };
+    }
     case 'analyze_audio': case 'analyze_video': return { reads: a.path ? strList(a.path) : [ACCESS_ANY], writes: [] };
     case 'fetch_url': return { reads: [], writes: strList(a.save_path) };
     case 'browser_sandbox': return { reads: [ACCESS_ANY], writes: [ACCESS_ANY] };

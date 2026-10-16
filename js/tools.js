@@ -9,6 +9,7 @@ import { CODE_TOOL_NAMES as REG_CODE_TOOL_NAMES, LEGACY_TOOL_ALIASES as REG_LEGA
 import { runJavaScript, runPython, runCpp, pythonAvailable, persistenceNote } from './sandbox.js';
 import { generateImage, editImage, bytesToDataUrl, dataUrlToBytes, sniffImage } from './api.js?v=2026.10.11.1';
 import { analyzeImage, analyzeVideo, analyzeAudio, VISION_TOOL_MODEL, VIDEO_TOOL_MODEL } from './vision.js';
+import { sanitizeSvgMarkup, svgSourceFromValue, svgDataUrl, extractSvgText } from './svg-safety.js';
 import { pdfToImages, pdfExtractText } from './pdfpages.js';
 import { SUBAGENTS } from './subagents.js';
 import { DEFAULT_IMAGE_MODEL, IMAGE_SIZES, IMAGE_QUALITIES, IMAGE_FORMATS, IMAGE_BACKGROUNDS, IMAGE_MODEL_IDS, resolveImageModel, resolveVisionModel, resolveVideoModel, resolveAudioModel } from './config.js?v=2026.10.11.1';
@@ -59,25 +60,27 @@ export const TOOL_DEFS = [
   { name: 'knowledge_search', description: 'Search the bundled bilingual project knowledge for exact rendering grammar, tool/runtime details and product/file policies. No external search; retrieve only needed sections. 核心规则/实时能力优先于历史参考。', parameters: { type:'object', properties: { query:{type:'string',description:'Topic keywords / 关键词'}, topic:{type:'string',enum:['runtime','rendering'],description:'Optional topic filter'}, language:{type:'string',enum:['zh','en']}, offset:{type:'number',description:'Continue a long matched section at this character offset'} }, required:['query'] } },
   {
     name: 'execute_javascript',
-    description: '在隔离的 Web Worker 沙箱中执行 JavaScript（支持顶层 await）。有 console、files，以及 Node 风格垫片：require（fs→映射到 files / path / buffer / util / events / crypto[sha256·sha1·md5·hmac·随机] / os / process / assert / url / querystring / timers）、Buffer、process、document.createElement("canvas")（OffscreenCanvas，await canvas.toDataURL()）。联网开启且中继可用时 fetch（仅 GET，经中继，≤8 次 / ≤2MB 每次）与 importScripts（加载 CDN 库，如 jsDelivr UMD 包）可用，否则调用会报「沙箱内网络未开启」；没有真实 DOM、XMLHttpRequest、WebSocket、child_process / http 等 Node 原生模块。files 是无原型的字典对象（Object.create(null)：files.constructor 为 undefined，用 Object.keys(files) / "k" in files 判断），键=完整相对路径，例 files["files/a.txt"] = "hi"。它是会话文件系统的完整快照：此前 write_file / 其它工具 / 上一次沙箱写的文件都在里面；本次对 files 的新增、修改、delete 在执行结束后同步回会话文件系统，后续任何工具（read_file / text_tool / 下一次 execute_*）都能看到，结果末尾的 files_keys 列出同步后的键。不熟悉就先探测：typeof console、Object.keys(files)。失败后先探测环境，不要换一个 API 名再猜。首段代码必须完整可运行；长命令保留源码 path，小错误最小补丁再按 path 执行。return 值或最后表达式作为结果。',
+    description: '在隔离的 Web Worker 沙箱中执行 JavaScript（支持顶层 await）。有 console、files，以及 Node 风格垫片：require（fs→映射到 files / path / buffer / util / events / crypto[sha256·sha1·md5·hmac·随机] / os / process / assert / url / querystring / timers）、Buffer、process、document.createElement("canvas")（OffscreenCanvas，await canvas.toDataURL()）。联网开启且中继可用时 fetch（仅 GET，经中继，≤8 次 / ≤2MB 每次）与 importScripts（加载 CDN 库，如 jsDelivr UMD 包）可用，否则调用会报「沙箱内网络未开启」；没有真实 DOM、XMLHttpRequest、WebSocket、child_process / http 等 Node 原生模块。files 是无原型的字典对象（Object.create(null)：files.constructor 为 undefined，用 Object.keys(files) / "k" in files 判断），键=完整相对路径，例 files["files/a.txt"] = "hi"。它是会话文件系统的完整快照：此前 write_file / 其它工具 / 上一次沙箱写的文件都在里面；本次对 files 的新增、修改、delete 在执行结束后同步回会话文件系统，后续任何工具（read_file / text_tool / 下一次 execute_*）都能看到，结果末尾的 files_keys 列出同步后的键。不熟悉就先探测：typeof console、Object.keys(files)。失败后先探测环境，不要换一个 API 名再猜。首段代码必须完整可运行；长命令保留源码 path，小错误最小补丁再按 path 执行。return 值或最后表达式作为结果。默认代码执行超时 30 秒；可传 timeout_sec（1–600 秒）为本次运行单独设定，超时会强制终止 Worker。',
     parameters: {
       type: 'object',
       properties: {
         path: { type: 'string', description: '已有沙箱源码文件路径，代替 code。小错误用 write_file(mode=replace) 局部修补后按 path 重跑，不要重发全文。' },
         code: { type: 'string', description: '要执行的 JavaScript 代码' },
+        timeout_sec: { type: 'integer', minimum: 1, maximum: 600, description: '可选：用户代码执行超时秒数，默认 30，最大 600' },
       },
       anyOf: [{ required: ['code'] }, { required: ['path'] }],
     },
   },
   {
     name: 'execute_python',
-    description: '在 Pyodide（WebAssembly Python 3）沙箱中执行 Python。提供 FILES 字典，键=完整相对路径，例 FILES["files/a.txt"] = "hi"。FILES 是会话文件系统的完整快照（含此前 write_file / 上一次沙箱写的文件），对它的增删改在执行结束后同步回会话文件系统，后续任何工具都能看到。没有 Node/浏览器宿主 API；沙箱禁网（requests / js.fetch 对任意网址都会被拒，只有装包时的 Pyodide CDN 与 PyPI 放行），要抓网页用 fetch_url。写入 FILES 的路径必须是合法相对路径，internal/ 与 .git/ 受保护。print 输出被捕获；最终结果赋给 result。code 必须完整可运行。可用 micropip / loadPackage 装第三方库（numpy、pandas 等）。本会话已装的包不会重装；刷新后运行时重建，会再 loadPackage（通常走浏览器缓存）。运行时常驻，仅会话首次需下载（约 10-30 秒）。',
+    description: '在 Pyodide（WebAssembly Python 3）沙箱中执行 Python。提供 FILES 字典，键=完整相对路径，例 FILES["files/a.txt"] = "hi"。FILES 是会话文件系统的完整快照（含此前 write_file / 上一次沙箱写的文件），对它的增删改在执行结束后同步回会话文件系统，后续任何工具都能看到。没有 Node/浏览器宿主 API；沙箱禁网（requests / js.fetch 对任意网址都会被拒，只有装包时的 Pyodide CDN 与 PyPI 放行），要抓网页用 fetch_url。写入 FILES 的路径必须是合法相对路径，internal/ 与 .git/ 受保护。print 输出被捕获；最终结果赋给 result。code 必须完整可运行。可用 micropip / loadPackage 装第三方库（numpy、pandas 等）。本会话已装的包不会重装；刷新后运行时重建，会再 loadPackage（通常走浏览器缓存）。运行时常驻，仅会话首次需下载（约 10-30 秒）。默认用户代码执行超时 30 秒；可传 timeout_sec（1–600 秒）设定本次时限。冷启动和按需装包另有 120 秒准备窗口，不计入代码时限。',
     parameters: {
       type: 'object',
       properties: {
         path: { type: 'string', description: '已有沙箱源码文件路径，代替 code。小错误用 write_file(mode=replace) 局部修补后按 path 重跑，不要重发全文。' },
         code: { type: 'string', description: '要执行的 Python 代码' },
         packages: { type: 'array', items: { type: 'string' }, description: '可选：先安装的 PyPI / Pyodide 包名，如 ["numpy","pandas"]。代码里的 import 也会自动尝试安装。' },
+        timeout_sec: { type: 'integer', minimum: 1, maximum: 600, description: '可选：用户代码执行超时秒数，默认 30，最大 600；冷启动与装包时间另计' },
       },
       anyOf: [{ required: ['code'] }, { required: ['path'] }],
     },
@@ -191,6 +194,21 @@ export const TOOL_DEFS = [
     },
   },
   {
+    name: 'analyze_svg',
+    description:
+      '分析沙箱中的 SVG 矢量图（附件或 outputs/*.svg）。Agent 可选 mode：image=先移除脚本、事件处理器、外链和危险 CSS，再在本地栅格化并上传识图模型；ocr=仅提取 SVG 原生 <text>/<title>/<desc> 文本，不调用外部模型（文字若已转成路径请改用 image）；code=把经过安全清理的 SVG 源码直接交给 Agent 阅读，不上传网关、不执行。默认 image。' +
+      `image 模式使用用户设置的识图模型（默认 ${VISION_TOOL_MODEL}）；必须有 API Key。` +
+      'path 省略时选最近的 SVG。源码长度有安全上限；完整识别/提取文本写入 internal/ocr/，可用 read_file 再读。',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'SVG 沙箱路径，如 uploads/diagram.svg 或 outputs/diagram-001.svg；省略=最近的 SVG' },
+        mode: { type: 'string', enum: ['image', 'ocr', 'code'], description: 'image=安全栅格化后远程识图；ocr=仅读原生 SVG 文本；code=将安全清理后的源码交给 Agent；默认 image' },
+        prompt: { type: 'string', description: 'image 模式的识图要求，如「描述图中结构」「逐字读取所有可见文字」' },
+      },
+    },
+  },
+  {
     name: 'analyze_video',
     description:
       '分析沙箱中的一段视频（用户上传的视频原样存放在 uploads/*.mp4|webm|mov|m4v）：按时间顺序描述画面与动作、转录字幕 / 屏幕文字 / 可听清的语音、概括主题。' +
@@ -215,16 +233,17 @@ export const TOOL_DEFS = [
     name: 'analyze_pdf',
     description:
       '分析沙箱中的 PDF（用户上传的 PDF 原样存放在 uploads/*.pdf）。对话模型不能直接读 PDF：必须调用本工具。' +
-      '流程：① 用 pdf.js 提取全部内嵌文本层；② 把页面渲染成图片，整批一次性上传给设置里选定的识图模型（默认 ' + VISION_TOOL_MODEL + '）识图（表格、公式、扫描件也能读）；③ 返回「文本层 + 视觉识别」合并结果。' +
+      'mode=image（默认）会提取 PDF 内嵌文本层并把选定页渲染为图片，整批上传识图模型；mode=ocr 只提取内嵌文本层，不上传页面图片；mode=code 以精确保留代码字符、缩进和行号为目标识别源码页（需视觉模型，适合扫描版代码）。' +
       '不要用 read_file 读 PDF（那是 base64），也不要逐页调 analyze_image。' +
-      'path 省略时自动取用户最近上传的 PDF。pages 可限制识图页数（默认前 8 页；文本层始终提取全部）。' +
+      'path 省略时自动取用户最近上传的 PDF。pages 可限制 image/code 模式的识图页数（默认前 8 页；文本层始终提取全部）。' +
       '返回全文，不截成摘要；同时写入沙箱 internal/ocr/{文件名}.ocr.md，可用 read_file 再读。',
     parameters: {
       type: 'object',
       properties: {
         path: { type: 'string', description: '沙箱 PDF 路径，如 uploads/report.pdf；省略=最近上传的 PDF' },
-        prompt: { type: 'string', description: '分析要求，如「提取全部表格」「总结每页要点」；缺省为完整转录并描述图表' },
-        pages: { type: 'integer', description: '最多识图的页数（1–24，默认 8）。只需文本层时可传 0 跳过识图' },
+        prompt: { type: 'string', description: '分析要求，如「提取全部表格」「总结每页要点」；code 模式会额外要求逐字抄录源码' },
+        mode: { type: 'string', enum: ['image', 'ocr', 'code'], description: 'image=内嵌文本+视觉识图（默认）；ocr=仅本地提取文本层，不上传图片；code=视觉模型精确抄录 PDF 中的代码' },
+        pages: { type: 'integer', minimum: 0, maximum: 24, description: 'image/code 模式最多识图页数（默认 8）；0 跳过视觉识别' },
         first_page: { type: 'integer', description: '识图起始页（默认 1），配合 pages 分段读长文档' },
       },
     },
@@ -606,6 +625,14 @@ export function normalizeFsPath(p) {
   return parts.join('/');
 }
 
+const DEFAULT_CODE_TIMEOUT_MS = 30000;
+const MAX_CODE_TIMEOUT_MS = 600000;
+function codeTimeoutMs(seconds) {
+  const n = Number(seconds);
+  if (!Number.isFinite(n) || n < 1) return DEFAULT_CODE_TIMEOUT_MS;
+  return Math.min(MAX_CODE_TIMEOUT_MS, Math.floor(n) * 1000);
+}
+
 function nextOutputPath(fs, prefix, ext) {
   let last = 0;
   const re = new RegExp(`^outputs/${prefix}-(\\d+)\\.[^.]*$`);
@@ -736,7 +763,7 @@ async function executeToolBody(outerName, outerArgs, ctx) {
         args = prepareCommandArgs(name, args, fs);
         emit({ status: 'running', lang: 'javascript' });
         // .35：顶栏联网开且中继可用时，沙箱内 fetch / importScripts 经主线程走中继（GET-only、次数 / 字节上限）
-        const out = await runJavaScript(args.code || '', fs, { signal: ctx.signal, onOutput: (log) => emit({ stream: log.level === 'error' ? 'stderr' : 'stdout', delta: `[${log.level}] ${log.text}\n` }), onPhase: (phase) => emit({ workerStage: phase, status: 'running', note: phase === 'bootstrap' ? '正在启动 JS Worker…' : 'JS Worker 已就绪，执行中…' }), net: { enabled: !!ctx.webEnabled, fetchPage: (p) => fetchPage({ ...p, signal: ctx.signal }) } });
+        const out = await runJavaScript(args.code || '', fs, { signal: ctx.signal, timeoutMs: codeTimeoutMs(args.timeout_sec), onOutput: (log) => emit({ stream: log.level === 'error' ? 'stderr' : 'stdout', delta: `[${log.level}] ${log.text}\n` }), onPhase: (phase) => emit({ workerStage: phase, status: 'running', note: phase === 'bootstrap' ? '正在启动 JS Worker…' : 'JS Worker 已就绪，执行中…' }), net: { enabled: !!ctx.webEnabled, fetchPage: (p) => fetchPage({ ...p, signal: ctx.signal }) } });
         emit({ status: out.ok ? 'ok' : 'error', sandboxOk: !!out.ok, lang: 'javascript', logs: out.logs, result: out.result, error: out.error, durationMs: out.durationMs, timedOut: out.timedOut, sandboxBootstrapFailed: !!out.bootstrapFailed, sandboxStarted: !!out.started });
         return formatExecResult('JavaScript', out) + commandRepairNote(retainCommandSource(name, args, ctx, out));
       }
@@ -749,7 +776,7 @@ async function executeToolBody(outerName, outerArgs, ctx) {
         }
         emit({ status: 'running', lang: 'python', note: '执行中…' });
         const extraPkgs = Array.isArray(args.packages) ? args.packages.map((p) => String(p || '').trim()).filter(Boolean) : [];
-        const out = await runPython(args.code || '', fs, (note) => emit({ status: 'running', lang: 'python', note }), extraPkgs, { signal: ctx.signal, onOutput: (log) => emit({ stream: log.level === 'error' ? 'stderr' : 'stdout', delta: `[${log.level}] ${log.text}\n` }) });
+        const out = await runPython(args.code || '', fs, (note) => emit({ status: 'running', lang: 'python', note }), extraPkgs, { signal: ctx.signal, timeoutMs: codeTimeoutMs(args.timeout_sec), onOutput: (log) => emit({ stream: log.level === 'error' ? 'stderr' : 'stdout', delta: `[${log.level}] ${log.text}\n` }) });
         emit({ status: out.ok ? 'ok' : 'error', sandboxOk: !!out.ok, lang: 'python', logs: out.logs, result: out.result, error: out.error, durationMs: out.durationMs, timedOut: out.timedOut });
         return formatExecResult('Python', out) + commandRepairNote(retainCommandSource(name, args, ctx, out));
       }
@@ -1200,6 +1227,66 @@ async function executeToolBody(outerName, outerArgs, ctx) {
           return `analyze_image 失败：${err.message}`;
         }
       }
+      case 'analyze_svg': {
+        const listSvgs = () => fs.list().filter((f) => /\.svg$/i.test(f.path)).map((f) => f.path);
+        let path = normalizeFsPath(args.path || '');
+        if (!path) path = listSvgs().at(-1) || '';
+        if (!path) return 'analyze_svg 失败：沙箱里没有 SVG；上传 SVG 后可用 mode=image / ocr / code 选择分析方式。';
+        let raw = '';
+        try { raw = String(fs.read(path) || ''); } catch { return `analyze_svg 失败：找不到 ${path}（现有 SVG：${listSvgs().join('、') || '无'}）`; }
+        let safeSvg = '';
+        try { safeSvg = sanitizeSvgMarkup(svgSourceFromValue(raw)); }
+        catch (err) { return `analyze_svg 失败：${path} 不是安全、有效的 SVG（${err.message || err}）。`; }
+        const mode = ['image', 'ocr', 'code'].includes(args.mode) ? args.mode : 'image';
+        const outPath = ocrOutPath([path]);
+        if (mode === 'code') {
+          const maxChars = 180000;
+          if (safeSvg.length > maxChars) return `analyze_svg code 模式拒绝输出 ${safeSvg.length} 字源码（上限 ${maxChars}）；请用 read_file 读取 ${path} 的局部内容，或选择 mode=ocr/image。`;
+          const longestFence = Math.max(0, ...[...safeSvg.matchAll(/`+/g)].map((m) => m[0].length));
+          const fence = '`'.repeat(Math.max(3, longestFence + 1));
+          return `[SVG 安全源码] ${path} · ${safeSvg.length} 字。已移除脚本、事件处理器、外链、活动内容与危险 CSS；仅交给 Agent 阅读，不执行、不上传网关。\n\n${fence}xml\n${safeSvg}\n${fence}`;
+        }
+        if (mode === 'ocr') {
+          let text = '';
+          try { text = extractSvgText(safeSvg); }
+          catch (err) { return `analyze_svg OCR 失败：${err.message || err}`; }
+          if (!text) return `[SVG 文本提取完成] ${path} 没有原生 <text>/<title>/<desc> 文本。若文字已转成路径或嵌入图片，请用 mode=image 识图；mode=ocr 不会调用外部模型。`;
+          let saved = false;
+          try { fs.write(outPath, `# ${path} · SVG 原生文本\n\n${text}`); saved = true; } catch { /* 仍返回全文 */ }
+          emit({ status: 'ok', note: `已提取 ${path} 的原生 SVG 文本`, fsChange: saved });
+          return `[SVG 文本提取完成] 文件 ${path} · ${text.length} 字${saved ? ` · 已写入 ${outPath}` : ''}\n\n${text}`;
+        }
+        if (!ctx.apiKey) {
+          emit({ status: 'error', error: { message: '未配置 API Key' } });
+          return '未配置 TeamoRouter API Key，无法调用 SVG 识图模型。可选 mode=ocr/code 在本地处理。';
+        }
+        const visionModel = resolveVisionModel(ctx.visionModel);
+        const t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+        let visionIn = 0, visionOut = 0;
+        try {
+          emit({ status: 'running', note: `安全清理并本地栅格化 SVG（${path}），随后识图…` });
+          const text = await analyzeImage({
+            apiKey: ctx.apiKey,
+            prompt: String(args.prompt || '').trim() || '请完整分析这张 SVG 矢量图：描述结构、关系与含义，并按阅读顺序逐字转录全部可见文字。',
+            dataUrl: svgDataUrl(safeSvg),
+            model: visionModel,
+            signal: ctx.signal,
+            onUsage: (u) => { if (u) { visionIn += Number(u.input || 0); visionOut += Number(u.output || 0); } },
+          });
+          const ms = Math.round(((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()) - t0);
+          let saved = false;
+          try { fs.write(outPath, `# ${path} · SVG 视觉识别\n\n${text}`); saved = true; } catch { /* 仍返回全文 */ }
+          emit({
+            status: 'ok', note: `已识别 ${path}`, durationMs: ms, fsChange: saved,
+            billing: { kind: 'vision', model: visionModel, usage: { input: visionIn, output: visionOut }, imageCount: 1 },
+          });
+          return `[SVG 识图完成] 模型 ${visionModel} · 文件 ${path} · 全文 ${text.length} 字${saved ? `已写入 ${outPath}` : '未存盘，请保留下方全文'}\n\n${text}`;
+        } catch (err) {
+          if (err && (err.name === 'AbortError' || ctx.signal && ctx.signal.aborted)) throw err;
+          emit({ status: 'error', error: { message: err.message } });
+          return `analyze_svg 失败：${err.message}`;
+        }
+      }
       case 'analyze_video': {
         // 逻辑照搬 analyze_image：取路径 → 读 data URL → 交给视频识别模型 → 全文落盘 internal/ocr/*.video.md → 计费事件
         if (!ctx.apiKey) {
@@ -1355,7 +1442,9 @@ async function executeToolBody(outerName, outerArgs, ctx) {
           return `analyze_pdf 失败：${path} 不是 PDF 文件（缺少 %PDF- 头）。`;
         }
         const prompt = String(args.prompt || '').trim();
-        const wantPages = args.pages == null ? 8 : Math.max(0, Math.min(24, Number(args.pages) || 0));
+        const mode = ['image', 'ocr', 'code'].includes(args.mode) ? args.mode : 'image';
+        const requestedPages = args.pages == null ? 8 : Math.max(0, Math.min(24, Number(args.pages) || 0));
+        const wantPages = mode === 'ocr' ? 0 : requestedPages;
         const firstPage = Math.max(1, Number(args.first_page) || 1);
         const t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
         try {
@@ -1373,7 +1462,9 @@ async function executeToolBody(outerName, outerArgs, ctx) {
           let shot = 0;
           let visionIn = 0;
           let visionOut = 0;
-          let renderNote = '';
+          let renderNote = mode === 'ocr'
+            ? 'mode=ocr：只提取 PDF 内嵌文本层，未上传页面图片。'
+            : (requestedPages === 0 ? 'pages=0：视觉识别已跳过。' : '');
           if (wantPages > 0 && ctx.apiKey) {
             emit({ status: 'running', note: `渲染 PDF 页面（第 ${firstPage} 页起，最多 ${wantPages} 页）…` });
             const got = await pdfToImages(bytes, { name: path.split('/').pop(), maxPages: wantPages, firstPage, baseScale: 1.6, maxEdge: 2048, quality: 0.85 });
@@ -1388,10 +1479,15 @@ async function executeToolBody(outerName, outerArgs, ctx) {
                 const from = batch[0].page;
                 const to = batch[batch.length - 1].page;
                 emit({ status: 'running', note: `识图中（${visionModel} · 第 ${from}–${to} 页一次上传${batches.length > 1 ? ` · 批次 ${b + 1}/${batches.length}` : ''}）…` });
-                const hint = layerChars
-                  ? '\n（这些页面来自同一份 PDF；文本层已单独提取，你重点补充文本层拿不到的内容：表格结构、图表/公式/图片含义、版面与标注，并修正文本层的乱序。）'
-                  : '\n（这些页面来自同一份 PDF，可能是扫描件：请按阅读顺序完整转录全部文字，并描述表格与图片。）';
-                const pagePrompt = `${prompt || '请完整分析这份 PDF：转录文字、还原表格、说明图表与公式。'}${hint}\n页码：第 ${from} 到第 ${to} 页，请用「## 第 N 页」标出。`;
+                const hint = mode === 'code'
+                  ? '\n（代码模式：逐页逐行抄录所有代码，严格保留大小写、标点、缩进、括号、运算符与行序；不改写、不解释、不补全不确定内容；每页用代码围栏标出，并将无法辨认处标为 [?]。）'
+                  : layerChars
+                    ? '\n（这些页面来自同一份 PDF；文本层已单独提取，你重点补充文本层拿不到的内容：表格结构、图表/公式/图片含义、版面与标注，并修正文本层的乱序。）'
+                    : '\n（这些页面来自同一份 PDF，可能是扫描件：请按阅读顺序完整转录全部文字，并描述表格与图片。）';
+                const defaultPrompt = mode === 'code'
+                  ? '请精确提取这份 PDF 中的源代码；保持每个字符和缩进，不要总结。'
+                  : '请完整分析这份 PDF：转录文字、还原表格、说明图表与公式。';
+                const pagePrompt = `${prompt || defaultPrompt}${hint}\n页码：第 ${from} 到第 ${to} 页，请用「## 第 N 页」标出。`;
                 const text = await analyzeImage({
                   apiKey: ctx.apiKey,
                   prompt: pagePrompt,
@@ -1425,7 +1521,7 @@ async function executeToolBody(outerName, outerArgs, ctx) {
           try { fs.write(ocrPath, `# ${path}\n\n${text}`); } catch { /* 落盘失败仍回全文 */ }
           emit({
             status: 'ok',
-            note: `已分析 ${path}（文本层 ${layerChars} 字${shot ? ` · 识图 ${shot} 页` : ''}）`,
+            note: `已分析 ${path}（mode=${mode} · 文本层 ${layerChars} 字${shot ? ` · 识图 ${shot} 页` : ''}）`,
             durationMs: ms,
             fsChange: true,
             billing: shot ? {
@@ -1435,7 +1531,7 @@ async function executeToolBody(outerName, outerArgs, ctx) {
               imageCount: shot,
             } : undefined,
           });
-          const head = `[PDF 分析完成] 文件 ${path} · 共 ${totalPages || '?'} 页 · 文本层 ${layerChars} 字 · 识图 ${shot} 页${shot ? `（${visionModel}，整批上传）` : ''} · 全文已写入 ${ocrPath}`;
+          const head = `[PDF 分析完成] mode=${mode} · 文件 ${path} · 共 ${totalPages || '?'} 页 · 文本层 ${layerChars} 字 · 识图 ${shot} 页${shot ? `（${visionModel}，整批上传）` : ''} · 全文已写入 ${ocrPath}`;
           return `${head}${renderNote ? `\n${renderNote}` : ''}\n\n${text}`;
         } catch (err) {
           if (err && (err.name === 'AbortError' || ctx.signal && ctx.signal.aborted)) throw err;

@@ -499,6 +499,14 @@ export function summarizeTurnCost(arg1, opts = {}) {
         visionItems.push(vc);
         continue;
       }
+      if (tc.name === 'analyze_svg' && (!tm || /^\[SVG 识图完成\]/.test(tContent))) {
+        if (tm && !/^\[SVG 识图完成\]/.test(tContent)) continue;
+        const mFound = /^\[SVG 识图完成\] 模型 (\S+)/.exec(tContent);
+        const vc = estimateVisionCost({ model: mFound ? mFound[1] : VISION_MODEL_ID, imageCount: 1, textChars: tContent.length || 600 });
+        visionCostUsd += vc.costUsd;
+        visionItems.push(vc);
+        continue;
+      }
       if (tc.name === 'analyze_image' && (!tm || /^\[识图完成\]/.test(tContent))) {
         const args = tc.args || {};
         const count = Array.isArray(args.paths) && args.paths.length ? args.paths.length : 1;

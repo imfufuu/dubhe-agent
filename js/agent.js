@@ -1322,7 +1322,7 @@ export function createAgent(store, hooks = {}) {
               ? 'pyodide-wasm'
               : call.name === 'execute_javascript'
                 ? 'worker-8ms'
-                : (call.name === 'dispatch_subagent' || call.name === 'generate_image' || call.name === 'analyze_image' || call.name === 'analyze_pdf' || call.name === 'analyze_video' || call.name === 'analyze_audio')
+                : (call.name === 'dispatch_subagent' || call.name === 'generate_image' || call.name === 'analyze_image' || call.name === 'analyze_pdf' || call.name === 'analyze_svg' || call.name === 'analyze_video' || call.name === 'analyze_audio')
                   ? 'gateway-api'
                   : 'browser-0ms';
             telemetry.recordTool(call.name, Math.round(waveMs / Math.max(1, toolCalls.length)), { engine, ok: !isErr });

@@ -9,7 +9,7 @@ import {
 import { protocolOf, providerOf, supportsFastMode, ENCRYPTED_THINKING_RE } from '../js/config.js';
 import { renderMarkdown } from '../js/ui.js';
 import _fs from 'node:fs';
-import { createFS } from '../js/sandbox.js';
+import { createFS, normalizeSandboxTimeoutMs } from '../js/sandbox.js';
 import { createStore } from '../js/state.js';
 import { estimateTokens, compactMessages, truncateToolContent, contextBudgetFor } from '../js/context.js';
 import { thinkingParamsFor } from '../js/config.js';
@@ -520,7 +520,7 @@ test('推理级别 Mini/Low/Medium/High/Max/Ultra 映射到各协议', async () 
   assert.equal(thinkingParamsFor('gpt-5.6-sol', 'high').reasoning_effort, 'high');
   assert.equal(thinkingParamsFor('claude-sonnet-5', 'high').thinking.budget_tokens, 8192);
   assert.ok(thinkingParamsFor('claude-sonnet-5', 'ultra').thinking.budget_tokens > thinkingParamsFor('claude-sonnet-5', 'high').thinking.budget_tokens);
-  assert.match(r.reasoningLevelHint('high'), /深度推理/);
+  assert.match(r.reasoningLevelHint('high'), /深入|深度推理/);
   assert.match(r.reasoningLevelHint('ultra'), /自检|多专家/);
   const ultraSys = cfg.systemPrompt(new Date(), { allowDispatch: true, reasoningLevel: 'ultra' });
   const highSys = cfg.systemPrompt(new Date(), { allowDispatch: false, reasoningLevel: 'high' });
@@ -4165,6 +4165,117 @@ test('analyze_pdf：注册 / 契约 / 访问集 / 附件不再预转页图', asy
   assert.ok(api.includes('请调用 analyze_pdf 工具'));
   const uiSrc = fsp.readFileSync(new URL('../js/ui.js', import.meta.url), 'utf8');
   assert.ok(uiSrc.includes('pathsOfAnalyzePdf(msg)'), 'analyze_pdf 归入 Explored File(s)');
+  assert.deepEqual(def.parameters.properties.mode.enum, ['image', 'ocr', 'code']);
+  assert.match(def.description, /mode=ocr/);
+  assert.match(def.description, /mode=code/);
+  assert.equal(ex.getToolContract('analyze_pdf', { mode: 'ocr' }).external, false, 'PDF 纯文本层模式不计远程副作用');
+  assert.equal(ex.getToolContract('analyze_pdf', { mode: 'code' }).external, true, 'PDF 代码视觉模式仍计远程副作用');
+});
+test('analyze_svg：能力、附件挂载、三种模式及本地安全处理', async () => {
+  const def = TOOL_DEFS.find((t) => t.name === 'analyze_svg');
+  assert.ok(def, '工具已注册');
+  assert.deepEqual(def.parameters.properties.mode.enum, ['image', 'ocr', 'code']);
+  const ec = await import('../js/executionContext.js');
+  const picked = ec.selectToolsForTurn({ allowed: TOOL_DEFS, text: '请检查这张图', attachments: [{ name: 'diagram.svg', kind: 'image', source: 'svg', dataUrl: 'data:image/svg+xml;charset=utf-8,%3Csvg%2F%3E' }] });
+  assert.ok(picked.mounted.some((t) => t.name === 'analyze_svg'));
+  assert.equal(picked.reasons.analyze_svg, 'attachment:svg');
+  assert.ok(!ec.selectToolsForTurn({ allowed: TOOL_DEFS, text: '你好' }).mounted.some((t) => t.name === 'analyze_svg'));
+  const ex = await import('../js/execution.js');
+  assert.equal(ex.getToolContract('analyze_svg').external, true);
+  assert.equal(ex.getToolContract('analyze_svg', { mode: 'ocr' }).external, false);
+  assert.equal(ex.getToolContract('analyze_svg', { mode: 'code' }).sideEffect, 'none');
+  assert.equal(ex.getToolContract('analyze_svg', { mode: 'image' }).external, true);
+  const runner = await import('../js/toolrunner.js');
+  assert.deepEqual(runner.toolAccessSet({ name: 'analyze_svg', args: { path: 'uploads/diagram.svg' } }).writes, ['internal/ocr/diagram.ocr.md']);
+
+  const source = '<svg xmlns="http://www.w3.org/2000/svg" onload="steal()"><script>steal()</script><a href="https://evil.invalid"><text>Hello &amp; world</text></a></svg>';
+  const fs = createFS({ 'uploads/diagram.svg': source });
+  const code = await executeTool('analyze_svg', { path: 'uploads/diagram.svg', mode: 'code' }, { fs });
+  assert.match(code, /\[SVG 安全源码\]/);
+  assert.doesNotMatch(code, /<script\b|onload\s*=|href="https:/i);
+  const ocr = await executeTool('analyze_svg', { path: 'uploads/diagram.svg', mode: 'ocr' }, { fs });
+  assert.match(ocr, /Hello & world/);
+  assert.match(ocr, /internal\/ocr\/diagram\.ocr\.md/);
+  assert.match(fs.read('internal/ocr/diagram.ocr.md'), /Hello & world/);
+});
+test('analyze_svg image 模式：先安全栅格化为 PNG，再才发送给视觉接口', async () => {
+  const source = '<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180" onload="steal()"><script>steal()</script><image href="https://evil.invalid/a.png"/><text>Visible label</text></svg>';
+  const fs = createFS({ 'uploads/diagram.svg': source });
+  const old = { fetch: globalThis.fetch, Image: globalThis.Image, document: globalThis.document };
+  let body;
+  const rasterInputs = [];
+  class FakeImage {
+    naturalWidth = 4000;
+    naturalHeight = 2000;
+    set src(value) { rasterInputs.push(String(value)); queueMicrotask(() => this.onload && this.onload()); }
+  }
+  globalThis.Image = FakeImage;
+  globalThis.document = { createElement: (tag) => {
+    assert.equal(tag, 'canvas');
+    return { width: 0, height: 0, getContext: () => ({ fillStyle: '', fillRect() {}, drawImage() {} }), toDataURL: () => 'data:image/png;base64,UE5H' };
+  } };
+  globalThis.fetch = async (_url, init) => {
+    body = JSON.parse(init.body);
+    return new Response(JSON.stringify({ choices: [{ message: { content: 'SVG 图像分析结果' }, finish_reason: 'stop' }], usage: { prompt_tokens: 12, completion_tokens: 5 } }), { status: 200, headers: { 'content-type': 'application/json' } });
+  };
+  try {
+    const result = await executeTool('analyze_svg', { path: 'uploads/diagram.svg', mode: 'image' }, { fs, apiKey: 'test-key' });
+    assert.match(result, /\[SVG 识图完成\]/);
+    assert.ok(rasterInputs.length > 0);
+    const rasterSvg = decodeURIComponent(rasterInputs[0].split(',').slice(1).join(','));
+    assert.doesNotMatch(rasterSvg, /<script\b|onload\s*=|https:\/\/evil/i);
+    const sentImage = body.messages[0].content.find((part) => part.type === 'image_url').image_url.url;
+    assert.equal(sentImage, 'data:image/png;base64,UE5H', '网关只收到 PNG，不是 SVG 源码');
+    assert.match(fs.read('internal/ocr/diagram.ocr.md'), /SVG 图像分析结果/);
+  } finally {
+    globalThis.fetch = old.fetch;
+    if (old.Image === undefined) delete globalThis.Image; else globalThis.Image = old.Image;
+    if (old.document === undefined) delete globalThis.document; else globalThis.document = old.document;
+  }
+});
+test('analyze_pdf：OCR 本地不上传，代码模式把页图交给视觉模型并强调逐字符转录', async () => {
+  const pdfData = `data:application/pdf;base64,${Buffer.from('%PDF-1.4\\nmock', 'latin1').toString('base64')}`;
+  const fs = createFS({ 'uploads/source.pdf': pdfData });
+  const old = { fetch: globalThis.fetch, window: globalThis.window, document: globalThis.document };
+  let requests = 0;
+  let visionBody = null;
+  const page = {
+    getTextContent: async () => ({ items: [
+      { str: 'function main() {', transform: [1, 0, 0, 1, 10, 80], hasEOL: true },
+      { str: '  return 42;', transform: [1, 0, 0, 1, 10, 50], hasEOL: true },
+      { str: '}', transform: [1, 0, 0, 1, 10, 20], hasEOL: true },
+    ] }),
+    getViewport: ({ scale }) => ({ width: 100 * scale, height: 150 * scale }),
+    render: () => ({ promise: Promise.resolve() }),
+  };
+  globalThis.window = { pdfjsLib: { getDocument: () => ({ promise: Promise.resolve({ numPages: 1, getPage: async () => page, destroy() {} }) }) } };
+  globalThis.document = { createElement: (tag) => {
+    assert.equal(tag, 'canvas');
+    return { width: 0, height: 0, getContext: () => ({ fillStyle: '', fillRect() {}, drawImage() {}, imageSmoothingEnabled: false, imageSmoothingQuality: '' }), toDataURL: () => 'data:image/jpeg;base64,SlBH' };
+  } };
+  globalThis.fetch = async (_url, init) => {
+    requests++;
+    visionBody = JSON.parse(init.body);
+    return new Response(JSON.stringify({ choices: [{ message: { content: '```js\\nfunction main() { return 42; }\\n```' }, finish_reason: 'stop' }], usage: { prompt_tokens: 90, completion_tokens: 20 } }), { status: 200, headers: { 'content-type': 'application/json' } });
+  };
+  try {
+    const local = await executeTool('analyze_pdf', { path: 'uploads/source.pdf', mode: 'ocr' }, { fs, apiKey: 'test-key' });
+    assert.match(local, /mode=ocr/);
+    assert.match(local, /function main\(\)/);
+    assert.equal(requests, 0, 'ocr 模式不得请求视觉网关');
+    assert.match(fs.read('internal/ocr/source.ocr.md'), /function main\(\)/);
+    const code = await executeTool('analyze_pdf', { path: 'uploads/source.pdf', mode: 'code', pages: 1 }, { fs, apiKey: 'test-key' });
+    assert.match(code, /mode=code/);
+    assert.match(code, /function main\(\) \{ return 42; \}/);
+    assert.equal(requests, 1);
+    const pagePrompt = visionBody.messages[0].content.find((part) => part.type === 'text').text;
+    assert.match(pagePrompt, /严格保留大小写、标点、缩进、括号、运算符与行序/);
+    assert.equal(visionBody.messages[0].content.filter((part) => part.type === 'image_url').length, 1);
+  } finally {
+    globalThis.fetch = old.fetch;
+    if (old.window === undefined) delete globalThis.window; else globalThis.window = old.window;
+    if (old.document === undefined) delete globalThis.document; else globalThis.document = old.document;
+  }
 });
 test('移动端消息头模型名与用量同一行；侧栏 Logo 不省略 DUBHEAGENT', async () => {
   const fsp = await import('node:fs');
@@ -4443,7 +4554,7 @@ test('代码块语言在左侧、复制始终可见；用户气泡反色链接',
   assert.match(ep, /Edited Files/i, '完成后显示 Edited Files N');
   assert.match(ui, /\$\{many\} \$\{paths\.length\}/, '多文件才在标题后加数量');
   assert.match(ui, /连续 Edited \/ Explored File/, '同一轮连续 write_file / read_file 合并成一块');
-  assert.match(ui, /FILE_FOLD_TOOLS = new Set\(\['write_file', 'read_file', 'analyze_image', 'analyze_pdf', 'analyze_video', 'analyze_audio'\]\)/, '文件读写与识图从命令芯片组移出');
+  assert.match(ui, /FILE_FOLD_TOOLS = new Set\(\['write_file', 'read_file', 'analyze_image', 'analyze_pdf', 'analyze_svg', 'analyze_video', 'analyze_audio'\]\)/, '文件读写与识图从命令芯片组移出');
   assert.match(ui, /pathsOfAnalyze/, 'analyze_image 路径合并到 Explored Files');
   assert.match(ui, /Ran commands \${total}/, '其余命令统一折叠到 Ran commands（.33：第二个词首字母不大写）');
   assert.doesNotMatch(ui, /'Ran Command'|`Ran Commands|'Explored File'|'Explored Files'/, '折叠头文案第二个词统一小写');
@@ -6786,6 +6897,25 @@ test('2026.10.1.12：P0-4 工具契约层——31 个工具契约全覆盖、调
   assert.equal(warnOnly.ok, true);
   assert.ok(warnOnly.warnings.some((w) => w.id === 'unknown-arg:reason'));
 
+  // 沙箱代码时限：默认 30 秒，单次参数范围 1–600 秒，Worker 层也硬封顶 600 秒。
+  const jsDef = TOOL_DEFS.find((t) => t.name === 'execute_javascript');
+  const pyDef = TOOL_DEFS.find((t) => t.name === 'execute_python');
+  for (const def of [jsDef, pyDef]) {
+    assert.equal(def.parameters.properties.timeout_sec.minimum, 1);
+    assert.equal(def.parameters.properties.timeout_sec.maximum, 600);
+    assert.equal(ex.validateToolArgs({ code: 'print(1)', timeout_sec: 600 }, def.parameters).ok, true);
+    assert.ok(ex.validateToolArgs({ code: 'print(1)', timeout_sec: 0 }, def.parameters).errors.some((e) => e.id === 'below-minimum:timeout_sec'));
+    assert.ok(ex.validateToolArgs({ code: 'print(1)', timeout_sec: 601 }, def.parameters).errors.some((e) => e.id === 'above-maximum:timeout_sec'));
+  }
+  assert.equal(normalizeSandboxTimeoutMs(undefined, 30000), 30000);
+  assert.equal(normalizeSandboxTimeoutMs(1000, 30000), 1000);
+  assert.equal(normalizeSandboxTimeoutMs(900000, 30000), 600000);
+  assert.equal(ex.getToolContract('execute_javascript').timeoutMs, 600000);
+  assert.equal(ex.getToolContract('execute_python').timeoutMs, 600000);
+  const sandboxCaps = ex.buildCapabilityConstraints({ sandboxEnabled: true });
+  assert.equal(sandboxCaps.sandbox.defaultRuntimeMs, 30000);
+  assert.equal(sandboxCaps.sandbox.maxRuntimeMs, 600000);
+
   // 调用前总闸门：未知工具 / 不在工具表 / 能力约束 / 预算 / 幂等键不确定
   const tools = TOOL_DEFS.map((t) => t.name).filter((n) => n !== 'fetch_url');
   const caps = ex.buildCapabilityConstraints({ relayOk: true, webEnabled: true, sandboxEnabled: true, canDispatch: false });
@@ -8372,7 +8502,7 @@ test('analyze_video 工具：定义 / 契约 / 并行与访问表 / 执行路径
   assert.match(def.description, /不要传 model/);
   assert.match(def.description, /16MB/);
   assert.deepEqual(Object.keys(def.parameters.properties).sort(), ['path', 'prompt']);
-  assert.equal(TOOL_DEFS.length, 38, '38工具：新增媒体格式转换 convert_file，登记/契约必须同步');
+  assert.equal(TOOL_DEFS.length, 39, '39 工具：媒体转换与 SVG 分析均须登记到能力表和执行契约');
   const c = ex.getToolContract('analyze_video');
   assert.equal(c.sideEffect, 'remote');
   assert.equal(c.external, true);
@@ -10054,7 +10184,7 @@ test('界面动效偏好：auto / on / off 三态，on 覆盖系统 reduce，off
   assert.match(main, /applyMotion\(\);/);
   assert.match(main, /browserFeatureReport\(\)[\s\S]*?dubhe-oldbrowser-noted/);
   const css = fsp.readFileSync(new URL('../css/styles.css', import.meta.url), 'utf8');
-  assert.equal((css.match(/@media \(prefers-reduced-motion: reduce\) \{/g) || []).length, 7, '含语音球体与状态抛光的减少动效块（跨页过渡那条已移到 css/page-fx.css）');
+  assert.equal((css.match(/@media \(prefers-reduced-motion: reduce\) \{/g) || []).length, 10, '含语音球体与状态抛光的减少动效块（跨页过渡那条已移到 css/page-fx.css）');
   const reduceBlocks = css.split('@media (prefers-reduced-motion: reduce) {').slice(1);
   for (const b of reduceBlocks) {
     let depth = 1, end = 0;
@@ -10239,7 +10369,7 @@ test('沙箱垫片：require(fs→files / path / buffer / crypto / util / events
   assert.match(over.error, /次数超过上限/);
   // 接线：tools.js 把联网开关透传给 runJavaScript，worker 侧装配垫片并在 lockdown 前 importScripts
   const tools = fsp.readFileSync(new URL('../js/tools.js', import.meta.url), 'utf8');
-  assert.match(tools, /runJavaScript\(args\.code \|\| '', fs, \{ signal: ctx\.signal, onOutput: \(log\) => emit\([\s\S]*?net: \{ enabled: !!ctx\.webEnabled, fetchPage: \(p\) => fetchPage\(\{ \.\.\.p, signal: ctx\.signal \}\) \} \}\)/);
+  assert.match(tools, /runJavaScript\(args\.code \|\| '', fs, \{ signal: ctx\.signal, timeoutMs: codeTimeoutMs\(args\.timeout_sec\), onOutput: \(log\) => emit\([\s\S]*?net: \{ enabled: !!ctx\.webEnabled, fetchPage: \(p\) => fetchPage\(\{ \.\.\.p, signal: ctx\.signal \}\) \} \}\)/);
   const worker = fsp.readFileSync(new URL('../js/worker-js.js', import.meta.url), 'utf8');
   const shimAt = worker.indexOf("importScripts('./worker-shims.js' +");
   assert.ok(shimAt >= 0 && shimAt < worker.indexOf('function lockdown()'), '版本化垫片脚本必须存在且在 lockdown 之前加载');
@@ -10380,6 +10510,83 @@ test('.36 弹层交互：Esc 收起（模态优先）、窗口尺寸 / 滚动变
   assert.ok(esc > 0 && hide > esc && modalGuard > hide, 'Esc 收起；设置 / 命令面板开着时不抢键');
   assert.ok(pop.includes(`window.addEventListener('scroll', follow, { passive: true, capture: true });`));
   assert.ok(pop.includes(`window.addEventListener('resize', follow, { passive: true });`));
+});
+
+test('截图回归：扫描入口、顶栏错位、面板宽度、简化思考提示、10 行思考窗、API Key 状态与 emoji 规则', async () => {
+  const read = (rel) => _fs.readFileSync(new URL(rel, import.meta.url), 'utf8');
+  const app = read('../app.html');
+  const css = read('../css/styles.css');
+  const ui = read('../js/ui.js');
+  const reasoning = read('../js/reasoning.js');
+  const prompts = read('../js/prompt-core.js') + read('../js/prompt-en.js');
+  const menuAt = app.indexOf('id="attach-menu"');
+  const menuEnd = app.indexOf('</div>', app.indexOf('id="attach-link-action"'));
+  const scanAt = app.indexOf('id="scan-btn"');
+  assert.ok(menuAt >= 0 && scanAt > menuAt && scanAt < menuEnd, '扫描文档必须是附件菜单项，而不是文本框旁的独立按钮');
+  assert.match(app.slice(scanAt, app.indexOf('</button>', scanAt)), /role="menuitem"[^>]*hidden/);
+  assert.match(css, /\.status\s*\{[^}]*white-space:\s*nowrap/);
+  assert.match(css, /\.time-stats\s*\{[^}]*white-space:\s*nowrap/);
+  assert.match(css, /#transport-badge,\s*#build-stamp,\s*#conv-stats\s*\{[^}]*white-space:\s*nowrap/);
+  assert.match(css, /\.topbar-right\s*\{[^}]*justify-content:\s*flex-end/);
+  assert.match(css, /\.app:has\(#sandbox-panel:not\(\.collapsed\)\) #panel-toggle\s*\{\s*display:\s*none;/);
+  assert.match(css, /grid-template-columns:\s*var\(--sbw, 268px\) minmax\(0, 1fr\) var\(--pnw, 280px\)/, '常态面板比原 300px 略窄');
+  assert.match(css, /--pnw:\s*clamp\(400px, 38vw, 640px\)/, '文件预览展开时仍单独加宽');
+  for (const hint of ['极速', '轻量', '均衡', '深入', '可委派', '多专家复核']) assert.ok(reasoning.includes(`'${hint}'`), `思考菜单保留简短提示：${hint}`);
+  assert.match(css, /max-height:\s*calc\(1\.65em \* 10\)/);
+  assert.match(ui, /split\('\\n'\)/);
+  assert.match(ui, /renderMarkdown\(m\.reasoning\)/);
+  assert.match(ui, /点击展开完整思考过程/);
+  assert.match(ui, /configured \? localeText\('已配置', 'Configured'\)/);
+  assert.match(css, /\.mini-btn:is\(\.admin-mode, \.configured-mode\) \{ background: var\(--fg\); color: var\(--bg\); border-color: var\(--fg\); \}/);
+  assert.match(prompts, /少用 emoji/);
+  assert.match(prompts, /Use emoji sparingly/);
+});
+
+test('语音输入：只使用原生 SpeechRecognition，一次点击一条识别流，录音开始与结束各发提示音', async () => {
+  const { installSpeechInput } = await import('../js/ui-speech.js');
+  const makeElement = () => ({
+    listeners: {}, attrs: {}, classList: { toggle() {} },
+    addEventListener(type, fn) { this.listeners[type] = fn; },
+    setAttribute(key, value) { this.attrs[key] = String(value); },
+    appendChild() {},
+  });
+  const voice = makeElement(), send = makeElement(), status = { textContent: '' };
+  const composer = Object.assign(makeElement(), {
+    value: '', selectionStart: 0, selectionEnd: 0,
+    setSelectionRange() {}, dispatchEvent() {}, ownerDocument: null,
+  });
+  let recognitionCount = 0, starts = 0, aborts = 0, toneStarts = 0, micPermissionCalls = 0;
+  class Recognition {
+    constructor() { recognitionCount++; }
+    start() { starts++; this.onstart?.(); }
+    abort() { aborts++; }
+  }
+  class AudioContextFake {
+    state = 'running'; currentTime = 0; destination = {};
+    createOscillator() { return { frequency: { setValueAtTime() {} }, connect() {}, start() { toneStarts++; }, stop() {} }; }
+    createGain() { return { gain: { setValueAtTime() {}, exponentialRampToValueAtTime() {} }, connect() {} }; }
+  }
+  const doc = {
+    hidden: false,
+    defaultView: { Event: class {} },
+    createElement: () => makeElement(),
+    getElementById: (id) => ({ 'voice-btn': voice, 'send-btn': send, 'voice-status': status })[id] || null,
+    addEventListener() {},
+  };
+  composer.ownerDocument = doc;
+  const win = {
+    SpeechRecognition: Recognition, isSecureContext: true, AudioContext: AudioContextFake,
+    navigator: { mediaDevices: { getUserMedia() { micPermissionCalls++; return Promise.resolve({}); } } },
+  };
+  installSpeechInput({ composer, win, toast() {} });
+  voice.listeners.click();
+  assert.equal(recognitionCount, 1);
+  assert.equal(starts, 1);
+  assert.equal(micPermissionCalls, 0, '不能再额外调用 getUserMedia 触发第二次权限申请');
+  assert.equal(toneStarts, 2, '开始录音播放双音提示');
+  voice.listeners.click();
+  assert.equal(aborts, 1);
+  assert.equal(toneStarts, 4, '结束录音再播放一组双音提示');
 });
 
 for (const item of queue) {

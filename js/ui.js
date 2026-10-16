@@ -12,10 +12,11 @@ import { paintEditFoldContent, syncEditingFold } from './ui-editpreview.js?v=202
 import { paintOrderedAssistant, renderToolChipDetail, paintCommandRows, ownerOfTool, paintVisibleTurn, activeToolOwner } from './ui-toolflow.js?v=2026.10.11.1';
 import { adjacentToolMessages, appendToolStream, toolFamily, commandRunFor } from './toolflow.js?v=2026.10.11.1';
 import { createRollbackFx } from './ui-rollback-fx.js?v=2026.10.11.1';
+import { motionAllowed } from './page-fx.js?v=2026.10.11.1';
 // ─── UI 层：渲染 / 交互 / 动画 ─────────────────────────────────────────
 import { providerOf, supportsFastMode, DEFAULT_IMAGE_MODEL, APP_VERSION, APP_RELEASE } from './config.js?v=2026.10.11.1';
 import { isSmartRouter, ROUTER_ICON_SVG, SMART_ROUTER_LABEL, modelDisplayName } from './smartrouter.js?v=2026.10.11.1';
-import { REASONING_LEVELS, normalizeReasoningLevel, reasoningLevelLabel, reasoningLevelHint, reasoningControlHint } from './reasoning.js?v=2026.10.11.1';
+import { REASONING_LEVELS, normalizeReasoningLevel, reasoningLevelLabel, reasoningLevelHint } from './reasoning.js?v=2026.10.11.1';
 import { fileBytesFromValue, withExtension, mimeFromPath } from './zip.js';
 import { getTransport } from './api.js?v=2026.10.11.1';
 import { gatewayBase, gatewayChosenBy, setGatewayBase, otherGatewayBase } from './endpoint.js';
@@ -57,7 +58,7 @@ import { toast, MAX_TOAST_STACK, fmtClock, fmtAgo } from './ui-common.js?v=2026.
 export { toast, MAX_TOAST_STACK };
 
 // 这些工具不进 Ran Commands，而是各自的文件折叠（Explored / Edited File(s)）
-const FILE_FOLD_TOOLS = new Set(['write_file', 'read_file', 'analyze_image', 'analyze_pdf', 'analyze_video', 'analyze_audio']);
+const FILE_FOLD_TOOLS = new Set(['write_file', 'read_file', 'analyze_image', 'analyze_pdf', 'analyze_svg', 'analyze_video', 'analyze_audio']);
 
 export function mountUI(store, agent) {
   let feedbackUI, sharingUI;
@@ -346,17 +347,19 @@ export function mountUI(store, agent) {
     thinkingToggle.classList.toggle('on', on);
     thinkingToggle.classList.toggle('ultra', on && normalizeReasoningLevel(store.state.settings.reasoningLevel) === 'ultra');
     thinkingToggle.title = on
-      ? `推理级别 ${reasoningLevelLabel(store.state.settings.reasoningLevel)}（点击切换 Mini/Low/Medium/High/Max/Ultra）`
-      : '思考已关闭（点击选择推理级别）';
+      ? localeText(`思考强度：${reasoningLevelLabel(store.state.settings.reasoningLevel)} · 点击调整`, `Reasoning: ${reasoningLevelLabel(store.state.settings.reasoningLevel)} · Click to adjust`)
+      : localeText('思考已关闭 · 点击开启', 'Reasoning off · Click to enable');
     syncCapLine();
   };
   const renderThinkMenu = () => {
     if (!thinkMenu) return;
     const on = store.state.settings.thinking !== false;
     const cur = normalizeReasoningLevel(store.state.settings.reasoningLevel);
-    const rows = [`<button type="button" class="think-item${on ? '' : ' active'}" data-think="off"><span class="think-lab">Off</span><span class="think-hint">不发送思考参数；模型原生思考可能仍开启</span></button>`];
+    const shortEn = { mini: 'Fastest', low: 'Light', medium: 'Balanced', high: 'Deep', max: 'Delegation', ultra: 'Multi-expert review' };
+    const rows = [`<button type="button" class="think-item${on ? '' : ' active'}" data-think="off"><span class="think-lab">Off</span><span class="think-hint">${localeText('关闭思考增强', 'Reasoning off')}</span></button>`];
     for (const lv of REASONING_LEVELS) {
-      rows.push(`<button type="button" class="think-item${on && cur === lv ? ' active' : ''}" data-think="${lv}"><span class="think-lab">${reasoningLevelLabel(lv)}</span><span class="think-hint">${reasoningLevelHint(lv)} · ${esc(reasoningControlHint(store.state.model, lv))}</span></button>`);
+      const hint = localeText(reasoningLevelHint(lv), shortEn[lv]);
+      rows.push(`<button type="button" class="think-item${on && cur === lv ? ' active' : ''}" data-think="${lv}"><span class="think-lab">${reasoningLevelLabel(lv)}</span><span class="think-hint">${esc(hint)}</span></button>`);
     }
     thinkMenu.innerHTML = rows.join('');
   };
@@ -497,11 +500,15 @@ function validateApiKey(s) {
     const b = $('#key-btn');
     if (!b) return;
     const admin = isAdminAlias(store.state.apiKey);
-    b.textContent = admin ? localeText('管理员', 'Admin') : 'API Key';
+    const configured = !!store.state.apiKey && !admin;
+    b.textContent = admin ? localeText('管理员', 'Admin') : configured ? localeText('已配置', 'Configured') : 'API Key';
     b.classList.toggle('admin-mode', admin);
+    b.classList.toggle('configured-mode', configured);
     b.title = admin
       ? (adminUnlocked() ? localeText(`管理员密钥已启用（有效期至 ${fmtAdminExp(adminExpiresAt())}，明文不落盘）`, `Admin key active (valid until ${fmtAdminExp(adminExpiresAt())}; never stored in plain text)`) : localeText('管理员密钥未解封或已过期：点开重新输入口令', 'Admin key locked or expired: open to re-enter the passphrase'))
-      : localeText('填入 TeamoRouter API Key（或管理员口令）', 'Enter a TeamoRouter API key (or admin passphrase)');
+      : configured
+        ? localeText('API Key 已配置并保存在本机，点击可管理', 'API key configured and stored locally; click to manage')
+        : localeText('填入 TeamoRouter API Key（或管理员口令）', 'Enter a TeamoRouter API key (or admin passphrase)');
   }
   updateKeyBtn();
   keyInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#key-save').click(); });
@@ -833,15 +840,23 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
   }
   $('#panel-toggle').addEventListener('click', () => setPanelCollapsed(!panel.classList.contains('collapsed')));
   $('#panel-close')?.addEventListener('click', () => setPanelCollapsed(true));
+  const animatePanelTab = (pane) => {
+    if (!pane || !motionAllowed(document)) return;
+    pane.classList.remove('panel-tab-enter');
+    void pane.offsetWidth; // Restart only this panel's local transition; never opt into cross-document view transitions.
+    pane.classList.add('panel-tab-enter');
+  };
   $$('[data-panel-tab]').forEach((b) => {
     b.addEventListener('click', () => {
       const id = b.dataset.panelTab;
+      const changed = !b.classList.contains('on');
       $$('[data-panel-tab]').forEach((x) => x.classList.toggle('on', x.dataset.panelTab === id));
       const files = $('#tab-files');
       const mem = $('#tab-memory');
       if (files) files.hidden = id !== 'files';
       if (mem) mem.hidden = id !== 'memory';
       if (id === 'memory') { viewerCloser?.(); renderMemory(); } // 打开记忆标签时总是重绘，保证空状态与列表都在
+      if (changed) animatePanelTab(id === 'memory' ? mem : files);
     });
   });
   $('#sidebar-toggle').addEventListener('click', () => {
@@ -1258,10 +1273,20 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     if (showThink || hiddenThink || thinkPending) {
       if (!reason) {
         reason = el('div', 'reasoning'); reason.dataset.owner = owner;
+        reason.setAttribute('role', 'button'); reason.tabIndex = 0;
+        const toggleReason = () => {
+          const expanded = !reason.classList.contains('expanded');
+          reason._user = expanded;
+          reason.classList.toggle('expanded', expanded);
+          reason.setAttribute('aria-expanded', String(expanded));
+        };
         reason.addEventListener('click', (e) => {
-          if (e.target.closest('a, button, .chip-copy')) return;
-          reason.classList.toggle('expanded');
-          reason._user = reason.classList.contains('expanded');
+          if (e.target.closest('.reason-detail, a, button, .chip-copy')) return;
+          toggleReason();
+        });
+        reason.addEventListener('keydown', (e) => {
+          if (e.key !== 'Enter' && e.key !== ' ') return;
+          e.preventDefault(); toggleReason();
         });
         reason.innerHTML = `<span class="think-ico">${ICON.thinking || ''}</span><span class="mono chip-name"></span><span class="chip-state"></span><div class="chip-detail reason-detail"><div class="fold-inner"></div></div>`;
         wrap.insertBefore(reason, body);
@@ -1280,17 +1305,36 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       if (stateEl) stateEl.textContent = bits.join(' · ');
       const inner = $('.fold-inner', reason);
       const detail = showThink
-        ? (thinkRunning ? `<pre class="think-stream">${esc(m.reasoning)}</pre>` : renderMarkdown(m.reasoning))
+        ? (thinkRunning ? '<pre class="think-stream"></pre>' : renderMarkdown(m.reasoning))
         : (hiddenThink
           ? '<div class="think-hidden">该模型在网关侧做了推理，但不返回可见思考文本。DeepSeek、GLM、Claude Haiku 会显示正文。</div>'
           : '');
       const sig = `${thinkRunning ? 'live' : 'done'}:${(m.reasoning || '').length}:${hiddenThink ? 1 : 0}`;
       if (inner && inner.dataset.sig !== sig) {
         inner.dataset.sig = sig;
-        // 流式思考：只改既有 <pre> 的 textContent（整段 innerHTML 会让长思考逐帧重建，越流越卡）
+        // 流式思考：只更新既有窗口的逐行节点；窗口滚动显示最新 10 行，避免长思考撑满对话。
+        const syncThinkLines = (pre) => {
+          const lines = String(m.reasoning || '').replace(/\r\n?/g, '\n').split('\n');
+          while (pre.children.length > lines.length) pre.lastElementChild.remove();
+          for (let i = 0; i < lines.length; i++) {
+            let line = pre.children[i];
+            if (!line) {
+              line = document.createElement('span');
+              line.className = 'think-line entered';
+              pre.appendChild(line);
+            }
+            line.textContent = lines[i];
+          }
+          pre.dataset.lineCount = String(lines.length);
+          if (thinkRunning) pre.scrollTop = pre.scrollHeight;
+        };
         const pre = thinkRunning && showThink ? inner.querySelector('pre.think-stream') : null;
-        if (pre) pre.textContent = m.reasoning || '';
-        else inner.innerHTML = detail;
+        if (pre) syncThinkLines(pre);
+        else {
+          inner.innerHTML = detail;
+          const createdPre = thinkRunning && showThink ? inner.querySelector('pre.think-stream') : null;
+          if (createdPre) syncThinkLines(createdPre);
+        }
         if (!thinkRunning) {
           hydrateSandboxMedia($('.reason-detail', reason) || reason, agent.fs);
           bindFoldRows($('.reason-detail', reason) || reason);
@@ -1299,7 +1343,12 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       const thinkLive = thinkRunning && (thinkPending || !!m.reasoning) && !m.text && !(m.toolCalls && m.toolCalls.length);
       const autoOpen = thinkLive;
       reason.classList.toggle('live', thinkLive);
-      reason.classList.toggle('expanded', reason._user == null ? autoOpen : !!reason._user);
+      const expanded = reason._user == null ? autoOpen : !!reason._user;
+      reason.classList.toggle('expanded', expanded);
+      reason.setAttribute('aria-expanded', String(expanded));
+      reason.title = expanded
+        ? localeText('点击收起思考过程', 'Click to collapse reasoning')
+        : localeText('点击展开完整思考过程', 'Click to expand full reasoning');
     } else if (reason) {
       reason.remove();
     }
@@ -1431,13 +1480,35 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
         const args = call.args && typeof call.args === 'object' ? call.args : {};
         const toolMsg = (store.state.messages || []).find((x) => x.role === 'tool' && String(x.toolCallId) === String(call.id));
         const result = String(toolMsg && toolMsg.content != null ? toolMsg.content : '');
-        const found = /^\[PDF 分析完成\] 文件 (.*?) · /.exec(result);
+        const found = /^\[PDF 分析完成\] mode=\w+ · 文件 (.*?) · /.exec(result);
         let path = found ? found[1].trim() : (args.path ? String(args.path) : decodeRawJsonString(String(args.__raw || ''), 'path'));
         if (!path) {
           try {
             const pdfs = (agent && agent.fs && typeof agent.fs.list === 'function' ? agent.fs.list() : [])
               .map((f) => String(f && f.path || '')).filter((p) => /\.pdf$/i.test(p));
             if (pdfs.length) path = pdfs[pdfs.length - 1];
+          } catch { /* noop */ }
+        }
+        if (path) out.push(path);
+      }
+      return [...new Set(out)];
+    };
+    const pathsOfAnalyzeSvg = (msg) => {
+      const out = [];
+      for (const call of (msg && msg.toolCalls || [])) {
+        if (call.name !== 'analyze_svg') continue;
+        const args = call.args && typeof call.args === 'object' ? call.args : {};
+        const toolMsg = (store.state.messages || []).find((x) => x.role === 'tool' && String(x.toolCallId) === String(call.id));
+        const result = String(toolMsg && toolMsg.content != null ? toolMsg.content : '');
+        const found = /^\[SVG 识图完成\] 模型 \S+ · 文件 (.*?) · /.exec(result)
+          || /^\[SVG 安全源码\] (.*?) · /.exec(result)
+          || /^\[SVG 文本提取完成\] 文件 (.*?) · /.exec(result);
+        let path = found ? found[1].trim() : (args.path ? String(args.path) : decodeRawJsonString(String(args.__raw || ''), 'path'));
+        if (!path) {
+          try {
+            const svgs = (agent && agent.fs && typeof agent.fs.list === 'function' ? agent.fs.list() : [])
+              .map((f) => String(f && f.path || '')).filter((p) => /\.svg$/i.test(p));
+            if (svgs.length) path = svgs[svgs.length - 1];
           } catch { /* noop */ }
         }
         if (path) out.push(path);
@@ -1464,7 +1535,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       }
       return [...new Set(out)];
     };
-    const pathsOfExplored = (msg) => [...new Set([...pathsOf(msg, 'read_file'), ...pathsOfAnalyze(msg), ...pathsOfAnalyzePdf(msg), ...pathsOfAnalyzeVideo(msg)])];
+    const pathsOfExplored = (msg) => [...new Set([...pathsOf(msg, 'read_file'), ...pathsOfAnalyze(msg), ...pathsOfAnalyzePdf(msg), ...pathsOfAnalyzeSvg(msg), ...pathsOfAnalyzeVideo(msg)])];
     // P3：写文件类的路径要走 editpreview —— 流式期间 args 是半截 JSON（{__raw}），
     // 只有它能从「还没写完的文本」里把 path 扫出来，否则直播行会一直空着直到整段写完。
     const pathsOfEdit = (msg) => {
@@ -2128,6 +2199,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     store,
   });
   function updateStats() {
+    updateKeyBtn();
     const msgs = store.state.messages;
     const n = msgs.filter((m) => m.role !== 'tool').length;
     const stats = $('#conv-stats');

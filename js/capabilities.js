@@ -66,6 +66,7 @@ export const CAPABILITY_REGISTRY = Object.freeze({
   generate_image: R('invariantCore', 'cost', { heavy: true, tags: ['image'] }),
   analyze_image: R('invariantCore', 'remote', { core: 11, parallel: true, heavy: true, tags: ['image'] }),
   analyze_pdf: R('invariantCore', 'remote', { tags: ['image'] }),
+  analyze_svg: R('invariantCore', 'remote', { tags: ['image'] }),
   analyze_video: R('invariantCore', 'remote', { tags: ['image'] }),
   analyze_audio: R('invariantCore', 'remote', { tags: ['audio'] }),
   // ── 记忆 ──

@@ -206,6 +206,8 @@ self.addEventListener('message', async (e) => {
     const fs = { ...before };
     pyodide.globals.set('FILES', pyodide.toPy(fs));
     try { pyodide.globals.delete('result'); } catch { /* 无该全局时忽略 */ }
+    // 只有代码即将交给 Pyodide 执行时，主线程才开始用户代码时限；冷启动、FS 同步与装包走独立准备窗口。
+    post({ __userCodeStart: true });
     await pyodide.runPythonAsync(code);
     let outFiles = fs;
     try {

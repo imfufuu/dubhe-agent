@@ -7,6 +7,7 @@ import { text as messageLocaleText } from './locale.js';
 // 不拥有：任何 store / agent 状态、toast、消息列表与 mountUI 内的交互。本文件绝不 import ui.js。
 import { contextBudgetFor } from './context.js';
 import { ICON } from './icons.js';
+import { sanitizeSvgMarkup, svgSourceFromValue } from './svg-safety.js';
 import { prepareMarkdownExtensions, parsePandocAttributes, pandocAttributesHtml } from './markdown-extensions.js?v=2026.10.11.1';
 import { parseChartInfo, parseDiagramInfo, renderQuickChart, renderQuickDiagram, CHART_DIRECT_ALIASES } from './quickviz.js?v=2026.10.11.1';
 
@@ -35,6 +36,10 @@ const IMG_DATA_URL_RE = /^data:image\/(png|jpe?g|gif|webp|bmp|ico|tiff?|avif|apn
 const IMG_MIME_RE = /^image\/(png|jpe?g|gif|webp|bmp|ico|tiff?|avif|apng|heic|heif|svg\+xml)$/i;
 export const safeImgSrc = (src) => {
   const s = String(src || '').trim();
+  if (/^data:image\/svg\+xml(?:;charset=[^;,]+)?(?:;base64)?,/i.test(s)) {
+    try { return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(sanitizeSvgMarkup(svgSourceFromValue(s)))}`; }
+    catch { return ''; }
+  }
   if (IMG_DATA_URL_RE.test(s)) return s.replace(/\s+/g, '');
   if (/^blob:/i.test(s)) return s;
   return safeHref(s);
@@ -97,28 +102,18 @@ const choiceHtml = (blocks) => {
 const CHART_FENCE_RE = new RegExp(`^:::(?:chart[ \\t]+([^\\n]+)|(${[...CHART_DIRECT_ALIASES].sort((a, b) => b.length - a.length).map((k) => k.replace(/[.*+?^${}()|[\]\\-]/g, '\\$&')).join('|')})[ \\t]*([^\\n]*))\\n([\\s\\S]*?)^:::[ \\t]*$`, 'gm');
 
 export function sanitizeSvgRaw(raw) {
-  let s = String(raw || '')
-    .replace(/<script[\s\S]*?<\/script>/gi, '')
-    .replace(/<foreignObject[\s\S]*?<\/foreignObject>/gi, '')
-    .replace(/\son[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '');
-  // 确保有 xmlns（否则 <img src="data:image/svg+xml"> 不认，渲染为 0×0）
-  if (/<svg[\s>]/i.test(s) && !/xmlns\s*=\s*["']http:\/\/www\.w3\.org\/2000\/svg["']/i.test(s)) {
-    s = s.replace(/<svg/i, '<svg xmlns="http://www.w3.org/2000/svg"');
-  }
-  // 若只有 viewBox 没有 width/height，补 width/height 避免 intrinsic size 塌陷成 0
-  if (/<svg[\s>][\s\S]*viewBox/i.test(s)) {
-    const hasW = /<svg[^>]*\swidth\s*=\s*["']?[\d.]+/i.test(s);
-    const hasH = /<svg[^>]*\sheight\s*=\s*["']?[\d.]+/i.test(s);
+  let s = '';
+  try { s = sanitizeSvgMarkup(raw); } catch { return ''; }
+  // 若只有 viewBox 没有 width/height，补 intrinsic 尺寸，避免 <img> 塌陷成 0×0。
+  if (/<svg\b[^>]*\bviewBox/i.test(s)) {
+    const svgTag = /<svg\b[^>]*>/i.exec(s)?.[0] || '';
+    const hasW = /\bwidth\s*=\s*["']?[\d.]+/i.test(svgTag);
+    const hasH = /\bheight\s*=\s*["']?[\d.]+/i.test(svgTag);
     if (!hasW || !hasH) {
-      const vm = /viewBox\s*=\s*["']?\s*([\-\d.]+)[\s,]+([\-\d.]+)[\s,]+([\-\d.]+)[\s,]+([\-\d.]+)/i.exec(s);
+      const vm = /viewBox\s*=\s*["']?\s*([\-\d.]+)[\s,]+([\-\d.]+)[\s,]+([\-\d.]+)[\s,]+([\-\d.]+)/i.exec(svgTag);
       if (vm) {
         const w = parseFloat(vm[3]), h = parseFloat(vm[4]);
-        s = s.replace(/<svg/i, (m) => {
-          let tag = m;
-          if (!hasW) tag += ` width="${w}"`;
-          if (!hasH) tag += ` height="${h}"`;
-          return tag;
-        });
+        s = s.replace(/<svg\b[^>]*>/i, (tag) => tag.replace(/>$/, `${!hasW ? ` width="${w}"` : ''}${!hasH ? ` height="${h}"` : ''}>`));
       }
     }
   }
@@ -141,10 +136,13 @@ export function hydrateSandboxMedia(root, fs) {
       }
     }
     if (/\.svg$/i.test(p) && /<svg[\s>]/i.test(String(raw))) {
-      img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(sanitizeSvgRaw(raw))}`;
-      if (!img.alt) img.alt = p;
-      img.classList.add('zoomable');
-      continue;
+      const safeSvg = sanitizeSvgRaw(raw);
+      if (safeSvg) {
+        img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(safeSvg)}`;
+        if (!img.alt) img.alt = p;
+        img.classList.add('zoomable');
+        continue;
+      }
     }
     const card = document.createElement('div');
     card.className = 'sb-file' + (raw ? '' : ' missing');

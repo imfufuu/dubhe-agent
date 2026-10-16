@@ -2,7 +2,7 @@
 // JS 沙箱：独立 Web Worker，无 DOM/fetch 访问面，超时强制 terminate
 // Python 沙箱：Pyodide（WASM）跑在独立 Worker 中，可终止；CDN 加载失败时优雅降级
 
-import { APP_VERSION, SANDBOX_JS_STARTUP_TIMEOUT_MS, SANDBOX_JS_TIMEOUT_MS, SANDBOX_PY_TIMEOUT_MS } from './config.js?v=2026.10.11.1';
+import { APP_VERSION, SANDBOX_JS_STARTUP_TIMEOUT_MS, SANDBOX_JS_TIMEOUT_MS, SANDBOX_PY_TIMEOUT_MS, SANDBOX_PY_STARTUP_TIMEOUT_MS } from './config.js?v=2026.10.11.1';
 import { SANDBOX_STORAGE_CAP } from './storagefmt.js';
 
 // ── 虚拟文件系统（会话级，随 state 持久化）─────────────────────────────
@@ -24,6 +24,14 @@ export function persistenceNote(fs, path) {
 }
 const FS_MAX_PATH = 512;
 const FS_MAX_FILES = 5000;
+
+export function normalizeSandboxTimeoutMs(value, fallbackMs = SANDBOX_JS_TIMEOUT_MS) {
+  if (value == null || value === '') return fallbackMs;
+  const requested = Number(value);
+  return Number.isFinite(requested)
+    ? Math.max(1000, Math.min(600000, Math.floor(requested)))
+    : fallbackMs;
+}
 
 // 路径合法性：相对路径、无反斜杠 / 控制字符、无空段 / . / ..、不允许原型键，长度 ≤ 512
 // 文件真实字节数：data URL 按 base64 反推（去掉填充），文本按 UTF-8 编码长度。
@@ -535,7 +543,8 @@ export async function runJavaScript(code, fsObj, opts = {}) {
   const t0 = performance.now();
   const files = fsObj.export();
   const rpc = createSandboxNetRpc(opts.net);
-  let out = await runInWorker('worker-js.js', { code, files, net: { enabled: !!rpc, ...SANDBOX_NET_LIMITS } }, SANDBOX_JS_TIMEOUT_MS, { rpc, extraScripts: ['worker-shims.js'], signal: opts.signal, onOutput: opts.onOutput, onPhase: opts.onPhase });
+  const timeoutMs = normalizeSandboxTimeoutMs(opts.timeoutMs, SANDBOX_JS_TIMEOUT_MS);
+  let out = await runInWorker('worker-js.js', { code, files, net: { enabled: !!rpc, ...SANDBOX_NET_LIMITS } }, timeoutMs, { rpc, extraScripts: ['worker-shims.js'], signal: opts.signal, onOutput: opts.onOutput, onPhase: opts.onPhase });
   if (out.files && !out.timedOut) out = noteWorkerFiles(out, applyWorkerFiles(fsObj, files, out.files));
   return { ...out, durationMs: Math.round(performance.now() - t0) };
 }
@@ -584,47 +593,90 @@ export async function runPython(code, fsObj, onProgress, extraPkgs = [], opts = 
     return { code, files, packages };
   };
 
+  const codeTimeoutMs = normalizeSandboxTimeoutMs(opts.timeoutMs, SANDBOX_PY_TIMEOUT_MS);
+
   const attempt = (useBlob) => new Promise((resolve) => {
-    const spawn = async () => {
-      if (useBlob) {
-        const res = await fetch(versionedURL('worker-py.js'));
-        if (!res.ok) throw new Error(`无法获取沙箱脚本（HTTP ${res.status}）`);
-        const url = URL.createObjectURL(new Blob([await res.text()], { type: 'text/javascript' }));
-        pyWorker = new Worker(url); // 常驻复用：后续 attempt(false) 直接拿到这个 blob Worker
-        return pyWorker;
-      }
-      if (!pyWorker) pyWorker = new Worker(versionedURL('worker-py.js'));
-      return pyWorker;
+    let settled = false;
+    let worker = null;
+    let timer = null;
+    let phase = 'startup';
+    const finish = (v) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      opts.signal?.removeEventListener('abort', abort);
+      resolve(v);
     };
-    spawn().then((worker) => {
-      let settled = false;
-      const finish = (v) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        opts.signal?.removeEventListener('abort', abort);
-        resolve(v);
-      };
-      const abort = () => {
-        try { worker.terminate(); } catch { /* noop */ }
-        if (pyWorker === worker) pyWorker = null; pySynced = null; pySyncedWorker = null;
-        finish({ ok: false, aborted: true, logs: [], files, error: { message: '执行已停止' } });
-      };
-      const timer = setTimeout(() => {
-        try { worker.terminate(); } catch { /* noop */ }
-        if (pyWorker === worker) pyWorker = null;
-        finish({ ok: false, timedOut: true, logs: [], files, error: { message: `执行超时（>${Math.round(SANDBOX_PY_TIMEOUT_MS / 1000)}s），沙箱已强制终止` } });
-      }, SANDBOX_PY_TIMEOUT_MS);
-      opts.signal?.addEventListener('abort', abort, { once: true });
-      if (opts.signal?.aborted) { abort(); return; }
-      worker.onmessage = (e) => {
-        if (e.data?.__log) { if (!settled) opts.onOutput?.(e.data.__log); return; }
-        if (e.data && e.data.__progress) { if (!settled) onProgress && onProgress(String(e.data.__progress)); return; }
-        finish(e.data);
-      };
-      worker.onerror = (e) => finish({ __workerError: e.message || '加载失败' });
-      worker.postMessage(buildPayload(worker));
-    }).catch((err) => resolve({ __workerError: err.message }));
+    const discardWorker = () => {
+      try { worker?.terminate(); } catch { /* noop */ }
+      if (pyWorker === worker) pyWorker = null;
+      if (pySyncedWorker === worker) { pySyncedWorker = null; pySynced = null; }
+    };
+    const abort = () => {
+      discardWorker();
+      pySynced = null; pySyncedWorker = null;
+      finish({ ok: false, aborted: true, logs: [], files, error: { message: '执行已停止' } });
+    };
+    const armTimeout = (nextPhase, ms) => {
+      phase = nextPhase;
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        discardWorker();
+        const startup = phase === 'startup';
+        finish({
+          ok: false,
+          timedOut: true,
+          startupTimedOut: startup,
+          stage: startup ? 'startup-timeout' : 'run',
+          logs: [],
+          files,
+          error: { message: startup
+            ? `Python 运行时准备超时（>${Math.round(SANDBOX_PY_STARTUP_TIMEOUT_MS / 1000)}s）：冷启动或依赖安装未能在准备窗口内完成，用户代码尚未开始。`
+            : `用户代码执行超时（>${Math.round(codeTimeoutMs / 1000)}s），Python Worker 已强制终止` },
+        });
+      }, ms);
+    };
+
+    opts.signal?.addEventListener('abort', abort, { once: true });
+    armTimeout('startup', SANDBOX_PY_STARTUP_TIMEOUT_MS);
+    if (opts.signal?.aborted) { abort(); return; }
+
+    const spawn = async () => {
+      try {
+        if (useBlob) {
+          const res = await fetch(versionedURL('worker-py.js'));
+          if (!res.ok) throw new Error(`无法获取沙箱脚本（HTTP ${res.status}）`);
+          const source = await res.text();
+          if (settled) return;
+          const url = URL.createObjectURL(new Blob([source], { type: 'text/javascript' }));
+          worker = new Worker(url); // 常驻复用：后续 attempt(false) 直接拿到这个 blob Worker
+          pyWorker = worker;
+        } else {
+          if (!pyWorker) pyWorker = new Worker(versionedURL('worker-py.js'));
+          worker = pyWorker;
+        }
+        if (settled) { discardWorker(); return; }
+        worker.onmessage = (e) => {
+          if (settled) return;
+          if (e.data?.__userCodeStart) { armTimeout('run', codeTimeoutMs); return; }
+          if (e.data?.__log) { opts.onOutput?.(e.data.__log); return; }
+          if (e.data && e.data.__progress) { onProgress && onProgress(String(e.data.__progress)); return; }
+          finish(e.data);
+        };
+        worker.onerror = (e) => {
+          if (settled) return;
+          discardWorker();
+          finish({ __workerError: e.message || '加载失败' });
+        };
+        worker.postMessage(buildPayload(worker));
+      } catch (err) {
+        if (!settled) {
+          if (worker) discardWorker();
+          finish({ __workerError: err.message || String(err) });
+        }
+      }
+    };
+    spawn();
   });
 
   let out = await attempt(false);

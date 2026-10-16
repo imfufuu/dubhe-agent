@@ -48,6 +48,12 @@ jobs:
       - name: tests/edit-demo.test.mjs · 文件差异与导航演示回归
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/edit-demo.test.mjs
+      - name: tests/page-fx.test.mjs · 页面动效安全与减少动效
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/page-fx.test.mjs
+      - name: tests/svg-safety.test.mjs · SVG 安全清理与本地文本提取
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/svg-safety.test.mjs
       - name: tests/ui-runtime.test.mjs · 演示动效与 Python 按需依赖
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/ui-runtime.test.mjs
@@ -66,9 +72,6 @@ jobs:
       - name: V1.8.1 fixes — thinking, command merge, skill loop, file tools
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/v181-fixes.test.mjs
-      - name: V1.8.2 UI — theme boot and page transitions
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/page-fx.test.mjs
 
       - name: '汇总测试计数（::notice:: + job summary）'
         if: ${{ !cancelled() }}
