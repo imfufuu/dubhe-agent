@@ -9,7 +9,8 @@ import { installFeedback } from './ui-feedback.js';
 import { installSpeechInput } from './ui-speech.js';
 import { createToolPresentation, presentationCallSettled, turnToolResults } from './toolpresentation.js?v=2026.10.11.1';
 import { paintEditFoldContent, syncEditingFold } from './ui-editpreview.js?v=2026.10.11.1';
-import { paintOrderedAssistant, renderToolChipDetail, paintCommandRows, ownerOfTool, paintVisibleTurn, activeToolOwner } from './ui-toolflow.js?v=2026.10.11.1';
+import { paintOrderedAssistant, renderToolChipDetail, paintCommandRows, ownerOfTool, paintVisibleTurn, activeToolOwner, persistTurnTiming } from './ui-toolflow.js?v=2026.10.11.1';
+import { classifyToolResult, toolResultFailed } from './toolwindows.js?v=2026.10.11.1';
 import { adjacentToolMessages, appendToolStream, toolFamily, commandRunFor } from './toolflow.js?v=2026.10.11.1';
 import { createRollbackFx } from './ui-rollback-fx.js?v=2026.10.11.1';
 import { motionAllowed } from './page-fx.js?v=2026.10.11.1';
@@ -1086,14 +1087,6 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
   }
   const BUDGET_CHANNEL_LABEL = { toolCalls: '工具调用', retries: '重试次数', durationMs: '墙钟时长', parallelTasks: '并发任务', memoryWrites: '记忆写入', externalSideEffects: '外部副作用', tokens: 'Token 消耗' };
 
-  const TOOL_RESULT_ERROR = /^(?:工具执行失败|图像模型调用失败|图像调用在发起前失败|未配置 TeamoRouter API Key|Python 沙箱不可用|(?:[A-Za-z][\w-]*)(?:\s+[A-Za-z][\w-]*)*\s+(?:失败|缺少|不可用|拒绝执行|错误)(?:[：:]|\b))/i;
-  function toolResultFailed(text) {
-    const body = String(text == null ? '' : text).trim();
-    return TOOL_RESULT_ERROR.test(body)
-      || /^\[git 退出码 (?!0\b)\d+\]/i.test(body)
-      || /^fatal:|^error:/im.test(body)
-      || /── 错误 ──|不是合法 JSON|未配置 TeamoRouter API Key|^⛔|执行内核在调用前拦截/.test(body);
-  }
   function toolIds(chip) {
     return String(chip && (chip.dataset.callIds || chip.dataset.callId) || '').split(',').filter(Boolean);
   }
@@ -1103,6 +1096,11 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
   function toolCallSettled(chip, id) {
     const status = chip && chip._toolStates && chip._toolStates[id] && chip._toolStates[id].status;
     return chip?._toolStates?.[id]?.settled !== false && (hasToolOutput(chip, id) || status === 'ok' || status === 'error');
+  }
+  function toolCallFailed(chip, id) {
+    const state = chip?._toolStates?.[id];
+    return state?.status === 'error' || state?.noOutput || (hasToolOutput(chip, id) && toolResultFailed(chip._outs[id]))
+      || (state?.status === 'ok' && !hasToolOutput(chip, id) && state.settled !== false);
   }
   function syncRanCommandsFold(fold) {
     if (!fold) return;
@@ -1132,7 +1130,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     for (const chip of children) {
       for (const id of toolIds(chip)) {
         const st = chip._toolStates && chip._toolStates[id];
-        if ((st && st.status === 'error') || (hasToolOutput(chip, id) && toolResultFailed(chip._outs[id]))) failedCount += 1;
+        if (toolCallFailed(chip, id)) failedCount += 1;
         if (st && Number.isFinite(Number(st.durationMs))) totalMs += Number(st.durationMs);
       }
     }
@@ -1165,10 +1163,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       return chip._toolStates[id]?.settled !== false && (hasToolOutput(chip, id) || status === 'ok' || status === 'error');
     };
     const allDone = chip.dataset.cancelled === 'true' || (ids.length > 0 && ids.every(terminal));
-    const failed = chip.dataset.cancelled !== 'true' && ids.some((id) => {
-      const state = chip._toolStates[id];
-      return (state && state.status === 'error') || (hasToolOutput(chip, id) && toolResultFailed(chip._outs[id]));
-    });
+    const failed = chip.dataset.cancelled !== 'true' && ids.some((id) => toolCallFailed(chip, id));
     const settled = ids.filter(terminal).length;
     const running = ids.map((id) => chip._toolStates[id]).find((x) => x && x.status === 'running');
     chip.classList.toggle('done', allDone);
@@ -1182,10 +1177,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       if (chip.dataset.cancelled === 'true') {
         state.textContent = '已停止'; state.title = ''; state.classList.remove('bad');
       } else if (allDone && failed) {
-        const failId = ids.find((id) => {
-          const item = chip._toolStates[id];
-          return (item && item.status === 'error') || (hasToolOutput(chip, id) && toolResultFailed(chip._outs[id]));
-        });
+        const failId = ids.find((id) => toolCallFailed(chip, id));
         const item = chip._toolStates[failId] || {};
         const errTxt = String(item.note || chip._outs[failId] || '工具失败').slice(0, 400);
         const durF = ids.map((id) => chip._toolStates[id] && chip._toolStates[id].durationMs).filter((x) => Number.isFinite(Number(x))).reduce((a, b) => a + Number(b), 0);
@@ -1395,9 +1387,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
             child._outs[id] = body;
             const previous = child._toolStates[id] || {};
             child._toolStates[id] = {
-              ...previous, settled: true,
-              status: previous.status === 'error' || t.status === 'error' || toolResultFailed(body) ? 'error' : 'ok',
-              note: previous.note || t.errorNote || '',
+              ...previous, settled: true, ...classifyToolResult(body, t, previous),
               durationMs: Number.isFinite(Number(previous.durationMs)) ? previous.durationMs : (Number.isFinite(Number(t.durationMs)) ? Number(t.durationMs) : undefined),
             };
           } else if (t.status || Number.isFinite(Number(t.durationMs))) {
@@ -2057,11 +2047,8 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     chip._outs[id] = body; // 空字符串也是已收到的出参，不能被当成「结果还没回来」
     liveToolCallIds.delete(id); // 结果已回来：不再是「执行中」
     const previous = chip._toolStates[id] || {};
-    const kernelErr = toolMsg.status === 'error';
     chip._toolStates[id] = {
-      ...previous, settled: true,
-      status: previous.status === 'error' || kernelErr || toolResultFailed(body) ? 'error' : 'ok',
-      note: previous.note || toolMsg.errorNote || '',
+      ...previous, settled: true, ...classifyToolResult(body, toolMsg, previous),
       durationMs: Number.isFinite(Number(toolMsg.durationMs)) ? Number(toolMsg.durationMs) : previous.durationMs,
     };
     syncToolChip(chip);
@@ -2679,14 +2666,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       refreshActionVisibility();
       updateTransportBadge();
     },
-    onTurnTiming(ms) {
-      if (!(ms > 0)) return;
-      const st = store.state.stats || (store.state.stats = { lastMs: 0, totalMs: 0 });
-      st.lastMs = ms;
-      st.totalMs += ms;
-      store.notify();
-      renderTimeStats();
-    },
+    onTurnTiming(ms) { persistTurnTiming(store, ms, msgNodes, paintFoot, syncAssistantShell, renderTimeStats); },
     // 回合结束后给会话起个标题（Agent 总结；用户手改过的不会被覆盖）
     // 联网：进度与来源（兼容解析模型服务端 web_search 事件）
     onWebSearch: (m) => {

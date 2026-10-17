@@ -93,7 +93,7 @@ export function mountHomeDemo(root, { autoStart = true, delay = (ms) => new Prom
       const n = make('div', 'edited-files expanded'); assistant().append(n);
       const calls = [], disk = new Map(specs.map((s) => [s.path, s.before]));
       const fs = { read: (p) => disk.get(p) || '' };
-      const paint = (live) => paintEditFoldContent(n, { icon: ICON.edited, label: live ? 'Writing files' : `Edited file${specs.length > 1 ? `s ${specs.length}` : ''}`,
+      const paint = (live) => paintEditFoldContent(n, { icon: ICON.edited, label: live ? 'Writing files' : `Edited File${specs.length > 1 ? `s ${specs.length}` : ''}`,
         paths: specs.map((s) => s.path), discarded: new Set(), preview: buildFileEditPreview(calls, fs), live, state: live ? '写入中…' : '' });
       for (const [i, spec] of specs.entries()) {
         const call = { id: `demo-write-${i}`, name: 'write_file', status: 'running', args: { path: spec.path, content: '' } };

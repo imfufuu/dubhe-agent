@@ -694,13 +694,19 @@ test('第 4 条：工具详情三窗口（COMMAND / STDOUT / STDERR）、逐条�
   assert.doesNotMatch(split.stdout, /boom|TypeError/, 'stdout 不含错误段');
   assert.match(split.stderr, /\[error\] boom/);
   assert.match(split.stderr, /TypeError: x/);
-  const html = tw.renderToolWindowsHtml({ command: 'ls', stdout: '', stderr: '' });
-  assert.equal((html.match(/class="chip-win /g) || []).length, 2, '无 stderr 时只有 COMMAND 与 STDOUT 两个窗口');
-  assert.match(html, /（空输出）/);
-  assert.match(html, /data-which="command"[^>]*>复制</);
-  assert.match(html, /data-which="stdout"/);
+  const empty = tw.renderToolWindowsHtml({ command: 'ls', stdout: '', stderr: '' });
+  assert.equal((empty.match(/class="chip-win /g) || []).length, 1, '无输出无错误时只显示 COMMAND');
+  assert.match(empty, /chip-no-output[^>]*>No output/);
+  assert.match(empty, /data-which="command"[^>]*>复制</);
+  assert.doesNotMatch(empty, /data-win="stdout"|data-win="stderr"/);
+  const onlyOut = tw.renderToolWindowsHtml({ command: 'printf hi', stdout: 'hi', stderr: '' });
+  assert.equal((onlyOut.match(/class="chip-win /g) || []).length, 2, '只有标准输出时仅 COMMAND + STDOUT');
+  assert.match(onlyOut, /data-win="stdout"/); assert.doesNotMatch(onlyOut, /data-win="stderr"/);
+  const onlyErr = tw.renderToolWindowsHtml({ command: 'bad-command', stdout: '', stderr: 'not found' });
+  assert.equal((onlyErr.match(/class="chip-win /g) || []).length, 2, '只有错误时仅 COMMAND + STDERR');
+  assert.match(onlyErr, /data-win="stderr"/); assert.doesNotMatch(onlyErr, /data-win="stdout"/);
   const withErr = tw.renderToolWindowsHtml({ command: 'ls', stdout: 'a', stderr: 'boom' });
-  assert.equal((withErr.match(/class="chip-win /g) || []).length, 3, '有 stderr 时出现 STDERR 窗口');
+  assert.equal((withErr.match(/class="chip-win /g) || []).length, 3, 'stdout 与 stderr 同时出现时显示三个窗口');
   assert.match(withErr, /data-win="stderr"/);
   const ui = readUiSource();
   assert.doesNotMatch(ui, /chip-json|入参<\/button>|出参<\/button>/, '入参 / 出参按钮已移除');
@@ -1080,6 +1086,8 @@ test('save(true) 同步落盘，不依赖 300ms 防抖定时器', async () => {
     const { createStore } = await import('../js/state.js?imm=' + Date.now());
     const store = storeNoWeb(createStore());
     store.pushMessage({ role: 'user', text: '最后一轮对话' });
+    const answer = store.pushMessage({ role: 'assistant', text: '已完成', done: true });
+    store.updateMessage(answer.id, { ts: 1780000000000, durationMs: 6400 });
     const key = 'dubhe-agent-state-v1-v2';
 
     // 防抖版：定时器未触发前不应写入
@@ -1095,6 +1103,11 @@ test('save(true) 同步落盘，不依赖 300ms 防抖定时器', async () => {
       saved.sessions.some((s) => (s.messages || []).some((m) => m.text === '最后一轮对话')),
       '最后一轮对话必须已持久化',
     );
+    const savedAnswer = saved.sessions[0].messages.find((m) => m.text === '已完成');
+    assert.equal(savedAnswer.ts, 1780000000000, '刷新后仍有回答时间戳');
+    assert.equal(savedAnswer.durationMs, 6400, '总耗时仍保留');
+    const reopened = createStore().state.messages.find((m) => m.text === '已完成');
+    assert.deepEqual([reopened.ts, reopened.durationMs], [1780000000000, 6400], '新 store 能从持久化快照恢复脚注元数据');
   } finally {
     if (realLS === undefined) delete globalThis.localStorage;
     else globalThis.localStorage = realLS;
@@ -10239,9 +10252,9 @@ test('生图模型选择器迁到设置 → 多模态模型：模型菜单无 dd
   assert.doesNotMatch(css, /\.dd-foot \{/);
 });
 
-test('折叠头文案第二个词统一小写：Edited file(s) / Editing file(s) / Explored file(s) / Ran command(s)', async () => {
+test('Edited Files 标题大小写；其余折叠头文案保持既有用词', async () => {
   const { editFoldLabel } = await import('../js/editpreview.js');
-  assert.equal(editFoldLabel(1), 'Edited file'); assert.equal(editFoldLabel(3), 'Edited files 3');
+  assert.equal(editFoldLabel(1), 'Edited File'); assert.equal(editFoldLabel(2), 'Edited Files 2'); assert.equal(editFoldLabel(3), 'Edited Files 3');
   assert.equal(editFoldLabel(1, { live: true }), 'Writing file'); assert.equal(editFoldLabel(2, { live: true }), 'Writing files 2');
   const ui = readUiSource();
   assert.match(ui, /total === 1 \? 'Ran command' : `Ran commands \$\{total\}`/);
@@ -10533,7 +10546,7 @@ test('截图回归：扫描入口、顶栏错位、面板宽度、简化思考�
   assert.match(css, /#transport-badge,\s*#build-stamp,\s*#conv-stats\s*\{[^}]*white-space:\s*nowrap/);
   assert.match(css, /\.topbar-right\s*\{[^}]*justify-content:\s*flex-end/);
   assert.match(css, /\.app:has\(#sandbox-panel:not\(\.collapsed\)\) #panel-toggle\s*\{\s*display:\s*none;/);
-  assert.match(css, /grid-template-columns:\s*var\(--sbw, 268px\) minmax\(0, 1fr\) var\(--pnw, 280px\)/, '常态面板比原 300px 略窄');
+  assert.match(css, /grid-template-columns:\s*var\(--sbw, 268px\) minmax\(0, 1fr\) var\(--pnw, 290px\)/, '常态文件面板较旧版约增宽 10px');
   assert.match(css, /--pnw:\s*clamp\(400px, 38vw, 640px\)/, '文件预览展开时仍单独加宽');
   for (const hint of ['极速', '轻量', '均衡', '深入', '可委派', '多专家复核']) assert.ok(reasoning.includes(`'${hint}'`), `思考菜单保留简短提示：${hint}`);
   assert.match(css, /max-height:\s*calc\(1\.65em \* 10\)/);

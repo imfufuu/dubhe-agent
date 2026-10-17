@@ -231,7 +231,7 @@ await tick(1200);
 const allText = $$('#messages .msg-assistant').map((n) => n.textContent).join(' ');
 const editFold = $('.edited-files');
 ok('工具回合执行且回复落地', allText.includes('已写入') && !!editFold, allText.replace(/\s+/g, ' ').slice(0, 120));
-ok('write_file 进入 Edited Files 折叠且显示交付路径', !!editFold && /Edited files?/.test(editFold.querySelector('.chip-name')?.textContent || '')
+ok('write_file 进入 Edited Files 折叠且显示交付路径', !!editFold && /Edited Files?/.test(editFold.querySelector('.chip-name')?.textContent || '')
   && editFold.textContent.includes('uploads/cat.png'));
 ok('写文件折叠图标为 SVG（非 emoji）', !!editFold?.querySelector('.chip-ico svg') && !/⚙/.test(editFold.querySelector('.chip-ico')?.textContent || ''),
   editFold?.querySelector('.chip-ico')?.innerHTML.slice(0, 60) || '');
@@ -245,7 +245,7 @@ const fileRow = $$('#file-list .ft-file')[0];
 ok('文件行显示文件名且 title 保留完整路径', /cat\.png/.test(fileRow?.textContent || '') && fileRow?.title === 'uploads/cat.png');
 ok('文件行下载按钮为 SVG（非 emoji）', !!fileRow?.querySelector('.file-dl svg') && !/⬇|↓/.test(fileRow.querySelector('.file-dl').textContent));
 click(dirRow);
-await tick(30);
+await tick(240);
 ok('点目录行折叠子文件', !$$('#file-list .ft-file').length && $$('#file-list .ft-dir')[0]?.classList.contains('closed'));
 
 console.log('\n关掉代码沙箱后仍能自主委派子智能体');

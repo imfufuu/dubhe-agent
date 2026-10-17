@@ -47,7 +47,10 @@ export function installCommandPalette({ store, agent, toast, chatModels, selectM
     palItems = collectCmds();
     palIdx = 0;
     pal.hidden = false;
-    if (palInput) { palInput.value = ''; palInput.focus(); }
+    if (palInput) palInput.value = '';
+    // Opening is not an implicit focus/typing action: users click the field to search.
+    const active = document.activeElement;
+    if (active && active !== document.body && typeof active.blur === 'function') active.blur();
     paintPal();
   }
   function closePal() {

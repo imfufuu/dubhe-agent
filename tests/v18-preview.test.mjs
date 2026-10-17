@@ -119,4 +119,6 @@ test('thumb down has its own downward path, with no second CSS or SVG rotation',
   assert.equal(doc.querySelector('[transform]'),null);
   const css=fs.readFileSync(new URL('../css/styles.css',import.meta.url),'utf8');
   assert.doesNotMatch(css,/\.feedback-btn\[data-vote="down"\] svg\s*\{[^}]*rotate/);
+  assert.doesNotMatch(css,/\.feedback-btn\[data-vote="(?:up|down)"\]\[aria-pressed="true"\]\s*\{[^}]*background:/, '赞/踩激活态不再绘制绿/红背景');
+  assert.doesNotMatch(css,/\[data-theme="dark"\] \.feedback-btn\[data-vote="(?:up|down)"\]\[aria-pressed="true"\]\s*\{[^}]*background:/);
 });

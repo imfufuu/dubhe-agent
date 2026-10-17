@@ -81,6 +81,16 @@ ok('模型卡片使用 TeamoRouter 原生产品图标', $('#model-btn-icon svg')
 ok('文件面板 ZIP 按钮存在', !!$('#download-zip'));
 ok('空沙箱工具栏仍显示 0.0KB/120.0MB 上限', /0\.0KB\/120\.0MB/.test($('#files-count').textContent), $('#files-count').textContent);
 
+console.log('\n快捷导航不自动抢输入焦点');
+const composer = $('#composer-input'), cmdInput = $('#cmd-input'), cmdPalette = $('#cmd-palette');
+composer.focus();
+window.document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true, cancelable: true }));
+ok('Ctrl+K 打开快捷导航', !cmdPalette.hidden);
+ok('打开后不聚焦搜索框，也不继续聚焦聊天输入框', window.document.activeElement !== cmdInput && window.document.activeElement !== composer);
+ok('打开后搜索框保持空白', cmdInput.value === '');
+window.document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+ok('Escape 可正常关闭快捷导航', cmdPalette.hidden);
+
 console.log('\n② 生图模型不作为对话模型出现');
 click($('#model-btn'));
 const ddItems = () => $$('#model-menu .dd-item-id').map((n) => n.textContent);
@@ -251,12 +261,15 @@ ok('容量单独显示已用/上限（按字节动态切换 KB/MB）', /\d+\.\d(
 // 折叠：点目录行收起整棵子树
 const uploadsRow = () => $$('#file-list .ft-dir').find((n) => rowPath(n) === 'uploads');
 click(uploadsRow());
+ok('折叠时目录子行播放收起动画', $$('#file-list .ft-row-collapsing').length > 0);
 ui.renderFiles();
 ok('折叠后子文件不再渲染', !$$('#file-list .ft-file').map(rowPath).includes('uploads/cat.png'), $$('#file-list .ft-file').map(rowPath).join(','));
 ok('折叠后 aria-expanded=false 且带 closed 类', uploadsRow().getAttribute('aria-expanded') === 'false' && uploadsRow().classList.contains('closed'));
-ok('折叠行上出现常驻 ZIP 按钮（不依赖 hover）', /ft-dir\.closed \.ft-zip \{ opacity: 1/.test(cssText));
+ok('目录 ZIP 按钮仅在悬浮/聚焦时显现并右对齐', /\.ft-row:hover \.files-icon-btn, \.ft-row:focus-within \.files-icon-btn \{ opacity: 1; \}/.test(cssText)
+  && /\.ft-actions \{[^}]*margin-left: auto/.test(cssText) && !/\.ft-dir\.closed \.ft-zip \{ opacity: 1/.test(cssText));
 click(uploadsRow());
 ok('再点一次展开', $$('#file-list .ft-file').map(rowPath).includes('uploads/cat.png'));
+ok('展开时目录子行播放进入动画', $$('#file-list .ft-row-expanding').length > 0);
 click($$('#file-list .ft-file').find((n) => rowPath(n) === 'uploads/cat.png'));
 ok('图片文件在查看器内预览', !!$('#file-viewer .fv-img img'));
 ok('查看器带 SVG 下载按钮', !!$('#file-viewer #fv-dl svg') && /下载/.test($('#file-viewer #fv-dl').textContent));
@@ -632,8 +645,8 @@ console.log('\n⑰ 工具折叠 / 出参回填 / 识图路径回归');
   ok('2026.10.9.1：同名多次命令逐条展开（每条一行，不合并成 ×N），所有出参都能回读', !!ran && allCommandChips.length === 5
     && !ran.textContent.includes('×') && ran.textContent.includes(unicodeOutput) && ran.textContent.includes('second output'));
   const emptyChip = $$('.tool-call-chip', ran || document).find((n) => n.dataset.callIds === 'empty-1');
-  ok('空字符串出参也算完成，并显示为空输出', !!emptyChip && emptyChip.classList.contains('done')
-    && emptyChip.querySelector('.chip-result')?.textContent === '（空输出）');
+  ok('空字符串出参也算完成，判为失败并提示 No output', !!emptyChip && emptyChip.classList.contains('done')
+    && emptyChip.classList.contains('fail') && emptyChip.querySelector('.chip-no-output')?.textContent === 'No output');
   const foldState = rans[1]?.querySelector(':scope > .chip-state');
   ok('折叠头只是菜单：不写成功 / 失败，失败数只进 title', !!foldState && !/成功|失败|failed/i.test(foldState.textContent) && /1 条失败/.test(foldState.title), foldState?.textContent + ' | ' + foldState?.title);
   const failChip = allCommandChips.find((n) => n.dataset.callIds === 'fail-1');

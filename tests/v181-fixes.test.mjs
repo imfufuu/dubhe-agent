@@ -336,7 +336,7 @@ test('read_file：data URL 存放的 SVG / 文本解码成原文；二进制只�
 });
 
 // ── V1.8.1 收尾：失败归类不显示、日常对话免回执、重建落底、连接呼吸点、弹层收起动画、光标与查看器 ──
-import { stripFailureClassNote, splitToolStreams, toolWindowsOf } from '../js/toolwindows.js?v=2026.10.11.1';
+import { stripFailureClassNote, splitToolStreams, hasSubstantiveToolOutput, classifyToolResult, toolWindowsOf } from '../js/toolwindows.js?v=2026.10.11.1';
 import { publicTaskPlan, publicPlanMarkdown } from '../js/publicplan.js';
 import { CARET_EM, CARET_NUDGE } from '../js/ui-caret.js';
 let panel0 = '';
@@ -354,10 +354,56 @@ test('失败归类：窗口/回答都不显示，模型上下文仍保留；sile
     _outs: { k1: note }, _toolStates: { k1: { status: 'error', settled: true } },
   };
   assert.doesNotMatch(toolWindowsOf(chip).stderr, /失败归类/, '失败提示同样不带归类');
+  const emptyExec = '[JavaScript 沙箱]\n（执行完成，无输出）\n[env: web-worker; apis: console, files; files_keys: []]\n[执行耗时 4ms]';
+  assert.equal(hasSubstantiveToolOutput(emptyExec), false, '环境、耗时和无输出包装不能伪装成 stdout');
+  assert.deepEqual(classifyToolResult(emptyExec), { status: 'error', note: 'No output', noOutput: true });
+  assert.deepEqual(classifyToolResult('not found', { status: 'error', errorNote: 'not found' }),
+    { status: 'error', note: 'not found', noOutput: false });
+  assert.deepEqual(classifyToolResult('[error] boom'), { status: 'error', note: '', noOutput: false });
+  const noOutputChip = { dataset: { callIds: 'silent' }, _items: [{ id: 'silent', name: 'execute_javascript', args: { code: 'void 0' } }],
+    _outs: { silent: emptyExec }, _toolStates: { silent: { status: 'error', settled: true, note: 'No output', noOutput: true } } };
+  const noOutputWindows = toolWindowsOf(noOutputChip);
+  assert.equal(noOutputWindows.noOutput, true); assert.equal(noOutputWindows.stdout, ''); assert.equal(noOutputWindows.stderr, '');
+  const errorExec = '[Python sandbox]\n── Error ──\nNameError: missing\n[Duration 4ms]';
+  const errorChip = { dataset: { callIds: 'err' }, _items: [{ id: 'err', name: 'execute_python', args: { code: 'bad' } }],
+    _outs: { err: errorExec }, _toolStates: { err: { status: 'error', settled: true } } };
+  const errorWindows = toolWindowsOf(errorChip);
+  assert.equal(errorWindows.stdout, '', '只有错误时不生成假 STDOUT'); assert.match(errorWindows.stderr, /NameError/);
   const uiSrc = read('../js/agent.js');
   assert.doesNotMatch(uiSrc, /text = fin\.finalText/, '回答末尾不再追加执行内核披露');
   const ex = read('../js/execution.js');
   assert.doesNotMatch(ex, /`> 失败归类：\$\{detail\}`,?`/, '披露文案本身去掉归类行');
+});
+
+test('助手气泡的整轮耗时与完成时间会写回并经刷新持久恢复', () => {
+  const ui = read('../js/ui.js');
+  const timing = read('../js/ui-toolflow.js');
+  const state = read('../js/state.js');
+  assert.match(ui, /persistTurnTiming\(store, ms, msgNodes, paintFoot, syncAssistantShell, renderTimeStats\)/);
+  assert.match(timing, /last\.durationMs = ms; last\.ts = Date\.now\(\);/);
+  assert.match(timing, /store\.save\?\.\(true\)/);
+  assert.match(ui, /const clock = m\.durationMs != null \? fmtClock\(m\.durationMs\) : '';/);
+  assert.match(ui, /durationMs: m\.durationMs, thinkingBlocks: m\.thinkingBlocks/);
+  assert.match(state, /durationMs: m\.durationMs/);
+  assert.match(state, /ts: m\.ts/);
+  assert.doesNotMatch(state, /turnDurationMs/);
+});
+
+test('快捷导航不抢输入焦点；文件面板可收缩长名称、悬浮按钮右对齐并动画展开', () => {
+  const palette = read('../js/ui-command-palette.js');
+  const open = palette.slice(palette.indexOf('function openPal()'), palette.indexOf('function closePal()'));
+  assert.doesNotMatch(open, /palInput\.focus\(\)/);
+  assert.match(open, /active\.blur\(\)/, '打开时不让后续按键误输入到主输入框');
+  const css = read('../css/styles.css');
+  assert.match(css, /grid-template-columns:\s*var\(--sbw, 268px\) minmax\(0, 1fr\) var\(--pnw, 290px\)/);
+  assert.match(css, /\.fv-actions \.fv-modes[^}]*border-radius:\s*999px/);
+  assert.match(css, /\.fv-modes-thumb[^}]*border-radius:\s*999px[^}]*transition: transform \.42s/);
+  assert.match(css, /\.file-list \.ft-row \{ width: 100%; min-width: 0; \}/);
+  assert.match(css, /\.ft-name[^}]*overflow: hidden; text-overflow: ellipsis/);
+  assert.match(css, /\.ft-actions[^}]*margin-left: auto/);
+  assert.match(css, /#file-list \.ft-row\.ft-row-collapsing/);
+  assert.match(css, /#file-list \.ft-row\.ft-row-expanding/);
+  assert.doesNotMatch(css, /\.ft-dir\.closed \.ft-zip \{ opacity: 1/);
 });
 
 test('日常对话不再打「收到任务 / 方向与计划」回执；多步任务保留', () => {

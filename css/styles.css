@@ -165,8 +165,8 @@ html { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
   /* grid-template-areas 不只是可读性：窄屏时 .sidebar / #sandbox-panel 变成 position:fixed
      脱离文档流，若没有命名区，唯一的在流子项 .main 会被自动排到第一列（--sbw 已收敛为 0px）
      → 主区宽度 0、全部内容横向溢出（这就是「移动端元素挤在一起」的根因）。 */
-  /* 默认沙箱面板略收窄；文件预览展开时由下方 clamp 单独加宽。 */
-  grid-template-columns: var(--sbw, 268px) minmax(0, 1fr) var(--pnw, 280px);
+  /* 默认沙箱面板比旧版约宽 10px；打开文件预览时由下方 clamp 单独加宽。 */
+  grid-template-columns: var(--sbw, 268px) minmax(0, 1fr) var(--pnw, 290px);
   grid-template-areas: "side main panel";
   height: 100vh;
   height: 100dvh; /* 移动 Safari：地址栏收起时不被底部工具栏遮住 */
@@ -1435,7 +1435,7 @@ html[data-motion="off"] .panel-body.panel-tab-enter { animation: none !important
 [data-theme="dark"] .files-icon-btn.danger:hover { color: #e8b4b4; background: #3a1f1f; }
 .side-label-btns { display: flex; align-items: center; gap: 5px; }
 .file-list { display: flex; flex-direction: column; gap: 1px; padding: 6px 6px 10px; flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; }
-.file-list .ft-row { min-width: max-content; }
+.file-list .ft-row { width: 100%; min-width: 0; }
 .file-item, .ft-row {
   display: flex; justify-content: flex-start; align-items: center; gap: 8px;
   padding: 3px 8px; border: 0; border-radius: 6px; cursor: pointer; line-height: 1.35;
@@ -1456,12 +1456,20 @@ html[data-motion="off"] .panel-body.panel-tab-enter { animation: none !important
 .ft-chev svg, .ft-ico svg { width: 100%; height: 100%; display: block; }
 .ft-name { font-size: var(--ui-fs-12_5px, 12.5px); flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--fg); }
 .ft-meta { font-size: var(--ui-fs-10px, 10px); color: var(--fg-3); font-family: var(--mono); flex-shrink: 0; }
-.ft-actions { display: flex; gap: 4px; flex-shrink: 0; align-items: center; }
-.ft-row .files-icon-btn { width: 22px; height: 22px; opacity: 0; }
+.ft-actions { display: flex; gap: 4px; flex: 0 0 auto; align-items: center; margin-left: auto; }
+.ft-row .files-icon-btn { width: 22px; height: 22px; opacity: 0; transition: opacity .16s var(--ease), color .16s var(--ease), background-color .16s var(--ease); }
 .ft-row .files-icon-btn .ico, .ft-row .files-icon-btn svg { width: 12px; height: 12px; }
 .ft-row:hover .files-icon-btn, .ft-row:focus-within .files-icon-btn { opacity: 1; }
-.ft-dir.closed .ft-zip { opacity: 1; }
-@media (hover: none) { .ft-row .files-icon-btn, .file-dl { opacity: 1; } }
+#file-list .ft-row.ft-row-collapsing { overflow: hidden; pointer-events: none; animation: ft-row-collapse .19s var(--ease) both; }
+#file-list .ft-row.ft-row-expanding { overflow: hidden; animation: ft-row-expand .22s var(--ease) both; }
+@keyframes ft-row-collapse {
+  from { opacity: 1; transform: translateX(0); max-height: var(--row-height, 40px); padding-top: 3px; padding-bottom: 3px; }
+  to { opacity: 0; transform: translateX(-7px); max-height: 0; padding-top: 0; padding-bottom: 0; margin-top: -1px; margin-bottom: -1px; }
+}
+@keyframes ft-row-expand {
+  from { opacity: 0; transform: translateX(-7px); max-height: 0; padding-top: 0; padding-bottom: 0; }
+  to { opacity: 1; transform: none; max-height: 72px; padding-top: 3px; padding-bottom: 3px; }
+}
 /* 按钮里的线性图标：与文字同色（currentColor），随主题/选中态自动反转 */
 .mini-btn { display: inline-flex; align-items: center; gap: 4px; }
 .mini-btn .btn-ico, .mini-btn svg.ico { width: 12px; height: 12px; display: block; flex-shrink: 0; }
@@ -2119,6 +2127,7 @@ polyline.md-chart-line, path.md-chart-line { fill: none; stroke: #4f46e5; stroke
 [data-theme="dark"] .chip-win-stderr .chip-win-t, [data-theme="dark"] .chip-win-stderr .chip-win-b { color: #fca5a5; }
 .chip-win-stdout .chip-win-b.tool-result-missing, .chip-win .tool-result-missing { color: var(--fg-3); font-style: italic; }
 .chip-win .chip-copy { flex-shrink: 0; }
+.chip-no-output { margin: 6px 0 0; padding: 8px 10px; border: 1px dashed var(--line); border-radius: 8px; color: var(--fg-3); background: var(--bg-soft); font-family: var(--mono); font-size: var(--ui-fs-11px, 11px); }
 .chip-copy {
   font-size: var(--ui-fs-10px, 10px); color: var(--fg-3); border: 1px solid var(--line); border-radius: 5px;
   padding: 0 6px; height: 20px; line-height: 18px; background: var(--bg); cursor: pointer;
@@ -2588,10 +2597,10 @@ html[data-motion="off"] .md-chart-map-loading, html[data-motion="off"] .md-chart
 .feedback-btn:hover svg{scale:1.07}
 .feedback-btn[aria-pressed="true"]{background:var(--bg-hover);box-shadow:inset 0 0 0 1px var(--line)}
 .feedback-btn[aria-pressed="true"] svg path{fill-opacity:.2}
-.feedback-btn[data-vote="up"][aria-pressed="true"]{color:#0f7a3d;box-shadow:inset 0 0 0 1px color-mix(in srgb,#0f7a3d 40%,var(--line));background:color-mix(in srgb,#0f7a3d 10%,var(--bg))}
-.feedback-btn[data-vote="down"][aria-pressed="true"]{color:#b42318;box-shadow:inset 0 0 0 1px color-mix(in srgb,#b42318 40%,var(--line));background:color-mix(in srgb,#b42318 9%,var(--bg))}
-[data-theme="dark"] .feedback-btn[data-vote="up"][aria-pressed="true"]{color:#5fd08a;background:color-mix(in srgb,#5fd08a 14%,var(--bg));box-shadow:inset 0 0 0 1px color-mix(in srgb,#5fd08a 34%,var(--line))}
-[data-theme="dark"] .feedback-btn[data-vote="down"][aria-pressed="true"]{color:#e88b83;background:color-mix(in srgb,#e88b83 14%,var(--bg));box-shadow:inset 0 0 0 1px color-mix(in srgb,#e88b83 34%,var(--line))}
+.feedback-btn[data-vote="up"][aria-pressed="true"]{color:#0f7a3d}
+.feedback-btn[data-vote="down"][aria-pressed="true"]{color:#b42318}
+[data-theme="dark"] .feedback-btn[data-vote="up"][aria-pressed="true"]{color:#5fd08a}
+[data-theme="dark"] .feedback-btn[data-vote="down"][aria-pressed="true"]{color:#e88b83}
 .feedback-btn::after{content:"";position:absolute;inset:0;border-radius:inherit;background:radial-gradient(circle,currentColor 0%,transparent 70%);opacity:0;scale:.4;z-index:-1;pointer-events:none}
 .feedback-btn[aria-pressed="true"] svg{animation:fb-pop .55s cubic-bezier(.34,1.56,.64,1)}
 .feedback-btn[aria-pressed="true"]::after{animation:fb-ripple .75s var(--ease-out) both}
@@ -2740,11 +2749,11 @@ button.fv-path:focus-visible { outline: 2px solid var(--fg); outline-offset: 1px
 button.fv-path > svg { width: 12px; height: 12px; flex: 0 0 auto; color: var(--fg-3); transform: rotate(90deg); transition: transform .22s var(--ease); }
 button.fv-path[aria-expanded="true"] > svg { transform: rotate(-90deg); }
 .fv-actions { flex-wrap: wrap; }
-/* 「代码 / 预览」分段切换：一块底色在两个按钮之间滑动 */
-.fv-actions .fv-modes { position: relative; display: inline-grid; grid-auto-flow: column; grid-auto-columns: 1fr; padding: 2px; border: 1px solid var(--line); border-radius: 7px; isolation: isolate; }
-.fv-modes-thumb { position: absolute; z-index: -1; top: 2px; bottom: 2px; left: 2px; width: calc(50% - 2px); border-radius: 5px; background: var(--fg); transition: transform .28s cubic-bezier(.3, .9, .3, 1); }
+/* 「代码 / 预览」大圆角分段滑块：圆润底轨 + 平滑滑动的高对比选择块 */
+.fv-actions .fv-modes { position: relative; display: inline-grid; grid-auto-flow: column; grid-auto-columns: 1fr; padding: 2px; border: 1px solid var(--line); border-radius: 999px; background: var(--bg-soft); isolation: isolate; }
+.fv-modes-thumb { position: absolute; z-index: -1; top: 2px; bottom: 2px; left: 2px; width: calc(50% - 2px); border-radius: 999px; background: var(--fg); box-shadow: 0 1px 2px rgba(0,0,0,.12); transition: transform .42s cubic-bezier(.22, 1, .36, 1); will-change: transform; }
 .fv-modes[data-mode="preview"] .fv-modes-thumb { transform: translateX(100%); }
-.fv-actions .fv-modes button { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 28px; padding: 0; border: 0; background: none; border-radius: 5px; color: var(--fg-2); transition: color .22s var(--ease); }
+.fv-actions .fv-modes button { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 28px; padding: 0; border: 0; background: none; border-radius: 999px; color: var(--fg-2); transition: color .24s var(--ease); }
 .fv-mode-icon { display: block; width: 15px; height: 15px; }
 .fv-actions .fv-modes button:hover { color: var(--fg); border: 0; }
 .fv-actions .fv-modes button[aria-pressed="true"] { color: var(--bg); }

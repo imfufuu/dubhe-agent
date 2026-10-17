@@ -295,7 +295,7 @@ export function pathsOfEdits(toolCalls = []) {
 export function editFoldLabel(count, { live = false } = {}) {
   const n = Number(count) || 0;
   if (live) return n === 1 ? 'Writing file' : `Writing files ${n}`;
-  return n === 1 ? 'Edited file' : `Edited files ${n}`;
+  return n === 1 ? 'Edited File' : `Edited Files ${n}`;
 }
 
 /**

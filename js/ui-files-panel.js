@@ -116,6 +116,44 @@ export function installFilesPanel({ store, agent, toast, fmtSize, highlightCode,
 
   // 目录折叠状态：本次页面会话内记住（沙箱是路径即结构，没有真实目录节点）
   const collapsedDirs = new Set();
+  const pendingDirCloses = new Map();
+  const DIR_TRANSITION_MS = 190;
+  const cancelDirTransitions = () => {
+    for (const timer of pendingDirCloses.values()) clearTimeout(timer);
+    pendingDirCloses.clear();
+  };
+  const setDirectoryRowState = (row, entry, closed) => {
+    row.classList.toggle('closed', closed);
+    row.classList.toggle('open', !closed);
+    row.setAttribute('aria-expanded', String(!closed));
+    row.title = `${entry.path}/（点击${closed ? '展开' : '折叠'}，共 ${entry.count} 个文件）`;
+    const icon = $('.ft-ico', row);
+    if (icon) icon.innerHTML = closed ? ICON.folder : ICON.folderOpen;
+  };
+  const toggleDirectory = (entry, row) => {
+    const pending = pendingDirCloses.get(entry.path);
+    if (pending != null) { clearTimeout(pending); pendingDirCloses.delete(entry.path); }
+    if (collapsedDirs.has(entry.path)) {
+      collapsedDirs.delete(entry.path);
+      renderFiles({ expandingPath: entry.path });
+      return;
+    }
+    collapsedDirs.add(entry.path);
+    setDirectoryRowState(row, entry, true);
+    const box = $('#file-list');
+    const prefix = `${entry.path}/`;
+    const descendants = [...box.querySelectorAll('.ft-row')].filter((n) => String(n.dataset.path || '').startsWith(prefix));
+    if (!motionAllowed(document) || !descendants.length) { renderFiles(); return; }
+    descendants.forEach((n) => {
+      n.style.setProperty('--row-height', `${n.getBoundingClientRect().height}px`);
+      n.classList.add('ft-row-collapsing');
+    });
+    const timer = setTimeout(() => {
+      pendingDirCloses.delete(entry.path);
+      if (collapsedDirs.has(entry.path)) renderFiles();
+    }, DIR_TRANSITION_MS);
+    pendingDirCloses.set(entry.path, timer);
+  };
   // 图片以 data URL 存放，字符串长度会虚高 ~1/3；按 base64 反推真实字节
   const approxBytes = (raw) => contentByteSize(raw);
 
@@ -133,7 +171,8 @@ export function installFilesPanel({ store, agent, toast, fmtSize, highlightCode,
   };
 
   let lastSig = null;
-  function renderFiles() {
+  function renderFiles({ expandingPath = '' } = {}) {
+    cancelDirTransitions();
     const box = $('#file-list'); box.innerHTML = '';
     const allList = agent.fs.list();
     const allFiles = allList.map((f) => {
@@ -193,6 +232,10 @@ export function installFilesPanel({ store, agent, toast, fmtSize, highlightCode,
       row.dataset.path = r.path;
       if (r.type !== 'dir' && changed.has(r.path)) row.classList.add('just-changed');
       row.title = r.type === 'dir' ? `${r.path}/（点击${collapsedDirs.has(r.path) ? '展开' : '折叠'}，共 ${r.count} 个文件）` : r.path;
+      if (expandingPath && r.path.startsWith(`${expandingPath}/`)) {
+        row.classList.add('ft-row-expanding');
+        setTimeout(() => row.classList.remove('ft-row-expanding'), 230);
+      }
       if (r.type === 'dir') {
         row.setAttribute('role', 'button');
         row.tabIndex = 0;
@@ -202,10 +245,7 @@ export function installFilesPanel({ store, agent, toast, fmtSize, highlightCode,
           + `<span class="ft-name">${esc(r.name)}</span>`
           + `<span class="ft-meta">${localeText(`${Number(r.count) || 0} 个文件 · ${fmtSize(Number(r.size) || 0)}`, `${Number(r.count) || 0} files · ${fmtSize(Number(r.size) || 0)}`)}</span>`
           + `<span class="ft-actions"><button class="files-icon-btn ft-copy" type="button" title="复制文件名">${ICON.copy}</button><button class="files-icon-btn ft-zip" type="button" title="打包 ${esc(r.path)}/">${ICON.download}</button></span>`;
-        const toggle = () => {
-          if (collapsedDirs.has(r.path)) collapsedDirs.delete(r.path); else collapsedDirs.add(r.path);
-          renderFiles();
-        };
+        const toggle = () => toggleDirectory(r, row);
         row.addEventListener('click', toggle);
         row.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
         $('.ft-copy', row).addEventListener('click', (e) => {

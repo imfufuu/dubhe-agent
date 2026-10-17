@@ -1,5 +1,18 @@
-// Stable DOM fragments in persisted SSE order; UI business rules stay in ui.js.
+// Stable DOM fragments in persisted SSE order plus lightweight UI lifecycle helpers.
 import { displayParts } from './toolflow.js?v=2026.10.11.1';
+export function persistTurnTiming(store, ms, msgNodes, paintFoot, syncShell, renderStats) {
+  if (!(ms > 0)) return;
+  const st = store.state.stats || (store.state.stats = { lastMs: 0, totalMs: 0 });
+  st.lastMs = ms; st.totalMs += ms;
+  const assistants = [...(store.state.messages || [])].reverse().filter((m) => m?.role === 'assistant');
+  const last = assistants.find((m) => !m.toolCalls?.length) || assistants[0];
+  if (last) {
+    last.durationMs = ms; last.ts = Date.now();
+    const wrap = msgNodes.get(last.id);
+    if (wrap) { paintFoot(wrap, last); syncShell(wrap); }
+  }
+  store.notify(); store.save?.(true); renderStats();
+}
 export function paintOrderedAssistant(wrap, m, { paintPart, paintMeta, paintFoot, syncShell, syncFolds, refreshActions }) {
   const parts = displayParts(m);
     if (!m._displayFragment && (parts.length > 1 || wrap._flowMode || m._sequentialPresentation)) {
@@ -47,15 +60,16 @@ export function renderToolChipDetail(chip) {
     if (!chip || !chip._detail) return;
     const w = toolWindowsOf(chip);
     chip._win = w;
-    const sig = JSON.stringify([w.command, w.stdout, w.stderr, w.missing]);
+    const sig = JSON.stringify([w.command, w.stdout, w.stderr, w.missing, w.noOutput]);
     if (chip._detailSig !== sig) {
       chip._detailSig = sig;
-      const expected = w.stderr ? ['command', 'stdout', 'stderr'] : ['command', 'stdout'];
+      const expected = ['command', ...(w.stdout ? ['stdout'] : []), ...(w.stderr ? ['stderr'] : [])];
       const existing = [...chip._detail.querySelectorAll('[data-win]')].map((n) => n.dataset.win);
-      if (expected.join() !== existing.join()) chip._detail.innerHTML = renderToolWindowsHtml(w);
+      const hasNoOutput = !!chip._detail.querySelector('.chip-no-output');
+      if (expected.join() !== existing.join() || hasNoOutput !== !!w.noOutput) chip._detail.innerHTML = renderToolWindowsHtml(w);
       else for (const kind of expected) {
         const pre = chip._detail.querySelector(`[data-win="${kind}"] pre`);
-        const text = w[kind] || (kind === 'stdout' ? (w.stderr ? '（无标准输出）' : '（空输出）') : '');
+        const text = w[kind] || '';
         if (pre && pre.textContent !== text) pre.textContent = text;
       }
     }
