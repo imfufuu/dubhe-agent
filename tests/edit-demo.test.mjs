@@ -80,7 +80,9 @@ test('stable per-file diff DOM: all edited files stay visible, code is escaped, 
   const options = { label: 'Edited Files 2', paths: ['example/abc.txt', 'example/def.txt'], discarded: new Set(), preview, live: true };
   paintEditFoldContent(n, options);
   assert.equal(n.querySelector('.chip-name').textContent, 'Edited Files 2');
-  assert.deepEqual([...n.querySelectorAll('.edit-stats')].map((x) => x.textContent), ['+10-0', '+0-10']);
+  const stats = [...n.querySelectorAll('.edit-stats')];
+  assert.deepEqual(stats.map((row) => [...row.children].map((item) => item.textContent)), [['+10', '-0'], ['-10', '0']]);
+  assert.deepEqual([...stats[1].children].map((item) => item.className), ['diff-del', 'diff-add']);
   assert.deepEqual([...n.querySelectorAll('.ep-path')].map((x) => x.textContent), ['example/abc.txt', 'example/def.txt']);
   assert.equal(n.querySelectorAll('.edit-preview').length, 2, '多个文件的差异卡应同时显示');
   const firstPath = n.querySelector('.edit-path'); firstPath.click();

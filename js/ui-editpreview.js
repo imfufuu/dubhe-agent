@@ -105,8 +105,11 @@ export function paintEditFoldContent(node, options) {
     text(row.name, path); row.name.setAttribute('aria-label', `跳转到 ${path} 的编辑预览`); row.item.dataset.path = path;
     const file = fileByPath.get(path) || (preview?.path === path ? preview : null);
     const known = file && file.added != null && file.removed != null;
-    text(row.add, known ? `+${file.added}` : '+—');
-    text(row.del, known ? `-${file.removed}` : '-—');
+    const deletionOnly = known && file.added === 0 && file.removed > 0;
+    row.add.className = deletionOnly ? 'diff-del' : 'diff-add';
+    row.del.className = deletionOnly ? 'diff-add' : 'diff-del';
+    text(row.add, !known ? '+—' : deletionOnly ? `-${file.removed}` : `+${file.added}`);
+    text(row.del, !known ? '-—' : deletionOnly ? '0' : `-${file.removed}`);
     row.stats.title = known ? `新增 ${file.added} 行，删除 ${file.removed} 行${file.failed ? '（写入失败，仅为拟议改动）' : ''}` : '缺少原始快照或差异计算超时';
     row.item.classList.toggle('fold-discarded', dropped);
     row.item.title = dropped ? '回合结束时最终回答没有提到这个文件，临时沙箱已把它丢弃；在回答里写出路径或文件名即可保留' : '';
