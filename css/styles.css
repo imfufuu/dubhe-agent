@@ -1594,6 +1594,13 @@ html[data-motion="off"] .file-viewer.switching > :not(.file-viewer-head) { anima
 .set-title { font-size: var(--ui-fs-13_5px, 13.5px); font-weight: 600; color: var(--fg); }
 .set-sub { font-size: var(--ui-fs-11_5px, 11.5px); color: var(--fg-3); margin-top: 2px; line-height: 1.4; }
 .set-ctl { flex: 0 0 auto; }
+.cache-refresh-progress { display: flex; align-items: center; gap: 10px; padding: 2px 0 10px; color: var(--fg-2); font-size: var(--ui-fs-11_5px, 11.5px); }
+.cache-refresh-progress[hidden] { display: none !important; }
+.cache-refresh-progress progress { display: block; flex: 1; width: 100%; height: 8px; min-width: 80px; border: 0; border-radius: 999px; overflow: hidden; appearance: none; background: var(--line); accent-color: var(--accent); }
+.cache-refresh-progress progress::-webkit-progress-bar { border-radius: 999px; background: var(--line); }
+.cache-refresh-progress progress::-webkit-progress-value { border-radius: 999px; background: var(--accent); transition: width .2s ease; }
+.cache-refresh-progress progress::-moz-progress-bar { border-radius: 999px; background: var(--accent); transition: width .2s ease; }
+.cache-refresh-progress > span { min-width: 4.2em; text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
 .set-input.set-num { width: 88px; text-align: right; }
 .set-input { padding: 8px 11px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg-soft); color: var(--fg); font-size: var(--ui-fs-12_5px, 12.5px); width: 230px; outline: none; transition: border-color .2s; }
 .set-input:focus { border-color: var(--fg); }
@@ -2715,6 +2722,8 @@ html[data-motion="off"] .is-working > :is(.chip-name, .chip-state) {
   html:not([data-motion="on"]) :is(.fv-dual > .fv-pane, .fv-modes-thumb, button.fv-path > svg) { transition: none !important; }
   html:not([data-motion="on"]) :is(.fv-switcher, .fv-switcher .fv-sw-q, .fv-too-big-ico .fv-art) { animation: none !important; }
   html:not([data-motion="on"]) .fv-switcher.is-closing .fv-sw-list { transition: none !important; }
+  html:not([data-motion="on"]) .cache-refresh-progress progress::-webkit-progress-value,
+  html:not([data-motion="on"]) .cache-refresh-progress progress::-moz-progress-bar { transition: none !important; }
 }
 @media (min-width: 761px) {
   /* V1.8.1：预览展开时面板不再向左铺满半屏（旧 clamp(420px, 52vw, 820px)），收窄贴右，给对话区留足宽度 */

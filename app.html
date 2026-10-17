@@ -549,6 +549,8 @@
           <div class="set-about-row"><span>部署提交</span><b id="set-about-commit" class="mono" title="来自线上 build.json：这次部署对应的 git 提交与文件清单，可用 tools/verify-build.mjs 逐文件核对">—</b></div>
         </div>
         <div class="set-row"><div class="set-lbl"><div class="set-title">临时缓存</div><div class="set-sub" id="set-cache-note">不含会话、密钥、设置与记忆</div></div><div class="set-ctl"><button type="button" id="set-clear-cache" class="ghost-btn">清除临时缓存</button></div></div>
+        <div class="set-row cache-refresh-row"><div class="set-lbl"><div class="set-title">脚本缓存更新</div><div class="set-sub" id="set-cache-update-status" role="status" aria-live="polite">点击后自动检查线上版本；有更新时缓存脚本并显示进度，不会打断当前页面。</div></div><div class="set-ctl"><button type="button" id="set-update-cache" class="ghost-btn" aria-controls="set-cache-update-progress-wrap">检查并更新</button></div></div>
+        <div id="set-cache-update-progress-wrap" class="cache-refresh-progress" role="group" aria-label="脚本缓存更新进度" hidden><progress id="set-cache-update-progress" max="100" value="0" aria-label="脚本缓存更新进度"></progress><span id="set-cache-update-progress-label">0%</span></div>
 
       </section>
 

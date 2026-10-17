@@ -1,4 +1,5 @@
 import { installModerationSetting } from './ui-moderation-setting.js';
+import { updateScriptCache } from './cache-update.js';
 import { text as localeText } from './locale.js';
 import { getLanguage, onLanguageChange } from './locale.js';
 // 设置弹窗：API Key / 中继地址 / 主题 / 字号 / 沙箱 / 联网 / 快速 / 思考 / 识图·视频识别模型 / 清空数据 / 关于
@@ -343,8 +344,77 @@ export function mountSettings(store, { onRelayChanged, onKeySaved, onSettingChan
   // 清除临时缓存：只动「丢了也能重建」的东西——Cache Storage（SW 离线资源：模型 / 审核资产 / 静态文件）、sessionStorage、
   // 中继探测缓存；会话 / 密钥 / 设置 / 长效记忆（localStorage + IndexedDB）一律不碰。不刷新页面，下次用到的资源按需重新下载。
   const cacheBtn = $('#set-clear-cache');
+  const updateCacheBtn = $('#set-update-cache');
+  const updateStatus = $('#set-cache-update-status');
+  const progressWrap = $('#set-cache-update-progress-wrap');
+  const progressBar = $('#set-cache-update-progress');
+  const progressLabel = $('#set-cache-update-progress-label');
+  const setUpdateStatus = (message) => { if (updateStatus) updateStatus.textContent = message; };
+  const paintUpdateProgress = (info = {}) => {
+    if (!progressWrap || !progressBar || !progressLabel) return;
+    progressWrap.hidden = false;
+    if (info.phase === 'manifest' || !(Number(info.total) > 0)) {
+      progressBar.removeAttribute('value');
+      progressLabel.textContent = localeText('准备中…', 'Preparing…');
+      if (info.phase === 'manifest') setUpdateStatus(info.reason === 'repair'
+        ? localeText(`当前版本 v${info.version} 的缓存不完整，正在补建…`, `The cache for v${info.version} is incomplete; rebuilding it…`)
+        : localeText(`发现新版 v${info.version}，正在准备缓存…`, `Found v${info.version}; preparing the cache…`));
+      return;
+    }
+    const total = Math.max(1, Number(info.total));
+    const completed = Math.max(0, Math.min(total, Number(info.completed) || 0));
+    const percent = info.phase === 'ready' ? 100 : Math.round(completed / total * 100);
+    progressBar.value = percent;
+    progressLabel.textContent = `${percent}%`;
+    if (info.phase === 'cache') {
+      setUpdateStatus(localeText(`正在缓存脚本资源：${completed} / ${total}`, `Caching script assets: ${completed} / ${total}`));
+    }
+  };
+  const updateFailureText = (error) => {
+    switch (error?.code) {
+      case 'manifest-network': return localeText('检查失败：无法连接到线上版本清单。', 'Could not reach the online build manifest.');
+      case 'manifest-http': return localeText('线上版本清单暂不可用，请稍后再试。', 'The online build manifest is unavailable. Try again later.');
+      case 'manifest-invalid': return localeText('线上版本清单无效，请稍后重试。', 'The online build manifest is invalid. Try again later.');
+      case 'unsupported': return localeText('此环境不支持 Service Worker 缓存更新（请使用 HTTPS 或 localhost）。', 'Service Worker cache updates require HTTPS or localhost.');
+      case 'cache-install-failed': return localeText('脚本缓存更新失败；旧缓存仍保留，请检查网络或存储空间后重试。', 'Script cache update failed; the previous cache is intact. Check network/storage and retry.');
+      case 'cache-update-timeout': return localeText('缓存更新超时；旧缓存仍保留，请检查网络后重试。', 'Cache update timed out; the previous cache is intact. Check your connection and retry.');
+      case 'no-worker-update': return localeText('发现新版，但浏览器未启动缓存安装。请稍后重试。', 'A newer build exists, but the browser did not start cache installation. Try again later.');
+      default: return localeText('缓存更新失败，请检查网络后重试。', 'Cache update failed. Check your connection and retry.');
+    }
+  };
+  if (updateCacheBtn) updateCacheBtn.addEventListener('click', async () => {
+    updateCacheBtn.disabled = true;
+    if (cacheBtn) cacheBtn.disabled = true;
+    updateCacheBtn.textContent = localeText('检查中…', 'Checking…');
+    if (progressWrap) progressWrap.hidden = true;
+    if (progressBar) progressBar.value = 0;
+    setUpdateStatus(localeText('正在检查线上最新版本…', 'Checking the latest online build…'));
+    try {
+      const result = await updateScriptCache({ currentVersion: APP_VERSION, onProgress: paintUpdateProgress });
+      if (result.status === 'current') {
+        if (progressWrap) progressWrap.hidden = true;
+        setUpdateStatus(localeText(`当前已是最新版本（v${result.version}）。`, `Already on the latest version (v${result.version}).`));
+      } else if (result.status === 'remote-behind') {
+        if (progressWrap) progressWrap.hidden = true;
+        setUpdateStatus(localeText(`线上清单版本 v${result.version} 低于当前页面，可能部署/CDN 正在同步，请稍后再试。`, `Online manifest v${result.version} is older than this page; deployment/CDN may still be syncing. Retry later.`));
+      } else if (result.status === 'unsupported') {
+        if (progressWrap) progressWrap.hidden = true;
+        setUpdateStatus(updateFailureText({ code: 'unsupported' }));
+      } else {
+        paintUpdateProgress({ phase: 'ready', completed: 1, total: 1 });
+        setUpdateStatus(localeText(`v${result.version} 的脚本已缓存。结束当前任务后刷新页面即可使用；不会强制中断。`, `Scripts for v${result.version} are cached. Refresh when your current task is finished; nothing is interrupted.`));
+      }
+    } catch (error) {
+      setUpdateStatus(updateFailureText(error));
+    } finally {
+      updateCacheBtn.disabled = false;
+      updateCacheBtn.textContent = localeText('检查并更新', 'Check & update');
+      if (cacheBtn) cacheBtn.disabled = false;
+    }
+  });
   if (cacheBtn) cacheBtn.addEventListener('click', async () => {
     cacheBtn.disabled = true;
+    if (updateCacheBtn) updateCacheBtn.disabled = true;
     const label = cacheBtn.textContent;
     cacheBtn.textContent = '清除中…';
     try {
@@ -355,7 +425,7 @@ export function mountSettings(store, { onRelayChanged, onKeySaved, onSettingChan
       onRelayChanged && onRelayChanged();
     } catch (err) {
       toast(localeText(`清除失败：${err && err.message ? err.message : String(err)}`, `Clear failed: ${err && err.message ? err.message : String(err)}`), 'err', 5000);
-    } finally { cacheBtn.disabled = false; cacheBtn.textContent = label; }
+    } finally { cacheBtn.disabled = false; cacheBtn.textContent = label; if (updateCacheBtn) updateCacheBtn.disabled = false; }
   });
 
 }

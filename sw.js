@@ -14,8 +14,31 @@ const PYODIDE_BASE = 'https://cdn.jsdelivr.net/pyodide/v0.26.4/full/';
 let manifestPromise;
 let cacheDisabled = false;
 let lastRecovery = 0;
+let cacheProgress = { phase: 'idle', version: DEPLOY_VERSION, completed: 0, total: 0 };
+let progressQueue = Promise.resolve();
+function reportCacheProgress(next, broadcast = true) {
+  cacheProgress = { type: 'dubhe-cache-progress', version: DEPLOY_VERSION, ...next };
+  if (!broadcast) return Promise.resolve();
+  const message = { ...cacheProgress };
+  progressQueue = progressQueue.then(async () => {
+    let clients = [];
+    try { clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true }); } catch { return; }
+    for (const client of clients) {
+      try { if (new URL(client.url).origin === ORIGIN) client.postMessage(message); } catch { /* closed or inaccessible tab */ }
+    }
+  }).catch(() => {});
+  return progressQueue;
+}
 self.addEventListener('message', event => {
   if (event.data?.type === 'dubhe-cache-cleared') { cacheDisabled = true; manifestPromise = null; }
+  else if (event.data?.type === 'dubhe-cache-progress-request') {
+    try { event.source?.postMessage({ ...cacheProgress, type: 'dubhe-cache-progress' }); } catch { /* requesting tab closed */ }
+  } else if (event.data?.type === 'dubhe-cache-refresh-request' && event.data.version === DEPLOY_VERSION && event.waitUntil) {
+    event.waitUntil(prepare({ notifyProgress: true }).catch(async error => {
+      await reportCacheProgress({ phase: 'error', completed: cacheProgress.completed || 0, total: cacheProgress.total || 0 });
+      throw error;
+    }));
+  }
 });
 const inflight = new Map();
 
@@ -84,7 +107,8 @@ function currentManifest() {
     return null;
   });
 }
-async function prepare() {
+async function prepare({ notifyProgress = false } = {}) {
+  if (notifyProgress) await reportCacheProgress({ phase: 'manifest', completed: 0, total: 0 });
   const response = await timedFetch(new URL('build.json', SCOPE).href, { cache: 'no-store', credentials: 'omit' });
   if (!response.ok) throw Error('No deployment manifest; leave development pages uncached');
   const next = validateManifest(await response.json());
@@ -109,7 +133,9 @@ async function prepare() {
     if (path && next.files[path]) wanted.add(path); // keep used lazy assets, but not deleted files
     else if (lazyExternal(request.url)) external.add(request.url);
   }
-  const jobs = [...wanted]; let cursor = 0, failure;
+  const jobs = [...wanted]; let cursor = 0, completed = 0, failure;
+  const progressEvery = Math.max(1, Math.ceil(jobs.length / 80));
+  if (notifyProgress) await reportCacheProgress({ phase: 'cache', completed: 0, total: jobs.length });
   const run = async () => {
     while (cursor < jobs.length && !failure) {
       const path = jobs[cursor++], key = new URL(path, SCOPE).href;
@@ -122,6 +148,10 @@ async function prepare() {
         }
         if (cacheDisabled) throw Error('Cache cleared');
         await cache.put(key, hit || await verified(path, next.files[path]));
+        completed++;
+        if (notifyProgress && (completed === jobs.length || completed % progressEvery === 0)) {
+          await reportCacheProgress({ phase: 'cache', completed, total: jobs.length });
+        }
       } catch (error) { failure = error; }
     }
   };
@@ -134,9 +164,15 @@ async function prepare() {
     // Ready marker goes LAST. A partial install can never replace the previous version.
     if (cacheDisabled) throw Error('Cache cleared');
     await cache.put(META, new Response(JSON.stringify(next), { headers: { 'Content-Type': 'application/json' } }));
+    if (notifyProgress) await reportCacheProgress({ phase: 'ready', completed: jobs.length, total: jobs.length });
   } catch (error) { await caches.delete(CACHE); throw error; }
 }
-self.addEventListener('install', event => { event.waitUntil(prepare()); });
+self.addEventListener('install', event => {
+  event.waitUntil(prepare({ notifyProgress: true }).catch(async error => {
+    await reportCacheProgress({ phase: 'error', completed: cacheProgress.completed || 0, total: cacheProgress.total || 0 });
+    throw error;
+  }));
+});
 function olderVersion(name) {
   const version = name.slice(PREFIX.length);
   if (!/^\d+\.\d+\.\d+\.\d+$/.test(version)) return version === 'source';
