@@ -63,11 +63,15 @@ export function dualViewKind(path) {
 export const DUAL_VIEW_MAX = Object.freeze({ web: 1024 * 1024, md: 512 * 1024, table: 512 * 1024 });
 export const VIEW_MODES = Object.freeze(['code', 'preview']);
 
-/** 分段切换：两个按钮 + 一块滑动的底色（data-mode 驱动，CSS 负责滑动与淡入） */
+/** 分段切换：图标按钮 + 一块滑动的底色（data-mode 驱动，CSS 负责滑动与淡入） */
 export function viewModesHtml(mode) {
   const labels = { code: localeText('代码', 'Code'), preview: localeText('预览', 'Preview') };
+  const icons = {
+    code: '<svg class="fv-mode-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m8 7-5 5 5 5M16 7l5 5-5 5M14 4l-4 16"/></svg>',
+    preview: '<svg class="fv-mode-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="2.8"/></svg>',
+  };
   return `<span class="fv-modes" role="group" aria-label="${localeText('显示模式', 'View mode')}" data-mode="${mode}"><span class="fv-modes-thumb" aria-hidden="true"></span>`
-    + VIEW_MODES.map((m) => `<button type="button" data-view-mode="${m}" aria-pressed="${m === mode}">${labels[m]}</button>`).join('') + '</span>';
+    + VIEW_MODES.map((m) => `<button type="button" data-view-mode="${m}" aria-pressed="${m === mode}" aria-label="${labels[m]}" title="${labels[m]}">${icons[m]}</button>`).join('') + '</span>';
 }
 export function applyViewMode(viewer, mode) {
   const next = VIEW_MODES.includes(mode) ? mode : 'preview';
@@ -126,9 +130,26 @@ export function openFileSwitcher({ viewer, anchor, current, files, fmtSize, onPi
     if (closed) return;
     closed = true;
     document.removeEventListener('pointerdown', onOutside, true);
-    pop.remove();
     if (anchor) anchor.setAttribute('aria-expanded', 'false');
     if (typeof onClose === 'function') onClose();
+    pop.setAttribute('aria-hidden', 'true');
+    pop.inert = true;
+    pop.classList.add('is-closing');
+    const motionSetting = document.documentElement?.dataset.motion;
+    const reducedMotion = motionSetting === 'off'
+      || (motionSetting !== 'on' && !!document.defaultView?.matchMedia?.('(prefers-reduced-motion: reduce)').matches);
+    if (reducedMotion) { pop.remove(); return; }
+    let removed = false;
+    const remove = () => {
+      if (removed) return;
+      removed = true;
+      pop.removeEventListener('animationend', onAnimationEnd);
+      clearTimeout(closeTimer);
+      pop.remove();
+    };
+    const onAnimationEnd = (event) => { if (event.target === pop && event.animationName === 'fvSwitcherOut') remove(); };
+    const closeTimer = setTimeout(remove, 190);
+    pop.addEventListener('animationend', onAnimationEnd);
   };
   const onOutside = (e) => { if (!pop.contains(e.target) && !(anchor && anchor.contains(e.target))) close(); };
   list.addEventListener('click', (e) => {

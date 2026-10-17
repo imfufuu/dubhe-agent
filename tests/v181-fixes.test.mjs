@@ -407,6 +407,8 @@ test('查看器：只剩代码/预览两档；md/csv 双视图；提示插画没
   assert.doesNotMatch(modes, /split|并排/);
   assert.match(modes, /fv-modes-thumb/);
   assert.match(modes, /data-view-mode="preview" aria-pressed="true"/);
+  assert.equal((modes.match(/class="fv-mode-icon"/g) || []).length, 2, '代码和预览切换只显示图标');
+  assert.match(modes, /aria-label="(?:预览|Preview)"/); assert.match(modes, /aria-label="(?:代码|Code)"/);
   assert.equal(dualViewKind('a.md'), 'md');
   assert.equal(dualViewKind('a.csv'), 'table');
   assert.equal(dualViewKind('a.tsv'), 'table');
@@ -422,6 +424,12 @@ test('查看器：只剩代码/预览两档；md/csv 双视图；提示插画没
   assert.doesNotMatch(panel, /fv-split|'split'/);
   assert.match(panel, /openFileSwitcher/);
   assert.match(panel, /class="fv-path"/);
+  const switcher = read('../js/ui-file-viewer.js');
+  assert.match(switcher, /pop\.classList\.add\('is-closing'\)/, '筛选弹层关闭时应先播放收起过渡');
+  const css = read('../css/styles.css');
+  assert.match(css, /@keyframes fvQuickFilterExpand/);
+  assert.match(css, /@keyframes fvQuickFilterCollapse/);
+  assert.match(css, /@keyframes fvSwitcherOut/);
 });
 
 test('光标：1.2em 高、下沉 2px、左移 1px', () => {
@@ -519,4 +527,15 @@ test('文档扫描：算法核（合成纸面检出四角）、PDF 结构、入�
   const ui = read('../js/ui-scanner.js');
   assert.match(ui, /仅本地处理/);
   assert.doesNotMatch(ui, /fetch\(|XMLHttpRequest/); // 相机画面绝不外发
+  assert.match(ui, /主画布显示完整原图/, '四角控件必须与完整源图保持同一坐标系');
+  assert.match(ui, /校正预览/, '扫描页保留透视矫正后的结果预览');
+  const geometry = await import('../js/ui-scanner.js');
+  const metrics = geometry.scannerDisplayMetrics(
+    { left: 130, top: 90, width: 800, height: 450 },
+    { left: 110, top: 70, width: 840, height: 490 },
+    1600, 900,
+  );
+  const bottomRight = geometry.scannerImageToOverlay({ x: 1600, y: 900 }, metrics);
+  assert.deepEqual(bottomRight, { x: 820, y: 470 }, '源图四角映射到显示画布范围内，而非裁剪结果之外');
+  assert.deepEqual(geometry.scannerOverlayToImage(bottomRight, metrics), { x: 1600, y: 900 }, '拖动坐标反算回全分辨率源图');
 });

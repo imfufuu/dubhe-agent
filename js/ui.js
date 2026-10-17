@@ -122,9 +122,10 @@ export function mountUI(store, agent) {
     }
   }
   function syncFileFold(node) {
-    syncEditingFold(node, { messages: store.state.messages, visibleMessages: displayedMessages(),
+    const autoCollapsed = syncEditingFold(node, { messages: store.state.messages, visibleMessages: displayedMessages(),
       resultIds: new Set(toolResults(node?.dataset.ownerId).keys()),
       busy: getBusy() && !presentationStopped });
+    if (autoCollapsed && node?._toggleKey) fileToggle.set(node._toggleKey, false);
   }
   function syncCompletedToolFolds() {
     for (const fold of $$('.ran-commands', msgList)) syncRanCommandsFold(fold);

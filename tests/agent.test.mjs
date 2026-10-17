@@ -980,10 +980,14 @@ test('照片编辑工作台：复用站点设计令牌（浅深色自适应）�
   assert.match(source, /key === 'r'[\s\S]{0,80}rotate\(/, '应支持 R 旋转快捷键');
   assert.match(source, /class="primary-btn photo-save"/, '保存按钮复用 .primary-btn');
   assert.match(source, /class="ghost-btn photo-cancel"/, '取消按钮复用 .ghost-btn');
+  assert.match(source, /fitCanvasToStage/, '照片画布应按工作区实测尺寸适配');
+  assert.match(source, /ResizeObserver/, '切换工具导致工作区缩放时应同步画布与定位覆盖层');
 });
 
-test('照片编辑器：裁剪框可按四边/四角调整并限制在图像范围内', async () => {
-  const { cropRectFromDrag, resizeCropRect } = await import('../js/photo-editor.js');
+test('照片编辑器：显示画布按真实工作区等比适配，裁剪框保持在图像范围内', async () => {
+  const { fitPhotoDisplaySize, cropRectFromDrag, resizeCropRect } = await import('../js/photo-editor.js');
+  assert.deepEqual(fitPhotoDisplaySize(4000, 3000, 600, 400), { width: 533, height: 400, scale: 0.13333333333333333 });
+  assert.deepEqual(fitPhotoDisplaySize(400, 300, 900, 700), { width: 400, height: 300, scale: 1 }, '小图不无谓放大');
   assert.deepEqual(cropRectFromDrag(80, 70, 20, 10, 100, 100), { x: 20, y: 10, width: 60, height: 60 });
   assert.deepEqual(resizeCropRect({ x: 20, y: 20, width: 60, height: 40 }, 'w', { x: 10, y: 40 }, 100, 100), { x: 10, y: 20, width: 70, height: 40 });
   assert.deepEqual(resizeCropRect({ x: 20, y: 20, width: 60, height: 40 }, 's', { x: 50, y: 80 }, 100, 100), { x: 20, y: 20, width: 60, height: 60 });

@@ -10,6 +10,25 @@ const DETECT_EDGE = 320;
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
+/** Map full-resolution source-image points into the actually displayed canvas rect. */
+export function scannerDisplayMetrics(canvasRect, overlayRect, sourceWidth, sourceHeight) {
+  const width = Math.max(0, Number(canvasRect?.width) || 0);
+  const height = Math.max(0, Number(canvasRect?.height) || 0);
+  const sourceW = Math.max(0, Number(sourceWidth) || 0);
+  const sourceH = Math.max(0, Number(sourceHeight) || 0);
+  return {
+    sx: sourceW > 0 ? width / sourceW : 0,
+    sy: sourceH > 0 ? height / sourceH : 0,
+    ox: (Number(canvasRect?.left) || 0) - (Number(overlayRect?.left) || 0),
+    oy: (Number(canvasRect?.top) || 0) - (Number(overlayRect?.top) || 0),
+  };
+}
+export const scannerImageToOverlay = (point, m) => ({ x: point.x * m.sx + m.ox, y: point.y * m.sy + m.oy });
+export const scannerOverlayToImage = (point, m) => ({
+  x: m.sx ? (point.x - m.ox) / m.sx : 0,
+  y: m.sy ? (point.y - m.oy) / m.sy : 0,
+});
+
 function scaleToFit(w, h, edge) {
   const s = Math.max(w, h) > edge ? edge / Math.max(w, h) : 1;
   return { width: Math.max(32, Math.round(w * s)), height: Math.max(32, Math.round(h * s)), s };
@@ -54,24 +73,32 @@ export async function openScanner({ doc = document } = {}) {
         </div>
       </header>
       <div class="photo-editor-main">
-        <div class="photo-stage"><div class="photo-canvas-wrap" data-r="wrap">
-          <video class="scan-video" playsinline muted autoplay></video>
-          <canvas class="scan-canvas" data-r="canvas" hidden></canvas>
-          <canvas class="scan-overlay" data-r="overlay" aria-hidden="true"></canvas>
-        </div></div>
+        <div class="photo-stage scan-stage" data-r="stage" data-phase="live">
+          <div class="photo-canvas-wrap" data-r="wrap">
+            <video class="scan-video" playsinline muted autoplay></video>
+            <canvas class="scan-canvas" data-r="canvas" hidden></canvas>
+            <canvas class="scan-overlay" data-r="overlay" aria-hidden="true"></canvas>
+          </div>
+          <aside class="scan-result-card" data-r="result-card" aria-label="校正后的页面预览" hidden>
+            <div class="scan-result-head"><strong>校正预览</strong><span>将作为扫描件加入</span></div>
+            <canvas class="scan-result-canvas" data-r="result-preview" aria-label="校正后的扫描页面"></canvas>
+          </aside>
+        </div>
       </div>
       <div class="scan-bar" role="toolbar" aria-label="扫描工具">
         <div class="scan-filters" role="group" aria-label="滤镜">
-          <button class="scan-f on" type="button" data-f="original">原色</button><button class="scan-f" type="button" data-f="gray">灰度</button><button class="scan-f" type="button" data-f="mono">黑白</button>
+          <button class="scan-f on" type="button" data-f="original" aria-pressed="true">原色</button><button class="scan-f" type="button" data-f="gray" aria-pressed="false">灰度</button><button class="scan-f" type="button" data-f="mono" aria-pressed="false">黑白</button>
         </div>
+        <span class="scan-count" data-r="count" aria-live="polite">已添加 0 页</span>
         <div class="scan-actions">
+          <button class="ghost-btn" type="button" data-r="toggle-preview" aria-expanded="false" hidden>校正预览</button>
           <button class="ghost-btn" type="button" data-r="reshoot" hidden>重新取景</button>
-          <button class="primary-btn scan-shutter" type="button" data-r="shoot">拍摄</button>
+          <button class="primary-btn scan-shutter" type="button" data-r="shoot" disabled>拍摄</button>
         </div>
         <div class="scan-pages" data-r="pages"></div>
       </div>
       <footer class="photo-editor-foot">
-        <div class="photo-editor-hint"><span>拍好后拖动四角可微调边界；扫描件作为附件加入本轮对话。</span></div>
+        <div class="photo-editor-hint"><span data-r="footer-hint">对准页面后拍摄；支持多页，可导出图片或 PDF。</span></div>
         <div class="photo-footer-actions">
           <button class="ghost-btn" type="button" data-r="cancel">取消</button>
           <button class="ghost-btn" type="button" data-r="save-img" disabled>存为图片</button>
@@ -84,16 +111,24 @@ export async function openScanner({ doc = document } = {}) {
   const video = modal.querySelector('.scan-video');
   const canvas = $('canvas');
   const overlay = $('overlay');
+  const stage = $('stage');
+  const resultCard = $('result-card');
+  const resultCanvas = $('result-preview');
   const hint = $('hint');
+  const footerHint = $('footer-hint');
+  const pageCount = $('count');
   const pagesEl = $('pages');
   const btnImg = $('save-img');
   const btnPdf = $('save-pdf');
   const btnShoot = $('shoot');
+  const btnPreview = $('toggle-preview');
   const btnReshoot = $('reshoot');
   requestAnimationFrame(() => requestAnimationFrame(() => modal.classList.add('open')));
 
   let stream = null;
   let phase = 'live'; // live | review
+  let cameraReady = false;
+  let previewShown = false;
   let filter = 'original';
   let still = null;            // 冻结帧 canvas（全分辨率）
   let quad = null;             // 全分辨率坐标的四角
@@ -101,7 +136,38 @@ export async function openScanner({ doc = document } = {}) {
   const pages = [];            // {canvas, name}
   let raf = 0;
 
-  const setHint = (t) => { hint.textContent = t; };
+  const setHint = (t, footer = '') => {
+    hint.textContent = t;
+    if (footerHint && footer) footerHint.textContent = footer;
+  };
+  const syncCameraReady = () => {
+    cameraReady = !!(video.videoWidth && video.videoHeight);
+    if (phase === 'live') btnShoot.disabled = !cameraReady;
+    if (cameraReady && phase === 'live' && !still) {
+      setHint(pages.length ? `已收录 ${pages.length} 页 · 可继续拍摄或导出` : '对准一页文档，尽量让纸面充满画面',
+        '对准页面后拍摄；支持多页，可导出图片或 PDF。');
+    }
+  };
+  const syncFilterButtons = () => {
+    for (const button of modal.querySelectorAll('.scan-f')) {
+      const selected = button.dataset.f === filter;
+      button.classList.toggle('on', selected);
+      button.setAttribute('aria-pressed', String(selected));
+      button.disabled = phase !== 'review';
+    }
+  };
+  const syncPreviewPanel = () => {
+    const show = phase === 'review' && previewShown;
+    resultCard.hidden = !show;
+    if (stage) stage.dataset.preview = show ? 'open' : 'closed';
+    btnPreview.hidden = phase !== 'review';
+    btnPreview.disabled = phase !== 'review';
+    btnPreview.setAttribute('aria-expanded', String(show));
+    btnPreview.textContent = show ? '隐藏预览' : '校正预览';
+  };
+  video.addEventListener('loadedmetadata', syncCameraReady);
+  video.addEventListener('playing', syncCameraReady);
+  video.addEventListener('resize', syncCameraReady);
   const start = async () => {
     try {
       stream = await media.getUserMedia({
@@ -113,7 +179,8 @@ export async function openScanner({ doc = document } = {}) {
     }
     video.srcObject = stream;
     await video.play().catch(() => { /* 自动播放策略下点了按钮才播 */ });
-    setHint('对准一页文档，尽量让纸面充满画面');
+    syncCameraReady();
+    if (!cameraReady) setHint('摄像头已连接，正在等待画面…', '请保持此窗口打开；画面就绪后即可拍摄。');
   };
 
   const stop = () => {
@@ -122,6 +189,8 @@ export async function openScanner({ doc = document } = {}) {
     stream = null;
     modal.classList.add('closing');
     doc.removeEventListener('keydown', onKey, true);
+    doc.removeEventListener('pointerup', endDrag);
+    win.removeEventListener('resize', drawOverlay);
     setTimeout(() => modal.remove(), 260);
   };
 
@@ -140,49 +209,62 @@ export async function openScanner({ doc = document } = {}) {
     overlay.width = w; overlay.height = h;
     const g = overlay.getContext('2d');
     g.clearRect(0, 0, w, h);
-    if (phase === 'live') return;
-    if (!preview || !quad || !still) return;
+    if (phase === 'live' || !quad || !still) return;
     const disp = displayScale();
-    const pts = quad.map((p) => ({ x: p.x * disp.k + disp.ox, y: p.y * disp.k + disp.oy }));
+    if (!disp.sx || !disp.sy) return;
+    const pts = quad.map((p) => scannerImageToOverlay(p, disp));
     g.lineWidth = 2; g.strokeStyle = '#a78bfa'; g.fillStyle = 'rgba(167,139,250,.16)';
     g.beginPath();
     pts.forEach((p, i) => (i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y)));
     g.closePath(); g.fill(); g.stroke();
     for (const p of pts) {
-      g.beginPath(); g.arc(p.x, p.y, 9, 0, Math.PI * 2);
+      g.beginPath(); g.arc(p.x, p.y, 10, 0, Math.PI * 2);
       g.fillStyle = '#fff'; g.fill();
       g.beginPath(); g.arc(p.x, p.y, 6, 0, Math.PI * 2); g.fillStyle = '#a78bfa'; g.fill();
     }
   };
 
   function displayScale() {
-    // 对齐坐标系：quad 是原图（still）坐标 → 乘 preview 的显示比例；overlay 与 wrap 同框
+    // quad 始终用冻结原图的全分辨率坐标；画布显示尺寸可以独立缩放。
     const wr = overlay.parentElement.getBoundingClientRect();
     const cr = canvas.getBoundingClientRect();
-    if (!preview || !still || !cr.width) return { k: 1, ox: 0, oy: 0 };
-    const css = canvas.offsetWidth ? cr.width / canvas.offsetWidth : 1;
-    const k = (preview.width / still.width) * css;
-    return { k, ox: cr.left - wr.left, oy: cr.top - wr.top };
+    if (!still || !cr.width || !cr.height) return { sx: 0, sy: 0, ox: 0, oy: 0 };
+    return scannerDisplayMetrics(cr, wr, still.width, still.height);
   }
 
   const renderPreview = () => {
     if (!still || !quad) return;
-    preview = renderPage(still, quad, filter, PREVIEW_EDGE);
-    canvas.width = preview.width; canvas.height = preview.height;
+    if (previewShown) {
+      preview = renderPage(still, quad, filter, PREVIEW_EDGE);
+      const resultCtx = resultCanvas.getContext('2d');
+      resultCanvas.width = preview.width; resultCanvas.height = preview.height;
+      resultCtx.clearRect(0, 0, resultCanvas.width, resultCanvas.height);
+      resultCtx.drawImage(preview, 0, 0);
+    } else preview = null;
+
+    // 主画布显示完整原图（而不是已透视裁出的结果），定位点因此与背景始终共用坐标系。
+    const sourceSize = scaleToFit(still.width, still.height, PREVIEW_EDGE);
+    canvas.width = sourceSize.width; canvas.height = sourceSize.height;
     const c = canvas.getContext('2d');
-    c.clearRect(0, 0, preview.width, preview.height);
-    c.drawImage(preview, 0, 0);
+    c.clearRect(0, 0, canvas.width, canvas.height);
+    c.drawImage(still, 0, 0, canvas.width, canvas.height);
+    const sourceData = applyScanFilter(c.getImageData(0, 0, canvas.width, canvas.height), filter);
+    const filteredData = c.createImageData(sourceData.width, sourceData.height);
+    filteredData.data.set(sourceData.data);
+    c.putImageData(filteredData, 0, 0);
     drawOverlay();
   };
   const schedulePreview = () => { if (raf) return; raf = requestAnimationFrame(() => { raf = 0; renderPreview(); }); };
 
   const captureStill = () => {
-    const vw = video.videoWidth || 1280; const vh = video.videoHeight || 720;
+    const vw = video.videoWidth; const vh = video.videoHeight;
+    if (!vw || !vh) return false;
     const fit = scaleToFit(vw, vh, OUTPUT_EDGE);
     still = doc.createElement('canvas');
     still.width = fit.width; still.height = fit.height;
     still.getContext('2d').drawImage(video, 0, 0, fit.width, fit.height);
     quad = detectQuadOnStill();
+    return true;
   };
 
   function detectQuadOnStill() {
@@ -199,18 +281,27 @@ export async function openScanner({ doc = document } = {}) {
 
   const toLive = () => {
     phase = 'live';
+    if (stage) stage.dataset.phase = 'live';
     video.hidden = false; canvas.hidden = true; still = null; quad = null; preview = null;
-    $('shoot').textContent = '拍摄';
+    previewShown = false; syncPreviewPanel();
+    btnShoot.textContent = '拍摄';
+    btnShoot.disabled = !cameraReady;
     btnReshoot.hidden = true;
-    setHint('对准一页文档，尽量让纸面充满画面');
+    syncFilterButtons();
+    const nextHint = pages.length ? `已收录 ${pages.length} 页 · 可继续拍摄或导出` : '对准一页文档，尽量让纸面充满画面';
+    setHint(nextHint, pages.length ? '可继续拍下一页，也可移除页面后导出图片或 PDF。' : '对准页面后拍摄；支持多页，可导出图片或 PDF。');
     drawOverlay();
   };
   const toReview = () => {
     phase = 'review';
+    if (stage) stage.dataset.phase = 'review';
     video.hidden = true; canvas.hidden = false;
-    btnShoot.textContent = '加入这一页';
+    previewShown = false; syncPreviewPanel();
+    btnShoot.textContent = `加入第 ${pages.length + 1} 页`;
+    btnShoot.disabled = false;
     btnReshoot.hidden = false;
-    setHint('拖动四角微调范围，选滤镜后加入本页');
+    syncFilterButtons();
+    setHint(`第 ${pages.length + 1} 页 · 拖动四个定位点微调范围`, '可点“校正预览”查看裁切效果；确认后加入这一页。');
     renderPreview();
   };
 
@@ -221,24 +312,39 @@ export async function openScanner({ doc = document } = {}) {
     const r = overlay.getBoundingClientRect();
     const x = (e.clientX - r.left); const y = (e.clientY - r.top);
     const disp = displayScale();
-    let best = -1; let bestD = 28 * 28;
+    if (!disp.sx || !disp.sy) return;
+    let best = -1; let bestD = 30 * 30;
     quad.forEach((p, i) => {
-      const dx = p.x * disp.k + disp.ox - x; const dy = p.y * disp.k + disp.oy - y;
+      const screen = scannerImageToOverlay(p, disp);
+      const dx = screen.x - x; const dy = screen.y - y;
       const d = dx * dx + dy * dy;
       if (d < bestD) { bestD = d; best = i; }
     });
-    if (best >= 0) { dragIdx = best; try { overlay.setPointerCapture(e.pointerId); } catch { /* 合成事件 / 失效指针：靠全局 pointerup 兜底 */ } }
+    if (best >= 0) {
+      dragIdx = best; overlay.style.cursor = 'grabbing'; e.preventDefault();
+      try { overlay.setPointerCapture(e.pointerId); } catch { /* 合成事件 / 失效指针：靠全局 pointerup 兜底 */ }
+    }
   });
   overlay.addEventListener('pointermove', (e) => {
     if (phase !== 'review') return;
     const r = overlay.getBoundingClientRect();
     const x = (e.clientX - r.left); const y = (e.clientY - r.top);
-    if (dragIdx < 0) { overlay.style.cursor = 'default'; return; }
     const disp = displayScale();
-    quad[dragIdx] = { x: clamp((x - disp.ox) / disp.k, 0, still.width), y: clamp((y - disp.oy) / disp.k, 0, still.height) };
+    if (!disp.sx || !disp.sy) { overlay.style.cursor = 'default'; return; }
+    if (dragIdx < 0) {
+      const onHandle = quad.some((p) => {
+        const screen = scannerImageToOverlay(p, disp);
+        return (screen.x - x) ** 2 + (screen.y - y) ** 2 <= 30 * 30;
+      });
+      overlay.style.cursor = onHandle ? 'grab' : 'default';
+      return;
+    }
+    overlay.style.cursor = 'grabbing';
+    const source = scannerOverlayToImage({ x, y }, disp);
+    quad[dragIdx] = { x: clamp(source.x, 0, still.width), y: clamp(source.y, 0, still.height) };
     schedulePreview();
   });
-  const endDrag = () => { dragIdx = -1; };
+  const endDrag = () => { dragIdx = -1; overlay.style.cursor = 'default'; };
   doc.addEventListener('pointerup', endDrag);
   overlay.addEventListener('pointercancel', endDrag);
 
@@ -252,7 +358,11 @@ export async function openScanner({ doc = document } = {}) {
       pagesEl.appendChild(chip);
     });
     btnImg.disabled = !pages.length; btnPdf.disabled = !pages.length;
-    if (pages.length) setHint(`已收录 ${pages.length} 页 · 可继续拍摄或导出`);
+    if (pageCount) pageCount.textContent = `已添加 ${pages.length} 页`;
+    if (phase === 'live') {
+      setHint(pages.length ? `已收录 ${pages.length} 页 · 可继续拍摄或导出` : '对准一页文档，尽量让纸面充满画面',
+        pages.length ? '可继续拍下一页，也可移除页面后导出图片或 PDF。' : '对准页面后拍摄；支持多页，可导出图片或 PDF。');
+    }
   };
 
   const toFile = (source, name, type) => new Promise((res) => {
@@ -263,14 +373,30 @@ export async function openScanner({ doc = document } = {}) {
   modal.addEventListener('click', async (e) => {
     const hit = (n) => e.target.closest(`[data-r="${n}"]`);
     const f = e.target.closest('.scan-f');
-    if (f) { filter = f.dataset.f; for (const b of modal.querySelectorAll('.scan-f')) b.classList.toggle('on', b === f); schedulePreview(); return; }
+    if (f && phase === 'review') { filter = f.dataset.f; syncFilterButtons(); schedulePreview(); return; }
+    if (hit('toggle-preview') && phase === 'review') {
+      previewShown = !previewShown;
+      syncPreviewPanel();
+      requestAnimationFrame(() => { if (previewShown) renderPreview(); else drawOverlay(); });
+      return;
+    }
     if (hit('close') || hit('cancel')) { finish(null); return; }
     if (hit('shoot')) {
-      if (phase === 'live') { captureStill(); toReview(); }
-      else {
-        pages.push({ canvas: renderPage(still, quad, filter, OUTPUT_EDGE) });
-        renderPages();
-        toLive();
+      if (phase === 'live') {
+        if (!cameraReady || !captureStill()) {
+          syncCameraReady();
+          setHint('摄像头画面尚未就绪，请稍候再拍。', '画面就绪后“拍摄”按钮会自动启用。');
+          return;
+        }
+        toReview();
+      } else {
+        try {
+          pages.push({ canvas: renderPage(still, quad, filter, OUTPUT_EDGE) });
+          renderPages();
+          toLive();
+        } catch (err) {
+          setHint(`页面处理失败：${(err && err.message) || err}`, '可重新取景后再试；已收录的页面不会丢失。');
+        }
       }
       return;
     }
@@ -298,6 +424,9 @@ export async function openScanner({ doc = document } = {}) {
   });
 
   win.addEventListener('resize', drawOverlay);
+  syncFilterButtons();
+  syncPreviewPanel();
+  syncCameraReady();
   try {
     await start();
   } catch (err) {

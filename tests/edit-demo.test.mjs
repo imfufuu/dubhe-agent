@@ -71,22 +71,46 @@ const dom = new JSDOM('<!doctype html><body></body>', { url: 'http://localhost/'
 Object.assign(globalThis, { window: dom.window, document: dom.window.document, matchMedia: () => ({ matches: true }) });
 Object.defineProperty(document, 'hidden', { value: false });
 
-test('stable diff DOM, escaped code, per-file selection and no whole-source rendering', () => {
+test('stable per-file diff DOM: all edited files stay visible, code is escaped, unchanged source is omitted', () => {
   const n = document.createElement('div'); document.body.append(n);
   const calls = [call({ path: 'a', content: 'keep\n<script>new</script>\n' }), call({ path: 'b', content: 'new b\n' }, 'b')];
   const preview = buildFileEditPreview(calls, disk({ a: 'keep\nold\n', b: '' }));
   const options = { label: 'Edited files 2', paths: ['a', 'b'], discarded: new Set(), preview, live: true };
   paintEditFoldContent(n, options);
   assert.deepEqual([...n.querySelectorAll('.edit-stats')].map((x) => x.textContent), ['+1-1', '+1-0']);
+  assert.deepEqual([...n.querySelectorAll('.ep-path')].map((x) => x.textContent), ['a', 'b']);
+  assert.equal(n.querySelectorAll('.edit-preview').length, 2, '多个文件的差异卡应同时显示');
   const firstPath = n.querySelector('.edit-path'); firstPath.click();
-  assert.equal(n.querySelector('.ep-path').textContent, 'a');
+  assert.deepEqual([...n.querySelectorAll('.ep-path')].map((x) => x.textContent), ['a', 'b']);
   assert.equal(n.querySelector('script'), null);
-  assert.equal(n.querySelector('.ep-body').textContent.includes('keep'), false);
-  const line = n.querySelector('.ep-line'); paintEditFoldContent(n, options);
-  assert.equal(n.querySelector('.ep-line'), line); assert.equal(n.querySelector('.edit-path'), firstPath);
+  assert.equal(n.querySelector('.edit-preview[data-path="a"] .ep-body').textContent.includes('keep'), false);
+  const firstCard = n.querySelector('.edit-preview[data-path="a"]');
+  const line = firstCard.querySelector('.ep-line'); paintEditFoldContent(n, options);
+  assert.equal(n.querySelector('.edit-preview[data-path="a"] .ep-line'), line, '流式刷新复用既有行节点');
+  assert.equal(n.querySelector('.edit-path'), firstPath, '路径列表也保持稳定');
+  assert.equal(n.querySelectorAll('.edit-preview').length, 2);
   n.remove();
 });
-test('file activity survives manual collapse and clears on stop/completion', () => {
+test('file activity survives a chosen state; completed edit folds automatically once', () => {
+  const node = document.createElement('div'); node.className = 'edited-files'; node.dataset.ownerId = 'a'; node._userToggle = null;
+  const c = call({ path: 'a', content: '' }); node._activeCalls = [c];
+  const messages = [{ id: 'u', role: 'user' }, { id: 'a', role: 'assistant', toolCalls: [c] }];
+  const context = { messages, visibleMessages: messages, resultIds: new Set(), busy: true };
+  syncEditingFold(node, context);
+  assert.equal(node.classList.contains('expanded'), true, '写入开始时默认展开');
+  assert.equal(node.classList.contains('is-working'), true);
+  node._userToggle = true;
+  c.status = 'ok';
+  assert.equal(syncEditingFold(node, { ...context, busy: false, resultIds: new Set(['w']) }), true, '结算沿用自动收起路径');
+  assert.equal(node.classList.contains('expanded'), false);
+  assert.equal(node._userToggle, false);
+  syncEditingFold(node, { ...context, busy: false, resultIds: new Set(['w']) });
+  assert.equal(node.classList.contains('expanded'), false, '后续重绘不再重新展开');
+  node._userToggle = true;
+  syncEditingFold(node, { ...context, busy: false, resultIds: new Set(['w']) });
+  assert.equal(node.classList.contains('expanded'), true, '完成后用户仍可手动展开');
+});
+test('non-edit file folds retain their prior active/manual toggle behavior', () => {
   const node = document.createElement('div'); node.dataset.ownerId = 'a'; node._userToggle = false;
   const c = call({ path: 'a', content: '' }); node._activeCalls = [c];
   const messages = [{ id: 'u', role: 'user' }, { id: 'a', role: 'assistant', toolCalls: [c] }];
@@ -94,7 +118,6 @@ test('file activity survives manual collapse and clears on stop/completion', () 
   syncEditingFold(node, context);
   assert.equal(node.classList.contains('expanded'), false); assert.equal(node.classList.contains('is-working'), true);
   syncEditingFold(node, { ...context, busy: false }); assert.equal(node.classList.contains('is-working'), false);
-  syncEditingFold(node, { ...context, resultIds: new Set(['w']) }); assert.equal(node.classList.contains('is-working'), false);
 });
 test('conversation read fold never renders file content', () => {
   const src = fs.readFileSync(new URL('../js/ui.js', import.meta.url), 'utf8');

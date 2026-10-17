@@ -8,6 +8,16 @@ export function fitPhotoSize(width, height, maxEdge = 4096) {
   return { width: Math.max(1, Math.round(w * scale)), height: Math.max(1, Math.round(h * scale)), scale };
 }
 
+/** Fit a source bitmap into the editor's measured stage without distorting or upscaling it. */
+export function fitPhotoDisplaySize(width, height, availableWidth, availableHeight) {
+  const w = Math.max(1, Number(width) || 1);
+  const h = Math.max(1, Number(height) || 1);
+  const maxW = Math.max(1, Number(availableWidth) || 1);
+  const maxH = Math.max(1, Number(availableHeight) || 1);
+  const scale = Math.min(1, maxW / w, maxH / h);
+  return { width: Math.max(1, Math.round(w * scale)), height: Math.max(1, Math.round(h * scale)), scale };
+}
+
 export function cropRectFromDrag(x1, y1, x2, y2, width, height, minSize = 12) {
   const maxW = Math.max(1, Number(width) || 1);
   const maxH = Math.max(1, Number(height) || 1);
@@ -141,6 +151,7 @@ export function openPhotoEditor(file, options = {}) {
     const canvas = modal.querySelector('.photo-canvas');
     const overlay = modal.querySelector('.photo-overlay');
     const stage = modal.querySelector('.photo-stage');
+    const canvasWrap = modal.querySelector('.photo-canvas-wrap');
     const ctx = canvas.getContext && canvas.getContext('2d');
     const overlayCtx = overlay.getContext && overlay.getContext('2d');
     const hint = modal.querySelector('.photo-editor-hint');
@@ -158,6 +169,8 @@ export function openPhotoEditor(file, options = {}) {
       dragInitial: null, ready: false, undoing: false, finished: false,
       historySequence: 0, historyBytes: 0,
     };
+    let resizeObserver = null;
+    let onStageResize = null;
     const applyCropButton = modal.querySelector('[data-photo-action="apply-crop"]');
     const cancelCropButton = modal.querySelector('[data-photo-action="cancel-crop"]');
     const undoButton = modal.querySelector('[data-photo-action="undo"]');
@@ -185,6 +198,8 @@ export function openPhotoEditor(file, options = {}) {
       if (state.finished) return;
       state.finished = true;
       try { win.URL.revokeObjectURL(objectUrl); } catch { /* no-op */ }
+      try { resizeObserver?.disconnect(); } catch { /* optional API */ }
+      if (onStageResize) win.removeEventListener('resize', onStageResize);
       modal.classList.remove('open');
       modal.classList.add('closing');
       modal.style.pointerEvents = 'none';
@@ -278,6 +293,20 @@ export function openPhotoEditor(file, options = {}) {
       if (state.crop) drawSelection();
       syncActionButtons();
     };
+    const fitCanvasToStage = () => {
+      if (!stage || !canvasWrap || !canvas.width || !canvas.height) return false;
+      const rect = stage.getBoundingClientRect();
+      let style = null;
+      try { style = win.getComputedStyle ? win.getComputedStyle(stage) : null; } catch { /* detached / test DOM */ }
+      const px = (name) => Number.parseFloat(style && style[name]) || 0;
+      const availableWidth = Math.max(1, (stage.clientWidth || rect.width || canvas.width) - px('paddingLeft') - px('paddingRight'));
+      const availableHeight = Math.max(1, (stage.clientHeight || rect.height || canvas.height) - px('paddingTop') - px('paddingBottom'));
+      const fitted = fitPhotoDisplaySize(canvas.width, canvas.height, availableWidth, availableHeight);
+      const width = `${fitted.width}px`, height = `${fitted.height}px`;
+      canvasWrap.style.width = width; canvasWrap.style.height = height;
+      canvas.style.width = width; canvas.style.height = height;
+      return true;
+    };
     const point = (event) => {
       const rect = canvas.getBoundingClientRect();
       const scaleX = rect.width ? canvas.width / rect.width : 1;
@@ -344,11 +373,20 @@ export function openPhotoEditor(file, options = {}) {
     const syncOverlay = () => {
       overlay.width = canvas.width;
       overlay.height = canvas.height;
+      fitCanvasToStage();
       if (overlayCtx) overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
       if (stage) stage.setAttribute('data-size', `${canvas.width}×${canvas.height}`);
       const dimensions = modal.querySelector('.photo-dimensions');
       if (dimensions) dimensions.textContent = `${canvas.width.toLocaleString()} × ${canvas.height.toLocaleString()} px`;
     };
+    onStageResize = () => {
+      if (fitCanvasToStage() && state.crop) drawSelection();
+    };
+    win.addEventListener('resize', onStageResize);
+    const ResizeObserverCtor = win.ResizeObserver || globalThis.ResizeObserver;
+    if (typeof ResizeObserverCtor === 'function' && stage) {
+      try { resizeObserver = new ResizeObserverCtor(onStageResize); resizeObserver.observe(stage); } catch { resizeObserver = null; }
+    }
     const beginCropDrag = (event, p) => {
       const handle = hitCropHandle(p, state.selection);
       const sel = state.selection;
