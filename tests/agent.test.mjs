@@ -708,6 +708,15 @@ test('第 4 条：工具详情三窗口（COMMAND / STDOUT / STDERR）、逐条�
   const withErr = tw.renderToolWindowsHtml({ command: 'ls', stdout: 'a', stderr: 'boom' });
   assert.equal((withErr.match(/class="chip-win /g) || []).length, 3, 'stdout 与 stderr 同时出现时显示三个窗口');
   assert.match(withErr, /data-win="stderr"/);
+  const ddgFallback = '[网页搜索] climate · DuckDuckGo · 3 条结果\n提示：SearXNG 不可用（上游请求失败，返回错误 503），已回退 DuckDuckGo\n结果正文';
+  assert.equal(tw.toolResultHasError(ddgFallback), false, '成功搜索前缀不能因上游回退提示中的「失败/错误」误判为命令报错');
+  assert.equal(tw.classifyToolResult(ddgFallback, { status: 'ok' }, {}).status, 'ok');
+  const fallbackWindows = tw.renderToolWindowsHtml({ command: 'climate', stdout: ddgFallback, stderr: '' });
+  assert.match(fallbackWindows, /data-win=\"stdout\"/);
+  assert.doesNotMatch(fallbackWindows, /data-win=\"stderr\"/, '回退警告仍显示在正常搜索输出窗口');
+  const fsp = await import('node:fs');
+  const agentSrc = fsp.readFileSync(new URL('../js/agent.js', import.meta.url), 'utf8');
+  assert.match(agentSrc, /call\.name === 'search_web' && \['ok', 'error'\]\.includes\(call\.status\)/, 'Agent 也以 search_web 的明确状态优先，不扫描成功回退文案');
   const ui = readUiSource();
   assert.doesNotMatch(ui, /chip-json|入参<\/button>|出参<\/button>/, '入参 / 出参按钮已移除');
   assert.match(ui, /const groups = mergedCalls\.map\(\(t\) => \(\{ name: t\.name, items: \[t\] \}\)\);/, '逐条展开，不按工具名合并 ×N');
@@ -723,7 +732,7 @@ test('第 3 条：设置页 / 文件面板触屏密度 + 左下角按钮一行 +
   assert.match(css, /\.side-footer-btns \{ display: flex; gap: 6px; flex-wrap: nowrap; \}/);
   assert.match(css, /\.seg button \{ min-height: 40px; padding: 8px 12px; \}/);
   assert.match(css, /\.set-input, \.set-select \{ min-height: 40px; \}/);
-  assert.match(css, /\.ft-row \.files-icon-btn, \.file-item \.file-dl \{ width: 40px; height: 40px; \}/);
+  assert.match(css, /\.ft-row \.files-icon-btn, \.file-item \.file-dl \{ width: 36px; height: 36px; \}/);
   const contrast = await import('../tools/contrast.mjs');
   assert.equal(contrast.contrastRatio('#ffffff', '#000000').toFixed(2), '21.00', 'WCAG 公式自检：黑白 21:1');
   const report = contrast.auditFile();
@@ -7908,6 +7917,7 @@ test('旧快照中的清理策略/台账/回复痕迹迁移掉，但不碰用户
     assert.equal(migrated.state.files['tmp/user-data.json'], '{"keep":true}');
     for (const key of ['cleanupArtifacts', 'lastCleanupReport', 'cleanupHistory', 'cleanupTotals']) assert.equal(key in migrated.state, false);
     assert.equal('cleanupPolicy' in migrated.state.settings, false);
+    assert.equal(migrated.state.settings.cleanupUnreferencedFiles, false, '旧快照迁移后自动清理也默认关闭');
     assert.equal('cleanup' in migrated.state.messages[0], false);
     assert.equal('cleanup' in migrated.state.sessions[0].messages[0], false);
   } finally {
@@ -8962,76 +8972,110 @@ test('设置页「执行预算」：两路上限可调（写 settings.executionB
   assert.doesNotMatch(css, /\.msg-foot \.foot-budget[^\n]*#dc2626/);
 });
 
-group('P2 修正：沙箱文件不保证跨轮持久 → internal/ · uploads/ 无条件提交 / 工具结果写明持久契约 / Edited File(s) 标出丢弃项');
+group('P2 修正：沙箱新文件默认保留；仅用户开启设置后自动清理未引用产物');
 
-test('createTempFS：commitAnswer 对 internal/ 与 uploads/ 无条件提交；outputs/ 等自由路径仍按「回答是否引用」判定；discard() 也保留白名单', async () => {
+test('createTempFS：默认保留本轮全部写入；cleanupUnreferencedFiles=true 时才按引用裁剪；internal/ 与 uploads/ 始终保留', async () => {
   const { createTempFS, TEMP_PERSIST_PREFIXES, isAlwaysPersistedPath, persistenceNote } = await import('../js/sandbox.js');
   assert.deepEqual([...TEMP_PERSIST_PREFIXES], ['internal/', 'uploads/']);
   assert.equal(isAlwaysPersistedPath('internal/web/a.md'), true);
   assert.equal(isAlwaysPersistedPath('uploads/x.png'), true);
   assert.equal(isAlwaysPersistedPath('outputs/x.png'), false);
   assert.equal(isAlwaysPersistedPath('internal'), false, '必须带斜杠前缀，根目录同名文件不算');
-  // ① 正常结束：回答一个字没提文件
+
+  // 默认：即使回答未提到，自由路径 / 调试文件也全部持久化。
   let base = createFS({ 'keep.txt': 'old' });
   let tmp = createTempFS(base);
   tmp.write('internal/web/example-com.md', '抓取全文');
   tmp.write('internal/ocr/img.ocr.md', '识图结果');
   tmp.write('uploads/pasted.png', 'data:image/png;base64,AAAA');
-  tmp.write('outputs/tmp.txt', '半截产物');
+  tmp.write('outputs/tmp.txt', '未引用产物');
   tmp.write('scratch.py', 'print(1)');
   let r = tmp.commitAnswer('做完了，没有什么要说的。');
-  assert.deepEqual(r.committed.sort(), ['internal/ocr/img.ocr.md', 'internal/web/example-com.md', 'uploads/pasted.png']);
-  assert.deepEqual(r.discarded.sort(), ['outputs/tmp.txt', 'scratch.py']);
-  assert.equal(base.has('internal/web/example-com.md'), true, '抓取全文必须活过本轮');
-  assert.equal(base.has('uploads/pasted.png'), true);
-  assert.equal(base.has('outputs/tmp.txt'), false, '未引用的自由路径仍然丢弃（行为不变）');
+  assert.deepEqual(r.committed.sort(), ['internal/ocr/img.ocr.md', 'internal/web/example-com.md', 'outputs/tmp.txt', 'scratch.py', 'uploads/pasted.png'].sort());
+  assert.deepEqual(r.discarded, []);
+  for (const path of ['internal/web/example-com.md', 'uploads/pasted.png', 'outputs/tmp.txt', 'scratch.py'])
+    assert.equal(base.has(path), true, `${path} 在默认设置下必须保留`);
   assert.equal(base.read('keep.txt'), 'old');
-  // ② 引用判定不变：回答提到文件名就留
+
+  // 开启后：白名单无条件保留；被回答提及的交付物保留；未引用自由路径才清理。
   base = createFS({});
-  tmp = createTempFS(base);
-  tmp.write('outputs/report.md', '# r');
-  tmp.write('outputs/tmp.txt', 'x');
+  tmp = createTempFS(base, { cleanupUnreferencedFiles: true });
+  tmp.write('internal/web/page.md', '抓取全文');
+  tmp.write('uploads/user.txt', '上传');
+  tmp.write('outputs/report.md', '# 报告');
+  tmp.write('outputs/tmp.txt', '临时文件');
   r = tmp.commitAnswer('报告见 outputs/report.md');
-  assert.deepEqual(r.committed, ['outputs/report.md']);
+  assert.deepEqual(r.committed.sort(), ['internal/web/page.md', 'outputs/report.md', 'uploads/user.txt'].sort());
   assert.deepEqual(r.discarded, ['outputs/tmp.txt']);
-  // ③ 取消 / 出错走 discard()：白名单照样落盘，半截产物丢掉，基座里的删除不生效
+  assert.equal(base.has('outputs/tmp.txt'), false);
+  assert.equal(base.has('outputs/report.md'), true);
+  assert.equal(base.has('internal/web/page.md'), true);
+
+  // 回答引用判断保持原有语义；未开启时不再因此删掉其它文件。
+  base = createFS({});
+  tmp = createTempFS(base, { cleanupUnreferencedFiles: true });
+  tmp.write('outputs/linked.md', '# linked');
+  tmp.write('outputs/unused.txt', 'x');
+  r = tmp.commitAnswer('输出链接：[打开](sandbox://outputs/linked.md)');
+  assert.deepEqual(r.committed, ['outputs/linked.md']);
+  assert.deepEqual(r.discarded, ['outputs/unused.txt']);
+
+  // 中止 / 失败：默认也保留自由路径文件，且不会应用本轮对基座文件的删除。
   base = createFS({ 'a.txt': '1' });
   tmp = createTempFS(base);
   tmp.write('internal/web/p.md', '全文');
   tmp.write('outputs/half.py', 'def');
   tmp.remove('a.txt');
   r = tmp.discard();
-  assert.deepEqual(r, { committed: ['internal/web/p.md'], discarded: ['outputs/half.py'] });
-  assert.equal(base.has('internal/web/p.md'), true, '中止也不该让抓取全文蒸发');
-  assert.equal(base.has('outputs/half.py'), false);
+  assert.deepEqual(r, { committed: ['internal/web/p.md', 'outputs/half.py'], discarded: [] });
+  assert.equal(base.has('internal/web/p.md'), true);
+  assert.equal(base.has('outputs/half.py'), true, '中止时默认不静默丢弃新文件');
   assert.equal(base.read('a.txt'), '1', 'discard 不应用删除');
-  assert.equal(tmp.has('outputs/half.py'), false, '临时层已清空');
+  assert.equal(tmp.read('outputs/half.py'), 'def', '结束后新文件已写入基座，临时覆盖层不再是唯一副本');
   assert.equal(tmp.has('a.txt'), true, '基座文件在临时层视图里复活（删除被撤销）');
-  // ④ 持久性说明：只对临时 FS 生效；白名单说「已持久」，其余说会被丢弃
+
+  // 显式开启自动清理时，discard 同样只保留白名单。
+  base = createFS({});
+  tmp = createTempFS(base, { cleanupUnreferencedFiles: true });
+  tmp.write('internal/ocr/result.md', 'OCR');
+  tmp.write('outputs/half.py', 'def');
+  r = tmp.discard();
+  assert.deepEqual(r, { committed: ['internal/ocr/result.md'], discarded: ['outputs/half.py'] });
+  assert.equal(base.has('internal/ocr/result.md'), true);
+  assert.equal(base.has('outputs/half.py'), false);
+
+  // 持久性说明与实际设置相符。
   assert.equal(persistenceNote(base, 'outputs/x.md'), '', '基座 FS 上不加说明');
   assert.equal(persistenceNote(tmp, 'internal/web/x.md'), '（已持久）');
-  assert.equal(persistenceNote(tmp, 'outputs/x.md'), '（本轮结束后若最终回答未提及此文件将被丢弃）');
+  assert.equal(persistenceNote(tmp, 'outputs/x.md'), '（自动清理已开启：若最终回答未引用，本轮结束后将删除）');
+  const normal = createTempFS(createFS({}));
+  assert.equal(persistenceNote(normal, 'outputs/x.md'), '（默认保留；可在设置中开启未引用文件自动清理）');
 });
 
-test('工具结果契约：write_file 在临时沙箱里写 outputs/ 会提示「未提及将被丢弃」；写 internal/ 提示「已持久」；基座 FS 上文案不变；system 提示里写明持久规则', async () => {
+test('工具结果契约：默认告知 outputs/ 会保留，只有自动清理开启才告知未引用后会删除；system prompt 与设置一致', async () => {
   const { createTempFS } = await import('../js/sandbox.js');
   const base = createFS({});
   const tmp = createTempFS(base);
   const r1 = await executeTool('write_file', { path: 'outputs/a.md', content: 'hi' }, { fs: tmp });
   const strip = (t) => String(t).replace(/\n\[执行耗时 \d+ms\]$/, '');
-  assert.equal(strip(r1), '已写入 outputs/a.md（2 字符）（本轮结束后若最终回答未提及此文件将被丢弃）');
+  assert.equal(strip(r1), '已写入 outputs/a.md（2 字符）（默认保留；可在设置中开启未引用文件自动清理）');
   const r2 = await executeTool('write_file', { path: 'internal/notes/a.md', content: 'hi' }, { fs: tmp });
   assert.equal(strip(r2), '已写入 internal/notes/a.md（2 字符）（已持久）');
-  const r3 = await executeTool('write_file', { path: 'outputs/b.md', content: 'hey' }, { fs: base });
-  assert.equal(strip(r3), '已写入 outputs/b.md（3 字符）', '基座 FS（子代理 / 直接调用）不加说明');
+  const cleanupFS = createTempFS(base, { cleanupUnreferencedFiles: true });
+  const r2b = await executeTool('write_file', { path: 'outputs/b.md', content: 'hey' }, { fs: cleanupFS });
+  assert.equal(strip(r2b), '已写入 outputs/b.md（3 字符）（自动清理已开启：若最终回答未引用，本轮结束后将删除）');
+  const r3 = await executeTool('write_file', { path: 'outputs/c.md', content: 'hey' }, { fs: base });
+  assert.equal(strip(r3), '已写入 outputs/c.md（3 字符）', '基座 FS（子代理 / 直接调用）不加说明');
   const fsp = await import('node:fs');
   const tools = fsp.readFileSync(new URL('../js/tools.js', import.meta.url), 'utf8');
   assert.match(tools, /import \{ runJavaScript, runPython, runCpp, pythonAvailable, persistenceNote, isSafeFsPath, contentByteSize \} from '\.\/sandbox\.js';/);
   assert.match(tools, /全文已存 \$\{r\.savedTo\}\$\{persistenceNote\(fs, r\.savedTo\)\}/, 'fetch_url 的落盘说明带持久契约');
   assert.match(tools, /保存：\$\{path\}\$\{persistenceNote\(fs, path\)\}/, 'download_file 的落盘说明带持久契约');
   const cfg = fsp.readFileSync(new URL('../js/config.js', import.meta.url), 'utf8');
-  assert.match(cfg, /沙箱持久规则：本轮新建的文件只有在最终回答里提到其路径或文件名/);
-  assert.match(cfg, /internal\/ 与 uploads\/ 下的文件（抓取全文、识图结果、下载件、用户上传）总是保留/);
+  assert.match(cfg, /沙箱持久规则：默认保留本轮写入的全部文件/);
+  assert.match(cfg, /只有用户在设置中显式开启「自动清理未引用文件」时/);
+  const promptEn = fsp.readFileSync(new URL('../js/prompt-en.js', import.meta.url), 'utf8');
+  assert.match(promptEn, /By default, all newly written files are retained/);
 });
 
 test('端到端：fetch_url 落盘的 internal/web/*.md 在回答完全没提到文件时仍进入 store.state.files；连续两轮累加；最终消息挂 tempCommit 供 UI 标注', async () => {
@@ -9080,8 +9124,8 @@ test('端到端：fetch_url 落盘的 internal/web/*.md 在回答完全没提到
   } finally { globalThis.fetch = realFetch; net.resetRelayProbe(); await drainSaves(); }
 });
 
-test('端到端：write_file 写 outputs/ 后回答没提 → 文件被丢弃，最终消息 tempCommit.discarded 列出它；回答提到则提交', async () => {
-  const run = async (finalText) => {
+test('端到端：未引用文件默认保留；只有设置启用自动清理后才丢弃；被引用文件始终提交', async () => {
+  const run = async (finalText, cleanupUnreferencedFiles = false) => {
     const calls = [];
     mockFetch([
       openaiToolTurn('call_w', 'write_file', JSON.stringify({ path: 'outputs/draft.md', content: '# 草稿' })),
@@ -9090,6 +9134,7 @@ test('端到端：write_file 写 outputs/ 后回答没提 → 文件被丢弃，
     const store = storeNoWeb(createStore());
     store.state.apiKey = 'sk-teamo-test';
     store.state.model = 'gpt-5.6-sol';
+    store.state.settings.cleanupUnreferencedFiles = cleanupUnreferencedFiles;
     const agent = createAgent(store, {});
     await agent.send('写个草稿');
     const tool = store.state.messages.find((m) => m.role === 'tool');
@@ -9097,17 +9142,26 @@ test('端到端：write_file 写 outputs/ 后回答没提 → 文件被丢弃，
     return { store, tool: String(tool.content), final };
   };
   try {
+    // 默认关闭：回答没有提及文件也会提交到真实沙箱。
     const a = await run('好了。');
-    assert.match(a.tool, /^已写入 outputs\/draft\.md（4 字符）（本轮结束后若最终回答未提及此文件将被丢弃）(\n\[执行耗时 \d+ms\])?$/);
-    assert.equal(Object.prototype.hasOwnProperty.call(a.store.state.files, 'outputs/draft.md'), false);
-    assert.deepEqual(a.final.tempCommit, { committed: [], discarded: ['outputs/draft.md'] });
-    const b = await run('草稿写在 outputs/draft.md。');
-    assert.equal(b.store.state.files['outputs/draft.md'], '# 草稿');
-    assert.deepEqual(b.final.tempCommit, { committed: ['outputs/draft.md'], discarded: [] });
+    assert.match(a.tool, /^已写入 outputs\/draft\.md（4 字符）（默认保留；可在设置中开启未引用文件自动清理）(\n\[执行耗时 \d+ms\])?$/);
+    assert.equal(a.store.state.files['outputs/draft.md'], '# 草稿');
+    assert.deepEqual(a.final.tempCommit, { committed: ['outputs/draft.md'], discarded: [] });
+
+    // 用户开启后，未引用的新文件会被清理。
+    const b = await run('好了。', true);
+    assert.match(b.tool, /^已写入 outputs\/draft\.md（4 字符）（自动清理已开启：若最终回答未引用，本轮结束后将删除）(\n\[执行耗时 \d+ms\])?$/);
+    assert.equal(Object.prototype.hasOwnProperty.call(b.store.state.files, 'outputs/draft.md'), false);
+    assert.deepEqual(b.final.tempCommit, { committed: [], discarded: ['outputs/draft.md'] });
+
+    // 自动清理开启也不影响最终回答明确引用的交付物。
+    const c = await run('草稿写在 outputs/draft.md。', true);
+    assert.equal(c.store.state.files['outputs/draft.md'], '# 草稿');
+    assert.deepEqual(c.final.tempCommit, { committed: ['outputs/draft.md'], discarded: [] });
   } finally { globalThis.fetch = realFetch; await drainSaves(); }
 });
 
-test('UI：Edited File(s) 折叠按 tempCommit 把丢弃项划线并标「已丢弃 · 回答未引用」；整轮没 write_file 时只在挂 tempCommit 的消息上画 Discarded File(s)；纯函数与样式到位', async () => {
+test('UI：Edited File(s) 仅在自动清理实际移除文件时标出未引用项；整轮没 write_file 时只在挂 tempCommit 的消息上画清理清单', async () => {
   const ep = await import('../js/editpreview.js');
   const edit = (path) => ({ role: 'assistant', toolCalls: [{ name: 'write_file', args: { path }, status: 'ok' }] });
   const msgs = [
@@ -9143,9 +9197,9 @@ test('UI：Edited File(s) 折叠按 tempCommit 把丢弃项划线并标「已丢
   assert.match(ui, /const tempCommit = liveNow \? null : findTurnTempCommit\(msgsAll, idxA, pathsOfEdit\);/, '直播期间不标注，收尾后才看提交结果');
   assert.match(ui, /discardedForFold\(tempCommit, \{ editedCount: edited\.length, hostHasCommit: !!\(m && m\.tempCommit\) \}\)/);
   assert.match(ui, /row\.item\.classList\.toggle\('fold-discarded', dropped\)/, '丢弃标记增量更新，而不是重建文件名');
-  assert.match(ui, /row\.item\.title = dropped \? '回合结束时最终回答没有提到这个文件，临时沙箱已把它丢弃；在回答里写出路径或文件名即可保留'/);
-  assert.match(ui, /text\(row\.tag, dropped \? '已丢弃 · 回答未引用' : ''\)/);
-  assert.match(ui, /本轮丢弃 \$\{discarded\.size\} 个未在回答中引用的临时文件；internal\/ 与 uploads\/ 下的文件总是保留。/);
+  assert.match(ui, /设置中开启了自动清理：因最终回答未引用，本文件已在回合结束时移除。/);
+  assert.match(ui, /自动清理 · 未引用/);
+  assert.match(ui, /本轮根据设置自动清理了 \$\{discarded\.size\} 个未引用文件；internal\/ 与 uploads\/ 下的文件始终保留。/);
   assert.match(ui, /node\.classList\.toggle\('has-discarded', discarded\.size > 0\);/);
   assert.match(ui, /edited\.length \? editFoldLabel\(edited\.length, \{ live: liveNow \}\) : discardedFoldLabel\(paths\.length\)/);
   assert.match(css, /\.edited-files li\.fold-discarded \{ color: var\(--fg-3\); text-decoration: line-through;/);
@@ -9726,6 +9780,25 @@ test('#9 设置页开关 → 会话区同步：mountSettings 回调 onSettingCha
   assert.match(ui, /const ui = \{\n\s+setStatus,\n\s+syncToolbar,/);
 });
 
+test('未引用文件自动清理：设置项默认关闭、持久化并传入每轮临时沙箱；提示文案解释保留边界', async () => {
+  const fsp = await import('node:fs');
+  const app = fsp.readFileSync(new URL('../app.html', import.meta.url), 'utf8');
+  const settings = fsp.readFileSync(new URL('../js/settings.js', import.meta.url), 'utf8');
+  const state = fsp.readFileSync(new URL('../js/state.js', import.meta.url), 'utf8');
+  const agent = fsp.readFileSync(new URL('../js/agent.js', import.meta.url), 'utf8');
+  const strings = fsp.readFileSync(new URL('../js/ui-strings.js', import.meta.url), 'utf8');
+  assert.match(app, /id="set-cleanup-unreferenced"\/><span/);
+  assert.doesNotMatch(app.match(/id="set-cleanup-unreferenced"[^>]*>/)?.[0] || '', /checked/);
+  assert.match(app, /自动清理未引用文件/);
+  assert.match(app, /默认关闭；开启后清理未被回答引用的新文件/);
+  assert.equal((state.match(/cleanupUnreferencedFiles: false/g) || []).length, 2, '初始 state 与旧快照补默认都关闭');
+  assert.match(settings, /\$\('#set-cleanup-unreferenced'\)\.checked = store\.state\.settings\.cleanupUnreferencedFiles === true/);
+  assert.match(settings, /bindSw\('#set-cleanup-unreferenced', 'cleanupUnreferencedFiles'\)/);
+  assert.match(agent, /createTempFS\(baseFS, \{ cleanupUnreferencedFiles: settings\.cleanupUnreferencedFiles === true \}\)/);
+  assert.match(strings, /"自动清理未引用文件": "Auto-clean unreferenced files"/);
+  assert.match(strings, /internal\/ and uploads\/ are always retained/);
+});
+
 test('#10 视频识别默认模型改为 Gemini 3.5 Flash Lite（设置档位 / state 默认 / 旧快照补默认三处一致）', async () => {
   const cfg2 = await import('../js/config.js');
   assert.equal(cfg2.DEFAULT_VIDEO_MODEL, 'gemini-3.5-flash-lite');
@@ -9736,6 +9809,7 @@ test('#10 视频识别默认模型改为 Gemini 3.5 Flash Lite（设置档位 / 
   const { createStore } = await import('../js/state.js');
   assert.equal(createStore().state.settings.videoModel, 'gemini-3.5-flash-lite');
   assert.equal(createStore().state.settings.imageRemoteReview, true);
+  assert.equal(createStore().state.settings.cleanupUnreferencedFiles, false, '自动清理设置初始默认为关闭');
 });
 
 test('#11 设置 → 清除临时缓存：只清 Cache Storage / sessionStorage / 中继探测，不碰 localStorage（会话 / 密钥 / 设置 / 记忆）', async () => {
@@ -10546,7 +10620,7 @@ test('截图回归：扫描入口、顶栏错位、面板宽度、简化思考�
   assert.match(css, /#transport-badge,\s*#build-stamp,\s*#conv-stats\s*\{[^}]*white-space:\s*nowrap/);
   assert.match(css, /\.topbar-right\s*\{[^}]*justify-content:\s*flex-end/);
   assert.match(css, /\.app:has\(#sandbox-panel:not\(\.collapsed\)\) #panel-toggle\s*\{\s*display:\s*none;/);
-  assert.match(css, /grid-template-columns:\s*var\(--sbw, 268px\) minmax\(0, 1fr\) var\(--pnw, 290px\)/, '常态文件面板较旧版约增宽 10px');
+  assert.match(css, /grid-template-columns:\s*var\(--sbw, 268px\) minmax\(0, 1fr\) var\(--pnw, 310px\)/, '常态文件面板较旧版增加 20px');
   assert.match(css, /--pnw:\s*clamp\(400px, 38vw, 640px\)/, '文件预览展开时仍单独加宽');
   for (const hint of ['极速', '轻量', '均衡', '深入', '可委派', '多专家复核']) assert.ok(reasoning.includes(`'${hint}'`), `思考菜单保留简短提示：${hint}`);
   assert.match(css, /max-height:\s*calc\(1\.65em \* 10\)/);

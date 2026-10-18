@@ -242,7 +242,7 @@ const dirs = $$('#file-list .ft-dir').map(rowPath);
 ok('文件行按 data-path 记录完整路径', paths.includes('uploads/cat.png') && paths.includes('uploads/spec.md'), paths.join(','));
 ok('目录节点被识别（uploads / outputs / outputs/nested）', dirs.join(',') === 'outputs,outputs/nested,uploads', dirs.join(','));
 ok('目录行带 aria-expanded', $$('#file-list .ft-dir').every((n) => n.getAttribute('aria-expanded') === 'true'));
-ok('目录行汇总文件数与体积', /2 个文件 ·/.test($$('#file-list .ft-dir')[2].textContent), $$('#file-list .ft-dir')[2].textContent);
+ok('目录名后显示精简的文件数，不让体积挤占行内空间', $$('#file-list .ft-dir')[2].querySelector('.ft-dir-count')?.textContent === '2 个文件' && !/·/.test($$('#file-list .ft-dir')[2].querySelector('.ft-dir-count').textContent), $$('#file-list .ft-dir')[2].textContent);
 ok('文件行显示文件名，整条路径挂到行 title', (() => {
   const row = $$('#file-list .ft-file').find((n) => rowPath(n) === 'uploads/cat.png');
   return !!row && row.querySelector('.ft-name').textContent === 'cat.png' && row.title === 'uploads/cat.png';
@@ -254,6 +254,7 @@ ok('目录行 title 提示折叠与数量', (() => {
 ok('缩进由 --d 驱动', $$('#file-list .ft-row').some((n) => n.style.getPropertyValue('--d') === '2'), $$('#file-list .ft-row').map((n) => n.style.getPropertyValue('--d')).join(','));
 ok('每行有下载按钮（目录行只有 ZIP）', $$('#file-list .file-dl').length === 3, `${$$('#file-list .file-dl').length} 个`);
 ok('目录行有打包按钮', $$('#file-list .ft-zip').length === 3, `${$$('#file-list .ft-zip').length} 个`);
+ok('目录行显示复制名称与下载 ZIP 操作，且有无障碍名称', $$('#file-list .ft-dir').every((row) => !!row.querySelector('.ft-copy[aria-label]') && !!row.querySelector('.ft-zip[aria-label]') && /复制文件夹名/.test(row.querySelector('.ft-copy').title)), $$('#file-list .ft-dir').map((row) => `${row.querySelector('.ft-copy')?.title} / ${row.querySelector('.ft-zip')?.title}`).join(' | '));
 ok('目录/文件图标为内联 SVG', $$('#file-list .ft-ico').every((n) => !!n.querySelector('svg')));
 ok('文件数单独显示', /3 个文件/.test($('#files-n').textContent), $('#files-n').textContent);
 ok('容量单独显示已用/上限（按字节动态切换 KB/MB）', /\d+\.\d(?:KB|MB)\/120\.0MB/.test($('#files-count').textContent), $('#files-count').textContent);
@@ -265,8 +266,10 @@ ok('折叠时目录子行播放收起动画', $$('#file-list .ft-row-collapsing'
 ui.renderFiles();
 ok('折叠后子文件不再渲染', !$$('#file-list .ft-file').map(rowPath).includes('uploads/cat.png'), $$('#file-list .ft-file').map(rowPath).join(','));
 ok('折叠后 aria-expanded=false 且带 closed 类', uploadsRow().getAttribute('aria-expanded') === 'false' && uploadsRow().classList.contains('closed'));
-ok('目录 ZIP 按钮仅在悬浮/聚焦时显现并右对齐', /\.ft-row:hover \.files-icon-btn, \.ft-row:focus-within \.files-icon-btn \{ opacity: 1; \}/.test(cssText)
-  && /\.ft-actions \{[^}]*margin-left: auto/.test(cssText) && !/\.ft-dir\.closed \.ft-zip \{ opacity: 1/.test(cssText));
+ok('文件夹操作始终可见并贴右，文件名使用独立可收缩列', /\.ft-row\.ft-dir \.files-icon-btn[^}]*opacity: 1/.test(cssText) && /\.ft-row\.ft-file \{[^}]*grid-template-columns: 12px 14px minmax\(0, 1fr\) auto/.test(cssText) && /\.ft-actions \{[^}]*justify-self: end/.test(cssText));
+ok('文件行复制按钮定位在操作区，不与文件名叠压', /\.ft-row\.ft-file \{[^}]*grid-template-columns: 12px 14px minmax\(0, 1fr\) auto/.test(cssText) && /\.ft-row \.files-icon-btn \{ width: 18px; height: 18px;/.test(cssText));
+ok('触屏文件行紧凑至 36px，保留操作按钮触控目标', /\.file-item, \.ft-row \{ min-height: 36px; padding-top: 0; padding-bottom: 0; \}/.test(cssText) && /\.ft-row \.files-icon-btn, \.file-item \.file-dl \{ width: 36px; height: 36px; \}/.test(cssText));
+ok('双视图滑块视觉轨道为 24px，透明触控区仍有 40px', /\.fv-actions \.fv-modes \{[^}]*height: 24px; min-height: 24px/.test(cssText) && /\.fv-actions \.fv-modes button \{[^}]*height: 18px; min-height: 0/.test(cssText) && /\.fv-actions \.fv-modes button::after \{ content:\s*["']{2}; position: absolute; inset: -11px 0; \}/.test(cssText));
 click(uploadsRow());
 ok('再点一次展开', $$('#file-list .ft-file').map(rowPath).includes('uploads/cat.png'));
 ok('展开时目录子行播放进入动画', $$('#file-list .ft-row-expanding').length > 0);
@@ -593,6 +596,9 @@ console.log('\n⑯ 移动端布局：根因修复 + 密度重排（源码级护�
   const bootSrc = fs.readFileSync(path.join(ROOT, 'js/main.js'), 'utf8');
   ok('控制台横幅跟随当前版本', /Dubhe Agent \$\{APP_RELEASE\}/.test(bootSrc) && /import \{ APP_RELEASE \}/.test(bootSrc));
   ok('导航页提供可访问的外观切换入口', /id="theme-toggle"[^>]*>外观<\/button>/.test(navHtml));
+  const homeCss = fs.readFileSync(path.join(ROOT, 'css/home.css'), 'utf8');
+  ok('导航页加载本地 Source Serif 字体并为中文保留系统回退', /href="fonts\/literary\.css\?v=/.test(navHtml) && /--serif: \"Dubhe Serif\"/.test(homeCss) && /Songti SC.*Noto Serif SC/.test(homeCss));
+  ok('导航与正文排版启用字偶距/连字优化及平衡标题', /font-kerning: normal; font-optical-sizing: auto; text-rendering: optimizeLegibility/.test(homeCss) && /text-wrap: balance/.test(homeCss));
   ok('会话/附件删除键也是 SVG', /sess-del[^>]*>\$\{ICON\.x\}/.test(uiSrc) && /attach-chip-x[^>]*>\$\{ICON\.x\}/.test(uiSrc));
   // 刷新后「对话 + 附件 + 沙箱」都要在：重数据外置到 IndexedDB
   const stateSrc = fs.readFileSync(path.join(ROOT, 'js/state.js'), 'utf8');
@@ -677,6 +683,11 @@ console.log('\n⑱ 设置页字号 / 深度思考 / 本地会话数回归');
     window.localStorage.setItem('dubhe-agent-state-v1-v2', JSON.stringify({ sessions: store.state.sessions }));
     window.localStorage.setItem('dubhe-agent-state', JSON.stringify({ sessions: [] })); // 旧错 key：不得影响计数
     openSettingsModal({ store });
+    ok('未引用文件自动清理设置默认关闭', $('#set-cleanup-unreferenced')?.checked === false && store.state.settings.cleanupUnreferencedFiles === false);
+    $('#set-cleanup-unreferenced').checked = true; $('#set-cleanup-unreferenced').dispatchEvent(new window.Event('change', { bubbles: true }));
+    ok('用户开启设置后保存 cleanupUnreferencedFiles=true', store.state.settings.cleanupUnreferencedFiles === true);
+    $('#set-cleanup-unreferenced').checked = false; $('#set-cleanup-unreferenced').dispatchEvent(new window.Event('change', { bubbles: true }));
+    ok('关闭设置后恢复默认保留模式', store.state.settings.cleanupUnreferencedFiles === false);
     ok('本地存储按 v2 实际显示会话数而非旧 key 的 0', $('#set-about-store').textContent.startsWith('3 个会话'), $('#set-about-store').textContent);
     const imgSel = $('#set-image-model');
     ok('.33：设置页生图模型选择器与目录一致（5 项，含 gemini-nano-banana-2.1）', imgSel.options.length === 5 && [...imgSel.options].some((o) => o.value === 'gemini-nano-banana-2.1'), `实际 ${imgSel.options.length}`);

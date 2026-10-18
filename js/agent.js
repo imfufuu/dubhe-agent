@@ -684,8 +684,8 @@ export function createAgent(store, hooks = {}) {
       };
       iterations = 0;
       // ── P3 临时沙箱（ephemeral overlay）：Agent 写文件全部落在临时层 ──
-      // 回合正常结束后只把最终回答里明确引用到的交付物提交到 baseFS，其余临时产物丢弃。
-      tempFS = createTempFS(baseFS);
+      // 默认保留本轮全部新文件；只有设置开启自动清理时，才丢弃最终回答未引用的产物。
+      tempFS = createTempFS(baseFS, { cleanupUnreferencedFiles: settings.cleanupUnreferencedFiles === true });
       fs = tempFS;
       finalAnswerText = ''; // 累积最终回答文本，用于 commit 判断
       cachedPrefix = null;
@@ -1316,7 +1316,10 @@ export function createAgent(store, hooks = {}) {
           for (const [i, call] of toolCalls.entries()) {
             const result = results[i];
             usedTools.push(call.name);
-            const isErr = typeof result === 'string' && /(失败|报错|错误|参数不是合法 JSON|未执行|拒绝执行)/.test(result.slice(0, 120));
+            // 搜索成功时的回退提示可能提到上游「不可用/失败」；search_web 的明确工具状态优先于结果文案启发式。
+            const hasSearchStatus = call.name === 'search_web' && ['ok', 'error'].includes(call.status);
+            const isErr = hasSearchStatus ? call.status === 'error'
+              : typeof result === 'string' && /(失败|报错|错误|参数不是合法 JSON|未执行|拒绝执行)/.test(result.slice(0, 120));
             if (isErr) { hadToolError = true; roundHasError = true; }
             stepHistory.push({ name: call.name, args: call.args, isError: isErr });
             const engine = call.name === 'execute_python'
@@ -1408,9 +1411,9 @@ export function createAgent(store, hooks = {}) {
         }
         telemetry.activeMemoryCount = Array.isArray(store.state.memory) ? store.state.memory.length : 0;
 
-        // ── 临时沙箱提交：正常结束 → 把最终回答引用到的文件 + 白名单前缀（internal/ · uploads/）提交到 baseFS；
-        //    取消/错误 → 丢弃模型自由创建的半截产物，白名单文件仍保留（P2 修正：抓取全文 / 识图结果不该随回合蒸发）。
-        //    结果同时挂到最终助手消息上（tempCommit），UI 在 Edited File(s) 折叠里标出哪些被丢弃、为什么。
+        // ── 临时沙箱提交：默认保留所有新文件；只有用户开启自动清理时才按最终回答引用关系裁剪。
+        //    internal/ · uploads/ 始终保留；取消/错误回合也尊重同一设置，且不会静默丢失默认模式下的文件。
+        //    结果同时挂到最终助手消息上（tempCommit），UI 在 Edited File(s) 折叠里显示实际提交/清理结果。
         let lastAssistant = null;
         try {
           lastAssistant = [...store.state.messages].reverse().find((m) => m.role === 'assistant' && !m.transientModeration) || null;

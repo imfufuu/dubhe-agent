@@ -3,7 +3,7 @@ import { motionAllowed, veilFade } from './page-fx.js?v=2026.10.11.1';
 import { getLanguage, languagePreference, setLanguagePreference, onLanguageChange, setLanguageTransition } from './locale.js';
 import { UI_STRINGS } from './ui-strings.js?v=2026.10.11.1';
 // Only UI chrome is translated. Message bodies, code, file names, model output and user content retain their exact values.
-const PRIVATE = '.md-body,.chip-detail,.ep-tx,.ep-path,.tree-name,.fp-name,.file-path,.thought-text,.reasoning-text,.files-name,.file-name,.session-title,.sess-title,[data-i18n-ignore],textarea,pre,code,script,style';
+const PRIVATE = '.md-body,.chip-detail,.ep-tx,.ep-path,.tree-name,.fp-name,.file-path,.thought-text,.reasoning-text,.files-name,.file-name,.ft-name,.session-title,.sess-title,[data-i18n-ignore],textarea,pre,code,script,style';
 export function translateUI(value, language = getLanguage()) {
   const raw = String(value ?? ''); if (language !== 'en') return raw;
   const key = raw.trim(), exact = Object.hasOwn(UI_STRINGS, key) ? UI_STRINGS[key] : null;

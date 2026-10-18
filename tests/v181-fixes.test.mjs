@@ -389,22 +389,25 @@ test('助手气泡的整轮耗时与完成时间会写回并经刷新持久恢�
   assert.doesNotMatch(state, /turnDurationMs/);
 });
 
-test('快捷导航不抢输入焦点；文件面板可收缩长名称、悬浮按钮右对齐并动画展开', () => {
+test('快捷导航不抢输入焦点；文件面板可收缩长名称、目录操作常显并动画展开', () => {
   const palette = read('../js/ui-command-palette.js');
   const open = palette.slice(palette.indexOf('function openPal()'), palette.indexOf('function closePal()'));
   assert.doesNotMatch(open, /palInput\.focus\(\)/);
   assert.match(open, /active\.blur\(\)/, '打开时不让后续按键误输入到主输入框');
   const css = read('../css/styles.css');
-  assert.match(css, /grid-template-columns:\s*var\(--sbw, 268px\) minmax\(0, 1fr\) var\(--pnw, 290px\)/);
+  assert.match(css, /grid-template-columns:\s*var\(--sbw, 268px\) minmax\(0, 1fr\) var\(--pnw, 310px\)/);
   assert.match(css, /\.fv-actions \.fv-modes[^}]*border-radius:\s*999px/);
-  assert.match(css, /\.fv-actions \.fv-modes button[^}]*height:\s*24px/);
+  assert.match(css, /\.fv-actions \.fv-modes \{[^}]*height: 24px; min-height: 24px/);
+  assert.match(css, /\.fv-actions \.fv-modes button[^}]*height:\s*18px; min-height: 0/);
   assert.match(css, /\.fv-modes-thumb[^}]*border-radius:\s*999px[^}]*transition: transform \.42s/);
   assert.match(css, /\.file-list \.ft-row \{ width: 100%; min-width: 0; \}/);
   assert.match(css, /\.ft-name[^}]*overflow: hidden; text-overflow: ellipsis/);
-  assert.match(css, /\.ft-actions[^}]*margin-left: auto/);
+  assert.match(css, /\.ft-actions[^}]*justify-self: end; margin-left: 0/);
+  assert.match(css, /\.ft-row\.ft-file \{[^}]*grid-template-columns: 12px 14px minmax\(0, 1fr\) auto/);
+  assert.match(css, /\.ft-row\.ft-dir \.files-icon-btn, \.ft-row\.ft-file \.ft-copy \{ opacity: 1; \}/);
   assert.match(css, /#file-list \.ft-row\.ft-row-collapsing/);
   assert.match(css, /#file-list \.ft-row\.ft-row-expanding/);
-  assert.doesNotMatch(css, /\.ft-dir\.closed \.ft-zip \{ opacity: 1/);
+  assert.match(css, /\.ft-dir-count/);
 });
 
 test('日常对话不再打「收到任务 / 方向与计划」回执；多步任务保留', () => {

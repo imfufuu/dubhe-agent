@@ -1,6 +1,7 @@
 // Stable editing DOM: filenames, headers, existing lines and scroll position survive
 // parameter deltas. Only new/changed lines are patched; no per-delta innerHTML reset.
 import { editPreviewMeta, editPreviewFoot } from './ui-markdown.js?v=2026.10.11.1';
+import { text as localeText } from './locale.js';
 
 const make = (tag, cls, text) => {
   const node = document.createElement(tag); node.className = cls;
@@ -112,11 +113,11 @@ export function paintEditFoldContent(node, options) {
     text(row.del, !known ? '-—' : deletionOnly ? '0' : `-${file.removed}`);
     row.stats.title = known ? `新增 ${file.added} 行，删除 ${file.removed} 行${file.failed ? '（写入失败，仅为拟议改动）' : ''}` : '缺少原始快照或差异计算超时';
     row.item.classList.toggle('fold-discarded', dropped);
-    row.item.title = dropped ? '回合结束时最终回答没有提到这个文件，临时沙箱已把它丢弃；在回答里写出路径或文件名即可保留' : '';
-    text(row.tag, dropped ? '已丢弃 · 回答未引用' : ''); row.tag.hidden = !dropped;
+    row.item.title = dropped ? localeText('设置中开启了自动清理：因最终回答未引用，本文件已在回合结束时移除。', 'Auto-clean is enabled; this file was removed at turn end because the final answer did not reference it.') : '';
+    text(row.tag, dropped ? localeText('自动清理 · 未引用', 'Auto-cleaned · Unreferenced') : ''); row.tag.hidden = !dropped;
   });
   while (dom.pathRows.length > paths.length) dom.pathRows.pop().item.remove();
-  text(dom.note, discarded.size ? `本轮丢弃 ${discarded.size} 个未在回答中引用的临时文件；internal/ 与 uploads/ 下的文件总是保留。` : '');
+  text(dom.note, discarded.size ? localeText(`本轮根据设置自动清理了 ${discarded.size} 个未引用文件；internal/ 与 uploads/ 下的文件始终保留。`, `Auto-clean removed ${discarded.size} unreferenced files this turn; files under internal/ and uploads/ are always retained.`) : '');
   dom.note.hidden = !discarded.size;
   node.classList.toggle('has-discarded', discarded.size > 0);
 

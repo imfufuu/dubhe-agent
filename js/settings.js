@@ -133,6 +133,7 @@ export function openSettingsModal({ store } = {}) {
   $('#set-web').checked = store.state.settings.webEnabled !== false;
   $('#set-fast').checked = !!store.state.settings.fastMode;
   if ($('#set-image-review')) $('#set-image-review').checked = store.state.settings.imageRemoteReview !== false;
+  if ($('#set-cleanup-unreferenced')) $('#set-cleanup-unreferenced').checked = store.state.settings.cleanupUnreferencedFiles === true;
   $('#set-thinking').checked = store.state.settings.thinking !== false;
   syncSeg('#set-reason', store.state.settings.reasoningLevel || 'medium');
   syncBudgetInputs(store);
@@ -277,6 +278,7 @@ export function mountSettings(store, { onRelayChanged, onKeySaved, onSettingChan
   bindSw('#set-web', 'webEnabled');
   bindSw('#set-fast', 'fastMode');
   bindSw('#set-image-review', 'imageRemoteReview');
+  bindSw('#set-cleanup-unreferenced', 'cleanupUnreferencedFiles');
   const reasonRow = document.getElementById('set-reason-row');
   const syncReasonRow = () => { if (reasonRow) reasonRow.hidden = !$('#set-thinking').checked; };
   bindSw('#set-thinking', 'thinking', syncReasonRow);

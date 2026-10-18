@@ -165,8 +165,8 @@ html { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
   /* grid-template-areas 不只是可读性：窄屏时 .sidebar / #sandbox-panel 变成 position:fixed
      脱离文档流，若没有命名区，唯一的在流子项 .main 会被自动排到第一列（--sbw 已收敛为 0px）
      → 主区宽度 0、全部内容横向溢出（这就是「移动端元素挤在一起」的根因）。 */
-  /* 默认沙箱面板比旧版约宽 10px；打开文件预览时由下方 clamp 单独加宽。 */
-  grid-template-columns: var(--sbw, 268px) minmax(0, 1fr) var(--pnw, 290px);
+  /* 默认沙箱面板比旧版宽 20px；打开文件预览时由下方 clamp 单独加宽。 */
+  grid-template-columns: var(--sbw, 268px) minmax(0, 1fr) var(--pnw, 310px);
   grid-template-areas: "side main panel";
   height: 100vh;
   height: 100dvh; /* 移动 Safari：地址栏收起时不被底部工具栏遮住 */
@@ -1434,11 +1434,11 @@ html[data-motion="off"] .panel-body.panel-tab-enter { animation: none !important
 .files-icon-btn.danger:hover { color: #b42318; background: #fdf2f2; }
 [data-theme="dark"] .files-icon-btn.danger:hover { color: #e8b4b4; background: #3a1f1f; }
 .side-label-btns { display: flex; align-items: center; gap: 5px; }
-.file-list { display: flex; flex-direction: column; gap: 1px; padding: 6px 6px 10px; flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; }
+.file-list { display: flex; flex-direction: column; gap: 0; padding: 4px 6px 8px; flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; }
 .file-list .ft-row { width: 100%; min-width: 0; }
 .file-item, .ft-row {
-  display: flex; justify-content: flex-start; align-items: center; gap: 8px;
-  padding: 3px 8px; border: 0; border-radius: 6px; cursor: pointer; line-height: 1.35;
+  display: flex; justify-content: flex-start; align-items: center; gap: 6px;
+  padding: 1px 8px; border: 0; border-radius: 6px; cursor: pointer; line-height: 1.25;
   transition: background .18s var(--ease);
 }
 .file-item:hover, .ft-row:hover { background: var(--bg-hover); }
@@ -1446,6 +1446,9 @@ html[data-motion="off"] .panel-body.panel-tab-enter { animation: none !important
 
 /* 目录树：沙箱是「路径即结构」，UI 还原层级；缩进用 --d（深度）驱动 */
 .ft-row { padding-left: calc(9px + var(--d, 0) * 13px); }
+/* Grid keeps the filename in its own shrinkable track and pins actions to the far edge. */
+.ft-row.ft-file { display: grid; grid-template-columns: 12px 14px minmax(0, 1fr) auto; column-gap: 5px; }
+.ft-row.ft-dir { display: grid; grid-template-columns: 12px 14px minmax(0, 1fr) max-content auto; column-gap: 5px; }
 .ft-dir { background: transparent; }
 .ft-dir .ft-name { font-weight: 650; letter-spacing: .01em; }
 .ft-chev, .ft-ico, .ft-sp { width: 12px; height: 12px; display: inline-flex; flex-shrink: 0; color: var(--fg-3); }
@@ -1455,20 +1458,22 @@ html[data-motion="off"] .panel-body.panel-tab-enter { animation: none !important
 .ft-dir.closed .ft-chev { transform: rotate(0deg); }
 .ft-chev svg, .ft-ico svg { width: 100%; height: 100%; display: block; }
 .ft-name { font-size: var(--ui-fs-12_5px, 12.5px); flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--fg); }
-.ft-meta { font-size: var(--ui-fs-10px, 10px); color: var(--fg-3); font-family: var(--mono); flex-shrink: 0; }
-.ft-actions { display: flex; gap: 4px; flex: 0 0 auto; align-items: center; margin-left: auto; }
-.ft-row .files-icon-btn { width: 22px; height: 22px; opacity: 0; transition: opacity .16s var(--ease), color .16s var(--ease), background-color .16s var(--ease); }
+.ft-meta { font-size: var(--ui-fs-10px, 10px); color: var(--fg-3); font-family: var(--mono); flex-shrink: 0; white-space: nowrap; }
+.ft-dir-count { font-family: var(--sans); font-variant-numeric: tabular-nums; letter-spacing: 0; }
+.ft-actions { display: flex; gap: 2px; flex: 0 0 auto; align-items: center; justify-self: end; margin-left: 0; }
+.ft-row .files-icon-btn { width: 18px; height: 18px; opacity: 0; transition: opacity .16s var(--ease), color .16s var(--ease), background-color .16s var(--ease); }
 .ft-row .files-icon-btn .ico, .ft-row .files-icon-btn svg { width: 12px; height: 12px; }
 .ft-row:hover .files-icon-btn, .ft-row:focus-within .files-icon-btn { opacity: 1; }
+.ft-row.ft-dir .files-icon-btn, .ft-row.ft-file .ft-copy { opacity: 1; }
 #file-list .ft-row.ft-row-collapsing { overflow: hidden; pointer-events: none; animation: ft-row-collapse .19s var(--ease) both; }
 #file-list .ft-row.ft-row-expanding { overflow: hidden; animation: ft-row-expand .22s var(--ease) both; }
 @keyframes ft-row-collapse {
-  from { opacity: 1; transform: translateX(0); max-height: var(--row-height, 40px); padding-top: 3px; padding-bottom: 3px; }
+  from { opacity: 1; transform: translateX(0); max-height: var(--row-height, 40px); padding-top: 1px; padding-bottom: 1px; }
   to { opacity: 0; transform: translateX(-7px); max-height: 0; padding-top: 0; padding-bottom: 0; margin-top: -1px; margin-bottom: -1px; }
 }
 @keyframes ft-row-expand {
   from { opacity: 0; transform: translateX(-7px); max-height: 0; padding-top: 0; padding-bottom: 0; }
-  to { opacity: 1; transform: none; max-height: 72px; padding-top: 3px; padding-bottom: 3px; }
+  to { opacity: 1; transform: none; max-height: 72px; padding-top: 1px; padding-bottom: 1px; }
 }
 /* 按钮里的线性图标：与文字同色（currentColor），随主题/选中态自动反转 */
 .mini-btn { display: inline-flex; align-items: center; gap: 4px; }
@@ -1693,15 +1698,15 @@ html[data-motion="off"] .file-viewer.switching > :not(.file-viewer-head) { anima
   .panel-tabs { min-height: 44px; }
   .files-icon-btn { width: 40px; height: 40px; }
   .fv-actions button { min-height: 40px; }
-  /* 2026.10.9.1（第 3 条）设置页 / 文件面板触屏密度：复核显示分段键 28–29px、输入框 33px、下拉 30px、幽灵键 33px、
-     文件行低于 40px 基线；统一抬到 40px（主操作 44px）。桌面鼠标层保持紧凑，不受影响。 */
+  /* 设置页 / 文件面板触屏密度：设置控件保持 40px 目标；文件行收敛为 36px，操作图标仍有 36px 触控区。
+     桌面鼠标层使用 18px 紧凑图标，不受触屏规则影响。 */
   .seg button { min-height: 40px; padding: 8px 12px; }
   .set-input, .set-select { min-height: 40px; }
   .ghost-btn { min-height: 40px; padding: 8px 14px; }
   .primary-btn { min-height: 44px; }
-  .file-item, .ft-row { min-height: 34px; }
-  /* 行内操作键（复制 / 打包 / 下载）原为 22px，优先级高于通用 .files-icon-btn，要单独抬到 40px */
-  .ft-row .files-icon-btn, .file-item .file-dl { width: 40px; height: 40px; }
+  .file-item, .ft-row { min-height: 36px; padding-top: 0; padding-bottom: 0; }
+  /* 触屏文件操作仍保留 36px 目标；桌面鼠标层则使用紧凑图标。 */
+  .ft-row .files-icon-btn, .file-item .file-dl { width: 36px; height: 36px; }
   .ft-row .files-icon-btn svg, .file-item .file-dl svg { width: 14px; height: 14px; }
   .side-footer-btns > .mini-btn { min-height: 40px; }
 }
@@ -2753,11 +2758,12 @@ button.fv-path > svg { width: 12px; height: 12px; flex: 0 0 auto; color: var(--f
 button.fv-path[aria-expanded="true"] > svg { transform: rotate(-90deg); }
 .fv-actions { flex-wrap: wrap; }
 /* 「代码 / 预览」大圆角分段滑块：圆润底轨 + 平滑滑动的高对比选择块 */
-.fv-actions .fv-modes { position: relative; display: inline-grid; grid-auto-flow: column; grid-auto-columns: 1fr; padding: 2px; border: 1px solid var(--line); border-radius: 999px; background: var(--bg-soft); isolation: isolate; }
+.fv-actions .fv-modes { position: relative; display: inline-grid; grid-auto-flow: column; grid-auto-columns: 1fr; width: max-content; height: 24px; min-height: 24px; padding: 2px; border: 1px solid var(--line); border-radius: 999px; background: var(--bg-soft); isolation: isolate; }
 .fv-modes-thumb { position: absolute; z-index: -1; top: 2px; bottom: 2px; left: 2px; width: calc(50% - 2px); border-radius: 999px; background: var(--fg); box-shadow: 0 1px 2px rgba(0,0,0,.12); transition: transform .42s cubic-bezier(.22, 1, .36, 1); will-change: transform; }
 .fv-modes[data-mode="preview"] .fv-modes-thumb { transform: translateX(100%); }
-.fv-actions .fv-modes button { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 24px; padding: 0; border: 0; background: none; border-radius: 999px; color: var(--fg-2); transition: color .24s var(--ease); }
-.fv-mode-icon { display: block; width: 15px; height: 15px; }
+.fv-actions .fv-modes button { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 18px; min-height: 0; padding: 0; border: 0; background: none; border-radius: 999px; color: var(--fg-2); line-height: 1; transition: color .24s var(--ease); }
+.fv-actions .fv-modes button::after { content: ""; position: absolute; inset: -11px 0; }
+.fv-mode-icon { display: block; width: 12px; height: 12px; }
 .fv-actions .fv-modes button:hover { color: var(--fg); border: 0; }
 .fv-actions .fv-modes button[aria-pressed="true"] { color: var(--bg); }
 /* 两层叠在同一格里交叉淡入（不再 display 硬切、也没有并排） */

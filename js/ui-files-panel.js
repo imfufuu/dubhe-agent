@@ -126,7 +126,7 @@ export function installFilesPanel({ store, agent, toast, fmtSize, highlightCode,
     row.classList.toggle('closed', closed);
     row.classList.toggle('open', !closed);
     row.setAttribute('aria-expanded', String(!closed));
-    row.title = `${entry.path}/（点击${closed ? '展开' : '折叠'}，共 ${entry.count} 个文件）`;
+    row.title = `${entry.path}/（点击${closed ? '展开' : '折叠'}，共 ${entry.count} 个文件，${fmtSize(Number(entry.size) || 0)}）`;
     const icon = $('.ft-ico', row);
     if (icon) icon.innerHTML = closed ? ICON.folder : ICON.folderOpen;
   };
@@ -231,7 +231,7 @@ export function installFilesPanel({ store, agent, toast, fmtSize, highlightCode,
       row.style.setProperty('--d', r.depth);
       row.dataset.path = r.path;
       if (r.type !== 'dir' && changed.has(r.path)) row.classList.add('just-changed');
-      row.title = r.type === 'dir' ? `${r.path}/（点击${collapsedDirs.has(r.path) ? '展开' : '折叠'}，共 ${r.count} 个文件）` : r.path;
+      row.title = r.type === 'dir' ? `${r.path}/（点击${collapsedDirs.has(r.path) ? '展开' : '折叠'}，共 ${r.count} 个文件，${fmtSize(Number(r.size) || 0)}）` : r.path;
       if (expandingPath && r.path.startsWith(`${expandingPath}/`)) {
         row.classList.add('ft-row-expanding');
         setTimeout(() => row.classList.remove('ft-row-expanding'), 230);
@@ -243,14 +243,17 @@ export function installFilesPanel({ store, agent, toast, fmtSize, highlightCode,
         row.innerHTML = `<span class="ft-chev">${ICON.chevRight}</span>`
           + `<span class="ft-ico">${closed ? ICON.folder : ICON.folderOpen}</span>`
           + `<span class="ft-name">${esc(r.name)}</span>`
-          + `<span class="ft-meta">${localeText(`${Number(r.count) || 0} 个文件 · ${fmtSize(Number(r.size) || 0)}`, `${Number(r.count) || 0} files · ${fmtSize(Number(r.size) || 0)}`)}</span>`
-          + `<span class="ft-actions"><button class="files-icon-btn ft-copy" type="button" title="复制文件名">${ICON.copy}</button><button class="files-icon-btn ft-zip" type="button" title="打包 ${esc(r.path)}/">${ICON.download}</button></span>`;
+          + `<span class="ft-meta ft-dir-count">${localeText(`${Number(r.count) || 0} 个文件`, `${Number(r.count) || 0} files`)}</span>`
+          + `<span class="ft-actions"><button class="files-icon-btn ft-copy" type="button" title="${localeText('复制文件夹名', 'Copy folder name')}" aria-label="${localeText('复制文件夹名', 'Copy folder name')}">${ICON.copy}</button><button class="files-icon-btn ft-zip" type="button" title="${esc(localeText(`下载文件夹 ZIP：${r.name}`, `Download folder ZIP: ${r.name}`))}" aria-label="${esc(localeText(`下载文件夹 ZIP：${r.name}`, `Download folder ZIP: ${r.name}`))}">${ICON.download}</button></span>`;
         const toggle = () => toggleDirectory(r, row);
         row.addEventListener('click', toggle);
-        row.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
+        row.addEventListener('keydown', (e) => {
+          if (e.target !== row && e.target.closest('.ft-actions')) return;
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
+        });
         $('.ft-copy', row).addEventListener('click', (e) => {
           e.stopPropagation();
-          navigator.clipboard.writeText(r.name).then(() => toast('已复制文件名', 'ok', 1200), () => toast('复制失败：浏览器拒绝了剪贴板权限', 'err'));
+          navigator.clipboard.writeText(r.name).then(() => toast(localeText('已复制文件夹名', 'Folder name copied'), 'ok', 1200), () => toast(localeText('复制失败：浏览器拒绝了剪贴板权限', 'Copy failed: clipboard permission was denied'), 'err'));
         });
         $('.ft-zip', row).addEventListener('click', (e) => {
           e.stopPropagation();
@@ -262,10 +265,10 @@ export function installFilesPanel({ store, agent, toast, fmtSize, highlightCode,
         row.innerHTML = `<span class="ft-sp"></span>`
           + `<span class="ft-ico">${videoSet.has(r.path) ? (ICON.video || '🎬') : (imageSet.has(r.path) || isSvgFile ? ICON.image : ICON.file)}</span>`
           + `<span class="ft-name file-path">${esc(r.name)}</span>`
-          + `<span class="ft-actions"><button class="files-icon-btn ft-copy" type="button" title="复制文件名">${ICON.copy}</button><button class="files-icon-btn file-dl" type="button" title="下载此文件">${ICON.download}</button></span>`;
+          + `<span class="ft-actions"><button class="files-icon-btn ft-copy" type="button" title="${localeText('复制文件名', 'Copy file name')}" aria-label="${localeText('复制文件名', 'Copy file name')}">${ICON.copy}</button><button class="files-icon-btn file-dl" type="button" title="${localeText('下载此文件', 'Download file')}" aria-label="${localeText('下载此文件', 'Download file')}">${ICON.download}</button></span>`;
         $('.ft-copy', row).addEventListener('click', (e) => {
           e.stopPropagation();
-          navigator.clipboard.writeText(r.name).then(() => toast('已复制文件名', 'ok', 1200), () => toast('复制失败：浏览器拒绝了剪贴板权限', 'err'));
+          navigator.clipboard.writeText(r.name).then(() => toast(localeText('已复制文件名', 'File name copied'), 'ok', 1200), () => toast(localeText('复制失败：浏览器拒绝了剪贴板权限', 'Copy failed: clipboard permission was denied'), 'err'));
         });
         $('.file-dl', row).addEventListener('click', (e) => { e.stopPropagation(); downloadFile(r.path); });
         row.addEventListener('click', () => openFileViewer(r.path));
@@ -347,7 +350,7 @@ export function installFilesPanel({ store, agent, toast, fmtSize, highlightCode,
     stopViewerMedia();
     viewer.innerHTML = `<div class="file-viewer-head mono"><button type="button" class="fv-path" aria-haspopup="dialog" aria-expanded="false" title="${localeText('点击切换沙箱文件', 'Click to switch sandbox file')}"><span class="fv-path-text">${esc(path)}</span>${ICON.chevRight}</button><span class="fv-size">${fmtSize(byteLen)}</span><span class="fv-actions">`
       + (dualPreview ? viewModesHtml(viewMode) : '')
-      + `<button id="fv-dl" type="button" title="下载此文件">${ICON.download}<span>下载</span></button>`
+      + `<button id="fv-dl" type="button" title="${localeText('下载此文件', 'Download file')}" aria-label="${localeText('下载此文件', 'Download file')}">${ICON.download}<span>下载</span></button>`
       + (/\.html?$/i.test(lower) ? `<button id="fv-run" type="button" title="在本地沙箱服务运行并用 Chromium 调试">${ICON.terminal || ICON.tool}<span>运行网页</span></button>` : '')
       + `<button id="fv-close" type="button" title="关闭">${ICON.x}</button></span></div>`
       + bodyHtml;

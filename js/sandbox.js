@@ -20,7 +20,7 @@ export function isAlwaysPersistedPath(p) {
 // 工具结果里的持久性说明：让「已写入 X」这句话带上契约，而不是让模型 / 用户猜
 export function persistenceNote(fs, path) {
   if (!fs || fs._isTemp !== true) return '';
-  return isAlwaysPersistedPath(path) ? '（已持久）' : '（本轮结束后若最终回答未提及此文件将被丢弃）';
+  return isAlwaysPersistedPath(path) ? '（已持久）' : fs.cleanupUnreferencedFiles ? '（自动清理已开启：若最终回答未引用，本轮结束后将删除）' : '（默认保留；可在设置中开启未引用文件自动清理）';
 }
 const FS_MAX_PATH = 512;
 const FS_MAX_FILES = 5000;
@@ -206,15 +206,15 @@ export function websiteDependencies(files, entries) {
   return kept;
 }
 
-// ── 临时沙箱（ephemeral overlay）：任务期间 Agent 写的文件先落在临时层，
-//    回合结束时只把「最终回答里提到/展示/引用」的交付物提交到真实沙箱，
-//    其余临时文件（调试输出、中间数据、缓存等）随 overlay 一起丢弃。
-//    修复 #3：Agent 不再在用户沙箱里留下一堆中间产物。
-export function createTempFS(baseFS) {
+// ── 临时沙箱（ephemeral overlay）：任务期间 Agent 写的文件先落在临时层。
+//    默认回合结束后全部保留；只有用户在设置中显式开启自动清理，才会删除未被最终回答引用的产物。
+//    internal/ 与 uploads/ 始终保留；用户通过文件工具主动删除的既有文件照常删除。
+export function createTempFS(baseFS, { cleanupUnreferencedFiles = false } = {}) {
   const ephemeral = {}; // 本轮临时写的文件
   const projectGroups = new Map();
   const deletedInEphemeral = new Set(); // 本轮主动删除的基文件
   const fs = {
+    cleanupUnreferencedFiles: cleanupUnreferencedFiles === true,
     read(path) {
       const p = String(path);
       if (deletedInEphemeral.has(p)) throw new Error(`文件不存在: ${p}`);
@@ -299,7 +299,7 @@ export function createTempFS(baseFS) {
       if (isSafeFsPath(entry) && Array.isArray(paths) && paths.length <= 512)
         projectGroups.set(entry, paths.filter((p) => isSafeFsPath(p) && !/^internal\//.test(p)));
     },
-    // 提交：扫描回答文本，把回答里明确引用到的临时文件落到真实沙箱；其余丢弃
+    // 提交：默认保留全部写入；仅在设置显式开启自动清理时才丢弃未引用文件。
     commitAnswer(answerText) {
       const text = String(answerText || '');
       const committed = [];
@@ -328,8 +328,8 @@ export function createTempFS(baseFS) {
       const dependencies = websiteDependencies(snapshot, entries);
       for (const [entry, paths] of projectGroups) if (looksReferenced(entry)) for (const p of paths) dependencies.add(p);
       for (const [p, c] of Object.entries(ephemeral)) {
-        // 白名单前缀（internal/ · uploads/）无条件提交；其余（outputs/、根目录等模型自由创建的）才走引用判定
-        if (isAlwaysPersistedPath(p) || looksReferenced(p) || dependencies.has(p)) {
+        // 白名单前缀（internal/ · uploads/）始终保留；用户未开启自动清理时所有文件都提交。
+        if (!this.cleanupUnreferencedFiles || isAlwaysPersistedPath(p) || looksReferenced(p) || dependencies.has(p)) {
           try { baseFS.write(p, c); committed.push(p); } catch { /* noop */ }
         } else {
           discarded.push(p);
@@ -339,13 +339,13 @@ export function createTempFS(baseFS) {
       this.clear(); projectGroups.clear();
       return { committed, discarded };
     },
-    // 丢弃临时层（任务中止 / 失败时调用）：模型自由创建的半截产物丢掉；
-    // 白名单前缀下的文件是整文件写入的（抓取全文 / 识图结果 / 下载件），中止也不该让它们蒸发。
+    // 任务中止 / 失败时清理临时层；默认保留写入，只有用户开启自动清理才丢弃自由路径产物。
+    // 白名单前缀下的抓取全文 / 识图结果 / 下载件始终保留。
     discard() {
       const committed = [];
       const discarded = [];
       for (const [p, c] of Object.entries(ephemeral)) {
-        if (isAlwaysPersistedPath(p)) {
+        if (!this.cleanupUnreferencedFiles || isAlwaysPersistedPath(p)) {
           try { baseFS.write(p, c); committed.push(p); continue; } catch { /* 写不进去就按丢弃记 */ }
         }
         discarded.push(p);
