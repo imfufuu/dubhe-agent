@@ -8,6 +8,7 @@ import {
 import { commandRunFor } from '../js/toolflow.js?v=2026.10.11.1';
 import { createStore } from '../js/state.js';
 import { createAgent } from '../js/agent.js';
+import { translateUI } from '../js/ui-language.js';
 
 const read = (rel) => fs.readFileSync(new URL(rel, import.meta.url), 'utf8');
 const sseEv = (o) => 'data: ' + JSON.stringify(o) + '\n\n';
@@ -249,12 +250,59 @@ test('技能库：读完技能自动挂载 document_tool；同轮重复 read 回
     assert.ok(!toolNames(calls[1].body).includes('document_tool'));
     assert.ok(toolNames(calls[2].body).includes('document_tool'), '读完 word-docx 后下一次请求就带上 document_tool');
     const results = store.state.messages.filter((m) => m.role === 'tool');
-    assert.match(results[1].content, /技能 word-docx 已加载，所需工具 document_tool 已挂载到本轮工具表。下一步直接调用 document_tool/);
+    assert.match(results[1].content, /技能 word-docx 已加载，所需工具组 document_tool、xlsx_tool 已挂载到本轮工具表。下一步直接调用 document_tool/);
     assert.match(results[2].content, /幂等复用/);
     assert.match(results[2].content, /# Word 文档生成与重建/, '重复读取拿得到正文');
     assert.match(results[2].content, /下一步直接调用 document_tool/);
     const sys = calls[2].body.messages.filter((m) => m.role === 'system').map((m) => m.content).join('\n');
-    assert.doesNotMatch(sys, /按需未挂载：[^\n]*document_tool/, '已挂载的工具不再出现在「按需未挂载」名单里');
+    assert.doesNotMatch(sys, /^- document_tool:/m, '已挂载的工具不再出现在紧凑的按需目录里');
+  } finally { globalThis.fetch = realFetch; }
+});
+
+test('工具目录 search→read：首轮只发紧凑目录，读取 XLSX Schema 后自动一次挂载 Office 文档组', async () => {
+  const { searchToolDirectory } = await import('../js/tool-catalog.js');
+  const { TOOL_DEFS } = await import('../js/tools.js');
+  assert.ok(searchToolDirectory(TOOL_DEFS, '请帮我做个电子表格').some((tool) => tool.name === 'xlsx_tool'), '自然中文查询可命中 XLSX');
+  const calls = mockFetch([
+    toolTurn('tl1', 'tool_library', { action: 'search', query: 'xlsx spreadsheet excel' }),
+    toolTurn('tl2', 'tool_library', { action: 'read', name: 'xlsx_tool' }),
+    textTurn('明白，我可以处理工作簿。'),
+  ]);
+  try {
+    const { store, agent } = newAgent('gpt-5.6-sol');
+    await agent.send('你好');
+    assert.equal(calls.length, 3);
+    const namesOf = (call) => toolNames(call.body);
+    assert.ok(!namesOf(calls[0]).includes('xlsx_tool') && !namesOf(calls[0]).includes('document_tool'));
+    const sys = calls[0].body.messages.filter((m) => m.role === 'system').map((m) => m.content).join('\n');
+    assert.match(sys, /按需未挂载工具目录/);
+    assert.match(sys, /xlsx_tool: 本地检查或生成 XLSX/);
+    assert.doesNotMatch(sys, /parameters|input_schema|sheets:\[/i, '未挂载 schema 不进入系统提示');
+    const results = store.state.messages.filter((m) => m.role === 'tool');
+    assert.equal(results.length, 2);
+    assert.match(results[0].content, /"name": "xlsx_tool"/);
+    assert.doesNotMatch(results[0].content, /"parameters"/);
+    assert.match(results[1].content, /\[Tool definition loaded: xlsx_tool\]/);
+    assert.match(results[1].content, /完整 Schema/);
+    const mounted = namesOf(calls[2]);
+    assert.ok(mounted.includes('document_tool') && mounted.includes('xlsx_tool'));
+    assert.ok(mounted.indexOf('document_tool') > mounted.indexOf('tool_library'), '动态 Office 工具追加在核心缓存前缀之后');
+    assert.ok(mounted.indexOf('xlsx_tool') > mounted.indexOf('tool_library'));
+    const sysAfter = calls[2].body.messages.filter((m) => m.role === 'system').map((m) => m.content).join('\n');
+    assert.doesNotMatch(sysAfter, /^- xlsx_tool:/m, '已挂载工具从按需目录移除');
+  } finally { globalThis.fetch = realFetch; }
+});
+
+test('轻量工具路由在首个模型请求前完成：XLSX 意图已一次挂载 DOCX/PPTX/PDF + XLSX 组', async () => {
+  const calls = mockFetch([textTurn('我会按要求处理工作簿。')]);
+  try {
+    const { agent } = newAgent('gpt-5.6-sol');
+    await agent.send('请生成一个 Excel XLSX 工作簿');
+    assert.equal(calls.length, 1, '路由不额外调用分类模型，也不等工具报错');
+    const names = toolNames(calls[0].body);
+    assert.ok(names.includes('document_tool') && names.includes('xlsx_tool'));
+    assert.ok(names.indexOf('document_tool') > names.indexOf('tool_library'));
+    assert.ok(names.indexOf('xlsx_tool') > names.indexOf('tool_library'));
   } finally { globalThis.fetch = realFetch; }
 });
 
@@ -408,6 +456,12 @@ test('快捷导航不抢输入焦点；文件面板可收缩长名称、目录�
   assert.match(css, /#file-list \.ft-row\.ft-row-collapsing/);
   assert.match(css, /#file-list \.ft-row\.ft-row-expanding/);
   assert.match(css, /\.ft-dir-count/);
+  assert.match(css, /^button \{[^}]*line-height: inherit;/m, '桌面按钮不依赖各操作系统的 UA 行高');
+  assert.match(css, /\.mini-btn \{[^}]*min-height: 24px; line-height: 1\.35;/);
+  assert.match(css, /\.icon-btn \{[^}]*min-width: 24px; min-height: 24px; line-height: 1;/);
+  assert.match(css, /\.file-item, \.ft-row \{[^}]*min-height: 24px; padding: 3px 8px;[^}]*line-height: 1\.4;/, '桌面沙箱文件行具有稳定的最小高度与行高');
+  assert.match(css, /@keyframes ft-row-collapse\s*\{[\s\S]*?to\s*\{[^}]*min-height: 0;/, '折叠动画同步压缩最小高度');
+  assert.match(css, /@keyframes ft-row-expand\s*\{[\s\S]*?to\s*\{[^}]*min-height: 24px;/, '展开动画恢复桌面行高');
 });
 
 test('日常对话不再打「收到任务 / 方向与计划」回执；多步任务保留', () => {
@@ -507,7 +561,7 @@ test('convert_file：三条通路计划、ffmpeg 参数、注册表/契约/挂�
   assert.equal(String.fromCharCode(wav[0], wav[1], wav[2], wav[3]), 'RIFF');
   const { TOOL_DEFS } = await import('../js/tools.js');
   assert.ok(TOOL_DEFS.some((t) => t.name === 'convert_file' && /ffmpeg\.wasm/.test(t.description)));
-  assert.equal(TOOL_DEFS.length, 40, '含 analyze_svg 与 pull_github_project 能力');
+  assert.equal(TOOL_DEFS.length, 42, '含新增的 tool_library 与 xlsx_tool');
   const caps = await import('../js/capabilities.js');
   assert.ok(caps.CAPABILITY_REGISTRY.convert_file, '能力登记');
   assert.ok(caps.TOOL_MOUNT_RULES.convert_file, '按需挂载规则（no-rule 会全量下发）');
@@ -525,6 +579,14 @@ test('convert.js：进度事件（含 0%）不终结任务；只有 ok/error 消
   assert.match(w, /ffmpeg-core\.wasm/);
   assert.match(w, /wasmBinary/);
   assert.match(w, /Invalid|magic word|head\[1\] === 0x61/, 'wasm 响应先验魔数，防代理把 HTML 页当二进制喂给实例化');
+});
+
+test('扫描文档附件菜单项在英文界面有标签和摄像头处理说明', () => {
+  assert.equal(translateUI('扫描文档', 'en'), 'Scan document');
+  assert.equal(
+    translateUI('摄像头扫描文档：自动找边、透视矫正、黑白增强', 'en'),
+    'Scan a document with your camera: automatic edge detection, perspective correction and black-and-white enhancement.',
+  );
 });
 
 test('文档扫描：算法核（合成纸面检出四角）、PDF 结构、入口按钮只随真实相机出现', async () => {

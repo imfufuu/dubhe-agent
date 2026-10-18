@@ -85,7 +85,12 @@ test('stable per-file diff DOM: all edited files stay visible, code is escaped, 
   assert.deepEqual([...stats[1].children].map((item) => item.className), ['diff-del', 'diff-add']);
   assert.deepEqual([...n.querySelectorAll('.ep-path')].map((x) => x.textContent), ['example/abc.txt', 'example/def.txt']);
   assert.equal(n.querySelectorAll('.edit-preview').length, 2, '多个文件的差异卡应同时显示');
-  const firstPath = n.querySelector('.edit-path'); firstPath.click();
+  const firstPath = n.querySelector('.edit-path');
+  const firstRow = firstPath.closest('.edit-path-row');
+  assert.ok(firstRow.querySelector('.edit-path-fold .edit-preview'), '文件编辑窗口嵌在各自文件名下的二级折叠里');
+  assert.equal(firstPath.getAttribute('aria-expanded'), 'true', '流式写入时默认展开文件预览');
+  firstPath.click();
+  assert.equal(firstPath.getAttribute('aria-expanded'), 'false', '点击文件名收起对应预览');
   assert.deepEqual([...n.querySelectorAll('.ep-path')].map((x) => x.textContent), ['example/abc.txt', 'example/def.txt']);
   assert.equal(n.querySelector('script'), null);
   assert.equal(n.querySelector('.edit-preview[data-path="example/abc.txt"] .ep-body').textContent.includes('old-1'), false, '仅展示修改行，不混入磁盘上的旧内容');
@@ -96,6 +101,25 @@ test('stable per-file diff DOM: all edited files stay visible, code is escaped, 
   assert.equal(n.querySelectorAll('.edit-preview').length, 2);
   n.remove();
 });
+test('nested per-file editor folds open while streaming, auto-collapse at completion, and remain user-toggleable', () => {
+  const node = document.createElement('div'); document.body.append(node);
+  const newline = String.fromCharCode(10);
+  const c = call({ path: 'a.py', content: `new${newline}` });
+  const preview = buildFileEditPreview([c], disk({ 'a.py': `old${newline}` }));
+  const options = { label: 'Writing file', paths: ['a.py'], discarded: new Set(), preview, live: true };
+  paintEditFoldContent(node, options);
+  const button = node.querySelector('.edit-path'), row = button.closest('.edit-path-row');
+  assert.equal(button.getAttribute('aria-expanded'), 'true');
+  assert.equal(row.querySelector('.edit-preview')?.dataset.path, 'a.py');
+  paintEditFoldContent(node, { ...options, label: 'Edited File', live: false });
+  assert.equal(button.getAttribute('aria-expanded'), 'false', '流式结束时二级折叠自动关闭');
+  button.click();
+  assert.equal(button.getAttribute('aria-expanded'), 'true', '结束后仍可手动展开');
+  paintEditFoldContent(node, { ...options, label: 'Edited File', live: false });
+  assert.equal(button.getAttribute('aria-expanded'), 'true', '非流式重绘保留手动状态');
+  node.remove();
+});
+
 test('file activity survives a chosen state; completed edit folds automatically once', () => {
   const node = document.createElement('div'); node.className = 'edited-files'; node.dataset.ownerId = 'a'; node._userToggle = null;
   const c = call({ path: 'a', content: '' }); node._activeCalls = [c];

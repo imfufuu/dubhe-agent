@@ -4,6 +4,7 @@ import { text as localeText } from './locale.js';
 import { getLanguage, onLanguageChange } from './locale.js';
 // 设置弹窗：API Key / 中继地址 / 主题 / 字号 / 沙箱 / 联网 / 快速 / 思考 / 识图·视频识别模型 / 清空数据 / 关于
 import { APP_RELEASE, APP_VERSION, STORAGE_KEY, VISION_MODELS, VIDEO_MODELS, AUDIO_MODELS, IMAGE_MODELS, DEFAULT_IMAGE_MODEL, isImageGenModel, imageModelLabel, resolveVisionModel, resolveVideoModel, resolveAudioModel } from './config.js?v=2026.10.11.1';
+import { DEFAULT_GATEWAY_ID, getGateway, validateGatewayApiKey, validateGatewayBaseUrl, gatewayModelListLabel, defaultModelForGateway } from './gateway-registry.js?v=2026.10.11.1';
 import { currentRelay, resetRelayProbe, RELAY_OVERRIDE_KEY } from './net.js';
 import { DEFAULT_TURN_BUDGET } from './execution.js?v=2026.10.11.1';
 import { NEXUS_ARCHITECTURE_SPEC } from './nexus.js';
@@ -17,14 +18,10 @@ const $ = (sel) => document.querySelector(sel);
 
 const ADMIN_PREFIX = 'admin-';
 const isAdmin = (s) => String(s || '').startsWith(ADMIN_PREFIX);
-function validateApiKey(s) {
+function validateApiKey(s, gatewayId = DEFAULT_GATEWAY_ID) {
   const v = String(s || '').trim();
-  if (!v) return { ok: true };
-  if (isAdmin(v)) return { ok: true };
-  if (!/^sk-teamo-[A-Za-z0-9_-]+$/.test(v)) return { ok: false, reason: 'Key 应以 sk-teamo- 开头，只能包含字母/数字/_/-' };
-  if (v.length < 25) return { ok: false, reason: 'Key 长度过短，请检查是否复制完整' };
-  if (v.length > 200) return { ok: false, reason: 'Key 过长，请检查是否粘贴了多余字符' };
-  return { ok: true };
+  if (isAdmin(v)) return gatewayId === DEFAULT_GATEWAY_ID ? { ok: true } : { ok: false, reason: '管理员别名只适用于 TeamoRouter' };
+  return validateGatewayApiKey(gatewayId, v);
 }
 function toast(msg, type = 'info', ms = 2600) {
   try {
@@ -119,10 +116,33 @@ function syncBudgetInputs(store) {
   }
 }
 
+function syncGatewayFields(store) {
+  const id = store.state.gatewayId || DEFAULT_GATEWAY_ID;
+  const spec = getGateway(id);
+  const selector = $('#set-gateway');
+  if (selector) selector.value = id;
+  const keyTitle = $('#set-key-title');
+  if (keyTitle) keyTitle.textContent = spec.keyLabel || `${spec.name} API Key`;
+  const key = $('#set-key');
+  if (key) {
+    key.value = store.state.apiKey || '';
+    key.placeholder = spec.keyHint || 'API Key';
+  }
+  const base = $('#set-gateway-base');
+  if (base) {
+    base.value = (store.state.gatewayBaseUrls || {})[id] || '';
+    base.placeholder = spec.baseUrl || 'https://api.example.com/v1';
+  }
+  const note = $('#set-gateway-note');
+  if (note) note.textContent = gatewayModelListLabel(id);
+  const manual = $('#set-manual-model');
+  if (manual) manual.value = '';
+}
+
 export function openSettingsModal({ store } = {}) {
   const m = $('#settings-modal');
   if (!m) return;
-  $('#set-key').value = store.state.apiKey || '';
+  syncGatewayFields(store);
   $('#set-relay').value = readLocal(RELAY_OVERRIDE_KEY) || '';
   syncSeg('#set-theme', store.state.settings.theme || 'light');
   syncSeg('#set-fontsize', document.documentElement.dataset.fontsize || 'medium');
@@ -218,7 +238,7 @@ function bindSeg(sel, onChange) {
   });
 }
 
-export function mountSettings(store, { onRelayChanged, onKeySaved, onSettingChanged } = {}) {
+export function mountSettings(store, { onRelayChanged, onKeySaved, onSettingChanged, onGatewayChanged } = {}) {
   // 设置页改了开关 / 档位 / 主题后通知外部（main.js → ui.syncToolbar）：顶栏 pill、能力行、主题按钮要跟着变，
   // 不然「设置里开了快速模式，会话区那颗 ⚡ 还是灰的」（.27 修）
   const changed = (key, value) => { try { onSettingChanged && onSettingChanged(key, value); } catch { /* 不影响设置本身 */ } };
@@ -236,15 +256,97 @@ export function mountSettings(store, { onRelayChanged, onKeySaved, onSettingChan
 
   function saveKey() {
     const v = $('#set-key').value.trim();
-    const chk = validateApiKey(v);
+    const gatewayId = store.state.gatewayId || DEFAULT_GATEWAY_ID;
+    const chk = validateApiKey(v, gatewayId);
     if (!chk.ok) { toast('Key 格式错误：' + chk.reason, 'err', 5000); $('#set-key').focus(); $('#set-key').select(); return false; }
     store.state.apiKey = v;
+    store.state.gatewayKeys = store.state.gatewayKeys || {};
+    if (v && !isAdmin(v)) store.state.gatewayKeys[gatewayId] = v;
+    else delete store.state.gatewayKeys[gatewayId];
     store.notify();
-    onKeySaved && onKeySaved();
+    onKeySaved && onKeySaved(gatewayId);
     return true;
   }
   $('#set-key').addEventListener('change', saveKey);
   $('#set-key').addEventListener('blur', saveKey);
+
+  const saveGatewayBase = ({ notify = true } = {}) => {
+    const id = store.state.gatewayId || DEFAULT_GATEWAY_ID;
+    const input = $('#set-gateway-base');
+    const raw = input ? input.value.trim() : '';
+    const checked = validateGatewayBaseUrl(raw);
+    if (!checked.ok) { toast(checked.reason, 'err', 5000); input && input.focus(); return false; }
+    store.state.gatewayBaseUrls = store.state.gatewayBaseUrls || {};
+    if (checked.value) store.state.gatewayBaseUrls[id] = checked.value;
+    else delete store.state.gatewayBaseUrls[id];
+    if (notify) {
+      store.state.modelsByGateway = store.state.modelsByGateway || {};
+      store.state.modelsFetchedAtByGateway = store.state.modelsFetchedAtByGateway || {};
+      store.state.modelsByGateway[id] = [];
+      delete store.state.modelsFetchedAtByGateway[id];
+      store.state.models = [];
+      store.state.modelsFetchedAt = 0;
+      store.notify();
+      onGatewayChanged && onGatewayChanged(id, { baseChanged: true, hasKey: !!store.state.apiKey });
+      changed('gatewayBaseUrl', checked.value);
+    }
+    return true;
+  };
+
+  const gatewaySelect = $('#set-gateway');
+  if (gatewaySelect) gatewaySelect.addEventListener('change', () => {
+    const nextId = getGateway(gatewaySelect.value).id;
+    const prevId = store.state.gatewayId || DEFAULT_GATEWAY_ID;
+    if (nextId === prevId) return;
+    if (!saveGatewayBase({ notify: false })) { gatewaySelect.value = prevId; return; }
+    const oldKey = String(store.state.apiKey || '');
+    store.state.gatewayKeys = store.state.gatewayKeys || {};
+    if (oldKey && !isAdmin(oldKey)) store.state.gatewayKeys[prevId] = oldKey;
+    else if (!oldKey) delete store.state.gatewayKeys[prevId];
+    store.state.gatewayId = nextId;
+    store.state.apiKey = String(store.state.gatewayKeys[nextId] || '');
+    store.state.modelsByGateway = store.state.modelsByGateway || {};
+    store.state.modelsFetchedAtByGateway = store.state.modelsFetchedAtByGateway || {};
+    store.state.models = Array.isArray(store.state.modelsByGateway[nextId]) ? store.state.modelsByGateway[nextId] : [];
+    store.state.modelsFetchedAt = Number(store.state.modelsFetchedAtByGateway[nextId]) || 0;
+    store.state.model = defaultModelForGateway(nextId);
+    const active = (store.state.sessions || []).find((s) => s.id === store.state.activeSessionId);
+    if (active) { active.gatewayId = nextId; active.model = store.state.model; }
+    store.notify();
+    syncGatewayFields(store);
+    onGatewayChanged && onGatewayChanged(nextId, { hasKey: !!store.state.apiKey });
+    changed('gatewayId', nextId);
+  });
+  const gatewayBaseInput = $('#set-gateway-base');
+  if (gatewayBaseInput) gatewayBaseInput.addEventListener('change', () => saveGatewayBase());
+  if (gatewayBaseInput) gatewayBaseInput.addEventListener('blur', () => {
+    const before = (store.state.gatewayBaseUrls || {})[store.state.gatewayId || DEFAULT_GATEWAY_ID] || '';
+    if (gatewayBaseInput.value.trim() !== before) saveGatewayBase();
+  });
+
+  const addModel = () => {
+    const input = $('#set-manual-model');
+    const id = String(input && input.value || '').trim();
+    if (!id) return;
+    if (!/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$/.test(id)) {
+      toast('模型 ID 只能包含字母、数字、点、下划线、冒号、斜杠或连字符', 'err'); return;
+    }
+    const gatewayId = store.state.gatewayId || DEFAULT_GATEWAY_ID;
+    store.state.manualModelsByGateway = store.state.manualModelsByGateway || {};
+    const list = Array.isArray(store.state.manualModelsByGateway[gatewayId]) ? store.state.manualModelsByGateway[gatewayId] : [];
+    if (!list.includes(id)) list.push(id);
+    store.state.manualModelsByGateway[gatewayId] = list;
+    if (input) input.value = '';
+    store.notify();
+    onGatewayChanged && onGatewayChanged(gatewayId, { manualModel: id, hasKey: !!store.state.apiKey });
+    changed('manualModels', id);
+    toast(`已添加模型 ID：${id}`, 'ok');
+  };
+  const addModelButton = $('#set-add-model');
+  if (addModelButton) addModelButton.addEventListener('click', addModel);
+  const manualInput = $('#set-manual-model');
+  if (manualInput) manualInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addModel(); } });
+
   $('#set-relay').addEventListener('change', async () => {
     const v = $('#set-relay').value.trim();
     if (v) writeLocal(RELAY_OVERRIDE_KEY, v); else removeLocal(RELAY_OVERRIDE_KEY);

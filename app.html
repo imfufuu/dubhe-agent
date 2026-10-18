@@ -420,9 +420,9 @@
 <!-- ═══ API Key 弹窗 ═══ -->
 <div id="key-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="key-modal-title">
   <div class="modal-card">
-    <div class="modal-head"><h3 id="key-modal-title">TeamoRouter API Key</h3><button id="key-close" class="icon-btn" type="button" aria-label="关闭"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6 18 18"/><path d="M18 6 6 18"/></svg></button></div>
-    <p class="modal-desc">Key 以 <span class="mono">sk-teamo-</span> 开头，在 <a href="https://teamorouter.com/dashboard?tab=api-keys" target="_blank" rel="noopener">TeamoRouter 控制台</a> 创建。仅保存在本机浏览器 localStorage，随请求头直发网关，不经过任何第三方。</p>
-    <input id="key-input" class="key-input mono" type="password" placeholder="sk-teamo-xxxxxxxx…" spellcheck="false" autocomplete="off" />
+    <div class="modal-head"><h3 id="key-modal-title">API Key</h3><button id="key-close" class="icon-btn" type="button" aria-label="关闭"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6 18 18"/><path d="M18 6 6 18"/></svg></button></div>
+    <p id="key-desc" class="modal-desc">API Key 仅保存在本机浏览器，随请求头直发所选网关。</p>
+    <input id="key-input" class="key-input mono" type="password" placeholder="API Key" spellcheck="false" autocomplete="off" />
     <div class="modal-actions">
       <button id="key-save" class="primary-btn" type="button">保存</button>
     </div>
@@ -465,13 +465,37 @@
     <div class="settings-body">
 
       <section class="set-sec">
-        <h4>账户</h4>
+        <h4>账户与模型网关</h4>
         <div class="set-row">
-          <div class="set-lbl"><div class="set-title">TeamoRouter API Key</div><div class="set-sub">仅保存在本机</div></div>
-          <div class="set-ctl"><input id="set-key" class="set-input mono" type="password" placeholder="sk-teamo-xxxxxxxx…" spellcheck="false" autocomplete="off"/></div>
+          <div class="set-lbl"><div class="set-title">模型网关</div><div class="set-sub">切换后使用该网关独立的 Key 与模型目录</div></div>
+          <div class="set-ctl"><select id="set-gateway" class="set-select" aria-label="模型网关">
+            <option value="teamorouter">TeamoRouter（第三方）</option>
+            <option value="anthropic">Claude / Anthropic（官方）</option>
+            <option value="openai">GPT / OpenAI（官方）</option>
+            <option value="gemini">Gemini / Google AI（官方）</option>
+            <option value="deepseek">DeepSeek（官方）</option>
+            <option value="glm">GLM / 智谱 AI（官方）</option>
+            <option value="grok">Grok / xAI（官方）</option>
+            <option value="kimi">Kimi / Moonshot AI（官方）</option>
+            <option value="doubao">Doubao / 火山方舟（官方）</option>
+            <option value="qwen">Qwen / 阿里云百炼（官方）</option>
+            <option value="custom">自定义 OpenAI 兼容网关</option>
+          </select></div>
         </div>
         <div class="set-row">
-          <div class="set-lbl"><div class="set-title">自定义中继地址</div><div class="set-sub">留空自动探测</div></div>
+          <div class="set-lbl"><div id="set-key-title" class="set-title">API Key</div><div class="set-sub">按网关独立保存；仅本机存储，直连所选服务</div></div>
+          <div class="set-ctl"><input id="set-key" class="set-input mono" type="password" placeholder="API Key" spellcheck="false" autocomplete="off"/></div>
+        </div>
+        <div id="set-gateway-base-row" class="set-row">
+          <div class="set-lbl"><div class="set-title">网关基础 URL（可选）</div><div class="set-sub">留空使用官方默认；自定义网关必填 HTTPS URL</div></div>
+          <div class="set-ctl"><input id="set-gateway-base" class="set-input mono" type="url" placeholder="https://api.example.com/v1" spellcheck="false" autocomplete="off"/></div>
+        </div>
+        <div class="set-row">
+          <div class="set-lbl"><div class="set-title">手动添加模型 ID</div><div class="set-sub" id="set-gateway-note">官方目录刷新后，模型列表以接口返回为准</div></div>
+          <div class="set-ctl"><input id="set-manual-model" class="set-input mono" type="text" placeholder="例如 model-id" spellcheck="false" autocomplete="off"/><button id="set-add-model" class="mini-btn" type="button">添加</button></div>
+        </div>
+        <div class="set-row">
+          <div class="set-lbl"><div class="set-title">自定义中继地址</div><div class="set-sub">仅 TeamoRouter 后端中继；官方网关不走此中继</div></div>
           <div class="set-ctl"><input id="set-relay" class="set-input mono" type="url" placeholder="https://xxx.workers.dev" spellcheck="false" autocomplete="off"/></div>
         </div>
         <div class="set-row"><div class="set-lbl"><div class="set-title">当前中继</div><div class="set-sub" id="set-relay-msg">检测中…</div></div></div>

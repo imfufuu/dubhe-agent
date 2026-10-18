@@ -803,7 +803,7 @@ export function checkCapabilityConstraints({ name = '', args = {}, capabilities 
         recovery: '把产物写到允许的目录（如 outputs/），或请用户放宽路径约束',
       };
     }
-    if (name === 'document_tool' && ['inspect', 'form_fields'].includes(a.action || 'inspect')) level = 'L1';
+    if (['document_tool', 'xlsx_tool'].includes(name) && ['inspect', 'form_fields'].includes(a.action || 'inspect')) level = 'L1';
   if (name === 'write_file') {
       const mode = String(a.mode || 'overwrite').toLowerCase();
       const protectedHit = (caps.filesystem.protectedPaths || []).some((p) => String(target || '').startsWith(p));
@@ -860,7 +860,9 @@ const contract = (o) => Object.freeze({
 
 export const TOOL_CONTRACTS = Object.freeze({
   skill_library: contract({ sideEffect: 'none', idempotent: true, timeoutMs: 20000, riskLevel: 'L0', note: '按需探索内置技能，仅加载目录或单篇说明' }),
-  document_tool: contract({ sideEffect: 'filesystem', idempotent: false, timeoutMs: 70000, riskLevel: 'L2', verifyAfterRun: true, note: '本地 Worker 读写文档；保存为新输出，不上传原件' }),
+  tool_library: contract({ sideEffect: 'none', idempotent: true, timeoutMs: 10000, riskLevel: 'L0', note: '搜索短工具目录并按需读取一份 Schema' }),
+  document_tool: contract({ sideEffect: 'filesystem', idempotent: false, timeoutMs: 70000, riskLevel: 'L2', verifyAfterRun: true, note: '本地 Worker 读写 DOCX/PPTX/PDF；保存为新输出，不上传原件' }),
+  xlsx_tool: contract({ sideEffect: 'filesystem', idempotent: false, timeoutMs: 70000, riskLevel: 'L2', verifyAfterRun: true, note: '本地 Worker 检查或创建 XLSX 工作簿；公式不执行' }),
   knowledge_search: contract({ sideEffect: 'none', idempotent: true, timeoutMs: 12000, riskLevel: 'L0', note: '按需检索项目内置知识，无外部副作用' }),
   browser_sandbox: contract({ sideEffect: 'sandbox', idempotent: false, timeoutMs: 75000, riskLevel: 'L2', verifyAfterRun: true, note: '只运行沙箱 HTML 项目；本机 Chromium 调试/截图，不接受公网 URL 或 shell 命令' }),
   execute_javascript: contract({ sideEffect: 'sandbox', idempotent: false, timeoutMs: 600000, riskLevel: 'L2', verifyAfterRun: true, note: '代码可写沙箱文件；默认 30 秒，可按 timeout_sec 设置至 600 秒，需核验副作用' }),
@@ -1140,7 +1142,7 @@ export function validateToolResultPost({
   if (c && c.timeoutMs && durationMs > c.timeoutMs) {
     issues.push({ id: 'timeout-exceeded', severity: 'warn', detail: `耗时 ${Math.round(durationMs)}ms 超过契约超时 ${c.timeoutMs}ms` });
   }
-  if (c && c.verifyAfterRun && !(name === 'document_tool' && ['inspect', 'form_fields'].includes(args?.action || 'inspect')) && !failureSignalled && !stateChanged) {
+  if (c && c.verifyAfterRun && !(['document_tool', 'xlsx_tool'].includes(name) && ['inspect', 'form_fields'].includes(args?.action || 'inspect')) && !failureSignalled && !stateChanged) {
     issues.push({ id: 'side-effect-missing', severity: 'warn', detail: '工具声称成功，但沙箱文件系统无任何变化（可能未真正写入，或写入内容与现值相同）' });
   }
   if (c && c.sideEffect !== 'none' && failureSignalled && stateChanged) {

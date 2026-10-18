@@ -63,6 +63,18 @@ export function reasoningControlFor(modelId, level) {
   if (/^deepseek-(?:v4(?:-|$)|flash$|pro$)/.test(m))
     return { kind: 'effort', native: THREE_EFFORT[lv], params: { thinking: { type: 'enabled' }, reasoning_effort: THREE_EFFORT[lv] } };
   if (m.startsWith('deepseek')) return { kind: 'toggle', params: { reasoning: true } }; // legacy gateway contract
+  if (/^kimi-k3(?:$|-)/.test(m)) {
+    const effort = { mini: 'low', low: 'low', medium: 'high', high: 'high', max: 'max', ultra: 'max' }[lv];
+    return { kind: 'effort', native: effort, params: { reasoning_effort: effort } };
+  }
+  if (/^kimi-k2\.6(?:$|-)/.test(m)) return { kind: 'toggle', params: { thinking: { type: 'enabled' } } };
+  if (/^kimi-k2\.7-code/.test(m)) return { kind: 'guided', alwaysThinking: true, params: {} };
+  if (/^doubao-seed-2-1/.test(m)) return { kind: 'toggle', params: { thinking: { type: 'enabled' } } };
+  if (/^qwen3\.8(?:-|$)/.test(m)) {
+    const effort = { mini: 'low', low: 'low', medium: 'medium', high: 'xhigh', max: 'xhigh', ultra: 'xhigh' }[lv];
+    return { kind: 'effort', native: effort, params: { reasoning_effort: effort } };
+  }
+  if (/^qwen3\.7(?:-|$)/.test(m)) return { kind: 'toggle', params: { enable_thinking: true } };
   const glm = /^glm-(\d+)(?:\.(\d+))?/.exec(m);
   if (glm) {
     const version = Number(glm[1]) + Number(glm[2] || 0) / 10;

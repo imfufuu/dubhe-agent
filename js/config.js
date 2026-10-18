@@ -52,7 +52,7 @@ export const FALLBACK_MODELS = [
   ...MODEL_CATALOG.filter(m => m.channel === 'chat' && !m.hidden).map(m => ({ ...m })),
 ];
 
-export const PROVIDER_ORDER = [SMART_ROUTER_PROVIDER, 'Anthropic', 'OpenAI', 'Google', 'DeepSeek', 'GLM', 'Kimi', 'Grok', '其他'];
+export const PROVIDER_ORDER = [SMART_ROUTER_PROVIDER, 'Anthropic', 'OpenAI', 'Google', 'DeepSeek', 'GLM', 'Grok', 'Kimi', 'Doubao', 'Qwen', '其他'];
 
 // ── 厂商组内模型排序：热度优先级 + 版本号降序 + 旗舰档位权重 ──────────────
 const PINNED_FAMILY_RANK = new Map(FALLBACK_MODELS.map((m, idx) => [m.id, idx]));
@@ -242,7 +242,9 @@ export function providerOf(modelId) {
   if (m.startsWith('deepseek')) return 'DeepSeek';
   if (m.startsWith('glm')) return 'GLM';
   if (m.startsWith('kimi') || m.startsWith('moonshot')) return 'Kimi';
-  if (m.startsWith('grok')) return 'Grok';
+  if (m.startsWith('grok') || m === 'latest') return 'Grok';
+  if (m.startsWith('doubao') || m.startsWith('seed-')) return 'Doubao';
+  if (m.startsWith('qwen')) return 'Qwen';
   return '其他';
 }
 
@@ -286,8 +288,8 @@ export function isImageModel(modelId) {
 }
 
 // GPT 系列支持 Fast mode（service_tier: "fast"，2x 计费）
-export function supportsFastMode(modelId) {
-  return providerOf(modelId) === 'OpenAI';
+export function supportsFastMode(modelId, gatewayId = 'teamorouter') {
+  return gatewayId === 'teamorouter' && providerOf(modelId) === 'OpenAI';
 }
 
 // ── 思考模式参数（按模型家族路由到各自协议的思考字段）──────────────────
@@ -306,7 +308,7 @@ export const OUTPUT_SPEC = [
   '- Emoji：默认不使用装饰性 Emoji；不要用 Emoji 代替项目符号、标题、状态或警告。仅在用户使用/明确要求，或确实能改善语义时少量使用，通常每条回复不超过 1 个；代码、路径、命令和错误原文不得改写。',
   '- 代码：一律用围栏代码块并标注语言（```js / ```python / ```cpp 等）；行内代码用单反引号。',
   '- 数学公式：行内用 $...$，独立公式用 $$...$$（LaTeX 语法，由 KaTeX 渲染），不要用纯文本拼公式。',
-  '- 强调：**加粗**、*斜体*、~~删除线~~ 与 ==高亮== 标注关键内容；术语/文件名/参数用 `代码样式`；不输出原始 HTML 标签。',
+  '- 强调：**加粗**、*斜体*、~~删除线~~ 与 ==高亮== 标注关键内容；术语/文件名/参数用 `代码样式`。合并表格单元格时，仅使用安全的 `<th colspan="2">…</th>` 或 `<td rowspan="2">…</td>`（跨度 1–1000）；除此之外不输出原始 HTML。',
   '- 用与用户相同的语言回复（用户用中文就用中文）；说明文字可以短，但本段交出的代码必须完整可运行：含错误处理、边界条件与必要注释；禁止伪代码、「其余略」、只给函数签名。',
   '- 你也可以回答非代码话题（闲聊、解释、规划、写作、常识）。不要把每句话都当成编程任务，不必为了用工具而用工具。',
   '- 大工程先给文件列表与接口，再每次只实现一个文件、每次最多改 1–3 个函数。一次做不完就在末尾单独一行写 <<<CONTINUE>>>，等用户让你继续。不要一次输出整个项目。',

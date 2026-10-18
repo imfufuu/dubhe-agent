@@ -66,6 +66,7 @@ import {
   verifyRuntimePremises,
 } from './nexus.js';
 import { moderateUserTurn } from './moderation.js?v=2026.10.11.1';
+import { DEFAULT_GATEWAY_ID } from './gateway-registry.js?v=2026.10.11.1';
 // ─── P0 执行内核（Dubhe Helix 2.5 · P0）：统一状态机 + 预算与风险治理 + 工具契约校验 ───
 // 新模块单独成文件并带 ?v=（混版纪律）：旧版 agent.js 不 import 它，不会因缺导出白屏。
 import {
@@ -183,13 +184,13 @@ function formatWebCapabilityNote({ relayOk, webEnabled, tools, dropped, deferred
   return `\n\n【联网】本轮已开启；中继健康检查通过。实际网页工具表：${names.map((name) => label[name] || name).join('、') || '（本轮无）'}。${lazy.length ? `${lazy.join(' / ')} 本轮按需未挂载（需要时直接调用，内核会当场挂载）。` : ''}${unavailable.length ? `未列出的 ${unavailable.join(' / ')} 本轮不可用。` : ''}${WEB_FACTS_NOTE}`;
 }
 // P3 修正：整张工具表的裁剪清单（含委派 / 沙箱 / 远程 C++ 等非联网门控）——与能力弹层逐字相同
-function formatToolTableNote(dropped, deferred) {
+function formatToolTableNote(dropped, deferred, language = getLanguage()) {
   const line = formatDroppedTools(dropped);
-  const lazy = formatDeferredTools(deferred); // P6：按需未挂载的只列名字，与「已禁用」严格分开
+  const lazy = formatDeferredTools(deferred, { language }); // 紧凑目录只给摘要，不预装完整 Schema
   if (!line && !lazy) return '';
   const parts = ['\n\n【工具表】'];
   if (line) parts.push(`本轮${line}。用户问起某项能力为何不可用时按括号内原因如实说明；不要调用这些工具，也不要声称它们可用。`);
-  if (lazy) parts.push(`${line ? '' : '本轮'}${lazy}。`);
+  if (lazy) parts.push(`${line ? '' : (language === 'en' ? 'For this turn: ' : '本轮')}${lazy}`);
   return parts.join('');
 }
 
@@ -230,7 +231,7 @@ export function subagentTools(sandboxEnabled, def, { remoteCpp = true } = {}) {
   return list.length ? list : null;
 }
 
-export async function runSubagent(def, task, { apiKey, model, thinking, reasoningLevel, sandboxEnabled, remoteCpp = true, webEnabled, fs, signal, onThinkingFallback, onWebFallback, imageModel, visionModel, videoModel, audioModel, onSubagentUsage, memory }) {
+export async function runSubagent(def, task, { apiKey, gatewayId = 'teamorouter', gatewayBaseUrl = '', model, thinking, reasoningLevel, sandboxEnabled, remoteCpp = true, webEnabled, fs, signal, onThinkingFallback, onWebFallback, imageModel, visionModel, videoModel, audioModel, onSubagentUsage, memory }) {
   const subTools = subagentTools(sandboxEnabled, def, { remoteCpp });
   const memBlock = formatMemory(memory);
   const messages = [
@@ -248,7 +249,7 @@ export async function runSubagent(def, task, { apiKey, model, thinking, reasonin
     let text = '';
     const roundUsage = { input: 0, output: 0, reasoning: 0 };
     await streamChat({
-      model, apiKey, thinking, reasoningLevel, signal, tools: subTools,
+      model, apiKey, gatewayId, gatewayBaseUrl, thinking, reasoningLevel, signal, tools: subTools,
       subagentId: def.id, iteration: i + 1,
       onThinkingFallback,
       webEnabled: !!webEnabled, onWebFallback,
@@ -277,7 +278,7 @@ export async function runSubagent(def, task, { apiKey, model, thinking, reasonin
     messages.push({ role: 'assistant', text, toolCalls: calls, ...(blocks.length ? { thinkingBlocks: blocks } : {}) });
     for (const c of calls) {
       // imageModel 要透传：否则子智能体出图会绕开用户在模型菜单里选定的生图模型
-      const res = await executeTool(c.name, c.args, { fs, onUi: () => {}, apiKey, imageModel: imageModel || null, visionModel: visionModel || null, videoModel: videoModel || null, audioModel: audioModel || null, sandboxEnabled, remoteCpp, signal });
+      const res = await executeTool(c.name, c.args, { fs, onUi: () => {}, apiKey, model, gatewayId, gatewayBaseUrl, imageModel: imageModel || null, visionModel: visionModel || null, videoModel: videoModel || null, audioModel: audioModel || null, sandboxEnabled, remoteCpp, signal });
       messages.push({ role: 'tool', toolCallId: c.id, name: c.name, content: res });
     }
   }
@@ -664,8 +665,10 @@ export function createAgent(store, hooks = {}) {
         })
         .filter((t) => t.name !== 'dispatch_subagent' || canDispatch);
       tools = legacyTools;
+      const gatewayId = store.state.gatewayId || DEFAULT_GATEWAY_ID;
+      const gatewayBaseUrl = (store.state.gatewayBaseUrls || {})[gatewayId] || '';
       turn = {
-        apiKey, model, signal,
+        apiKey, model, signal, gatewayId, gatewayBaseUrl,
         userModel, // 用户在 UI 选择的模型（可能是 __smart_router__），UI 显示用
         routerDecision, // 智能路由结果：含 provider/类别/难度，不含具体模型 ID
         fastMode: !!settings.fastMode,
@@ -845,7 +848,7 @@ export function createAgent(store, hooks = {}) {
       // 派生输入是**完整工具表**（TOOL_DEFS）：能力裁剪（沙箱/联网/委派）从此只发生在一个地方，
       // 旧路径结果只用来交叉验证——两条独立计算必须逐项一致，否则说明有人只改了一处。
       whitelist = deriveToolWhitelist(exec.turnContext, TOOL_DEFS);
-      // P6 修正：工具选择熵过高——能力裁剪之后再做**按需挂载**（核心 12 个必带，其余按消息/附件/近几轮用量）。
+      // P6 修正：能力裁剪后由轻量规则在首个模型请求前路由；核心工具稳定前置，动态工具追加。
       // 请求体里的 tools 从此是 selection.mounted；whitelist.allowed 仍是「本轮能力上允许」的全集，
       // 模型点名调用未挂载工具时内核会从这个全集里当场挂载（见 toolrunner 的 lazy-mount 回执）。
       selection = selectToolsForTurn({
@@ -949,7 +952,9 @@ export function createAgent(store, hooks = {}) {
 
     // ── Stage 4 · loop：Jev 预判 → 模型 / 工具迭代循环（含子智能体、预算、幂等、确认闸门）→ 收尾状态 ──
     async function stageLoop() {
-        if (settings.jevEnabled !== false) {
+        // Jev System-One is a TeamoRouter-specific service. Never send a first-party key to it;
+        // official gateways instead rely on the selected native model plus local safety rules.
+        if (settings.jevEnabled !== false && turn.gatewayId === DEFAULT_GATEWAY_ID) {
           const jevT0 = Date.now();
           setStatus(turn.thinking ? 'thinking' : 'connecting');
           const lastUser = [...store.state.messages].reverse().find((m) => m.role === 'user');
@@ -1007,7 +1012,7 @@ export function createAgent(store, hooks = {}) {
           const pull = () => {
             const pullUsage = {};
             return streamChat({
-                model, apiKey, tools, signal,
+                model, apiKey, gatewayId: turn.gatewayId, gatewayBaseUrl: turn.gatewayBaseUrl, tools, signal,
                 fastMode: settings.fastMode,
                 thinking: streamThinking, // 空正文恢复时临时关闭思考，避免再次只消耗 token 不产出正文
                 reasoningLevel: streamThinking ? turn.reasoningLevel : 'off',
@@ -1494,7 +1499,7 @@ export function createAgent(store, hooks = {}) {
     setStatus('moderating');
     try {
       const apiKey = effectiveApiKey(store.state.apiKey);
-      return await moderateUserTurn({ text: userText, attachments, apiKey, signal: ctrl ? ctrl.signal : undefined, remoteImageReview: store.state.settings.imageRemoteReview !== false });
+      return await moderateUserTurn({ text: userText, attachments, apiKey, signal: ctrl ? ctrl.signal : undefined, remoteImageReview: store.state.settings.imageRemoteReview !== false, gatewayId: store.state.gatewayId || DEFAULT_GATEWAY_ID, gatewayBaseUrl: ((store.state.gatewayBaseUrls || {})[store.state.gatewayId || DEFAULT_GATEWAY_ID] || ''), model: store.state.model || '' });
     } catch (err) {
       if (err && (err.name === 'AbortError' || (ctrl && ctrl.signal && ctrl.signal.aborted))) throw err;
       const reason = err && err.name === 'ModerationTimeoutError' ? '总预算超时' : '审核异常';

@@ -70,11 +70,14 @@ function paintPreviewCard(card, preview, live) {
   card.previewPath = path;
 }
 
+let editPreviewFoldSequence = 0;
+
 export function paintEditFoldContent(node, options) {
   const { icon = '', label, paths, discarded, live, state = '' } = options;
   const preview = options.preview || null;
   const files = preview?.files || (preview ? [preview] : []);
   const fileByPath = new Map(files.filter((file) => file && file.path).map((file) => [file.path, file]));
+  const discardedPaths = discarded instanceof Set ? discarded : new Set(discarded || []);
   node._editOptions = options;
   let dom = node._editDom;
   if (!dom) {
@@ -83,27 +86,50 @@ export function paintEditFoldContent(node, options) {
     const status = make('span', 'chip-state ep-state');
     const detail = make('div', 'chip-detail'), inner = make('div', 'fold-inner');
     const list = make('ul', 'edit-paths'), note = make('div', 'fold-note');
-    const previews = make('div', 'edit-previews');
-    inner.append(list, note, previews); detail.appendChild(inner); node.append(ico, name, status, detail);
-    dom = node._editDom = { name, status, list, note, previews, pathRows: [], previewCards: new Map() };
+    inner.append(list, note); detail.appendChild(inner); node.append(ico, name, status, detail);
+    dom = node._editDom = { name, status, list, note, pathRows: new Map() };
   }
   text(dom.name, label); text(dom.status, state); dom.status.hidden = !state;
-  paths.forEach((path, index) => {
-    let row = dom.pathRows[index];
+  const setExpanded = (row, expanded) => {
+    row.item.classList.toggle('expanded', expanded);
+    row.name.setAttribute('aria-expanded', String(expanded));
+    row.fold.setAttribute('aria-hidden', String(!expanded));
+    if ('inert' in row.fold) row.fold.inert = !expanded;
+  };
+  const displayPaths = [...new Set((Array.isArray(paths) ? paths : []).map(String).filter(Boolean))];
+  if (preview?.path && !displayPaths.includes(preview.path)) displayPaths.push(preview.path);
+  const wanted = new Set(displayPaths);
+  for (const [path, row] of dom.pathRows) {
+    if (wanted.has(path)) continue;
+    row.item.remove(); dom.pathRows.delete(path);
+  }
+  displayPaths.forEach((path, index) => {
+    let row = dom.pathRows.get(path);
     if (!row) {
-      const item = make('li', 'mono'), name = make('button', 'edit-path'), tag = make('span', 'fold-tag');
+      const item = make('li', 'mono edit-path-row'), head = make('div', 'edit-path-head');
+      const pathButton = make('button', 'edit-path'), tag = make('span', 'fold-tag');
       const stats = make('span', 'edit-stats'), add = make('span', 'diff-add'), del = make('span', 'diff-del');
-      name.type = 'button'; name.setAttribute('aria-label', `跳转到 ${path} 的编辑预览`);
-      name.addEventListener('click', (event) => {
+      const fold = make('div', 'edit-path-fold'), foldInner = make('div', 'edit-path-fold-inner');
+      const card = createPreviewCard(path);
+      fold.id = `edit-path-preview-${++editPreviewFoldSequence}`;
+      fold.setAttribute('aria-hidden', 'true'); fold.inert = true;
+      foldInner.appendChild(card.window); fold.appendChild(foldInner);
+      pathButton.type = 'button'; pathButton.setAttribute('aria-controls', fold.id); pathButton.setAttribute('aria-expanded', 'false');
+      stats.append(add, del); head.append(pathButton, stats, tag); item.append(head, fold);
+      row = { item, head, name: pathButton, tag, stats, add, del, fold, card, userToggle: null, wasLive: false };
+      pathButton.addEventListener('click', (event) => {
         event.stopPropagation();
-        const card = node._editDom?.previewCards.get(item.dataset.path);
-        card?.window?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
+        row.userToggle = !row.item.classList.contains('expanded');
+        setExpanded(row, row.userToggle);
       });
-      stats.append(add, del); item.append(name, stats, tag); dom.list.appendChild(item);
-      row = { item, name, tag, stats, add, del }; dom.pathRows.push(row);
+      dom.pathRows.set(path, row);
     }
-    const dropped = discarded.has(path);
-    text(row.name, path); row.name.setAttribute('aria-label', `跳转到 ${path} 的编辑预览`); row.item.dataset.path = path;
+    const at = dom.list.children[index] || null;
+    if (at !== row.item) dom.list.insertBefore(row.item, at);
+    const dropped = discardedPaths.has(path);
+    text(row.name, path);
+    row.name.setAttribute('aria-label', localeText(`展开或收起 ${path} 的编辑预览`, `Toggle edit preview for ${path}`));
+    row.item.dataset.path = path;
     const file = fileByPath.get(path) || (preview?.path === path ? preview : null);
     const known = file && file.added != null && file.removed != null;
     const deletionOnly = known && file.added === 0 && file.removed > 0;
@@ -115,29 +141,14 @@ export function paintEditFoldContent(node, options) {
     row.item.classList.toggle('fold-discarded', dropped);
     row.item.title = dropped ? localeText('设置中开启了自动清理：因最终回答未引用，本文件已在回合结束时移除。', 'Auto-clean is enabled; this file was removed at turn end because the final answer did not reference it.') : '';
     text(row.tag, dropped ? localeText('自动清理 · 未引用', 'Auto-cleaned · Unreferenced') : ''); row.tag.hidden = !dropped;
+    if ((live && !row.wasLive) || (!live && row.wasLive)) row.userToggle = null;
+    setExpanded(row, row.userToggle == null ? live : row.userToggle);
+    row.wasLive = !!live;
+    paintPreviewCard(row.card, file, live);
   });
-  while (dom.pathRows.length > paths.length) dom.pathRows.pop().item.remove();
-  text(dom.note, discarded.size ? localeText(`本轮根据设置自动清理了 ${discarded.size} 个未引用文件；internal/ 与 uploads/ 下的文件始终保留。`, `Auto-clean removed ${discarded.size} unreferenced files this turn; files under internal/ and uploads/ are always retained.`) : '');
-  dom.note.hidden = !discarded.size;
-  node.classList.toggle('has-discarded', discarded.size > 0);
-
-  const previewPaths = [...new Set(paths)];
-  if (preview?.path && !previewPaths.includes(preview.path)) previewPaths.push(preview.path);
-  const wanted = new Set(previewPaths);
-  for (const [path, card] of dom.previewCards) {
-    if (wanted.has(path)) continue;
-    card.window.remove(); dom.previewCards.delete(path);
-  }
-  previewPaths.forEach((path, index) => {
-    let card = dom.previewCards.get(path);
-    if (!card) {
-      card = createPreviewCard(path); dom.previewCards.set(path, card);
-    }
-    const at = dom.previews.children[index] || null;
-    if (at !== card.window) dom.previews.insertBefore(card.window, at);
-    paintPreviewCard(card, fileByPath.get(path) || (preview?.path === path ? preview : null), live);
-  });
-  dom.previews.hidden = previewPaths.length === 0;
+  text(dom.note, discardedPaths.size ? localeText(`本轮根据设置自动清理了 ${discardedPaths.size} 个未引用文件；internal/ 与 uploads/ 下的文件始终保留。`, `Auto-clean removed ${discardedPaths.size} unreferenced files this turn; files under internal/ and uploads/ are always retained.`) : '');
+  dom.note.hidden = !discardedPaths.size;
+  node.classList.toggle('has-discarded', discardedPaths.size > 0);
 }
 
 import { presentationCallSettled } from './toolpresentation.js?v=2026.10.11.1';

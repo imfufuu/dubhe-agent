@@ -13,6 +13,7 @@ import { ICON, providerIcon } from './icons.js';
 import { ROUTER_ICON_SVG, isSmartRouter, SMART_ROUTER_LABEL, SMART_ROUTER_PROVIDER_LABEL } from './smartrouter.js?v=2026.10.11.1';
 import { fetchModels } from './api.js?v=2026.10.11.1';
 import { effectiveApiKey } from './adminkey.js';
+import { DEFAULT_GATEWAY_ID, gatewayFallbackModels, defaultModelForGateway, gatewayModelListLabel } from './gateway-registry.js?v=2026.10.11.1';
 
 export function installModelPicker({ store, agent, toast, getBusy, openKeyModal, rebuildMessages, renderSessions, renderFiles, updateStats, syncCapLine, syncWeb }) {
   // ── 模型下拉 ──
@@ -24,8 +25,12 @@ export function installModelPicker({ store, agent, toast, getBusy, openKeyModal,
   // 对话模型列表：过滤掉生图模型（只能由主智能体通过 generate_image 工具调用，
   // 直接选中会绕过工具循环、破坏 Agent 特性；网关 /v1/models 里带它们时也照样隐藏）
   function mergedModels() {
-    return mergeAvailableModels(store.state.models, FALLBACK_MODELS,
-      !!store.state.modelsFetchedAt || (store.state.models || []).length > 0)
+    const gatewayId = store.state.gatewayId || DEFAULT_GATEWAY_ID;
+    const presets = gatewayFallbackModels(gatewayId);
+    const extraIds = (store.state.manualModelsByGateway || {})[gatewayId] || [];
+    return mergeAvailableModels(store.state.models, presets,
+      !!store.state.modelsFetchedAt || (store.state.models || []).length > 0,
+      { gatewayId, includeRouter: gatewayId === DEFAULT_GATEWAY_ID, extraIds })
       .filter(m => !HIDDEN_MODELS.has(m.id) && !isImageModel(m.id) && !isJevModel(m.id))
       .map(m => ({ ...m, provider: m.provider || providerOf(m.id) }));
   }
@@ -152,8 +157,8 @@ export function installModelPicker({ store, agent, toast, getBusy, openKeyModal,
     updateModelBtn(); closeMenu();
     const fast = $('#fast-toggle');
     if (fast) {
-      fast.disabled = !supportsFastMode(id);
-      if (store.state.settings.fastMode && !supportsFastMode(id)) {
+      fast.disabled = !supportsFastMode(id, store.state.gatewayId || DEFAULT_GATEWAY_ID);
+      if (store.state.settings.fastMode && !supportsFastMode(id, store.state.gatewayId || DEFAULT_GATEWAY_ID)) {
         store.state.settings.fastMode = false; fast.classList.remove('on');
       }
     }
@@ -220,17 +225,53 @@ export function installModelPicker({ store, agent, toast, getBusy, openKeyModal,
   window.addEventListener('resize', closeMenu);
   updateModelBtn();
 
-  $('#refresh-models').addEventListener('click', async () => {
-    if (!store.state.apiKey) return openKeyModal();
-    $('#refresh-models').classList.add('spin');
+  async function refreshModels({ silent = false, requireKey = true } = {}) {
+    const gatewayId = store.state.gatewayId || DEFAULT_GATEWAY_ID;
+    const apiKey = effectiveApiKey(store.state.apiKey);
+    if (requireKey && !apiKey) { if (!silent) openKeyModal(); return false; }
+    const button = $('#refresh-models');
+    if (button) button.classList.add('spin');
     try {
-      const list = await fetchModels(effectiveApiKey(store.state.apiKey));
-      store.state.models = list; store.state.modelsFetchedAt = Date.now(); store.notify();
-      renderModelMenu();
-      toast(`已获取 ${list.length} 个模型（GET /v1/models）`, 'ok');
-    } catch (err) { toast(localeText('模型列表获取失败：', 'Failed to load the model list: ') + err.message, 'err'); }
-    finally { $('#refresh-models').classList.remove('spin'); }
-  });
+      const list = apiKey ? await fetchModels(apiKey, undefined, {
+        gatewayId, gatewayBaseUrl: (store.state.gatewayBaseUrls || {})[gatewayId] || '',
+      }) : null;
+      store.state.modelsByGateway = store.state.modelsByGateway || {};
+      store.state.modelsFetchedAtByGateway = store.state.modelsFetchedAtByGateway || {};
+      if (list === null) {
+        store.state.modelsByGateway[gatewayId] = [];
+        delete store.state.modelsFetchedAtByGateway[gatewayId];
+        store.state.models = [];
+        store.state.modelsFetchedAt = 0;
+        store.notify();
+        syncGateway();
+        if (!silent) toast(gatewayModelListLabel(gatewayId), 'warn', 6000);
+        return true;
+      }
+      store.state.modelsByGateway[gatewayId] = list;
+      store.state.modelsFetchedAtByGateway[gatewayId] = Date.now();
+      store.state.models = list;
+      store.state.modelsFetchedAt = store.state.modelsFetchedAtByGateway[gatewayId];
+      store.notify();
+      syncGateway();
+      if (!silent) toast(`已从 ${gatewayId} 获取 ${list.length} 个模型`, 'ok');
+      return true;
+    } catch (err) {
+      if (!silent) toast(localeText('模型列表获取失败：', 'Failed to load the model list: ') + err.message, 'err');
+      return false;
+    } finally { if (button) button.classList.remove('spin'); }
+  }
+  function syncGateway() {
+    const button = $('#refresh-models');
+    if (button) {
+      const gatewayId = store.state.gatewayId || DEFAULT_GATEWAY_ID;
+      const name = gatewayId === DEFAULT_GATEWAY_ID ? 'TeamoRouter' : gatewayId;
+      button.title = `从当前网关 ${name} 刷新模型列表`;
+      button.setAttribute('aria-label', button.title);
+    }
+    updateModelBtn();
+    renderModelMenu();
+  }
+  $('#refresh-models').addEventListener('click', () => refreshModels());
 
-  return { inSystem, isSystemIsolated, selectModel, chatModels, updateModelBtn, renderModelMenu };
+  return { inSystem, isSystemIsolated, selectModel, chatModels, updateModelBtn, renderModelMenu, refreshModels, syncGateway };
 }

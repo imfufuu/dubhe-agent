@@ -1,4 +1,4 @@
-const FORMATS = new Set(['docx', 'pptx', 'pdf']);
+const FORMATS = new Set(['docx', 'pptx', 'xlsx', 'pdf']);
 const PDF_ACTIONS = new Set(['inspect', 'create', 'merge', 'extract', 'rotate', 'watermark', 'form_fields', 'fill_form', 'metadata']);
 const MAX_INPUT = 32 * 1024 * 1024;
 export function documentPath(path) {
@@ -9,7 +9,7 @@ export function documentPath(path) {
 export function prepareDocumentRequest(input, fs) {
   const args = { ...input, action: input.action || 'inspect' };
   args.format = String(args.format || String(args.path || '').split('.').pop()).toLowerCase();
-  if (!FORMATS.has(args.format)) throw Error('支持 DOCX、PPTX、PDF；旧版 .doc 请先在本机另存为 .docx，不伪装转换');
+  if (!FORMATS.has(args.format)) throw Error('支持 DOCX、PPTX、XLSX、PDF；旧版 .doc 请先在本机另存为 .docx，不伪装转换');
   if (!(args.format === 'pdf' ? PDF_ACTIONS : new Set(['inspect', 'create'])).has(args.action)) throw Error('Unsupported document action');
   if (JSON.stringify(args.data || {}).length > 1024 * 1024) throw Error('Document data exceeds 1MB');
   const paths = new Set();

@@ -103,7 +103,7 @@ export const NEXUS_ARCHITECTURE_SPEC = Object.freeze({
     'P3 能力门控透明（预演工具表 == 请求体工具表，每个被禁用工具带原因与开启路径）',
     'P4 巨型单文件拆分（toolrunner / turnfinalizer / ui-* 子模块，字节上限由测试守住）',
     'P5 外部验证闭环（npm test 单入口、CI 一文件一 step、测试数字由 CI 产出）',
-    'P6 工具选择熵（9 → 2 伞工具、两层下发核心 12 + 按需挂载、未挂载调用回执、tool_misselect_rate 进基线门禁）',
+    'P6 工具选择熵（紧凑目录 + Schema search→read、首轮规则路由、Office 工作流组挂载、核心工具缓存前缀 + 后置动态挂载、机器可读未挂载回执）',
     'P7 可验证供应链（见 L8）',
     'P8 单点依赖韧性（见 L9）',
     'Helix 3.0 · DC（Dubhe Cambrian，天枢·寒武）：能力登记处（L7）作为「寒武纪」的前提——新增一个工具从改 7 处收敛为登记 1 行 + 定义 + 契约，其余派生并由三方一致性测试强制',

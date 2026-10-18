@@ -12,7 +12,7 @@ import { effectiveApiKey } from './adminkey.js';
 const inflight = new Set(); // 正在起标题的会话 id，避免同一会话并发重复调用
 
 /** 让模型给一轮问答起标题；失败/无 key 时返回 ''（调用方保留兜底标题） */
-export async function summarizeTitle({ apiKey, model, question, answer, signal, maxChars = 16 }) {
+export async function summarizeTitle({ apiKey, model, question, answer, signal, maxChars = 16, gatewayId, gatewayBaseUrl = '' }) {
   const prompt = [
     '给下面这轮对话起一个标题，用于侧栏会话列表。',
     `要求：不超过 ${maxChars} 个字；名词短语优先；不要引号、书名号、句号、前缀或解释；`,
@@ -23,7 +23,7 @@ export async function summarizeTitle({ apiKey, model, question, answer, signal, 
   ].join('\n');
   let text = '';
   await streamChat({
-    model, apiKey, thinking: false, phase: 'titler', tools: null, signal,
+    model, apiKey, gatewayId, gatewayBaseUrl, thinking: false, phase: 'titler', tools: null, signal,
     messages: [{ role: 'user', text: prompt }],
     onEvent: (ev) => { if (ev.type === 'text') text += ev.text; },
   });
@@ -40,11 +40,13 @@ export async function autoTitle(store, { summarize = summarizeTitle } = {}) {
   if (!need) return { ok: false, reason: 'not-needed' };
   if (inflight.has(need.sessionId)) return { ok: false, reason: 'inflight' };
   const { model } = store.state;
+  const gatewayId = store.state.gatewayId || 'teamorouter';
+  const gatewayBaseUrl = (store.state.gatewayBaseUrls || {})[gatewayId] || '';
   const apiKey = effectiveApiKey(store.state.apiKey);
   if (!apiKey) return { ok: false, reason: 'no-key' }; // 不标记 titled：配好 key 后下一轮还会试
   inflight.add(need.sessionId);
   try {
-    const title = await summarize({ apiKey, model, question: need.question, answer: need.answer });
+    const title = await summarize({ apiKey, model, gatewayId, gatewayBaseUrl, question: need.question, answer: need.answer });
     if (typeof store.setAutoTitle !== 'function') return { ok: false, reason: 'stale-store' }; // 混版：旧 state.js 没这方法
     const applied = store.setAutoTitle(need.sessionId, title); // 内部同时把 titled 置位
     return applied ? { ok: true, title } : { ok: false, reason: title ? 'user-owned' : 'empty' };

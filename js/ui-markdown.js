@@ -439,6 +439,28 @@ export function sysReplyHtml(text) {
   return `<div class="sys-reply">${rows.join('')}</div>`;
 }
 
+function blockquotePrefixes(line) {
+  let rest = String(line || ''), prefix = '', depth = 0;
+  while (true) {
+    const match = /^ {0,3}>[ \t]?/.exec(rest);
+    if (!match) break;
+    prefix += match[0];
+    rest = rest.slice(match[0].length);
+    depth++;
+  }
+  return { prefix, rest, depth };
+}
+
+function stripBlockquoteDepth(line, depth) {
+  let rest = String(line || '');
+  for (let i = 0; i < depth; i++) {
+    const match = /^ {0,3}>[ \t]?/.exec(rest);
+    if (!match) return { matched: false, rest };
+    rest = rest.slice(match[0].length);
+  }
+  return { matched: true, rest };
+}
+
 function extractCodeFences(source, codeBlocks) {
   const lines = [];
   for (let start = 0; start < source.length;) {
@@ -452,7 +474,8 @@ function extractCodeFences(source, codeBlocks) {
   let cursor = 0;
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    const open = /^ {0,3}(`{3,}|~{3,})([^\r\n]*)$/.exec(line.text);
+    const quote = blockquotePrefixes(line.text);
+    const open = /^ {0,3}(`{3,}|~{3,})([^\r\n]*)$/.exec(quote.rest);
     if (!open) continue;
     const fence = open[1];
     const marker = fence[0];
@@ -466,7 +489,9 @@ function extractCodeFences(source, codeBlocks) {
     let closeEnd = source.length;
     let closeLine = i;
     for (let j = i + 1; j < lines.length; j++) {
-      const close = closeRe.exec(lines[j].text);
+      const candidate = stripBlockquoteDepth(lines[j].text, quote.depth);
+      if (!candidate.matched) continue;
+      const close = closeRe.exec(candidate.rest);
       if (close && close[1].length >= size) {
         closeAt = lines[j].start;
         closeEnd = lines[j].end;
@@ -476,11 +501,16 @@ function extractCodeFences(source, codeBlocks) {
     }
     out += source.slice(cursor, line.start);
     const closed = closeAt >= 0;
-    const code = source.slice(line.end, closed ? closeAt : source.length);
+    const contentEnd = closed ? closeLine : lines.length;
+    const code = lines.slice(i + 1, contentEnd).map((part) => {
+      const content = quote.depth ? stripBlockquoteDepth(part.text, quote.depth) : { matched: true, rest: part.text };
+      const text = content.matched ? content.rest : part.text;
+      return text + (part.end > part.start && source[part.end - 1] === '\n' ? '\n' : '');
+    }).join('');
     const attrMatch = /\{[^{}]*\}[ \t]*$/.exec(info);
     const attrs = attrMatch ? parsePandocAttributes(attrMatch[0]) : null;
     codeBlocks.push({ lang, code, open: !closed, attrs });
-    out += `\uE000CB${codeBlocks.length - 1}\uE000`;
+    out += `${quote.prefix}\uE000CB${codeBlocks.length - 1}\uE000`;
     cursor = closed ? closeEnd : source.length;
     i = closeLine;
     if (!closed) break; // 流式输入中的末尾围栏：整段保留为一个未闭合代码块
@@ -785,7 +815,10 @@ export function renderMarkdown(src) {
     const id = headingSlug(title.replace(/<[^>]+>/g, ''));
     return `<h${n} id="${esc(id)}">${title}</h${n}>`;
   });
-  t = t.replace(/^&gt; (.*)$/gm, '<blockquote>$1</blockquote>');
+  t = t.replace(/^((?:&gt;[ \t]?)+)(.*)$/gm, (_, prefix, content) => {
+    const depth = (prefix.match(/&gt;/g) || []).length;
+    return '<blockquote>'.repeat(depth) + content + '</blockquote>'.repeat(depth);
+  });
   t = t.replace(/~~([^~]+?)~~/g, '<s>$1</s>');
   t = t.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
   t = t.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');

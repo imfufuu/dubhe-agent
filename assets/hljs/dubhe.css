@@ -41,6 +41,8 @@
 .hljs-meta, .hljs-doctag { color: #57534e; }
 .hljs-tag { color: #9f1239; }
 .hljs-emphasis { font-style: italic; }
+/* Markdown emphasis tokens inside fenced code are syntax, not rendered prose. */
+.code-block .hljs-emphasis { font-style: normal; }
 .hljs-strong { font-weight: 700; }
 
 [data-theme="dark"] .hljs-comment, [data-theme="dark"] .hljs-quote { color: #8a8a8a; }

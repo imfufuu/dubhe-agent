@@ -1,4 +1,5 @@
 import { isRetiredModel } from './model-catalog.js?v=2026.10.11.1';
+import { defaultModelForGateway } from './gateway-registry.js?v=2026.10.11.1';
 import { normalizeFeedback } from './feedback.js';
 // ─── 会话状态：多会话记录、消息、检查点（回滚）、持久化 ────────────────
 // 侧栏展示「会话记录」；回滚操作全部发生在对话区（消息级按钮 + 撤销浮条）
@@ -11,8 +12,8 @@ import { pruneLearnedSkills } from './skills.js';
 
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2));
 
-function newSession(title = '', model = '', imageModel = '') {
-  return { id: uid(), title, model, imageModel, createdAt: Date.now(), updatedAt: Date.now(), messages: [], checkpoints: [], undoBranch: null, files: {}, stats: { lastMs: 0, totalMs: 0 } };
+function newSession(title = '', model = '', imageModel = '', gatewayId = 'teamorouter') {
+  return { id: uid(), title, model, imageModel, gatewayId, createdAt: Date.now(), updatedAt: Date.now(), messages: [], checkpoints: [], undoBranch: null, files: {}, stats: { lastMs: 0, totalMs: 0 } };
 }
 
 const sessionActivityAt = (s) => {
@@ -166,7 +167,13 @@ export function applyBlobs(state, map) {
 
 export function createStore(onChange) {
   const state = {
-    apiKey: '',
+    apiKey: '', // 当前活动网关的密钥；旧版入口保留，具体 Key 同步保存在 gatewayKeys[id]
+    gatewayId: 'teamorouter',
+    gatewayKeys: {},
+    gatewayBaseUrls: {},
+    modelsByGateway: {},
+    modelsFetchedAtByGateway: {},
+    manualModelsByGateway: {},
     model: DEFAULT_CHAT_MODEL,
     imageModel: DEFAULT_IMAGE_MODEL, // 生图模型（由 generate_image 工具使用，与会话绑定）
     models: [],
@@ -239,10 +246,15 @@ export function createStore(onChange) {
     state.files = s.files;
     state.undoBranch = s.undoBranch;
     state.stats = s.stats || (s.stats = { lastMs: 0, totalMs: 0 });
-    // 模型属于会话属性：切换会话时恢复该会话自己的模型，而不是沿用全局当前选择
+    // 模型网关与模型均按会话恢复；API Key / 模型目录严格按网关隔离。
+    if (validGatewayIds.has(String(s.gatewayId || ''))) state.gatewayId = s.gatewayId;
+    else s.gatewayId = state.gatewayId || 'teamorouter';
+    state.apiKey = String(state.gatewayKeys[state.gatewayId] || (state.gatewayId === 'teamorouter' ? state.apiKey : '') || '');
+    state.models = state.modelsByGateway[state.gatewayId] || [];
+    state.modelsFetchedAt = Number(state.modelsFetchedAtByGateway[state.gatewayId]) || 0;
     state.model = sessionModel(s) || state.model;
-    // 生图模型只能由 generate_image 工具调用：历史数据若存着它，回落到默认对话模型
-    if (isImageModel(state.model) || isJevModel(state.model) || isRetiredModel(state.model)) state.model = DEFAULT_CHAT_MODEL;
+    // 生图模型只能由 generate_image 工具调用：历史数据若存着它，回落到当前网关默认模型。
+    if (isImageModel(state.model) || isJevModel(state.model) || isRetiredModel(state.model, state.gatewayId)) state.model = defaultModelForGateway(state.gatewayId) || DEFAULT_CHAT_MODEL;
     s.model = state.model;
     // 生图模型同样按会话记忆；缺失或非法值回落到默认
     const wantImage = s.imageModel || state.imageModel;
@@ -262,7 +274,8 @@ export function createStore(onChange) {
     s.files = state.files;
     s.undoBranch = state.undoBranch;
     s.stats = state.stats;
-    s.model = state.model;           // 会话级模型（修复：切换会话后模型名被当前选择覆盖）
+    s.model = state.model;           // 会话级模型
+    s.gatewayId = state.gatewayId || 'teamorouter';
     s.imageModel = state.imageModel; // 会话级生图模型
     s.thinking = state.settings.thinking !== false;
     s.reasoningLevel = state.settings.reasoningLevel || 'medium';
@@ -446,6 +459,26 @@ export function createStore(onChange) {
       }
     }
   } catch { /* 损坏数据忽略 */ }
+  // Gateway isolation/migration: legacy snapshots have one TeamoRouter apiKey + model cache.
+  const validGatewayIds = new Set(['teamorouter', 'anthropic', 'openai', 'gemini', 'deepseek', 'glm', 'grok', 'kimi', 'doubao', 'qwen', 'custom']);
+  if (!validGatewayIds.has(String(state.gatewayId || ''))) state.gatewayId = 'teamorouter';
+  const cleanMap = (value) => value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  state.gatewayKeys = cleanMap(state.gatewayKeys);
+  state.gatewayBaseUrls = cleanMap(state.gatewayBaseUrls);
+  state.modelsByGateway = cleanMap(state.modelsByGateway);
+  state.modelsFetchedAtByGateway = cleanMap(state.modelsFetchedAtByGateway);
+  state.manualModelsByGateway = cleanMap(state.manualModelsByGateway);
+  if (!Array.isArray(state.modelsByGateway.teamorouter) && Array.isArray(state.models)) state.modelsByGateway.teamorouter = state.models;
+  if (!state.gatewayKeys.teamorouter && state.apiKey) state.gatewayKeys.teamorouter = state.apiKey;
+  if (!state.gatewayKeys[state.gatewayId] && state.apiKey && state.gatewayId === 'teamorouter') state.gatewayKeys[state.gatewayId] = state.apiKey;
+  for (const id of validGatewayIds) {
+    if (!Array.isArray(state.modelsByGateway[id])) state.modelsByGateway[id] = [];
+    if (!Array.isArray(state.manualModelsByGateway[id])) state.manualModelsByGateway[id] = [];
+  }
+  for (const session of state.sessions || []) if (!validGatewayIds.has(String(session.gatewayId || ''))) session.gatewayId = state.gatewayId;
+  state.apiKey = String(state.gatewayKeys[state.gatewayId] || (state.gatewayId === 'teamorouter' ? state.apiKey : '') || '');
+  state.models = state.modelsByGateway[state.gatewayId] || [];
+  state.modelsFetchedAt = Number(state.modelsFetchedAtByGateway[state.gatewayId]) || state.modelsFetchedAt || 0;
   // Drop retired auto-prune metadata from all old snapshot formats; never scan or delete user files.
   for (const key of ['cleanupArtifacts', 'lastCleanupReport', 'cleanupHistory', 'cleanupTotals']) delete state[key];
   delete state.settings.cleanupPolicy;
@@ -470,7 +503,7 @@ export function createStore(onChange) {
     },
     createSession() {
       // 新会话继承当前模型选择，之后各会话独立记忆自己的模型
-      const s = newSession('', state.model, state.imageModel);
+      const s = newSession('', state.model, state.imageModel, state.gatewayId || 'teamorouter');
       state.sessions.unshift(s);
       state.activeSessionId = s.id;
       hydrate();
@@ -508,7 +541,7 @@ export function createStore(onChange) {
     // 一键清除所有会话记录：全部丢掉，只留一个新的空草稿
     clearAllSessions() {
       const removed = state.sessions.filter((x) => (x.messages || []).length > 0).length;
-      const fresh = newSession('', state.model, state.imageModel);
+      const fresh = newSession('', state.model, state.imageModel, state.gatewayId || 'teamorouter');
       state.sessions = [fresh];
       state.activeSessionId = fresh.id;
       hydrate();

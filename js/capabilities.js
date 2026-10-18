@@ -39,7 +39,9 @@ export const CAPABILITY_REGISTRY = Object.freeze({
   execute_cpp: R('codeSandbox', 'remote', { core: 3, heavy: true, tags: ['code'] }),
   browser_sandbox: R('localBrowser', 'exec', { heavy: true, tags: ['code'] }),
   skill_library: R('invariantCore', 'local', { core: 14, parallel: true, readOnly: true }),
+  tool_library: R('invariantCore', 'local', { core: 15 }),
   document_tool: R('invariantCore', 'fs-write', { heavy: true }),
+  xlsx_tool: R('invariantCore', 'fs-write', { heavy: true }),
   knowledge_search: R('invariantCore', 'local', { core: 13, parallel: true, readOnly: true }),
   // ── 文件系统（永远在）──
   write_file: R('invariantCore', 'fs-write', { core: 4, heavy: true }),
@@ -125,6 +127,15 @@ export const CAPABILITY_GATED_TOOL_GROUPS = Object.freeze(Object.fromEntries(
 // 按需挂载规则：只给非核心工具；规则正文在 capabilities-mount.js（正则多、单独放，避免这个文件被淹没）
 export const TOOL_MOUNT_RULES = Object.freeze(Object.fromEntries(
   Object.entries(TOOL_MOUNT_RULES_SOURCE).filter(([name]) => CAPABILITY_REGISTRY[name] && !CAPABILITY_REGISTRY[name].core),
+));
+
+// One routing hit mounts every schema needed for a coherent Office workflow.
+// document_tool covers DOCX/PPTX/PDF; xlsx_tool covers spreadsheets.
+export const TOOL_MOUNT_GROUPS = Object.freeze({
+  office_documents: Object.freeze(['document_tool', 'xlsx_tool']),
+});
+export const TOOL_MOUNT_GROUP_BY_TOOL = Object.freeze(Object.fromEntries(
+  Object.entries(TOOL_MOUNT_GROUPS).flatMap(([group, names]) => names.map((name) => [name, group])),
 ));
 
 /** 登记处自检（启动 / 测试调用）：返回不一致项列表，空数组 = 一致 */

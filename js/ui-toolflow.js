@@ -1,5 +1,19 @@
 // Stable DOM fragments in persisted SSE order plus lightweight UI lifecycle helpers.
 import { displayParts } from './toolflow.js?v=2026.10.11.1';
+export function syncToolMenuCursor(chips, live) {
+  if (!chips) return null;
+  let cursor = chips.querySelector(':scope > .tool-menu-cursor');
+  if (!live) { cursor?.remove(); return null; }
+  if (!cursor) {
+    cursor = chips.ownerDocument.createElement('span');
+    cursor.className = 'cursor tool-menu-cursor';
+    cursor.setAttribute('aria-hidden', 'true');
+  }
+  // Keep the busy caret after the entire tool menu even when streamed rows are re-ordered.
+  chips.appendChild(cursor);
+  return cursor;
+}
+
 export function persistTurnTiming(store, ms, msgNodes, paintFoot, syncShell, renderStats) {
   if (!(ms > 0)) return;
   const st = store.state.stats || (store.state.stats = { lastMs: 0, totalMs: 0 });

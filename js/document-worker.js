@@ -4,7 +4,7 @@
  */
 const ROOT = new URL('../', self.location.href);
 const LIMIT = 32 * 1024 * 1024;
-const MIME = { docx:'application/vnd.openxmlformats-officedocument.wordprocessingml.document', pptx:'application/vnd.openxmlformats-officedocument.presentationml.presentation', pdf:'application/pdf' };
+const MIME = { docx:'application/vnd.openxmlformats-officedocument.wordprocessingml.document', pptx:'application/vnd.openxmlformats-officedocument.presentationml.presentation', xlsx:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', pdf:'application/pdf' };
 function bytes(value) {
   const m = /^data:[^;,]*;base64,([a-zA-Z0-9+/\r\n]*={0,2})$/.exec(String(value || ''));
   if (!m || m[1].length > Math.ceil(LIMIT / 3) * 4) throw Error('Invalid or oversized binary document');
@@ -169,6 +169,12 @@ self.onmessage = async event => {
     const { args, files } = event.data;
     let result;
     if (args.format === 'pdf') result = await pdfOperation(args, files);
+    else if (args.format === 'xlsx') {
+      const { createXlsxWorkbook, inspectXlsxWorkbook } = await import('./xlsx.js');
+      if (args.action === 'inspect') result = await inspectXlsxWorkbook(bytes(files[args.path]), { offset: args.offset });
+      else if (args.action === 'create') result = { output: dataURL(await createXlsxWorkbook(args.data || {}), 'xlsx'), warnings: ['Editable XLSX generated locally. No spreadsheet renderer: open it in a viewer to review layout. Text beginning with = is stored literally; formulas are never generated or evaluated.'] };
+      else throw Error('XLSX supports inspect/create only');
+    }
     else if (args.action === 'inspect') result = await inspectOffice(files[args.path], args.format, args.offset);
     else if (args.action === 'create') result = { output: await (args.format === 'docx' ? createDocx(args.data || {}, files) : createPptx(args.data || {}, files)), warnings: ['Editable OOXML generated locally. No Office rendering engine: inspect content and review layout in a viewer before publishing.'] };
     else throw Error('This format supports inspect/create only; use skill_library for workflows');

@@ -4,7 +4,9 @@
 // Cheap: list input <= $1 AND output <= $5 per million tokens. New: newly included in our menu snapshot.
 // Removed from active choices after user-confirmed retirement; historical billing stays readable.
 export const RETIRED_MODEL_IDS = new Set(['kimi-k3', 'kimi-k3[1M]']);
-export const isRetiredModel = id => RETIRED_MODEL_IDS.has(String(id || '').trim());
+// Retirement is scoped to the TeamoRouter directory snapshot. The same ID may remain
+// available from its first-party provider (for example, Moonshot's current kimi-k3).
+export const isRetiredModel = (id, gatewayId = 'teamorouter') => gatewayId === 'teamorouter' && RETIRED_MODEL_IDS.has(String(id || '').trim());
 export const MODEL_CATALOG_DATE = '2026-10-14';
 export const MODEL_CATALOG = [
   {"id":"claude-fable-5","provider":"Anthropic","displayName":"Claude Fable 5","channel":"chat","listPrice":{"currency":"USD","input":10.0,"output":50.0,"cached_input":1.0},"contextWindow":1000000},
@@ -58,9 +60,10 @@ export const MODEL_CATALOG = [
 export const MODEL_CATALOG_BY_ID = new Map(MODEL_CATALOG.map(m => [m.id, m]));
 // A successful live response is authoritative. Do not union unavailable fallback IDs back into it.
 // A missing/failed response uses the checked-in snapshot, while an explicitly empty response stays empty.
-export function mergeAvailableModels(liveIds, presets, liveKnown = Array.isArray(liveIds) && liveIds.length > 0) {
-  const metadata = new Map(presets.map(m => [m.id, m]));
-  const ids = liveKnown ? (liveIds || []) : presets.map(m => m.id);
-  return [...new Set(['__smart_router__', ...ids.filter(id => typeof id === 'string' && id.trim() && !isRetiredModel(id))])]
-    .map(id => ({ ...(metadata.get(id) || MODEL_CATALOG_BY_ID.get(id) || { id }) }));
+export function mergeAvailableModels(liveIds, presets, liveKnown = Array.isArray(liveIds) && liveIds.length > 0, { gatewayId = 'teamorouter', includeRouter = true, extraIds = [] } = {}) {
+  const metadata = new Map((presets || []).map(m => [m.id, m]));
+  const ids = liveKnown ? (liveIds || []) : (presets || []).map(m => m.id);
+  const merged = [...(includeRouter ? ['__smart_router__'] : []), ...ids, ...(Array.isArray(extraIds) ? extraIds : [])]
+    .filter(id => typeof id === 'string' && id.trim() && !isRetiredModel(id, gatewayId));
+  return [...new Set(merged)].map(id => ({ ...(metadata.get(id) || MODEL_CATALOG_BY_ID.get(id) || { id }) }));
 }

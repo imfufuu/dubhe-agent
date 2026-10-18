@@ -216,5 +216,7 @@ export function canSendTemperature(modelOrOpts, opts = {}) {
   if (!m || m === 'jev' || m.includes('typesafe')) return false;
   const isAnthropic = protocol === 'anthropic' || m.startsWith('claude');
   if (isAnthropic && withThinking) return false;
+  // Moonshot Kimi K2/K3 require their fixed native temperature; sending our adaptive value is a 400.
+  if (/^kimi-(?:k3|k2\.(?:6|7))/.test(m)) return false;
   return true;
 }

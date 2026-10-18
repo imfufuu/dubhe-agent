@@ -1,4 +1,5 @@
-import { CORE_TOOL_NAMES, TOOL_MOUNT_RULES as REG_TOOL_MOUNT_RULES } from './capabilities.js';
+import { CORE_TOOL_NAMES, TOOL_MOUNT_RULES as REG_TOOL_MOUNT_RULES, TOOL_MOUNT_GROUPS } from './capabilities.js';
+import { formatToolDirectory } from './tool-catalog.js';
 // ─── P2（Dubhe Helix 2.5）：统一执行上下文（单一真相源）───────────────────────────
 // 对应 P2 验收要点第 1 条：**统一 ExecutionContext，避免「声明允许 Web 但工具表没有 Web」
 // 这类状态分裂**。
@@ -412,8 +413,8 @@ export function formatContextPanel(ctx) {
 }
 
 // ─── P6 修正：工具选择熵过高 ─────────────────────────────────────────────
-// 以前 deriveToolWhitelist 只按能力位「摘除」，剩下的全量下发（39 份 schema 每轮都进请求体），
-// 模型要在 39 个名字里挑，本地工作台与 execute_javascript 又互相重叠。
+// 以前 deriveToolWhitelist 只按能力位「摘除」，剩下的全量下发（所有工具 schema 每轮都进请求体），
+// 模型要在全部工具名里挑，本地工作台与 execute_javascript 又互相重叠。
 // 这里再加一层**按需挂载**：核心工具每轮必带；其余按用户消息、附件类型、近几轮用量、点名挂载。
 // 纯函数：同样的输入永远给出同样的表（顺序保持 allowed 原序），可被测试与 p2-eval 直接复算。
 export const CORE_TOOLS = CORE_TOOL_NAMES;
@@ -424,7 +425,7 @@ export const CORE_TOOLS = CORE_TOOL_NAMES;
 export const TOOL_MOUNT_RULES = REG_TOOL_MOUNT_RULES;
 
 const ATTACHMENT_KIND_RE = Object.freeze({
-  audio: /\.(?:mp3|mpga|wav|m4a|aac|ogg|oga|opus|flac|weba)$/i, office: /\.(?:docx|pptx|doc)$/i, pdf: /\.pdf$/i, video: /\.(?:mp4|webm|mov|m4v)$/i, zip: /\.zip$/i, csv: /\.(?:csv|tsv)$/i,
+  audio: /\.(?:mp3|mpga|wav|m4a|aac|ogg|oga|opus|flac|weba)$/i, office: /\.(?:docx|pptx|xlsx|doc)$/i, pdf: /\.pdf$/i, video: /\.(?:mp4|webm|mov|m4v)$/i, zip: /\.zip$/i, csv: /\.(?:csv|tsv)$/i,
 });
 /** 附件 → 挂载规则认识的类型（pdf / video / zip / csv / image / text / other），只看名字、kind、source、dataUrl 前缀。 */
 export function attachmentKindOf(a) {
@@ -433,7 +434,7 @@ export function attachmentKindOf(a) {
   if (a.source === 'audio' || /^data:audio\//.test(String(a.dataUrl || ''))) return 'audio';
 
   for (const [kind, re] of Object.entries(ATTACHMENT_KIND_RE)) if (re.test(name)) return kind;
-  if (a.source === 'office' || /\.(docx|pptx|doc)$/i.test(String(a.name || ''))) return 'office';
+  if (a.source === 'office' || /\.(docx|pptx|xlsx|doc)$/i.test(String(a.name || ''))) return 'office';
   if (a.source === 'video' || /^data:video\//.test(String(a.dataUrl || ''))) return 'video';
   if (a.source === 'svg' || /\.svg$/i.test(name) || /^data:image\/svg\+xml/i.test(String(a.dataUrl || ''))) return 'svg';
   if (/^data:application\/pdf/.test(String(a.dataUrl || ''))) return 'pdf';
@@ -458,8 +459,8 @@ export function selectToolsForTurn({ allowed = [], text = '', attachments = [], 
   const attKinds = new Set((Array.isArray(attachments) ? attachments : []).map(attachmentKindOf));
   const recent = new Set((Array.isArray(recentTools) ? recentTools : []).map(String));
   const forced = new Set((Array.isArray(forceMount) ? forceMount : []).map(String));
-  const mounted = [];
-  const deferred = [];
+  const byName = new Map(list.map((tool) => [toolName(tool), tool]).filter(([name]) => name));
+  const selected = new Map();
   const reasons = {};
   for (const tool of list) {
     const name = toolName(tool);
@@ -471,22 +472,50 @@ export function selectToolsForTurn({ allowed = [], text = '', attachments = [], 
     else if (recent.has(name)) why = 'recent';
     else {
       const rule = TOOL_MOUNT_RULES[name];
-      if (!rule) why = 'no-rule'; // 没写规则的工具按旧行为全量下发，不会因为漏写规则而悄悄消失
+      if (!rule) why = 'no-rule'; // 漏写路由规则时沿用全量下发，避免能力悄悄消失
       else if (rule.attachments && rule.attachments.some((k) => attKinds.has(k))) why = `attachment:${rule.attachments.find((k) => attKinds.has(k))}`;
       else if (rule.text && rule.text.test(msg) && !(rule.exclude && rule.exclude.test(msg))) why = 'keyword';
     }
-    if (why) { mounted.push(tool); reasons[name] = why; } else deferred.push({ name, reason: 'on-demand' });
+    if (why) selected.set(name, why);
   }
-  return { mounted, deferred, reasons, core: CORE_TOOLS.filter((n) => list.some((t) => toolName(t) === n)) };
+
+  // Lightweight pre-router: evaluate deterministic rules before the first model request,
+  // then expand one positive hit to the complete workflow group.
+  const routedGroups = [];
+  for (const [group, names] of Object.entries(TOOL_MOUNT_GROUPS || {})) {
+    if (!names.some((name) => selected.has(name))) continue;
+    routedGroups.push(group);
+    for (const name of names) if (byName.has(name) && !selected.has(name)) selected.set(name, `group:${group}`);
+  }
+
+  const core = CORE_TOOLS.filter((name) => selected.has(name) && byName.has(name));
+  const mounted = [
+    ...core.map((name) => byName.get(name)),
+    ...list.filter((tool) => {
+      const name = toolName(tool);
+      return name && selected.has(name) && !CORE_TOOLS.includes(name);
+    }),
+  ];
+  const deferred = list.filter((tool) => {
+    const name = toolName(tool);
+    return name && !selected.has(name);
+  }).map((tool) => ({ name: toolName(tool), reason: 'on-demand' }));
+  for (const [name, why] of selected) reasons[name] = why;
+  return {
+    mounted, deferred, reasons, core, routedGroups,
+    router: { phase: 'before-first-model-request', method: 'rules', groups: routedGroups },
+    cachePrefixCount: core.length,
+  };
 }
 
-/** 【工具表】段里给模型看的一行：只列名字（≈5 token/个），schema 不下发；点名即挂载。 */
-export function formatDeferredTools(deferred, { max = 24 } = {}) {
+/** 【工具目录】给模型的短摘要；不下发未挂载工具的完整 JSON Schema。 */
+export function formatDeferredTools(deferred, { max = 48, language = 'zh' } = {}) {
   const names = (Array.isArray(deferred) ? deferred : []).map((d) => (d && d.name) || d).filter(Boolean);
   if (!names.length) return '';
-  const shown = names.slice(0, max).join('、');
-  const more = names.length > max ? `…等 ${names.length} 个` : '';
-  return `另有 ${names.length} 个工具本轮按需未挂载：${shown}${more}（确有需要时直接调用，内核会当场挂载并让你重试；小任务优先用已挂载工具或 execute_javascript）`;
+  const directory = formatToolDirectory(names, { language, max }).split('\n').slice(1).join('\n');
+  return language === 'en'
+    ? `On-demand tool directory (${names.length}; full schemas not mounted):\n${directory}\nUse tool_library(action="search", query="...") then tool_library(action="read", name="...") to load a schema and its whole workflow group. A direct call returns machine-readable TOOL_NOT_MOUNTED and a safe one-time retry.`
+    : `按需未挂载工具目录（${names.length}项；完整Schema未挂载）：\n${directory}\n需要完整参数时用tool_library(action="search", query="...")，再对命中项调用tool_library(action="read", name="...")，读取会一次挂载整组Schema。直接调用会返回机器码TOOL_NOT_MOUNTED并安全重试。`;
 }
 
 /** 从会话消息里取近几轮实际调用过的工具名（粘性挂载的输入）。 */

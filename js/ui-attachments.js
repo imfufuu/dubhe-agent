@@ -207,10 +207,10 @@ export function installAttachments({ composer, toast, safeImgSrc, fmtSize }) {
           const dataUrl = String(await readAs('dataURL', f)).replace(/^data:[^;]*;base64,/, `data:${mime};base64,`);
           pending.push({ id: Math.random().toString(36).slice(2), kind: 'file', source: 'audio', name: f.name, mime, size: f.size, dataUrl });
           toast(localeText(`${f.name}：已加入音频；发送分析时会上传网关，未做本地语音内容审核`, `${f.name}: audio attached; analysis uploads it to the gateway. No local speech-content moderation.`), 'ok', 5000);
-        } else if (/\.(docx|pptx|doc)$/i.test(f.name)) {
+        } else if (/\.(docx|pptx|xlsx|doc)$/i.test(f.name)) {
           if (f.size > 16 * 1024 * 1024) { toast(`${f.name}：Office 文件超过 16MB`, 'err'); continue; }
           const ext = f.name.split('.').pop().toLowerCase();
-          const mime = ext === 'docx' ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : ext === 'pptx' ? 'application/vnd.openxmlformats-officedocument.presentationml.presentation' : 'application/msword';
+          const mime = ext === 'docx' ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : ext === 'pptx' ? 'application/vnd.openxmlformats-officedocument.presentationml.presentation' : ext === 'xlsx' ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' : 'application/msword';
           pending.push({ id: Math.random().toString(36).slice(2), kind: 'file', source: 'office', name: f.name, mime, size: f.size, dataUrl: String(await readAs('dataURL', f)).replace(/^data:[^;]*;base64,/, `data:${mime};base64,`) });
           if (ext === 'doc') toast(localeText('旧版 .doc 可保存，但暂不能在浏览器解析；请先另存为 .docx', 'Legacy .doc can be stored, but must be converted to .docx for local parsing.'), 'warn', 5000);
         } else if (VIDEO_RE.test(f.name) || VIDEO_MIME_RE.test(f.type)) {

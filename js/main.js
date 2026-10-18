@@ -115,7 +115,13 @@ try {
 } catch { /* 提示失败不影响使用 */ }
 mountSettings(store, {
   onRelayChanged: () => { relayAvailable().then((ok) => { store.state.relayOk = ok; if (ui && ui.syncWeb) ui.syncWeb(); }).catch(() => {}); },
-  onKeySaved: () => { if (ui && ui.updateStats) ui.updateStats(); },
+  onKeySaved: () => { if (ui && ui.updateStats) ui.updateStats(); if (ui && ui.refreshModels && store.state.apiKey) ui.refreshModels({ silent: true }); },
+  onGatewayChanged: (_gatewayId, details = {}) => {
+    if (ui && ui.syncGateway) ui.syncGateway();
+    if (details.manualModel) return;
+    if (details.hasKey && ui && ui.refreshModels) ui.refreshModels({ silent: true });
+    else if (!details.hasKey && window.openKeyModal) window.openKeyModal();
+  },
   // 设置页任何开关 / 档位 / 主题变化 → 顶栏 pill（沙箱 / 联网 / 快速 / 思考）、能力行、主题按钮同步
   onSettingChanged: (key) => { if (ui && ui.syncToolbar) ui.syncToolbar(); if (key === 'sandboxEnabled') warmSandbox(); },
 });

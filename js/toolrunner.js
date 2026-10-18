@@ -9,7 +9,7 @@ import { captureEditPreviewBase, captureEditPreviewSnapshot } from './editprevie
 // 不拥有：模型请求循环、系统提示组装、回合收尾记账（agent.js runLoop / turnfinalizer.js）、工具本身的实现（tools.js）。
 // 注入而非 import 的四样东西：store（状态）、emit（UI 钩子）、getFs（回合内 fs 指针会被换成临时层，所以是 getter）、
 // runSubagent（住在 agent.js，避免循环依赖）。P1（预算）/ P2（持久）类修正都会碰这段代码——先抽出来再改。
-import { PARALLEL_TOOL_NAMES, NETWORK_TOOL_NAMES } from './capabilities.js';
+import { PARALLEL_TOOL_NAMES, NETWORK_TOOL_NAMES, TOOL_MOUNT_GROUPS, TOOL_MOUNT_GROUP_BY_TOOL } from './capabilities.js';
 import { executeTool } from './tools.js';
 import { findSubagent } from './subagents.js';
 import {
@@ -22,6 +22,7 @@ import { buildCheckpoint, diffFileState, digestArtifact } from './recovery.js?v=
 import { operationKey, planReplay, digestResultText } from './idempotency.js?v=2026.10.11.1';
 import { toolName } from './executionContext.js?v=2026.10.11.1';
 import { skillToolsFromResult } from './skill-library.js';
+import { toolDefinitionFromResult } from './tool-catalog.js';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // 一次委派最多并发几个子智能体（再高就是自己跟自己抢网关并发额度了）
@@ -86,6 +87,8 @@ export function toolAccessSet(call) {
     case 'csv_tool': case 'text_tool':
       return { reads: strList(a.path), writes: strList(a.out) };
     case 'document_tool': return { reads: [ACCESS_ANY], writes: ['inspect', 'form_fields'].includes(a.action) ? [] : outOrAny([ACCESS_ANY]) };
+    case 'xlsx_tool': return { reads: [ACCESS_ANY], writes: a.action === 'inspect' ? [] : outOrAny([ACCESS_ANY]) };
+    case 'tool_library': return { reads: [ACCESS_ANY], writes: [ACCESS_ANY] };
     case 'data_tool': // P6 伞工具：kind=qr 不传 out 时写 outputs/qr-NNN.svg（路径未知 → ANY）
       return { reads: strList(a.path), writes: a.kind === 'qr' ? outOrAny([ACCESS_ANY]) : strList(a.out) };
     case 'render_mermaid': case 'render_dot':
@@ -183,11 +186,14 @@ export function planToolWaves(calls) {
  * @param {object} deps { store, emit, getFs, runSubagent }
  */
 export function createToolRunner({ store, emit, getFs, runSubagent } = {}) {
-  function toolCtxFor(call, turn) {
+  function toolCtxFor(call, turn, exec = null) {
     const fs = getFs();
+    if (exec && !(exec.toolLibrarySearchResults instanceof Set)) exec.toolLibrarySearchResults = new Set();
     captureEditPreviewBase(call, fs, { refresh: true });
     return {
       fs, callId: call.id,
+      availableToolDefinitions: exec?.toolWhitelist?.allowed || [],
+      toolSearchResults: exec?.toolLibrarySearchResults || new Set(),
       memory: store.state.memory,
       memoryArchive: store.state.memoryArchive,
       setMemory: (next) => {
@@ -196,6 +202,9 @@ export function createToolRunner({ store, emit, getFs, runSubagent } = {}) {
         else if (typeof store.save === 'function') store.save(true);
       },
       apiKey: turn.apiKey,
+      model: turn.model,
+      gatewayId: turn.gatewayId,
+      gatewayBaseUrl: turn.gatewayBaseUrl,
       imageModel: turn.imageModel,
       visionModel: turn.visionModel,
       videoModel: turn.videoModel,
@@ -222,6 +231,8 @@ export function createToolRunner({ store, emit, getFs, runSubagent } = {}) {
         onNote && onNote(`子智能体「${def.name}」思考中…`);
         const report = await runSubagent(def, subTask, {
           apiKey: turn.apiKey,
+          gatewayId: turn.gatewayId,
+          gatewayBaseUrl: turn.gatewayBaseUrl,
           model: turn.model,
           thinking: turn.thinking,
           reasoningLevel: turn.reasoningLevel,
@@ -269,20 +280,24 @@ export function createToolRunner({ store, emit, getFs, runSubagent } = {}) {
     const out = new Array(calls.length);
     const waveRuns = [];
     const toolDefByName = new Map(exec.toolList.map((t) => [t.name, t]));
-    // 技能库防死循环：读完技能 → 把它列出的工具挂进本轮工具表并给出明确下一步；只读调用同轮重复时回放完整结果
-    // （旧版只回「幂等复用 + 摘要」，模型拿不到技能正文，于是反复 search / read 同一技能、始终不动手）。
+    // Progressive disclosure: reading a guide/schema appends its tool group after the stable core prefix.
+    // Full tool schemas remain absent until search→read or an explicit TOOL_NOT_MOUNTED fallback.
     exec.skillsRead ||= new Map();
+    exec.toolLibraryReads ||= new Set();
+    exec.toolLibrarySearchResults ||= new Set();
     exec.pureResults ||= new Map();
-    const skillFollowUp = (result) => {
-      const info = skillToolsFromResult(result);
-      if (!info) {
-        const read = [...exec.skillsRead.keys()];
-        return read.length ? `\n\n[执行内核] 本轮已读取过技能 ${read.join('、')}（正文在上文，所需工具已挂载）；不要重复检索，直接调用工具完成任务。` : '';
+    const mountDeferredNames = (names) => {
+      const expanded = new Set();
+      for (const raw of Array.isArray(names) ? names : []) {
+        const name = String(raw || '');
+        const group = TOOL_MOUNT_GROUP_BY_TOOL[name];
+        const members = group ? TOOL_MOUNT_GROUPS[group] : [name];
+        for (const member of members || []) expanded.add(member);
       }
-      exec.skillsRead.set(info.id, info.tools);
       const mounted = [];
-      for (const name of info.tools) {
-        const def = !toolDefByName.has(name) && exec.deferredTools instanceof Map ? exec.deferredTools.get(name) : null;
+      for (const name of expanded) {
+        if (toolDefByName.has(name)) continue;
+        const def = exec.deferredTools instanceof Map ? exec.deferredTools.get(name) : null;
         if (!def) continue; // 能力掩码裁掉的工具不在 deferredTools 里：绝不复活
         exec.deferredTools.delete(name);
         if (!exec.toolList.some((t) => t && t.name === name)) exec.toolList.push(def);
@@ -292,9 +307,26 @@ export function createToolRunner({ store, emit, getFs, runSubagent } = {}) {
         if (at >= 0) pending.splice(at, 1);
         mounted.push(name);
       }
+      return { mounted, usable: [...expanded].filter((name) => toolDefByName.has(name)) };
+    };
+    const skillFollowUp = (result) => {
+      const info = skillToolsFromResult(result);
+      if (!info) {
+        const read = [...exec.skillsRead.keys()];
+        return read.length ? `\n\n[执行内核] 本轮已读取过技能 ${read.join('、')}（正文在上文，所需工具已挂载）；不要重复检索，直接调用工具完成任务。` : '';
+      }
+      exec.skillsRead.set(info.id, info.tools);
+      const { mounted, usable } = mountDeferredNames(info.tools);
       if (mounted.length) exec.machine.audit.record('tool-skill-mount', { skill: info.id, tools: mounted });
-      const usable = info.tools.filter((n) => toolDefByName.has(n));
-      return usable.length ? `\n\n[执行内核] 技能 ${info.id} 已加载${mounted.length ? `，所需工具 ${mounted.join('、')} 已挂载到本轮工具表` : ''}。下一步直接调用 ${usable[0]} 完成任务，不要再检索或重复读取本技能。` : '';
+      return usable.length ? `\n\n[执行内核] 技能 ${info.id} 已加载${mounted.length ? `，所需工具组 ${mounted.join('、')} 已挂载到本轮工具表` : ''}。下一步直接调用 ${usable[0]} 完成任务，不要再检索或重复读取本技能。` : '';
+    };
+    const toolLibraryFollowUp = (result) => {
+      const info = toolDefinitionFromResult(result);
+      if (!info) return exec.toolLibraryReads.size ? `\n\n[执行内核] 工具 Schema 已在上文，所需工具组已挂载；现在直接调用工具，不要再次检索或读取。` : '';
+      exec.toolLibraryReads.add(info.name);
+      const { mounted, usable } = mountDeferredNames([info.name]);
+      if (mounted.length) exec.machine.audit.record('tool-directory-mount', { requested: info.name, tools: mounted });
+      return usable.length ? `\n\n[执行内核] 已读取 ${info.name} 的完整 Schema${mounted.length ? `，工具组 ${mounted.join('、')} 已挂载到本轮工具表` : ''}。下一步直接调用 ${info.name}，不要重复搜索/读取。` : '';
     };
     const rememberPure = (key, result, fsAfterDigest) => {
       const text = String(result == null ? '' : result);
@@ -324,25 +356,39 @@ export function createToolRunner({ store, emit, getFs, runSubagent } = {}) {
       emit('onToolStart', call);
       let toolDef = toolDefByName.get(call.name) || null;
 
-      // ①a P6 按需挂载：模型调用了能力上允许、但本轮没下发 schema 的工具 → 明确回执（不是静默失败），
-      //    同时把它挂进本轮工具表（后续迭代请求体里就有它），模型可以直接重试或改用 execute_javascript。
+      // ①a Machine-readable lazy-mount fallback. Normal routing happens before the first model request;
+      // this branch is only for a model that names an allowed deferred tool without reading its schema.
       if (!toolDef && exec.deferredTools instanceof Map && exec.deferredTools.has(call.name)) {
-        const def = exec.deferredTools.get(call.name);
-        exec.deferredTools.delete(call.name);
-        if (def && !exec.toolList.some((t) => t && t.name === call.name)) exec.toolList.push(def);
-        if (def) toolDefByName.set(call.name, def);
-        exec.machine.audit.record('tool-lazy-mount', { name: call.name, mountedCount: exec.toolList.length });
-        emit('onToolEvent', call, { status: 'error', note: '本轮未启用（已临时挂载，可重试）' });
+        const { mounted } = mountDeferredNames([call.name]);
+        exec.machine.audit.record('tool-lazy-mount', { name: call.name, groupMounted: mounted, mountedCount: exec.toolList.length });
+        emit('onToolEvent', call, { status: 'error', note: 'TOOL_NOT_MOUNTED（已挂载，可重试一次）' });
         recordBlocked(call, {
-          reason: `工具 ${call.name} 本轮未启用（按需挂载表之外）`,
+          reason: 'TOOL_NOT_MOUNTED',
           failure: {
-            kind: 'ENVIRONMENT', label: '工具未挂载', handling: '内核已临时挂载：可直接重试一次，或改用 execute_javascript',
+            kind: 'ENVIRONMENT', label: '工具未挂载', handling: '内核已挂载该能力及其工作流组；可安全重试一次',
             retryable: true, maxRetries: 1, verifyFirst: false,
-            guidance: `再次调用 ${call.name}（内核已挂载），或用 execute_javascript 完成同样的事。`,
+            guidance: `机器码 TOOL_NOT_MOUNTED：下一次请求已附加 ${mounted.join('、') || call.name} 的 Schema；仅重试一次后继续任务。`,
           },
           risk: { level: 'L0', levelLabel: '未执行', reasons: ['工具本轮未启用'], hasExternalSideEffect: false, irreversible: false, requiresConfirmation: false },
+          notes: ['TOOL_NOT_MOUNTED'],
         });
-        return `该工具本轮未启用，可用 execute_javascript 完成；内核已临时挂载 ${call.name}，如确需也可直接重试一次。`;
+        return JSON.stringify({
+          code: 'TOOL_NOT_MOUNTED', tool: call.name, retryable: true,
+          mounted: mounted.length ? mounted : [call.name],
+          retry: 'The tool schema is attached to the next request. Retry this tool once, then continue; do not repeat the mount request.',
+        });
+      }
+      if (!toolDef) {
+        const dropped = (exec.toolWhitelist?.dropped || []).find((item) => item?.name === call.name);
+        if (dropped) {
+          recordBlocked(call, {
+            reason: 'TOOL_UNAVAILABLE',
+            failure: { kind: 'PERMISSION', label: '工具不可用', handling: '能力白名单已裁剪，不可挂载或重试', retryable: false, maxRetries: 0, verifyFirst: false, guidance: `该工具被能力策略裁剪：${dropped.reason || '原因未记录'}` },
+            risk: { level: 'L0', levelLabel: '未执行', reasons: ['能力白名单已裁剪'], hasExternalSideEffect: false, irreversible: false, requiresConfirmation: false },
+            notes: ['TOOL_UNAVAILABLE'],
+          });
+          return JSON.stringify({ code: 'TOOL_UNAVAILABLE', tool: call.name, retryable: false, reason: dropped.reason || 'capability-filtered' });
+        }
       }
 
       // ①b 技能库调用上限：技能正文都在上文，第 7 次起不再执行，逼模型动手或如实说明阻碍
@@ -452,7 +498,7 @@ export function createToolRunner({ store, emit, getFs, runSubagent } = {}) {
           waveRuns.push(run1);
           const cached = pre.contract && pre.contract.sideEffect === 'none' ? exec.pureResults.get(opKey) : null;
           if (cached) {
-            return `[执行内核 · 幂等复用] 同一轮内已执行过完全相同的只读调用，下面原样附上次结果；不要再次调用，直接进入下一步。\n${cached.text}${call.name === 'skill_library' ? skillFollowUp(cached.text) : ''}`;
+            return `[执行内核 · 幂等复用] 同一轮内已执行过完全相同的只读调用，下面原样附上次结果；不要再次调用，直接进入下一步。\n${cached.text}${call.name === 'skill_library' ? skillFollowUp(cached.text) : call.name === 'tool_library' ? toolLibraryFollowUp(cached.text) : ''}`;
           }
           return `[执行内核 · 幂等复用] ${replay.reason}。${replay.guidance || ''}${ledgerEntry.resultDigest ? `（上次结果摘要 ${ledgerEntry.resultDigest}）` : ''}`;
         }
@@ -563,7 +609,7 @@ export function createToolRunner({ store, emit, getFs, runSubagent } = {}) {
         reason: `契约允许（${pre.contract ? pre.contract.sideEffect : 'unknown'} 副作用 · 超时 ${pre.contract ? pre.contract.timeoutMs : '-'}ms）· 风险 ${risk.level}`,
         risk, idempotencyKey: pre.idempotencyKey,
       });
-      const toolCtx = { ...toolCtxFor(call, turn), execution: exec.execCtx };
+      const toolCtx = { ...toolCtxFor(call, turn, exec), execution: exec.execCtx };
       // 幂等账本：执行前登记（in-flight），并发同键调用会命中上面的复用分支
       exec.ledger.claim(opKey, { tool: call.name, turnId: exec.execCtx.turnId, argsSummary: summarizeArgs(call.name, call.args) });
       // 快照必须在启动执行之前取（否则 await 之前的同步写入会让前后快照一致，diff 为空）
@@ -719,6 +765,7 @@ export function createToolRunner({ store, emit, getFs, runSubagent } = {}) {
       if (retryNote) notes += retryNote;
       if (status === 'succeeded' && pre.contract && pre.contract.sideEffect === 'none') rememberPure(opKey, result, fsAfter.digest);
       if (status === 'succeeded' && call.name === 'skill_library') notes += skillFollowUp(result);
+      if (status === 'succeeded' && call.name === 'tool_library') notes += toolLibraryFollowUp(result);
       const left = exec.budgetGov.remaining('toolCalls');
       if (Number.isFinite(left) && left <= 1) notes += `\n\n⚠️ 执行内核：本轮工具调用预算即将用尽（剩余 ${left}），后续调用会被拒绝，请尽快收敛结论。`;
       return `${String(result)}${notes}`;

@@ -2,10 +2,11 @@ import { normalizeAudioData } from './audio-format.js';
 // 识图 / 视频识别工具专用通道：对话模型全部按纯文本发送，图片与视频只走这里。
 // 模型由设置页「多模态模型」决定（config.js VISION_MODELS / VIDEO_MODELS），默认仍是 deepseek-v4-flash-vision-exp。
 // 独立文件，避免给 api.js 新增具名导出（Pages 混版缓存会白屏）。
-import { authHeaders } from './api.js?v=2026.10.11.1';
+import { authHeaders, gatewayRequest } from './api.js?v=2026.10.11.1';
 import { svgDataUrl } from './svg-safety.js';
-import { gatewayBase, otherGatewayBase, setGatewayBase, isNetworkError } from './endpoint.js';
 import { DEFAULT_VISION_MODEL, DEFAULT_VIDEO_MODEL, resolveVisionModel, resolveVideoModel, DEFAULT_AUDIO_MODEL, resolveAudioModel } from './config.js?v=2026.10.11.1';
+import { protocolOf } from './config.js?v=2026.10.11.1';
+import { DEFAULT_GATEWAY_ID, getGateway, gatewayPath, defaultVisionModelForGateway } from './gateway-registry.js?v=2026.10.11.1';
 
 export const VISION_TOOL_MODEL = DEFAULT_VISION_MODEL;
 export const VIDEO_TOOL_MODEL = DEFAULT_VIDEO_MODEL;
@@ -16,20 +17,39 @@ const VISION_MAX_TOKENS = 16384;
 const VISION_CONTINUES = 4;
 const DEFAULT_VISION_PROMPT = '请完整分析这张图片：按阅读顺序转录全部可见文字（OCR，一个字都不要省略、不要总结成摘要），表格按行列写出，并说明关键物体、布局、数字与图表。文字多就全部写完。';
 
-async function postChat(body, apiKey, signal) {
-  const headers = { 'Content-Type': 'application/json', ...authHeaders('openai', apiKey) };
-  const tryFetch = (base) => fetch(`${base}/v1/chat/completions`, { method: 'POST', headers, body: JSON.stringify(body), signal });
-  const base = gatewayBase();
-  try {
-    return await tryFetch(base);
-  } catch (err) {
-    if (signal && signal.aborted) throw err;
-    if (!isNetworkError(err)) throw err;
-    const alt = otherGatewayBase();
-    const res = await tryFetch(alt);
-    setGatewayBase(alt, 'failover');
-    return res;
+function anthropicVisionPayload(body) {
+  const messages = (body.messages || []).map((message) => {
+    if (message.role !== 'user' || !Array.isArray(message.content)) return { role: message.role, content: String(message.content || '') };
+    const content = [];
+    for (const part of message.content) {
+      if (part && part.type === 'text') content.push({ type: 'text', text: String(part.text || '') });
+      else if (part && part.type === 'image_url') {
+        const url = String(part.image_url && part.image_url.url || '');
+        const hit = /^data:(image\/[\w.+-]+);base64,([\s\S]+)$/i.exec(url);
+        if (!hit) throw new Error('Anthropic 直连识图只接受 base64 图片；请先将远程 URL 下载到沙箱后重试。');
+        content.push({ type: 'image', source: { type: 'base64', media_type: hit[1].toLowerCase(), data: hit[2] } });
+      } else if (part && part.type === 'file') {
+        throw new Error('Anthropic 直连尚不支持当前 file-part 视频/音频分析。');
+      }
+    }
+    return { role: message.role, content };
+  });
+  return {
+    model: body.model, max_tokens: body.max_tokens || VISION_MAX_TOKENS, stream: false,
+    messages, ...(body.system ? { system: body.system } : {}),
+  };
+}
+
+async function postChat(body, apiKey, signal, { gatewayId = DEFAULT_GATEWAY_ID, gatewayBaseUrl = '' } = {}) {
+  const spec = getGateway(gatewayId);
+  if (gatewayId !== DEFAULT_GATEWAY_ID && (body.messages || []).some((m) => Array.isArray(m.content) && m.content.some((part) => part && part.type === 'file'))) {
+    throw new Error(`${spec.name} 直连尚未验证当前视频/音频 file-part 协议；为避免错发密钥，请改用该网关支持的原生文件端点。`);
   }
+  const protocol = spec.protocol === 'auto' ? protocolOf(body.model) : spec.protocol;
+  const requestBody = protocol === 'anthropic' ? anthropicVisionPayload(body) : body;
+  const path = gatewayPath(gatewayId, protocol === 'anthropic' ? 'messages' : 'chat');
+  const headers = { 'Content-Type': 'application/json', ...authHeaders(protocol, apiKey, gatewayId) };
+  return gatewayRequest(path, { method: 'POST', headers, body: JSON.stringify(requestBody), signal, gatewayId, gatewayBaseUrl });
 }
 
 function extractChoiceText(json) {
@@ -57,8 +77,8 @@ function isLengthStop(reason) {
   return /^(length|max_tokens|max_output_tokens)$/i.test(String(reason || ''));
 }
 
-async function oneShot(body, apiKey, signal) {
-  const res = await postChat(body, apiKey, signal);
+async function oneShot(body, apiKey, signal, { gatewayId = DEFAULT_GATEWAY_ID, gatewayBaseUrl = '' } = {}) {
+  const res = await postChat(body, apiKey, signal, { gatewayId, gatewayBaseUrl });
   const raw = await res.text();
   if (!res.ok) {
     let msg = raw.slice(0, 400);
@@ -70,7 +90,10 @@ async function oneShot(body, apiKey, signal) {
   }
   let json;
   try { json = JSON.parse(raw); } catch { throw new Error('识图接口返回了非 JSON'); }
-  const { text, finishReason } = extractChoiceText(json);
+  const protocol = getGateway(gatewayId).protocol === 'auto' ? protocolOf(body.model) : getGateway(gatewayId).protocol;
+  const { text, finishReason } = protocol === 'anthropic'
+    ? { text: (json.content || []).filter((part) => part && part.type === 'text').map((part) => part.text || '').join(''), finishReason: json.stop_reason || '' }
+    : extractChoiceText(json);
   if (!text) throw new Error('识图接口没有返回内容');
   const u = json && json.usage ? {
     input: Number(json.usage.prompt_tokens ?? json.usage.input_tokens ?? 0) || 0,
@@ -129,7 +152,7 @@ async function normalizeForVision(u) {
 }
 
 /** 用识图模型看一张或多张图（data URL 或 http URL），返回模型文字。长度上限会自动续写。 */
-export async function analyzeImage({ apiKey, prompt, dataUrl, dataUrls, model, signal, onUsage }) {
+export async function analyzeImage({ apiKey, prompt, dataUrl, dataUrls, model, signal, onUsage, gatewayId = DEFAULT_GATEWAY_ID, gatewayBaseUrl = '' }) {
   if (!apiKey) throw new Error('未配置 API Key');
   const rawUrls = [];
   for (const u of (Array.isArray(dataUrls) ? dataUrls : [])) {
@@ -145,7 +168,11 @@ export async function analyzeImage({ apiKey, prompt, dataUrl, dataUrls, model, s
     text: urls.length > 1 ? `${text}\n（共 ${urls.length} 张，按顺序分别分析每一张，用 Markdown 二级标题标出第几张。）` : text,
   }];
   for (const u of urls) content.push({ type: 'image_url', image_url: { url: u } });
-  return runVisionTurns({ model: resolveVisionModel(model), content, apiKey, signal, onUsage, promptLen: text.length, imageCount: urls.length });
+  const modelId = gatewayId === DEFAULT_GATEWAY_ID
+    ? resolveVisionModel(model)
+    : String(model || defaultVisionModelForGateway(gatewayId) || '').trim();
+  if (!modelId) throw new Error(`${getGateway(gatewayId).name} 尚未配置可用的识图模型`);
+  return runVisionTurns({ model: modelId, content, apiKey, signal, onUsage, promptLen: text.length, imageCount: urls.length, gatewayId, gatewayBaseUrl });
 }
 
 // 只有 DeepSeek / GLM 系默认会「先思考再答」且认 reasoning:false；Gemini / Claude 不认这个字段，
@@ -155,7 +182,7 @@ function wantsReasoningOff(model) {
 }
 
 // 公共循环：发一轮，finish_reason=length 就续写，最多 VISION_CONTINUES 次；汇总 usage 回调计费。
-async function runVisionTurns({ model, content, apiKey, signal, onUsage, promptLen = 0, imageCount = 0, videoSeconds = 0, audio = false }) {
+async function runVisionTurns({ model, content, apiKey, signal, onUsage, promptLen = 0, imageCount = 0, videoSeconds = 0, audio = false, gatewayId = DEFAULT_GATEWAY_ID, gatewayBaseUrl = '' }) {
   const messages = [{ role: 'user', content }];
   let disableReasoning = wantsReasoningOff(model);
   const parts = [];
@@ -172,7 +199,7 @@ async function runVisionTurns({ model, content, apiKey, signal, onUsage, promptL
     if (disableReasoning) body.reasoning = false;
     let shot;
     try {
-      shot = await oneShot(body, apiKey, signal);
+      shot = await oneShot(body, apiKey, signal, { gatewayId, gatewayBaseUrl });
     } catch (err) {
       if (disableReasoning && err && err.status === 400 && /reasoning|thinking/i.test(String(err.body || err.message || ''))) {
         disableReasoning = false;
@@ -209,7 +236,8 @@ const VIDEO_MIME = /^video\/(mp4|webm|quicktime|x-m4v)$/i;
  * 走 OpenAI 兼容 chat/completions 的 `file` 部件（filename + file_data），这是网关唯一真正把视频喂给 Gemini 的写法：
  * `video_url` 部件会被静默丢弃（模型靠文件名瞎编），非 Gemini 模型会把 file 部件剥掉——所以模型表只收录 Gemini。
  */
-export async function analyzeVideo({ apiKey, prompt, dataUrl, filename, model, signal, onUsage, durationSec = 0 }) {
+export async function analyzeVideo({ apiKey, prompt, dataUrl, filename, model, signal, onUsage, durationSec = 0, gatewayId = DEFAULT_GATEWAY_ID, gatewayBaseUrl = '' }) {
+  if (gatewayId !== DEFAULT_GATEWAY_ID) throw new Error(`${getGateway(gatewayId).name} 官方直连的视频 file-part 协议尚未验证；本次已阻止密钥跨网关发送。`);
   if (!apiKey) throw new Error('未配置 API Key');
   const u = String(dataUrl || '');
   const mm = /^data:([^;]+);base64,/.exec(u);
@@ -225,14 +253,15 @@ export async function analyzeVideo({ apiKey, prompt, dataUrl, filename, model, s
     { type: 'text', text },
     { type: 'file', file: { filename: String(filename || 'video.mp4'), file_data: fileData } },
   ];
-  return runVisionTurns({ model: resolveVideoModel(model), content, apiKey, signal, onUsage, promptLen: text.length, videoSeconds: durationSec });
+  return runVisionTurns({ model: resolveVideoModel(model), content, apiKey, signal, onUsage, promptLen: text.length, videoSeconds: durationSec, gatewayId, gatewayBaseUrl });
 }
 
 // Same gateway wire format as video: NOT input_audio or audio_url.
-export async function analyzeAudio({ apiKey, prompt, dataUrl, filename, model, signal, onUsage }) {
+export async function analyzeAudio({ apiKey, prompt, dataUrl, filename, model, signal, onUsage, gatewayId = DEFAULT_GATEWAY_ID, gatewayBaseUrl = '' }) {
+  if (gatewayId !== DEFAULT_GATEWAY_ID) throw new Error(`${getGateway(gatewayId).name} 官方直连的音频 file-part 协议尚未验证；本次已阻止密钥跨网关发送。`);
   if (!apiKey) throw Error('未配置 API Key');
   const media = normalizeAudioData(dataUrl, filename);
   const text = String(prompt || '转录可听清的语音，标注语言、近似时间点和说话人 A/B；标记听不清处，不猜测真实身份。另列摘要、待办和非语音声音。时间点与说话人区分不是强制对齐结果。').trim();
   const content = [{ type: 'text', text }, { type: 'file', file: { filename: String(filename || 'audio.mp3'), file_data: media.dataUrl } }];
-  return runVisionTurns({ model: resolveAudioModel(model), content, apiKey, signal, onUsage, promptLen: text.length, audio: true });
+  return runVisionTurns({ model: resolveAudioModel(model), content, apiKey, signal, onUsage, promptLen: text.length, audio: true, gatewayId, gatewayBaseUrl });
 }

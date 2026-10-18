@@ -18,7 +18,8 @@ function binaryHint(mime, path) {
   const m = String(mime || '').toLowerCase(), ext = (String(path).toLowerCase().match(/\.([a-z0-9]+)$/) || [])[1] || '';
   if (m.startsWith('image/')) return '要看图片内容用 analyze_image；要换格式用 convert_file';
   if (m === 'application/pdf' || ext === 'pdf') return '要读 PDF 文字用 document_tool(format="pdf", action="inspect") 或 analyze_pdf';
-  if (/wordprocessingml|presentationml/.test(m) || ext === 'docx' || ext === 'pptx') return '要读 Office 文稿用 document_tool(action="inspect")';
+  if (/wordprocessingml|presentationml/.test(m) || ext === 'docx' || ext === 'pptx') return '要读 DOCX/PPTX 用 document_tool(action="inspect")';
+  if (/spreadsheetml/.test(m) || ext === 'xlsx') return '要读 XLSX 工作簿用 xlsx_tool(action="inspect")';
   if (m.startsWith('audio/')) return '要听写/分析音频用 analyze_audio；要换格式用 convert_file';
   if (m.startsWith('video/')) return '要分析视频用 analyze_video；要换格式或抽音轨用 convert_file';
   if (m === 'application/zip' || ext === 'zip') return '要查看压缩包用 unzip_file';

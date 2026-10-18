@@ -31,7 +31,7 @@ const cfg = await import('../js/config.js');
 const api = await import('../js/api.js?v=2026.10.11.1');
 // V1.7.1：ui.js 已拆出 ui-files-panel.js / ui-lightbox.js / quickviz.js。源码级断言（grep 字符串）
 // 一律读「UI 层整体」，拆分不应改变这些契约；只需精确到某个文件的断言请直接 readFileSync 该文件。
-const UI_SOURCE_PARTS = ['../js/ui.js', '../js/ui-common.js', '../js/ui-choices.js', '../js/ui-toolflow.js', '../js/ui-editpreview.js', '../js/ui-markdown.js', '../js/ui-model-picker.js', '../js/ui-popovers.js', '../js/ui-command-palette.js', '../js/ui-system-commands.js', '../js/ui-files-panel.js', '../js/ui-lightbox.js', '../js/ui-attachments.js', '../js/ui-capability.js', '../js/quickviz.js', '../js/ui-rollback-fx.js', '../js/ui-file-viewer.js'];
+const UI_SOURCE_PARTS = ['../js/ui.js', '../js/ui-common.js', '../js/ui-choices.js', '../js/ui-toolflow.js', '../js/ui-editpreview.js', '../js/ui-markdown.js', '../js/ui-model-picker.js', '../js/ui-popovers.js', '../js/ui-command-palette.js', '../js/ui-system-commands.js', '../js/ui-files-panel.js', '../js/ui-lightbox.js', '../js/ui-attachments.js', '../js/ui-capability.js', '../js/quickviz.js', '../js/ui-rollback-fx.js', '../js/ui-file-viewer.js', '../js/ui-gateway-key.js'];
 function readUiSource() {
   const fsp = _fs;
   return UI_SOURCE_PARTS.map((rel) => fsp.readFileSync(new URL(rel, import.meta.url), 'utf8')).join('\n');
@@ -66,6 +66,106 @@ test('认证头映射（调研结论）', () => {
   assert.equal(a['anthropic-version'], '2023-06-01');
   const o = authHeaders('openai', 'sk-teamo-x');
   assert.equal(o['Authorization'], 'Bearer sk-teamo-x');
+  assert.equal(authHeaders('openai', 'AIza-test', 'gemini').Authorization, 'Bearer AIza-test', 'Gemini OpenAI-compatible endpoint uses Bearer');
+  assert.equal(authHeaders('gemini-native', 'AIza-test', 'gemini')['x-goog-api-key'], 'AIza-test', 'Gemini native REST uses x-goog-api-key');
+});
+test('Gemini 原生模型目录与 OpenAI 兼容聊天走同一 Google 网关、分协议鉴权', async () => {
+  const calls = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, opts = {}) => {
+    calls.push({ url: String(url), headers: opts.headers || {}, body: opts.body ? JSON.parse(opts.body) : null });
+    if (String(url).includes('/models')) return new Response(JSON.stringify({ models: [
+      { name: 'models/gemini-3.8-flash', supportedActions: ['generateContent'] },
+    ] }), { status: 200, headers: { 'content-type': 'application/json' } });
+    return openaiTextTurn('Gemini 正常');
+  };
+  try {
+    const list = await api.fetchModels('AIza-test-key', undefined, { gatewayId: 'gemini' });
+    assert.deepEqual(list, ['gemini-3.8-flash']);
+    const events = [];
+    await api.streamChat({
+      model: 'gemini-3.8-flash', apiKey: 'AIza-test-key', gatewayId: 'gemini',
+      messages: [{ role: 'user', text: 'hi' }], tools: null, thinking: false, onEvent: (ev) => events.push(ev),
+    });
+    assert.equal(calls.length, 2);
+    assert.equal(calls[0].url, 'https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000');
+    assert.equal(calls[0].headers['x-goog-api-key'], 'AIza-test-key');
+    assert.match(calls[1].url, /\/v1beta\/openai\/chat\/completions$/);
+    assert.equal(calls[1].headers.Authorization, 'Bearer AIza-test-key');
+    assert.equal(calls[1].headers['x-goog-api-key'], undefined);
+    assert.equal(events.find((ev) => ev.type === 'text')?.text, 'Gemini 正常');
+  } finally { globalThis.fetch = realFetch; }
+});
+test('官方网关目录包含所需厂商、Qwen 区域目录地址与 OpenAI 当前默认模型', async () => {
+  const registry = await import('../js/gateway-registry.js?v=2026.10.11.1');
+  const ids = registry.GATEWAYS.map((gateway) => gateway.id);
+  for (const id of ['teamorouter', 'anthropic', 'openai', 'gemini', 'deepseek', 'glm', 'grok', 'kimi', 'doubao', 'qwen', 'custom']) {
+    assert.ok(ids.includes(id), `缺少网关 ${id}`);
+  }
+  assert.equal(registry.defaultModelForGateway('openai'), 'gpt-6-luna');
+  assert.equal(
+    registry.gatewayModelListUrl('qwen', 'https://ws-demo.cn-beijing.maas.aliyuncs.com/compatible-mode/v1'),
+    'https://ws-demo.cn-beijing.maas.aliyuncs.com/api/v1/models?providers=qwen&page_no=1&page_size=100',
+  );
+  assert.equal(registry.gatewayModelListUrl('gemini'), 'https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000');
+});
+test('Qwen 官方模型目录按百炼分页并沿用配置地域和 Bearer Key', async () => {
+  const calls = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, opts = {}) => {
+    const parsed = new URL(String(url));
+    calls.push({ url: parsed, headers: opts.headers || {} });
+    const page = Number(parsed.searchParams.get('page_no'));
+    const count = page === 1 ? 100 : 1;
+    const models = Array.from({ length: count }, (_, index) => ({ model: `qwen-test-${(page - 1) * 100 + index + 1}` }));
+    return new Response(JSON.stringify({ output: { total: 101, page_no: page, page_size: 100, models } }), {
+      status: 200, headers: { 'content-type': 'application/json' },
+    });
+  };
+  try {
+    const list = await api.fetchModels('qwen-test-key', undefined, {
+      gatewayId: 'qwen', gatewayBaseUrl: 'https://ws-demo.cn-beijing.maas.aliyuncs.com/compatible-mode/v1',
+    });
+    assert.equal(list.length, 101);
+    assert.equal(list[0], 'qwen-test-1');
+    assert.equal(list.at(-1), 'qwen-test-101');
+    assert.equal(calls.length, 2);
+    assert.ok(calls.every((call) => call.url.hostname === 'ws-demo.cn-beijing.maas.aliyuncs.com'));
+    assert.deepEqual(calls.map((call) => call.url.searchParams.get('page_no')), ['1', '2']);
+    assert.ok(calls.every((call) => call.url.searchParams.get('page_size') === '100'));
+    assert.ok(calls.every((call) => call.headers.Authorization === 'Bearer qwen-test-key'));
+  } finally { globalThis.fetch = realFetch; }
+});
+test('官方网关直连失败不回退或泄露 Key 到 TeamoRouter', async () => {
+  const calls = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => { calls.push(String(url)); throw new TypeError('Failed to fetch'); };
+  try {
+    await assert.rejects(api.gatewayRequest('chat/completions', {
+      method: 'POST', gatewayId: 'deepseek', gatewayBaseUrl: 'https://api.deepseek.com',
+      headers: { Authorization: 'Bearer first-party-secret' }, body: '{}',
+    }), /未改发 TeamoRouter/);
+    assert.deepEqual(calls, ['https://api.deepseek.com/chat/completions']);
+  } finally { globalThis.fetch = realFetch; }
+});
+test('Anthropic 直连使用原生 Messages endpoint 和 browser header', async () => {
+  const calls = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, opts = {}) => {
+    calls.push({ url: String(url), headers: opts.headers || {} });
+    return anthropicTextTurn('Claude 正常');
+  };
+  try {
+    await api.streamChat({
+      model: 'claude-haiku-5-5', apiKey: 'sk-ant-test-key', gatewayId: 'anthropic',
+      messages: [{ role: 'user', text: 'hi' }], tools: null, thinking: false, onEvent() {},
+    });
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].url, 'https://api.anthropic.com/v1/messages');
+    assert.equal(calls[0].headers['x-api-key'], 'sk-ant-test-key');
+    assert.equal(calls[0].headers['anthropic-dangerous-direct-browser-access'], 'true');
+    assert.equal(calls[0].headers.Authorization, undefined);
+  } finally { globalThis.fetch = realFetch; }
 });
 
 group('SSE 解析器');
@@ -268,10 +368,22 @@ test('Anthropic payload（system 提取 / tool_result 合并 / max_tokens 必填
   assert.equal(user.content.length, 2);
   assert.deepEqual(user.content.map((b) => b.tool_use_id), ['t1', 't2']);
 });
-test('工具 schema 双格式转换', () => {
+test('工具 schema 双格式转换：稳定核心前缀后置动态 Schema；Anthropic 缓存断点只标在最后一个核心工具', async () => {
   const defs = [{ name: 'f', description: 'd', parameters: { type: 'object', properties: {} } }];
   assert.equal(toOpenAITools(defs)[0].function.name, 'f');
   assert.equal(toAnthropicTools(defs)[0].input_schema.type, 'object');
+  assert.equal(toAnthropicTools(defs)[0].cache_control, undefined, '无核心工具时不制造缓存断点');
+  const { CORE_TOOLS } = await import('../js/executionContext.js');
+  const { TOOL_DEFS } = await import('../js/tools.js');
+  const core = CORE_TOOLS.map((name) => TOOL_DEFS.find((tool) => tool.name === name));
+  const dynamic = TOOL_DEFS.find((tool) => tool.name === 'document_tool');
+  const anth = toAnthropicTools([dynamic, ...core]);
+  assert.deepEqual(anth.map((tool) => tool.name), [...CORE_TOOLS, 'document_tool'], '协议序列化会纠正子智能体等调用方的输入顺序');
+  assert.deepEqual(anth[core.length - 1].cache_control, { type: 'ephemeral' });
+  assert.equal(anth[core.length].cache_control, undefined, '动态工具在 cache breakpoint 之后');
+  const openai = toOpenAITools([dynamic, ...core]);
+  assert.deepEqual(openai.map((tool) => tool.function.name), [...CORE_TOOLS, 'document_tool']);
+  assert.ok(openai.every((tool) => !('cache_control' in tool)), 'OpenAI 使用稳定工具前缀与自动缓存，不发送 Anthropic 扩展字段');
 });
 
 group('Markdown 渲染（UI）');
@@ -836,6 +948,11 @@ test('renderMarkdown：完整 Markdown（markdown-it）+ KaTeX 公式', async ()
   // 表格
   const table = renderMarkdown('| 模型 | 价格 |\n|---|---|\n| A | $0 |');
   assert.ok(table.includes('<table>') && table.includes('<th>模型</th>'), '表格渲染');
+  const mergedCells = renderMarkdown('<table><tbody><tr><th colspan="2">横向合并</th></tr><tr><td rowspan="2">纵向合并</td><td>单元格</td></tr></tbody></table>');
+  assert.ok(mergedCells.includes('<th colspan="2">横向合并</th>'), '支持 colspan 横向合并');
+  assert.ok(mergedCells.includes('<td rowspan="2">纵向合并</td>'), '支持 rowspan 纵向合并');
+  const unsafeSpans = renderMarkdown('<table><tr><td colspan="0" onclick="alert(1)">无效</td><td rowspan="1001">无效</td></tr></table>');
+  assert.ok(!['colspan', 'rowspan', 'onclick'].some((attr) => unsafeSpans.includes(attr)), '跨度限定为 1–1000，事件属性必须剥除');
   // 任务列表 / 删除线 / 分割线 / 嵌套列表 / 引用
   const task = renderMarkdown('- [x] 完成\n- [ ] 待办');
   assert.ok(task.includes('type="checkbox"') && task.includes('checked'), '任务列表');
@@ -864,6 +981,15 @@ test('renderMarkdown：完整 Markdown（markdown-it）+ KaTeX 公式', async ()
   const nested = renderMarkdown('- a\n  - b');
   assert.equal((nested.match(/<ul>/g) || []).length, 2, '嵌套列表');
   assert.ok(renderMarkdown('> 引用').includes('<blockquote>'), '引用块');
+  const inlineCodeEmphasis = renderMarkdown('`*代码中的星号*` 与 _正常斜体_');
+  assert.ok(inlineCodeEmphasis.includes('<code>*代码中的星号*</code>'), '行内代码中的星号保持字面文本');
+  assert.ok(inlineCodeEmphasis.includes('<em>正常斜体</em>'), '行内代码之外的斜体仍正常渲染');
+  const quotedCode = renderMarkdown(['> ```md', '> *代码围栏中的星号* `inline`', '> ```'].join(String.fromCharCode(10)));
+  assert.ok(quotedCode.includes('<blockquote>') && quotedCode.includes('<div class="code-block"'), '引用块中的围栏代码保持代码块结构');
+  assert.ok(quotedCode.includes('*代码围栏中的星号* `inline`'), '引用标记剥离，代码内容原样保留');
+  assert.ok(!quotedCode.includes('<em>') && !quotedCode.includes('<strong>') && !quotedCode.includes('E000CB'), '引用块代码不再被当 Markdown 强调或泄漏占位符');
+  const hljsCss = readFileSync(new URL('../assets/hljs/dubhe.css', import.meta.url), 'utf8');
+  assert.ok(hljsCss.includes('.code-block .hljs-emphasis { font-style: normal; }'), 'Markdown 围栏中的强调标记不得把代码视觉上斜体化');
   // 自动链接（新窗口 + noopener）
   const link = renderMarkdown('见 https://example.com');
   assert.ok(link.includes('href="https://example.com"') && link.includes('target="_blank"') && link.includes('noopener'), '自动链接');
@@ -1047,6 +1173,12 @@ test('renderMarkdown：markdown-it 缺失时回退精简渲染器', async () => 
   assert.ok(nestedFallback.includes('<mark class="md-highlight"><code>IC0</code></mark>'), '回退路径恢复高亮中的行内代码');
   assert.ok(nestedFallback.includes('<sub><code>2</code></sub>O'), '回退路径恢复下标中的行内代码');
   assert.ok(!/\uE000IC\d+\uE000/.test(nestedFallback), '回退路径不得泄漏行内代码占位符');
+  const quoteCodeFallback = renderMarkdown(['> ```md', '> *literal* `inline`', '> ```'].join(String.fromCharCode(10)));
+  assert.ok(quoteCodeFallback.includes('<blockquote><div class="code-block"'), '回退路径保留引用块内的代码围栏');
+  assert.ok(quoteCodeFallback.includes('*literal* `inline`') && !quoteCodeFallback.includes('<em>'), '回退路径中的引用代码保持字面内容');
+  const nestedQuoteCodeFallback = renderMarkdown(['> > ```js', '> > *nested literal* `inline`', '> > ```'].join(String.fromCharCode(10)));
+  assert.ok(nestedQuoteCodeFallback.includes('<blockquote><blockquote><div class="code-block"'), '嵌套引用中的代码围栏保持两层引用结构');
+  assert.ok(nestedQuoteCodeFallback.includes('*nested literal* `inline`') && !nestedQuoteCodeFallback.includes('&gt;') && !nestedQuoteCodeFallback.includes('<em>'), '嵌套引用代码不残留 > 前缀，也不触发斜体');
   assert.ok(!out.includes('<script>'), '回退渲染安全');
   globalThis.markdownit = savedMd;
 });
@@ -1064,6 +1196,9 @@ test('systemPrompt / 子智能体：注入输出规范', async () => {
   assert.match(OUTPUT_SPEC, /:::flow/);
   assert.match(OUTPUT_SPEC, /:::mind/);
   assert.ok(OUTPUT_SPEC.includes('表格') && OUTPUT_SPEC.includes('围栏代码块'), '规范含表格/代码块要求');
+  assert.match(OUTPUT_SPEC, /colspan="2"[\s\S]*rowspan="2"/, '中文输出规范说明合并单元格写法');
+  const { OUTPUT_SPEC_EN } = await import('../js/prompt-en.js');
+  assert.match(OUTPUT_SPEC_EN, /colspan="2"[\s\S]*rowspan="2"/, '英文输出规范同步说明合并单元格写法');
   assert.ok(OUTPUT_SPEC.includes(String.raw`少用）：\n:::fold 标题\n内容\n:::`), '折叠栏示例只保留单层反斜杠');
   assert.ok(OUTPUT_SPEC.includes('Emoji：默认不使用装饰性 Emoji'), '提示词降低装饰性 Emoji 频率');
   assert.match(OUTPUT_SPEC, /完整可运行/, '代码不得写太短太简略');
@@ -4017,10 +4152,29 @@ test('paintAssistant：光标必须叠上忙碌状态（导入后去不掉的根
   const src = readUiSource();
   const paint = src.slice(src.indexOf('function paintAssistant'), src.indexOf('function webNote'));
   assert.match(paint, /const live = !m\.done && getBusy\(\)/, '历史消息缺 done 时不能只靠 !m.done 画光标');
-  assert.match(paint, /live && !noOutputYet.*cursor/, '光标只在 live 时出现');
+  assert.match(paint, /live && !noOutputYet.*cursor/, '普通正文光标只在 live 时出现');
   assert.equal(paint.includes("if (!m.done && !noOutputYet) html += '<span class=\"cursor\""), false, '旧条件会让导入会话的每条回复一直闪光标');
   assert.match(paint, /模型未返回可见答复/, '旧会话里的空完成消息也不能继续显示为空白');
   assert.match(paint, /m\.done && !m\.cancelled && !String\(m\.text \|\| ''\)\.trim\(\)/, '完成但无正文时应显示重新生成提示');
+});
+test('运行工具时光标位于工具菜单下方，完成后从工具菜单移除', async () => {
+  const { JSDOM } = await import('jsdom');
+  const { syncToolMenuCursor } = await import('../js/ui-toolflow.js');
+  const doc = new JSDOM('<div class="tool-chips"><div class="ran-commands"></div></div>').window.document;
+  const chips = doc.querySelector('.tool-chips'), menu = doc.querySelector('.ran-commands');
+  const cursor = syncToolMenuCursor(chips, true);
+  assert.equal(cursor.classList.contains('cursor'), true);
+  assert.equal(cursor.getAttribute('aria-hidden'), 'true');
+  assert.equal(menu.nextElementSibling, cursor, '光标是菜单之后的独立节点');
+  assert.equal(chips.lastElementChild, cursor);
+  assert.equal(syncToolMenuCursor(chips, false), null);
+  assert.equal(chips.querySelector('.tool-menu-cursor'), null);
+  const src = readUiSource();
+  const paint = src.slice(src.indexOf('function paintAssistant'), src.indexOf('function webNote'));
+  assert.match(paint, /const toolMenuBusy = live &&[\s\S]*?liveToolCallIds\.has\(String\(t\.id\)\)/);
+  assert.match(paint, /syncToolMenuCursor\(chips, menuCaretLive\)/);
+  const css = _fs.readFileSync(new URL('../css/styles.css', import.meta.url), 'utf8');
+  assert.match(css, /\.tool-chips > \.tool-menu-cursor \{ margin-left: 21px; \}/);
 });
 
 group('Hermes 式 harness（提示词分层 / 技能 / 记忆 / 并行工具）');
@@ -4732,6 +4886,61 @@ test('pdfToImages 在无 Canvas 环境给出可读失败', async () => {
   assert.ok(src.includes('JPEG_QUALITY = 0.92'));
   assert.ok(src.includes("intent: 'print'"));
 });
+test('PDF 沙箱文件预览：成功渲染后显示页面缩略图，而非失败占位', async () => {
+  const { JSDOM } = await import('jsdom');
+  const dom = new JSDOM('<!doctype html><html><body><button id="download-zip"></button><button id="clear-files"></button><div id="file-list"></div><div id="files-count"></div><div id="files-n"></div><div id="files-zip"></div><div id="file-viewer"></div></body></html>', { url: 'https://dubhe.test/app.html', pretendToBeVisual: true });
+  const old = { window: globalThis.window, document: globalThis.document, atob: globalThis.atob };
+  const dataUrl = `data:application/pdf;base64,${Buffer.from('%PDF-1.4\\nfixture', 'latin1').toString('base64')}`;
+  let destroyed = false;
+  let renderOptions = null;
+  const page = {
+    getViewport: ({ scale }) => ({ width: 120 * scale, height: 160 * scale }),
+    render: (options) => { renderOptions = options; return { promise: Promise.resolve() }; },
+  };
+  const canvasContext = { fillStyle: '', imageSmoothingEnabled: false, imageSmoothingQuality: '', fillRect() {}, drawImage() {} };
+  dom.window.HTMLCanvasElement.prototype.getContext = function (type) { assert.equal(type, '2d'); return canvasContext; };
+  dom.window.HTMLCanvasElement.prototype.toDataURL = function (type, quality) {
+    assert.equal(type, 'image/jpeg'); assert.equal(quality, 0.8);
+    return 'data:image/jpeg;base64,SlBH';
+  };
+  dom.window.pdfjsLib = {
+    GlobalWorkerOptions: {},
+    getDocument: ({ data }) => {
+      assert.ok(data instanceof ArrayBuffer);
+      return { promise: Promise.resolve({ numPages: 1, getPage: async (n) => { assert.equal(n, 1); return page; }, destroy() { destroyed = true; } }) };
+    },
+  };
+  globalThis.window = dom.window;
+  globalThis.document = dom.window.document;
+  try {
+    const { installFilesPanel } = await import('../js/ui-files-panel.js');
+    const fs = {
+      read: (path) => path === 'uploads/report.pdf' ? dataUrl : '',
+      list: () => [{ path: 'uploads/report.pdf', size: dataUrl.length }],
+      isInternalPath: () => false,
+    };
+    const panel = installFilesPanel({
+      store: { state: { activeSessionId: 'pdf-preview-test' } }, agent: { fs }, toast() {},
+      fmtSize: (n) => `${n}B`, highlightCode: (text) => text, sanitizeSvgRaw: (text) => text, safeImgSrc: (text) => text,
+    });
+    panel.openFileViewer('uploads/report.pdf');
+    const deadline = Date.now() + 500;
+    while (!document.querySelector('.fv-pdf-page img') && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 0));
+    const box = document.querySelector('.fv-pdf');
+    const image = box?.querySelector('.fv-pdf-page img');
+    assert.ok(image, box?.textContent || 'PDF 页面没有渲染到预览');
+    assert.equal(image.getAttribute('src'), 'data:image/jpeg;base64,SlBH');
+    assert.equal(image.getAttribute('alt'), '第 1 页');
+    assert.match(box.querySelector('.fv-pdf-meta')?.textContent || '', /PDF · 1 页/);
+    assert.ok(renderOptions?.canvasContext && renderOptions?.viewport, 'pdf.js 的页面渲染参数应交给 Canvas');
+    assert.equal(destroyed, true, '渲染完释放 PDF 文档资源');
+  } finally {
+    dom.window.close();
+    if (old.window === undefined) delete globalThis.window; else globalThis.window = old.window;
+    if (old.document === undefined) delete globalThis.document; else globalThis.document = old.document;
+    if (old.atob === undefined) delete globalThis.atob; else globalThis.atob = old.atob;
+  }
+});
 
 group('本地代码小工具（regex / hash / codec / unicode）');
 test('P6：regex / hash / codec / unicode 并入 text_tool（旧名字不再注册但仍可执行），提示词点名', async () => {
@@ -5110,8 +5319,9 @@ test('内容审核使用项目内下载模型，不调用 DeepSeek/网关审核'
   assert.match(src, /local:tfjs-toxicity/);
   assert.match(src, /local:nudenet-320n/);
   assert.match(src, /nsfwjs/);
-  // 远程只有「灰区图复核」一条路，且必须经 vision.analyzeImage（统一网关 / 故障切换 / 计费口径），moderation.js 自己不拼请求
-  assert.doesNotMatch(src, /chat\/completions|authHeaders|gatewayBase/i);
+  // 远程只有「灰区图复核」一条路，且必须经 vision.analyzeImage；moderation.js 只传递当前网关上下文，不自行构造 HTTP 请求。
+  assert.doesNotMatch(src, /authHeaders|gatewayRequest\s*\(/);
+  assert.match(src, /gatewayBaseUrl/);
   assert.match(src, /import \{ analyzeImage \} from '\.\/vision\.js'/);
   assert.match(src, /REMOTE_IMAGE_REVIEW_MODEL = 'gemini-3\.5-flash-lite'/);
   const main = fsp.readFileSync(new URL('../js/main.js', import.meta.url), 'utf8');
@@ -8529,7 +8739,7 @@ test('analyze_video 工具：定义 / 契约 / 并行与访问表 / 执行路径
   assert.match(def.description, /不要传 model/);
   assert.match(def.description, /16MB/);
   assert.deepEqual(Object.keys(def.parameters.properties).sort(), ['path', 'prompt']);
-  assert.equal(TOOL_DEFS.length, 40, '40 工具：媒体转换、SVG 分析与 GitHub 项目拉取均须登记到能力表和执行契约');
+  assert.equal(TOOL_DEFS.length, 42, '42 工具：工具目录与 XLSX 能力均登记到能力表和执行契约');
   const c = ex.getToolContract('analyze_video');
   assert.equal(c.sideEffect, 'remote');
   assert.equal(c.external, true);
@@ -8540,14 +8750,15 @@ test('analyze_video 工具：定义 / 契约 / 并行与访问表 / 执行路径
   assert.match(tools, /const VIDEO_MAX_BYTES = 16 \* 1024 \* 1024;/);
   assert.match(tools, /\[视频识别完成\] 模型 \$\{videoModel\} · 文件 \$\{path\} · 全文 \$\{text\.length\} 字已写入 \$\{outPath\}/);
   assert.match(tools, /kind: 'vision',\s*model: videoModel,/, '计费事件带真实模型');
-  // analyze_image / analyze_pdf 改读 ctx.visionModel
-  assert.match(tools, /const visionModel = resolveVisionModel\(ctx\.visionModel\);/);
+  // analyze_image / analyze_pdf use the selected gateway's vision model (TeamoRouter honors ctx.visionModel).
+  assert.match(tools, /const visionModel = visionModelForContext\(ctx\);/);
+  assert.match(tools, /defaultVisionModelForGateway\(gatewayId\)/);
   assert.ok(!/model: VISION_TOOL_MODEL,/.test(tools), 'analyze_image/analyze_pdf 不得再写死默认识图模型');
   const vision = fsp.readFileSync(new URL('../js/vision.js', import.meta.url), 'utf8');
-  assert.match(vision, /export async function analyzeVideo\(\{ apiKey, prompt, dataUrl, filename, model, signal, onUsage, durationSec = 0 \}\)/);
+  assert.match(vision, /export async function analyzeVideo\(\{ apiKey, prompt, dataUrl, filename, model, signal, onUsage, durationSec = 0, gatewayId = DEFAULT_GATEWAY_ID, gatewayBaseUrl = '' \}\)/);
   assert.match(vision, /\{ type: 'file', file: \{ filename: String\(filename \|\| 'video\.mp4'\), file_data: fileData \} \}/, '网关唯一真正把视频喂给 Gemini 的写法是 file 部件');
   assert.ok(!/type: 'video_url'/.test(vision), 'video_url 部件会被网关静默丢弃，不得使用');
-  assert.match(vision, /export async function analyzeImage\(\{ apiKey, prompt, dataUrl, dataUrls, model, signal, onUsage \}\)/);
+  assert.match(vision, /export async function analyzeImage\(\{ apiKey, prompt, dataUrl, dataUrls, model, signal, onUsage, gatewayId = DEFAULT_GATEWAY_ID, gatewayBaseUrl = '' \}\)/);
   // 执行路径：无 key / 无视频 / 非视频 data URL / 超限
   const fs = createFS();
   assert.match(await executeTool('analyze_video', {}, { fs, onUi: () => {} }), /未配置 TeamoRouter API Key/);
@@ -9199,10 +9410,11 @@ test('UI：Edited File(s) 仅在自动清理实际移除文件时标出未引用
   assert.match(ui, /row\.item\.classList\.toggle\('fold-discarded', dropped\)/, '丢弃标记增量更新，而不是重建文件名');
   assert.match(ui, /设置中开启了自动清理：因最终回答未引用，本文件已在回合结束时移除。/);
   assert.match(ui, /自动清理 · 未引用/);
-  assert.match(ui, /本轮根据设置自动清理了 \$\{discarded\.size\} 个未引用文件；internal\/ 与 uploads\/ 下的文件始终保留。/);
-  assert.match(ui, /node\.classList\.toggle\('has-discarded', discarded\.size > 0\);/);
+  assert.match(ui, /本轮根据设置自动清理了 \$\{discardedPaths\.size\} 个未引用文件；internal\/ 与 uploads\/ 下的文件始终保留。/);
+  assert.match(ui, /node\.classList\.toggle\('has-discarded', discardedPaths\.size > 0\);/);
   assert.match(ui, /edited\.length \? editFoldLabel\(edited\.length, \{ live: liveNow \}\) : discardedFoldLabel\(paths\.length\)/);
-  assert.match(css, /\.edited-files li\.fold-discarded \{ color: var\(--fg-3\); text-decoration: line-through;/);
+  assert.match(css, /\.edited-files li\.fold-discarded > \.edit-path-head \{ color: var\(--fg-3\); \}/);
+  assert.match(css, /\.edited-files li\.fold-discarded \.edit-path \{ text-decoration: line-through;/);
   assert.match(css, /\.edited-files li\.fold-discarded \.fold-tag \{ margin-left: 8px;[^}]*color: #dc2626;/);
   assert.match(css, /\.edited-files \.fold-note \{/);
   assert.match(agentSrc, /store\.updateMessage\(lastAssistant\.id, \{ tempCommit: \{ committed: tc\.committed \|\| \[\], discarded: tc\.discarded \|\| \[\] \} \}\);\n\s+emit\('onTempCommit', lastAssistant\);/, '提交结果挂到最终助手消息并通知 UI 重画');
@@ -9303,7 +9515,7 @@ test('端到端：思考 Off + 中继离线时，agent.previewToolTable().allowe
     assert.ok(sent.length <= 18 && sent.length >= 8, `寒暄一句只带核心工具：${sent.length}`);
     const sys = calls[0].body.messages.filter((m) => m.role === 'system').map((m) => (typeof m.content === 'string' ? m.content : JSON.stringify(m.content))).join('\n');
     assert.match(sys, /【工具表】本轮已禁用 \d+ 个：/);
-    assert.match(sys, /另有 \d+ 个工具本轮按需未挂载：/);
+    assert.match(sys, /按需未挂载工具目录（\d+项；完整Schema未挂载）：/);
     assert.match(sys, /dispatch_subagent（思考档位需 Max\/Ultra）/);
     assert.match(sys, /execute_cpp（远程 C\+\+ 已关）/);
     assert.ok(sys.includes(`【工具表】本轮${pv.summary}`), '系统提示的清单与 previewToolTable().summary 逐字相同');
@@ -9347,7 +9559,7 @@ test('端到端：中继在线但只声明 fetch/search 时，【联网】段列
     assert.equal(calls.length, 1);
     const sys = calls[0].body.messages.filter((m) => m.role === 'system').map((m) => (typeof m.content === 'string' ? m.content : JSON.stringify(m.content))).join('\n');
     assert.match(sys, /本轮已开启；中继健康检查通过/);
-    assert.match(sys, /实际网页工具表：search_web（网页搜索）、fetch_url（读取单个网页）。未列出的 crawl_site（中继未声明 crawl） \/ download_file（中继未声明 file） \/ pull_github_project（中继未声明 file） 本轮不可用。/);
+    assert.match(sys, /实际网页工具表：fetch_url（读取单个网页）、search_web（网页搜索）。未列出的 crawl_site（中继未声明 crawl） \/ download_file（中继未声明 file） \/ pull_github_project（中继未声明 file） 本轮不可用。/);
     assert.match(sys, /【工具表】本轮已禁用 \d+ 个：[^\n]*crawl_site（中继未声明 crawl）、download_file（中继未声明 file）、pull_github_project（中继未声明 file）/);
     const sent = (calls[0].body.tools || []).map((t) => (t.function && t.function.name) || t.name);
     assert.ok(sent.includes('fetch_url') && sent.includes('search_web') && !sent.includes('crawl_site') && !sent.includes('download_file') && !sent.includes('pull_github_project'));
@@ -9435,7 +9647,7 @@ test('ui.js 第三刀：ui-markdown / ui-model-picker / ui-popovers / ui-command
   const mdV = await import('../js/ui-markdown.js?v=2026.10.11.1');
   assert.strictEqual(uiMod.renderMarkdown, mdV.renderMarkdown, 'ui.js 再导出同一个 renderMarkdown（旧 import 路径不变）');
   assert.strictEqual(uiMod.videoBlobUrl, mdV.videoBlobUrl);
-  assert.match(ui, /const \{ inSystem, isSystemIsolated, selectModel, chatModels, updateModelBtn, renderModelMenu \} = installModelPicker\(\{/);
+  assert.match(ui, /const \{ inSystem, isSystemIsolated, selectModel, chatModels, updateModelBtn, renderModelMenu, refreshModels, syncGateway \} = installModelPicker\(\{/);
   assert.match(ui, /renderFiles: \(\) => renderFiles\(\), updateStats, syncCapLine, syncWeb: \(\) => syncWeb\(\),/, 'renderFiles / syncWeb 定义在后，必须惰性注入');
   assert.match(ui, /const \{ hideTokPop, placeTokPop, showRouterPop, showTokBreak \} = installPopovers\(\{/);
   assert.match(ui, /const \{ handleSystemCommand \} = installSystemCommands\(\{/);
@@ -9503,15 +9715,17 @@ test('package.json：scripts.test 一条命令跑全部（= CI）；README 顶�
   assert.doesNotMatch(readme, /npm test\s+#\s*tests\/agent\.test\.mjs/, 'npm test 不再只是主单测');
 });
 
-group('P6 修正：工具选择熵过高 → 两层下发（核心 12 必带 + 按需挂载）/ 9 → 2 伞工具 / 未挂载调用回执 / p2-eval 误选率门禁');
+group('P6 修正：工具选择熵过高 → 两层下发（稳定核心前缀 + 按需工具组）/ Schema 渐进披露 / 未挂载机器码 / p2-eval 误选率门禁');
 
-test('selectToolsForTurn：核心 12 必带；其余按关键词 / 附件 / 近几轮用量 / 点名挂载；exclude 生效；没写规则的工具不会悄悄消失', async () => {
+test('selectToolsForTurn：核心工具稳定前置；规则在首轮请求前路由并按组挂载；附件、近几轮用量与点名也生效', async () => {
   const ec = await import('../js/executionContext.js');
   const { TOOL_DEFS } = await import('../js/tools.js');
-  assert.deepEqual([...ec.CORE_TOOLS], ['execute_javascript', 'execute_python', 'execute_cpp', 'write_file', 'read_file', 'list_files', 'delete_file', 'copy_file', 'fetch_url', 'search_web', 'analyze_image', 'dispatch_subagent', 'knowledge_search', 'skill_library']);
+  assert.deepEqual([...ec.CORE_TOOLS], ['execute_javascript', 'execute_python', 'execute_cpp', 'write_file', 'read_file', 'list_files', 'delete_file', 'copy_file', 'fetch_url', 'search_web', 'analyze_image', 'dispatch_subagent', 'knowledge_search', 'skill_library', 'tool_library']);
   const names = (r) => r.mounted.map((t) => t.name);
   const hello = ec.selectToolsForTurn({ allowed: TOOL_DEFS, text: '你好' });
-  assert.deepEqual(names(hello), [...ec.CORE_TOOLS].filter((n) => TOOL_DEFS.some((t) => t.name === n)).sort((a, b) => TOOL_DEFS.findIndex((t) => t.name === a) - TOOL_DEFS.findIndex((t) => t.name === b)), '寒暄只带核心工具（保持 TOOL_DEFS 原序）');
+  assert.deepEqual(names(hello), [...ec.CORE_TOOLS], '寒暄只带核心工具，且核心 schema 排在稳定前缀中');
+  assert.equal(hello.cachePrefixCount, ec.CORE_TOOLS.length);
+  assert.deepEqual(hello.router, { phase: 'before-first-model-request', method: 'rules', groups: [] });
   assert.equal(hello.deferred.length, TOOL_DEFS.length - ec.CORE_TOOLS.length);
   assert.ok(hello.deferred.every((d) => d.reason === 'on-demand'));
   // 关键词
@@ -9519,12 +9733,21 @@ test('selectToolsForTurn：核心 12 必带；其余按关键词 / 附件 / 近�
   assert.ok(names(ec.selectToolsForTurn({ allowed: TOOL_DEFS, text: '把这段话的 sha256 算出来' })).includes('text_tool'));
   assert.ok(names(ec.selectToolsForTurn({ allowed: TOOL_DEFS, text: '画一张海报' })).includes('generate_image'));
   assert.ok(!names(ec.selectToolsForTurn({ allowed: TOOL_DEFS, text: '画个折线图' })).includes('generate_image'), 'exclude：统计图不挂 generate_image');
+  // 首轮前置路由：命中任一 Office 工具就一次挂载 DOCX/PPTX/PDF + XLSX 两份 schema
+  const officeRoute = ec.selectToolsForTurn({ allowed: TOOL_DEFS, text: '请创建一个 Excel 工作簿并导出 XLSX' });
+  assert.deepEqual(officeRoute.routedGroups, ['office_documents']);
+  assert.ok(names(officeRoute).includes('document_tool') && names(officeRoute).includes('xlsx_tool'));
+  assert.equal(officeRoute.reasons.document_tool, 'group:office_documents');
+  assert.equal(officeRoute.router.phase, 'before-first-model-request');
   // 附件类型
   const pdf = ec.selectToolsForTurn({ allowed: TOOL_DEFS, text: '这份讲了什么', attachments: [{ name: 'paper.pdf', kind: 'text' }] });
   assert.ok(names(pdf).includes('analyze_pdf') && pdf.reasons.analyze_pdf === 'attachment:pdf');
   assert.ok(!names(ec.selectToolsForTurn({ allowed: TOOL_DEFS, text: '这份讲了什么' })).includes('analyze_pdf'), '没有 PDF 附件就不带 analyze_pdf');
   assert.ok(names(ec.selectToolsForTurn({ allowed: TOOL_DEFS, text: '看看', attachments: [{ name: 'clip.mp4', source: 'video' }] })).includes('analyze_video'));
   assert.ok(names(ec.selectToolsForTurn({ allowed: TOOL_DEFS, text: '看看', attachments: [{ name: 'a.zip' }] })).includes('unzip_file'));
+  const xlsxAttachment = ec.selectToolsForTurn({ allowed: TOOL_DEFS, text: '看看这个表', attachments: [{ name: 'uploads/budget.xlsx', source: 'office' }] });
+  assert.ok(names(xlsxAttachment).includes('document_tool') && names(xlsxAttachment).includes('xlsx_tool'));
+  assert.equal(ec.attachmentKindOf({ name: 'budget.xlsx' }), 'office');
   assert.ok(names(ec.selectToolsForTurn({ allowed: TOOL_DEFS, text: '看看', attachments: [{ name: 'sales.csv', kind: 'text' }] })).includes('data_tool'));
   // 粘性 + 点名 + 强制
   const sticky = ec.selectToolsForTurn({ allowed: TOOL_DEFS, text: '继续', recentTools: ['render_mermaid'] });
@@ -9540,8 +9763,12 @@ test('selectToolsForTurn：核心 12 必带；其余按关键词 / 附件 / 近�
   assert.equal(ghost.reasons.ghost_tool, 'no-rule');
   // 每个非核心工具都有规则（否则两层下发名存实亡）
   for (const t of TOOL_DEFS) if (!ec.CORE_TOOLS.includes(t.name)) assert.ok(ec.TOOL_MOUNT_RULES[t.name], `${t.name} 缺按需挂载规则`);
-  // 提示词一行只列名字
-  assert.match(ec.formatDeferredTools(hello.deferred), /^另有 \d+ 个工具本轮按需未挂载：browser_sandbox、document_tool、get_current_time、/);
+  // 提示词仅有紧凑目录（名称 + 一句话）；完整 parameters schema 不预装
+  const directory = ec.formatDeferredTools(hello.deferred);
+  assert.match(directory, /^按需未挂载工具目录（\d+项；完整Schema未挂载）：\n- browser_sandbox: /);
+  assert.match(directory, /document_tool: .*DOCX/);
+  assert.doesNotMatch(directory, /parameters|input_schema|slides:\[/i);
+  assert.match(ec.formatDeferredTools(hello.deferred, { language: 'en' }), /^On-demand tool directory \(\d+; full schemas not mounted\):\n- /);
   assert.equal(ec.formatDeferredTools([]), '');
   // recentToolNames：只看最近两轮
   const msgs = [
@@ -9610,7 +9837,7 @@ test('P6 验收：三类典型消息的请求体 tools.length 中位数 ≤ 18�
   } finally { globalThis.fetch = realFetch; net.resetRelayProbe(); await drainSaves(); }
 });
 
-test('P6：模型调用本轮未挂载的工具 → 内核回「该工具本轮未启用，可用 execute_javascript 完成」并当场挂载，下一次请求体里就有它，审计留 tool-lazy-mount', async () => {
+test('P6：模型调用本轮未挂载工具 → 返回机器可读 TOOL_NOT_MOUNTED、挂载后只重试一次，下一请求即带 Schema', async () => {
   const calls = [];
   mockFetch([
     openaiToolTurn('c1', 'json_tool', JSON.stringify({ action: 'parse', text: '{"a":1}' })),
@@ -9628,8 +9855,9 @@ test('P6：模型调用本轮未挂载的工具 → 内核回「该工具本轮�
     const toolsOf = (c) => (c.body.tools || []).map((t) => (t.function && t.function.name) || t.name);
     assert.ok(!toolsOf(calls[0]).includes('json_tool'), '寒暄一句不会预先挂 json_tool');
     const firstResult = calls[1].body.messages.filter((m) => m.role === 'tool').map((m) => String(m.content)).pop();
-    assert.match(firstResult, /该工具本轮未启用，可用 execute_javascript 完成/);
-    assert.match(firstResult, /已临时挂载 json_tool/);
+    assert.match(firstResult, /\"code\":\"TOOL_NOT_MOUNTED\"/);
+    assert.match(firstResult, /\"retryable\":true/);
+    assert.match(firstResult, /\"mounted\":\[\"json_tool\"\]/);
     assert.ok(toolsOf(calls[1]).includes('json_tool'), '回执之后的请求体里已经挂上 json_tool');
     const secondResult = calls[2].body.messages.filter((m) => m.role === 'tool').map((m) => String(m.content)).pop();
     assert.match(secondResult, /"a": 2|a.*2/, '重试后真正执行');
@@ -9640,7 +9868,7 @@ test('P6：模型调用本轮未挂载的工具 → 内核回「该工具本轮�
     const last = store.state.messages[store.state.messages.length - 1];
     assert.match(last.text, /解析完成/);
     const chips = store.state.messages.filter((m) => m.role === 'assistant' && Array.isArray(m.toolCalls)).flatMap((m) => m.toolCalls);
-    assert.ok(chips.some((c) => c.name === 'json_tool' && c.status === 'error' && /未启用/.test(c.errorNote || '')), '芯片显示 ✗ + 原因');
+    assert.ok(chips.some((c) => c.name === 'json_tool' && c.status === 'error' && /TOOL_NOT_MOUNTED/.test(c.errorNote || '')), '芯片显示 ✗ + 机器码原因');
   } finally { globalThis.fetch = realFetch; await drainSaves(); }
 });
 
@@ -9715,7 +9943,7 @@ test('#2b Gemini 复核前先压缩快照：最长边 512 / JPEG 0.8；无 DOM �
   } finally { if (oldDoc === undefined) delete globalThis.document; else globalThis.document = oldDoc; }
   const fsp = await import('node:fs');
   const src = fsp.readFileSync(new URL('../js/moderation.js', import.meta.url), 'utf8');
-  assert.match(src, /const snap = snapshotForRemoteReview\(img, a\.dataUrl\);[\s\S]*?remoteImageReview\(snap\.dataUrl, \{ apiKey, signal \}\)/, '流水线里送远程的是快照不是原图');
+  assert.match(src, /const snap = snapshotForRemoteReview\(img, a\.dataUrl\);[\s\S]*?remoteImageReview\(snap\.dataUrl, \{ apiKey, signal, model: reviewModel, gatewayId, gatewayBaseUrl \}\)/, '流水线里送远程的是快照，并复用当前网关上下文');
 });
 
 test('#3 用户提示不念内部审核流程：拦截气泡只说「该内容已被审核」，上传 toast 不提抽帧 / 待审核 / 通过审核', async () => {
@@ -9769,7 +9997,7 @@ test('#9 设置页开关 → 会话区同步：mountSettings 回调 onSettingCha
   const settings = fsp.readFileSync(new URL('../js/settings.js', import.meta.url), 'utf8');
   const main = fsp.readFileSync(new URL('../js/main.js', import.meta.url), 'utf8');
   const ui = readUiSource();
-  assert.match(settings, /export function mountSettings\(store, \{ onRelayChanged, onKeySaved, onSettingChanged \} = \{\}\)/);
+  assert.match(settings, /export function mountSettings\(store, \{ onRelayChanged, onKeySaved, onSettingChanged, onGatewayChanged \} = \{\}\)/);
   assert.match(settings, /onChange && onChange\(el\.checked\);\n\s+changed\(key, el\.checked\);/, '每个开关都回调');
   assert.match(settings, /changed\('theme', v\);/);
   assert.match(settings, /changed\('reasoningLevel', v\);/);
@@ -10192,8 +10420,8 @@ test('能力登记处：TOOL_DEFS ↔ 登记表 ↔ execution.js 契约三方一
   same(reg.PARALLEL_TOOL_NAMES, ['skill_library', 'knowledge_search', 'read_file', 'list_files', 'search_files', 'get_current_time', 'get_browser_environment', 'fetch_url', 'search_web', 'regex', 'hash', 'codec', 'unicode', 'evaluate_expression', 'diff_text', 'json_tool', 'date_calc', 'convert_units', 'analyze_image', 'text_tool']);
   same(reg.NETWORK_TOOL_NAMES, ['fetch_url', 'search_web', 'crawl_site', 'download_file', 'pull_github_project']);
   same(reg.READ_ONLY_TOOL_NAMES, ['skill_library', 'knowledge_search', 'read_file', 'list_files', 'search_files', 'get_current_time', 'regex', 'hash', 'codec', 'unicode', 'evaluate_expression', 'diff_text', 'json_tool', 'csv_tool', 'date_calc', 'text_tool', 'convert_units', 'data_tool']);
-  same(reg.HEAVY_TOOL_NAMES, ['document_tool', 'browser_sandbox', 'write_file', 'delete_file', 'copy_file', 'zip_files', 'unzip_file', 'convert_file', 'execute_javascript', 'execute_python', 'execute_cpp', 'generate_image', 'dispatch_subagent', 'fetch_url', 'run_git', 'analyze_image', 'render_mermaid', 'render_dot', 'execute_sql']);
-  assert.deepEqual([...reg.CORE_TOOL_NAMES], ['execute_javascript', 'execute_python', 'execute_cpp', 'write_file', 'read_file', 'list_files', 'delete_file', 'copy_file', 'fetch_url', 'search_web', 'analyze_image', 'dispatch_subagent', 'knowledge_search', 'skill_library'], '原核心顺序不变，末尾增加只读知识检索');
+  same(reg.HEAVY_TOOL_NAMES, ['document_tool', 'xlsx_tool', 'browser_sandbox', 'write_file', 'delete_file', 'copy_file', 'zip_files', 'unzip_file', 'convert_file', 'execute_javascript', 'execute_python', 'execute_cpp', 'generate_image', 'dispatch_subagent', 'fetch_url', 'run_git', 'analyze_image', 'render_mermaid', 'render_dot', 'execute_sql']);
+  assert.deepEqual([...reg.CORE_TOOL_NAMES], ['execute_javascript', 'execute_python', 'execute_cpp', 'write_file', 'read_file', 'list_files', 'delete_file', 'copy_file', 'fetch_url', 'search_web', 'analyze_image', 'dispatch_subagent', 'knowledge_search', 'skill_library', 'tool_library'], '稳定核心顺序末尾增加工具目录 Schema');
   assert.deepEqual(Object.keys(reg.CAPABILITY_GATED_TOOL_GROUPS), ['invariantCore', 'webFetch', 'workerSearch', 'siteCrawler', 'fileDownload', 'codeSandbox', 'localBrowser', 'subagentSwarm']);
   assert.deepEqual([...reg.CAPABILITY_GATED_TOOL_GROUPS.codeSandbox], ['execute_javascript', 'execute_python', 'execute_cpp']);
   assert.deepEqual([...reg.CAPABILITY_GATED_TOOL_GROUPS.webFetch], ['fetch_url']);
@@ -10275,7 +10503,7 @@ test('界面动效偏好：auto / on / off 三态，on 覆盖系统 reduce，off
   assert.match(main, /applyMotion\(\);/);
   assert.match(main, /browserFeatureReport\(\)[\s\S]*?dubhe-oldbrowser-noted/);
   const css = fsp.readFileSync(new URL('../css/styles.css', import.meta.url), 'utf8');
-  assert.equal((css.match(/@media \(prefers-reduced-motion: reduce\) \{/g) || []).length, 10, '含语音球体与状态抛光的减少动效块（跨页过渡那条已移到 css/page-fx.css）');
+  assert.equal((css.match(/@media \(prefers-reduced-motion: reduce\) \{/g) || []).length, 11, '含嵌套编辑预览、语音球体与状态抛光的减少动效块（跨页过渡那条已移到 css/page-fx.css）');
   const reduceBlocks = css.split('@media (prefers-reduced-motion: reduce) {').slice(1);
   for (const b of reduceBlocks) {
     let depth = 1, end = 0;
@@ -10646,9 +10874,9 @@ test('语音输入：只使用原生 SpeechRecognition，一次点击一条识�
     value: '', selectionStart: 0, selectionEnd: 0,
     setSelectionRange() {}, dispatchEvent() {}, ownerDocument: null,
   });
-  let recognitionCount = 0, starts = 0, aborts = 0, toneStarts = 0, micPermissionCalls = 0;
+  let recognitionCount = 0, starts = 0, aborts = 0, toneStarts = 0, micPermissionCalls = 0, currentRecognition = null;
   class Recognition {
-    constructor() { recognitionCount++; }
+    constructor() { recognitionCount++; currentRecognition = this; }
     start() { starts++; this.onstart?.(); }
     abort() { aborts++; }
   }
@@ -10675,9 +10903,65 @@ test('语音输入：只使用原生 SpeechRecognition，一次点击一条识�
   assert.equal(starts, 1);
   assert.equal(micPermissionCalls, 0, '不能再额外调用 getUserMedia 触发第二次权限申请');
   assert.equal(toneStarts, 2, '开始录音播放双音提示');
+  assert.equal(status.textContent, '请说话，识别结果不会自动发送', '录音开始后在输入框底部提示状态');
+  currentRecognition.onresult({ results: [{ 0: { transcript: '你好' } }] });
+  assert.equal(status.textContent, '正在听…点击麦克风结束', '识别过程中继续在底部提示');
   voice.listeners.click();
   assert.equal(aborts, 1);
+  assert.equal(status.textContent, '', '结束语音输入后清除状态提示');
   assert.equal(toneStarts, 4, '结束录音再播放一组双音提示');
+  const app = _fs.readFileSync(new URL('../app.html', import.meta.url), 'utf8');
+  const css = _fs.readFileSync(new URL('../css/styles.css', import.meta.url), 'utf8');
+  assert.match(app, /id="voice-status" class="voice-status" role="status" aria-live="polite"/);
+  assert.ok(app.indexOf('id="voice-status"') > app.indexOf('id="composer-input"') && app.indexOf('id="voice-status"') < app.indexOf('class="composer-hint"'), '语音状态应位于底部输入框下、免责声明上');
+  assert.match(css, /\.voice-status \{[^}]*text-align:center/);
+});
+
+group('第一方网关密钥隔离');
+test('第一方文本审核不会把 API Key 交给 TeamoRouter Jev', async () => {
+  const moderation = await import('../js/moderation.js');
+  const previous = globalThis.__DubheModerationTestHooks;
+  let jevCalls = 0;
+  globalThis.__DubheModerationTestHooks = { jevDecision: async () => { jevCalls++; return { blocked: false }; } };
+  try {
+    const result = await moderation.moderateText({ text: 'Tell me one short fact about Saturn.', apiKey: 'first-party-secret', gatewayId: 'openai' });
+    assert.equal(jevCalls, 0);
+    assert.equal(result.blocked, false);
+    assert.ok(result.parts?.some((part) => part && part.skipped === 'gateway-isolation'));
+  } finally {
+    if (previous === undefined) delete globalThis.__DubheModerationTestHooks;
+    else globalThis.__DubheModerationTestHooks = previous;
+  }
+});
+test('图片灰区复核沿用当前网关、Key、基础 URL 与视觉模型', async () => {
+  const moderation = await import('../js/moderation.js');
+  const previous = globalThis.__DubheModerationTestHooks;
+  let reviewContext = null;
+  globalThis.__DubheModerationTestHooks = {
+    decodeImage: async () => ({ width: 64, height: 64 }),
+    nudityDecision: async () => ({ blocked: false, score: 0, categories: [], uncertain: false }),
+    imageModel: { classify: async () => [{ className: 'porn', probability: 0.13 }] },
+    remoteReview: async (_dataUrl, context) => {
+      reviewContext = context;
+      return { blocked: false, score: 0, categories: [], verdict: 'safe' };
+    },
+  };
+  try {
+    const result = await moderation.moderateImages({
+      attachments: [{ kind: 'image', name: 'sample.png', dataUrl: 'data:image/png;base64,YQ==' }],
+      apiKey: 'sk-ant-test-key', gatewayId: 'anthropic', gatewayBaseUrl: 'https://api.anthropic.com',
+      model: 'claude-sonnet-5-5', remoteReview: true,
+    });
+    assert.ok(reviewContext, '本地灰区应触发一次远程复核');
+    assert.equal(reviewContext.apiKey, 'sk-ant-test-key');
+    assert.equal(reviewContext.gatewayId, 'anthropic');
+    assert.equal(reviewContext.gatewayBaseUrl, 'https://api.anthropic.com');
+    assert.equal(reviewContext.model, 'claude-haiku-5-5', '使用当前网关的默认视觉模型，而不是 TeamoRouter Gemini');
+    assert.equal(result.blocked, false);
+  } finally {
+    if (previous === undefined) delete globalThis.__DubheModerationTestHooks;
+    else globalThis.__DubheModerationTestHooks = previous;
+  }
 });
 
 for (const item of queue) {

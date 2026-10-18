@@ -6,6 +6,7 @@
 
 import { askJev, noul, choice, score, noulOf, choiceOf, scoreOf, confidenceOf, JEV_MODEL, JEV_TIMEOUT_MS } from './jev.js';
 import { analyzeImage } from './vision.js';
+import { DEFAULT_GATEWAY_ID, getGateway, defaultVisionModelForGateway } from './gateway-registry.js?v=2026.10.11.1';
 
 export const TEXT_MODERATION_MODEL = 'jev:systemone+policy-v2';
 export const IMAGE_MODERATION_MODEL = 'local:nudenet-320n+nsfwjs-inception-v3';
@@ -865,14 +866,16 @@ export function snapshotForRemoteReview(img, fallbackDataUrl, { maxSide = REMOTE
   } catch { return { dataUrl: fallbackDataUrl, compressed: false }; }
 }
 
-async function remoteImageReview(dataUrl, { apiKey, signal, model = REMOTE_IMAGE_REVIEW_MODEL } = {}) {
+async function remoteImageReview(dataUrl, { apiKey, signal, model = REMOTE_IMAGE_REVIEW_MODEL, gatewayId = DEFAULT_GATEWAY_ID, gatewayBaseUrl = '' } = {}) {
   const hooks = testHooks();
-  if (typeof hooks.remoteReview === 'function') return hooks.remoteReview(dataUrl, { apiKey, signal, model });
+  if (typeof hooks.remoteReview === 'function') return hooks.remoteReview(dataUrl, { apiKey, signal, model, gatewayId, gatewayBaseUrl });
   if (!apiKey) return { blocked: false, score: 0, categories: [], skipped: 'no-api-key', source: `remote:${model}` };
   const t0 = performance.now();
   let answer;
   try {
-    answer = await withAbort(analyzeImage({ apiKey, prompt: REMOTE_REVIEW_PROMPT, dataUrl, model, signal }), signal, 'remoteReview', timeoutFor('remoteReview', TIMEOUTS.remoteReview));
+    answer = await withAbort(analyzeImage({
+      apiKey, prompt: REMOTE_REVIEW_PROMPT, dataUrl, model, signal, gatewayId, gatewayBaseUrl,
+    }), signal, 'remoteReview', timeoutFor('remoteReview', TIMEOUTS.remoteReview));
   } catch (err) {
     if (isAbortError(err)) throw err;
     // 网关安全过滤器直接 4xx（Gemini 常见：prompt blocked / SAFETY）→ 视为模型拒看 → unsafe；其它错误（超时 / 网络 / 5xx）→ 跳过，退回本地判定
@@ -902,9 +905,10 @@ async function imageFromDataUrl(dataUrl, signal) {
   return withAbort(task, signal, 'imageDecode', timeoutFor('imageDecode', TIMEOUTS.imageDecode));
 }
 
-async function jevTextDecision(payload, { apiKey = '', signal } = {}) {
+async function jevTextDecision(payload, { apiKey = '', signal, gatewayId = DEFAULT_GATEWAY_ID } = {}) {
+  if (gatewayId !== DEFAULT_GATEWAY_ID) return { blocked: false, score: 0, categories: [], skipped: 'gateway-isolation', source: 'local-policy' };
   const hooks = testHooks();
-  if (typeof hooks.jevDecision === 'function') return hooks.jevDecision(payload, { apiKey, signal });
+  if (typeof hooks.jevDecision === 'function') return hooks.jevDecision(payload, { apiKey, signal, gatewayId });
   const key = String(apiKey || '').trim();
   if (!key) return { blocked: false, score: 0, categories: [], skipped: 'no-api-key', source: 'jev' };
   const state = `Task: Content safety moderation for user input.\nUser input:\n${compactText(payload, 12000)}`;
@@ -941,7 +945,7 @@ async function jevTextDecision(payload, { apiKey = '', signal } = {}) {
   };
 }
 
-export async function moderateText({ text, attachments = [], apiKey = '', signal } = {}) {
+export async function moderateText({ text, attachments = [], apiKey = '', signal, gatewayId = DEFAULT_GATEWAY_ID } = {}) {
   throwIfAborted(signal);
   const t0 = performance.now();
   const payload = textPayload(text, attachments);
@@ -990,7 +994,7 @@ export async function moderateText({ text, attachments = [], apiKey = '', signal
   try {
     throwIfAborted(signal);
     jevDecision = await withAbort(
-      jevTextDecision(payload, { apiKey, signal }),
+      jevTextDecision(payload, { apiKey, signal, gatewayId }),
       signal,
       'jevText',
       timeoutFor('jevText', JEV_TIMEOUT_MS + 1500),
@@ -1014,11 +1018,15 @@ export async function moderateText({ text, attachments = [], apiKey = '', signal
 
 export const VIDEO_MODERATION_FRAMES = 5; // 每段视频均匀抽 5 帧参与审核（与 ui-attachments.captureVideoFrames 一致）
 
-export async function moderateImages({ attachments = [], text = '', signal, apiKey = '', remoteReview = true } = {}) {
+export async function moderateImages({ attachments = [], text = '', signal, apiKey = '', remoteReview = true, gatewayId = DEFAULT_GATEWAY_ID, gatewayBaseUrl = '', model = '' } = {}) {
   throwIfAborted(signal);
   const tAll = performance.now();
-  let remoteLeft = remoteReview && apiKey ? REMOTE_IMAGE_REVIEW_MAX_PER_TURN : 0;
-  const remoteSkipWhy = !remoteReview ? 'disabled' : (!apiKey ? 'no-api-key' : '');
+  const reviewModel = gatewayId === DEFAULT_GATEWAY_ID
+    ? REMOTE_IMAGE_REVIEW_MODEL
+    : (defaultVisionModelForGateway(gatewayId) || String(model || '').trim());
+  const remoteEnabled = !!remoteReview && !!apiKey && !!reviewModel;
+  let remoteLeft = remoteEnabled ? REMOTE_IMAGE_REVIEW_MAX_PER_TURN : 0;
+  const remoteSkipWhy = !remoteReview ? 'disabled' : (!apiKey ? 'no-api-key' : (!reviewModel ? 'no-vision-model-for-gateway' : ''));
   const localImgs = (attachments || [])
     .filter((a) => a && a.kind === 'image' && /^data:image\//.test(String(a.dataUrl || '')));
   // 视频附件：上传时均匀抽的 5 帧（ui-attachments.captureVideoFrames）当作图片一起过 NudeNet + NSFWJS；
@@ -1095,8 +1103,8 @@ export async function moderateImages({ attachments = [], text = '', signal, apiK
         if (remoteLeft > 0) {
           remoteLeft -= 1;
           const snap = snapshotForRemoteReview(img, a.dataUrl);
-          mlog(`image#${i + 1}:remote-review-start`, { why: merged.uncertainWhy, model: REMOTE_IMAGE_REVIEW_MODEL, 快照: snap.compressed ? `${snap.width}x${snap.height} JPEG ${Math.round(snap.bytes / 1024)}KB（原 ${Math.round(snap.fromBytes / 1024)}KB）` : '原图（无法压缩）' });
-          const rr = await remoteImageReview(snap.dataUrl, { apiKey, signal });
+          mlog(`image#${i + 1}:remote-review-start`, { why: merged.uncertainWhy, gateway: getGateway(gatewayId).name, model: reviewModel, 快照: snap.compressed ? `${snap.width}x${snap.height} JPEG ${Math.round(snap.bytes / 1024)}KB（原 ${Math.round(snap.fromBytes / 1024)}KB）` : '原图（无法压缩）' });
+          const rr = await remoteImageReview(snap.dataUrl, { apiKey, signal, model: reviewModel, gatewayId, gatewayBaseUrl });
           if (rr && rr.blocked) merged = { ...mergeDecisions(nudity, nsfw, rr), uncertain: false, remote: rr };
           else merged = { ...merged, remote: rr };
         } else {
@@ -1124,7 +1132,7 @@ export async function moderateImages({ attachments = [], text = '', signal, apiK
   return out;
 }
 
-export async function moderateUserTurn({ text, attachments = [], apiKey = '', signal, remoteImageReview = true } = {}) {
+export async function moderateUserTurn({ text, attachments = [], apiKey = '', signal, remoteImageReview = true, gatewayId = DEFAULT_GATEWAY_ID, gatewayBaseUrl = '', model = '' } = {}) {
   throwIfAborted(signal);
   const t0 = performance.now();
   const imgCount = (attachments || []).filter((a) => a && (a.kind === 'image' || a.source === 'video')).length;
@@ -1133,10 +1141,17 @@ export async function moderateUserTurn({ text, attachments = [], apiKey = '', si
   if (bypass.blocked) { mlog('turn:blocked-by-prompt-bypass', {}); return { blocked: true, text: bypass, image: { blocked: false, score: 0, categories: [], skipped: 'policy-preblocked' } }; }
   // 带图回合预算放宽到 120s（模型资源 ~26MB + 灰区远程复核，慢网络友好）；纯文本仍 45s（Jev + 规则层即时可用）
   const budget = imgCount > 0 ? IMAGE_TURN_BUDGET_MS : MODERATION_TIMEOUT_MS;
-  mlog('turn:start', { 文本长度: (text || '').length, 图片数: imgCount, 文本引擎: 'Jev (System One)', 图片引擎: `${IMAGE_MODERATION_MODEL}${remoteImageReview !== false && apiKey ? ` → 灰区复核 ${REMOTE_IMAGE_REVIEW_MODEL}` : ''}`, 总预算: `${budget}ms（带图超时将 fail-closed 拦截，纯文本 fail-open 放行）` });
+  const gatewayName = getGateway(gatewayId).name;
+  const reviewModel = gatewayId === DEFAULT_GATEWAY_ID ? REMOTE_IMAGE_REVIEW_MODEL : (defaultVisionModelForGateway(gatewayId) || String(model || '').trim());
+  mlog('turn:start', {
+    gateway: gatewayName, 文本长度: (text || '').length, 图片数: imgCount,
+    文本引擎: gatewayId === DEFAULT_GATEWAY_ID ? 'Jev (System One) + local rules' : 'local rules (Jev key isolation)',
+    图片引擎: `${IMAGE_MODERATION_MODEL}${remoteImageReview !== false && apiKey && reviewModel ? ` → 灰区复核 ${reviewModel} (${gatewayName})` : ''}`,
+    总预算: `${budget}ms（带图超时将 fail-closed 拦截，纯文本 fail-open 放行）`,
+  });
   const task = Promise.all([
-    moderateText({ text, attachments, apiKey, signal }),
-    moderateImages({ text, attachments, signal, apiKey, remoteReview: remoteImageReview !== false }),
+    moderateText({ text, attachments, apiKey, signal, gatewayId }),
+    moderateImages({ text, attachments, signal, apiKey, remoteReview: remoteImageReview !== false, gatewayId, gatewayBaseUrl, model }),
   ]);
   const [textResult, imageResult] = await withAbort(task, signal, 'moderation', timeoutFor('moderation', budget));
   if (textResult.blocked) {

@@ -9,13 +9,15 @@ import { installFeedback } from './ui-feedback.js';
 import { installSpeechInput } from './ui-speech.js';
 import { createToolPresentation, presentationCallSettled, turnToolResults } from './toolpresentation.js?v=2026.10.11.1';
 import { paintEditFoldContent, syncEditingFold } from './ui-editpreview.js?v=2026.10.11.1';
-import { paintOrderedAssistant, renderToolChipDetail, paintCommandRows, ownerOfTool, paintVisibleTurn, activeToolOwner, persistTurnTiming } from './ui-toolflow.js?v=2026.10.11.1';
+import { paintOrderedAssistant, renderToolChipDetail, paintCommandRows, syncToolMenuCursor, ownerOfTool, paintVisibleTurn, activeToolOwner, persistTurnTiming } from './ui-toolflow.js?v=2026.10.11.1';
 import { classifyToolResult, toolResultFailed } from './toolwindows.js?v=2026.10.11.1';
 import { adjacentToolMessages, appendToolStream, toolFamily, commandRunFor } from './toolflow.js?v=2026.10.11.1';
 import { createRollbackFx } from './ui-rollback-fx.js?v=2026.10.11.1';
 import { motionAllowed } from './page-fx.js?v=2026.10.11.1';
 // ─── UI 层：渲染 / 交互 / 动画 ─────────────────────────────────────────
 import { providerOf, supportsFastMode, DEFAULT_IMAGE_MODEL, APP_VERSION, APP_RELEASE } from './config.js?v=2026.10.11.1';
+import { DEFAULT_GATEWAY_ID, getGateway } from './gateway-registry.js?v=2026.10.11.1';
+import { syncGatewayKeyModal, validateGatewayKey } from './ui-gateway-key.js?v=2026.10.11.1';
 import { isSmartRouter, ROUTER_ICON_SVG, SMART_ROUTER_LABEL, modelDisplayName } from './smartrouter.js?v=2026.10.11.1';
 import { REASONING_LEVELS, normalizeReasoningLevel, reasoningLevelLabel, reasoningLevelHint } from './reasoning.js?v=2026.10.11.1';
 import { fileBytesFromValue, withExtension, mimeFromPath } from './zip.js';
@@ -230,7 +232,7 @@ export function mountUI(store, agent) {
     applyTheme(); store.notify();
   });
 
-  const { inSystem, isSystemIsolated, selectModel, chatModels, updateModelBtn, renderModelMenu } = installModelPicker({
+  const { inSystem, isSystemIsolated, selectModel, chatModels, updateModelBtn, renderModelMenu, refreshModels, syncGateway } = installModelPicker({
     store, agent, toast, getBusy, openKeyModal, rebuildMessages, renderSessions, renderFiles: () => renderFiles(), updateStats, syncCapLine, syncWeb: () => syncWeb(),
   });
   // ── 开关 ──
@@ -406,7 +408,7 @@ export function mountUI(store, agent) {
   const fastToggle = $('#fast-toggle');
   const syncFast = () => {
     fastToggle.classList.toggle('on', store.state.settings.fastMode);
-    fastToggle.disabled = !supportsFastMode(store.state.model);
+    fastToggle.disabled = !supportsFastMode(store.state.model, store.state.gatewayId || DEFAULT_GATEWAY_ID);
   };
   fastToggle.addEventListener('click', () => {
     store.state.settings.fastMode = !store.state.settings.fastMode;
@@ -422,6 +424,7 @@ export function mountUI(store, agent) {
   window.openKeyModal = openKeyModal;
   function openKeyModal() {
     modalReturnFocus = document.activeElement;
+    syncGatewayKeyModal(store.state.gatewayId || DEFAULT_GATEWAY_ID, keyInput, $('#key-modal-title'), $('#key-desc'));
     keyInput.value = store.state.apiKey;
     keyModal.classList.add('open');
     setTimeout(() => keyInput.focus(), 100);
@@ -455,25 +458,10 @@ const fmtAdminExp = (ms) => {
   const p = (n) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 };
-/** API Key 格式校验：
- *  - 空值允许（清除 key）
- *  - admin- 开头的管理员别名直接放行（isAdminAlias 另作口令校验）
- *  - 普通 key 必须以 sk-teamo- 开头，后面只允许字母数字 _-，总长度 ≥ 25
- */
-function validateApiKey(s) {
-  const v = String(s || '').trim();
-  if (!v) return { ok: true };
-  if (isAdminAlias(v)) return { ok: true };
-  if (!/^sk-teamo-[A-Za-z0-9_-]+$/.test(v)) {
-    return { ok: false, reason: 'Key 应以 sk-teamo- 开头，后面只能包含字母/数字/_/-' };
-  }
-  if (v.length < 25) return { ok: false, reason: 'Key 长度过短，请检查是否复制完整' };
-  if (v.length > 200) return { ok: false, reason: 'Key 过长，请检查是否粘贴了多余字符' };
-  return { ok: true };
-}
   $('#key-save').addEventListener('click', async () => {
     const typed = keyInput.value.trim();
-    const chk = validateApiKey(typed);
+    const gatewayId = store.state.gatewayId || DEFAULT_GATEWAY_ID;
+    const chk = validateGatewayKey(typed, gatewayId, isAdminAlias);
     if (!chk.ok) { toast('Key 格式错误：' + chk.reason, 'err', 5000); keyInput.focus(); keyInput.select(); return; }
     // 管理员别名：先用口令解封（解不开就拒绝保存，避免存进去一把用不了的 key）
     if (isAdminAlias(typed)) {
@@ -485,23 +473,33 @@ function validateApiKey(s) {
             : localeText('管理员密钥不可用', 'Admin key unavailable');
         return toast(why, 'err', 6000);
       }
-      store.state.apiKey = typed; store.notify();
+      store.state.apiKey = typed;
+      store.state.gatewayKeys = store.state.gatewayKeys || {};
+      delete store.state.gatewayKeys[gatewayId];
+      store.notify();
       closeKeyModal();
       toast(localeText(`管理员密钥已启用（有效期至 ${fmtAdminExp(r.exp)}）：请求会用管理员密钥发出，明文不落盘、不上屏`, `Admin key enabled (valid until ${fmtAdminExp(r.exp)}). Requests use the admin key; the plaintext is never saved or shown.`), 'ok', 5200);
       updateKeyBtn(); updateTransportBadge();
+      refreshModels({ silent: true });
       return;
     }
-    store.state.apiKey = typed; store.notify();
+    store.state.apiKey = typed;
+    store.state.gatewayKeys = store.state.gatewayKeys || {};
+    if (typed) store.state.gatewayKeys[gatewayId] = typed;
+    else delete store.state.gatewayKeys[gatewayId];
+    store.notify();
     closeKeyModal();
-    toast(store.state.apiKey ? 'API Key 已保存（仅存于浏览器 localStorage）' : 'API Key 已清除', 'ok');
+    toast(store.state.apiKey ? 'API Key 已保存（仅存于本机浏览器）' : 'API Key 已清除', 'ok');
     updateKeyBtn(); updateTransportBadge();
+    if (typed) refreshModels({ silent: true });
   });
   // 底部「API Key」按钮的文案：管理员模式下明确标出来（但不显示密钥任何片段）；切换语言时同步刷新
   onLanguageChange(() => updateKeyBtn());
   function updateKeyBtn() {
     const b = $('#key-btn');
     if (!b) return;
-    const admin = isAdminAlias(store.state.apiKey);
+    const gateway = getGateway(store.state.gatewayId || DEFAULT_GATEWAY_ID);
+    const admin = isAdminAlias(store.state.apiKey) && gateway.id === DEFAULT_GATEWAY_ID;
     const configured = !!store.state.apiKey && !admin;
     b.textContent = admin ? localeText('管理员', 'Admin') : configured ? localeText('已配置', 'Configured') : 'API Key';
     b.classList.toggle('admin-mode', admin);
@@ -509,8 +507,8 @@ function validateApiKey(s) {
     b.title = admin
       ? (adminUnlocked() ? localeText(`管理员密钥已启用（有效期至 ${fmtAdminExp(adminExpiresAt())}，明文不落盘）`, `Admin key active (valid until ${fmtAdminExp(adminExpiresAt())}; never stored in plain text)`) : localeText('管理员密钥未解封或已过期：点开重新输入口令', 'Admin key locked or expired: open to re-enter the passphrase'))
       : configured
-        ? localeText('API Key 已配置并保存在本机，点击可管理', 'API key configured and stored locally; click to manage')
-        : localeText('填入 TeamoRouter API Key（或管理员口令）', 'Enter a TeamoRouter API key (or admin passphrase)');
+        ? localeText(`${gateway.name} API Key 已配置并保存在本机，点击可管理`, `${gateway.name} API key is stored locally; click to manage`)
+        : localeText(`填入 ${gateway.name} API Key`, `Enter a ${gateway.name} API key`);
   }
   updateKeyBtn();
   keyInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#key-save').click(); });
@@ -1224,6 +1222,8 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     // 光标/连接动画只属于「正在跑的这一条」。导入的历史回复没有 done 字段，
     // 不能靠 !m.done 一直闪烁 —— 必须叠上本轮忙碌状态。
     const live = !m.done && getBusy();
+    const toolMenuBusy = live && (m.toolCalls || []).some((t) => t && !FILE_FOLD_TOOLS.has(t.name)
+      && (liveToolCallIds.has(String(t.id)) || t.status === 'running'));
     // 思考过程：Off 本轮不画。Claude 5 / GPT / Gemini 常只返回签名或 reasoning_tokens、没有正文。
     const thinkOn = m.reasoningLevel !== 'off';
     const showThink = thinkOn && m.reasoning;
@@ -1233,7 +1233,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       html += `<div class="connect-line"><span class="connect-dot" aria-hidden="true"></span><span>正在连接 <b class="mono">${esc(modelDisplayName(m.model || store.state.model))}</b>，等待首个响应…</span></div>`;
     }
     html += m.model === '__system__' ? sysReplyHtml(m.text) : renderMarkdown(m.text || '');
-    if (live && !noOutputYet) html += '<span class="cursor"></span>';
+    if (live && !noOutputYet && !toolMenuBusy) html += '<span class="cursor"></span>';
     // Cancellation is a tail after text AND tool/file output, never a prefix.
     const lengthCapped = /^(length|max_tokens|max_output_tokens)$/i.test(String(m.finishReason || ''));
     if (m.done && !m.cancelled && !String(m.text || '').trim() && !(m.toolCalls && m.toolCalls.length) && !m.error) {
@@ -1370,6 +1370,8 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     const sig = groups.map((g) => `${g.name}:${g.items.map((t) => t.id).join('+')}`).join('|');
     const scope = String(msgsAll[turnRange(msgsAll, idxA)[0]]?.id || m.id);
     paintCommandRows(chips, { groups, sig, scope, ownerId: m.id, commandToggle, callToggle, liveToolCallIds });
+    const menuCaretLive = toolMenuBusy && mergedCalls.some((t) => t && (liveToolCallIds.has(String(t.id)) || t.status === 'running'));
+    syncToolMenuCursor(chips, menuCaretLive);
     const fold = $('.ran-commands', chips);
     if (fold) {
       const resultById = toolResults(m.id);
@@ -1602,7 +1604,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
           node = el('div', 'edited-files');
           node._toggleKey = fileToggleKey('edited-files'); node._userToggle = fileToggle.get(node._toggleKey) ?? null;
           node.addEventListener('click', (e) => {
-            if (e.target.closest('a, button, .chip-copy, .edit-preview')) return;
+            if (e.target.closest('a, button, .chip-copy, .edit-preview, .edit-path-fold')) return;
             node.classList.toggle('expanded'); node._userToggle = node.classList.contains('expanded');
             fileToggle.set(node._toggleKey, node._userToggle);
           });
@@ -2600,6 +2602,16 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     setStatus,
     syncToolbar,
     refreshKeyBtn: updateKeyBtn,   // main.js 解封成功后刷新按钮文案
+    refreshModels,
+    syncGateway() {
+      syncGateway();
+      updateModelBtn();
+      updateKeyBtn();
+      updateTransportBadge();
+      syncFast();
+      syncCapLine();
+      syncWeb();
+    },
     // 刷新页面后：外置在 IndexedDB 的重数据取回来了 → 重绘消息（附件图片、芯片里的生成图）
     // 与文件面板（沙箱里的图），并把沙箱重新灌进 agent（createAgent 建 fs 时它们还没回来）
     afterHydrate() {

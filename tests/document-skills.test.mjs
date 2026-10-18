@@ -17,6 +17,7 @@ import { mergeAvailableModels, isRetiredModel } from '../js/model-catalog.js';
 import { summarizeTurnCost } from '../js/pricing.js';
 import { createZip } from '../js/zip.js';
 import { unpackZip } from '../js/unzip.js';
+import { createXlsxWorkbook, inspectXlsxWorkbook } from '../js/xlsx.js';
 const index = JSON.parse(fs.readFileSync(new URL('../assets/skills/index.json', import.meta.url), 'utf8'));
 const audio = 'data:audio/wav;base64,' + Buffer.from('RIFF0000WAVEfmt 000000000000data0000').toString('base64');
 function apiReply(text = 'Speaker A: test transcript', usage = { prompt_tokens: 120, completion_tokens: 30 }, finish = 'stop') { return Response.json({ choices: [{ message: { content: text }, finish_reason: finish }], ...(usage ? { usage } : {}) }); }
@@ -70,14 +71,14 @@ test('audio errors and cancellation do not create a successful transcript', asyn
 });
 test('text conversation only receives audio/Office attachment hints, not binary payloads', () => {
   const result = JSON.stringify(buildOpenAIMessages([{ role: 'user', text: 'Read these', attachments: [{ kind: 'file', source: 'audio', name: 'voice.wav', mime: 'audio/wav', dataUrl: audio }, { kind: 'file', source: 'office', name: 'report.docx', dataUrl: 'data:application/zip;base64,cHJpdmF0ZQ==' }] }]));
-  assert.match(result, /analyze_audio/); assert.match(result, /skill_library/); assert.match(result, /document_tool/); assert.doesNotMatch(result, /base64|cHJpdmF0ZQ/);
+  assert.match(result, /analyze_audio/); assert.match(result, /document_tool/); assert.match(result, /xlsx_tool/); assert.match(result, /Office 文档组/); assert.doesNotMatch(result, /base64|cHJpdmF0ZQ/);
 });
 test('audio and Office attachments mount the right tools; audio WebM takes precedence over filename', () => {
   assert.equal(attachmentKindOf({ name: 'clip.webm', source: 'audio' }), 'audio');
-  assert.equal(attachmentKindOf({ name: 'voice.mp3' }), 'audio'); assert.equal(attachmentKindOf({ name: 'deck.pptx' }), 'office');
-  for (const name of ['skill_library', 'document_tool', 'analyze_audio']) assert.ok(TOOL_DEFS.some(t => t.name === name) && getToolContract(name));
+  assert.equal(attachmentKindOf({ name: 'voice.mp3' }), 'audio'); assert.equal(attachmentKindOf({ name: 'deck.pptx' }), 'office'); assert.equal(attachmentKindOf({ name: 'budget.xlsx' }), 'office');
+  for (const name of ['skill_library', 'tool_library', 'document_tool', 'xlsx_tool', 'analyze_audio']) assert.ok(TOOL_DEFS.some(t => t.name === name) && getToolContract(name));
   const allowed = deriveToolWhitelistFromBits({ sandboxEnabled: false, webEnabled: false }, TOOL_DEFS).allowed;
-  for (const name of ['skill_library', 'document_tool', 'analyze_audio']) assert.ok(allowed.some(t => (t.name || t.function?.name) === name));
+  for (const name of ['skill_library', 'tool_library', 'document_tool', 'xlsx_tool', 'analyze_audio']) assert.ok(allowed.some(t => (t.name || t.function?.name) === name));
 });
 test('twelve bilingual extension skills exist and search does not return their bodies', () => {
   assert.equal(index.skills.length, 12); assert.equal(new Set(index.skills.map(s => s.id)).size, 12);
@@ -107,6 +108,57 @@ test('skill fetching is lazy, validates IDs, and loads only the selected guide',
     await assert.rejects(retrieveSkill({ query: 'PDF' }, { signal: AbortSignal.abort() }), { name: 'AbortError' });
   } finally { globalThis.fetch = old; }
 });
+test('XLSX codec creates a real OOXML workbook and safely inspects cells without evaluating formulas', async () => {
+  const bytes = await createXlsxWorkbook({ sheets: [
+    { name: 'Summary', rows: [['Name', 'Value', 'Note'], ['Alpha', 12, ' <safe> & text '], ['Beta', true, '=SUM(B1:B2)']] },
+    { name: '第二页', rows: [['城市', '数量'], ['波士顿', 3]] },
+  ] });
+  assert.ok(bytes instanceof Uint8Array && bytes.length > 500);
+  const zip = await unpackZip(bytes);
+  assert.equal(zip.ok, true);
+  assert.ok(zip.files.some(f => f.path === 'xl/workbook.xml'));
+  assert.ok(zip.files.some(f => f.path === 'xl/worksheets/sheet2.xml'));
+  const inspected = await inspectXlsxWorkbook(bytes);
+  assert.equal(inspected.format, 'xlsx'); assert.equal(inspected.sheetCount, 2); assert.equal(inspected.formulaCount, 0);
+  const workbook = JSON.parse(inspected.text);
+  const cells = workbook.sheets[0].cells;
+  assert.equal(cells.find(c => c.cell === 'B2').value, 12);
+  assert.equal(cells.find(c => c.cell === 'C2').value, ' <safe> & text ');
+  assert.equal(cells.find(c => c.cell === 'B3').value, true);
+  assert.equal(cells.find(c => c.cell === 'C3').value, '=SUM(B1:B2)', 'formula-like strings are literal data');
+  assert.equal(workbook.sheets[1].name, '第二页');
+  assert.match(inspected.warnings.join(' '), /never evaluated/);
+});
+
+test('XLSX codec rejects invalid workbook names, duplicate sheets, DTDs, and relationships escaping the package', async () => {
+  await assert.rejects(createXlsxWorkbook({ sheets: [] }), /Provide 1/);
+  await assert.rejects(createXlsxWorkbook({ sheets: [{ name: 'Bad/Name', rows: [] }] }), /Invalid worksheet/);
+  await assert.rejects(createXlsxWorkbook({ sheets: [{ name: 'A', rows: [] }, { name: 'a', rows: [] }] }), /Duplicate/);
+  const dtd = createZip([
+    { name: '[Content_Types].xml', bytes: Buffer.from('<Types><Override ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/></Types>') },
+    { name: 'xl/workbook.xml', bytes: Buffer.from('<!DOCTYPE workbook [<!ENTITY x "boom">]><workbook/>') },
+  ]);
+  await assert.rejects(inspectXlsxWorkbook(new Uint8Array(await dtd.arrayBuffer())), /DTD\/entity/);
+  const escaping = createZip([
+    { name: '[Content_Types].xml', bytes: Buffer.from('<Types><Override ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/></Types>') },
+    { name: 'xl/workbook.xml', bytes: Buffer.from('<workbook><sheets><sheet name="Bad" r:id="rId1"/></sheets></workbook>') },
+    { name: 'xl/_rels/workbook.xml.rels', bytes: Buffer.from('<Relationships><Relationship Id="rId1" Target="../../outside.xml"/></Relationships>') },
+  ]);
+  await assert.rejects(inspectXlsxWorkbook(new Uint8Array(await escaping.arrayBuffer())), /relationship missing or unsupported/);
+});
+
+test('document request validation accepts XLSX inspect/create with bounded, correctly suffixed outputs', async () => {
+  const bytes = await createXlsxWorkbook({ sheets: [{ name: 'Budget', rows: [['Year', 'Amount'], [2026, 10]] }] });
+  const data = `data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,${Buffer.from(bytes).toString('base64')}`;
+  const vfs = createFS({ 'uploads/budget.xlsx': data });
+  const inspect = prepareDocumentRequest({ action: 'inspect', path: 'uploads/budget.xlsx' }, vfs);
+  assert.equal(inspect.args.format, 'xlsx'); assert.deepEqual(Object.keys(inspect.files), ['uploads/budget.xlsx']);
+  const create = prepareDocumentRequest({ format: 'xlsx', action: 'create', out: 'outputs/budget.xlsx', data: { sheets: [{ rows: [['A']] }] } }, vfs);
+  assert.equal(create.args.format, 'xlsx'); assert.equal(create.args.out, 'outputs/budget.xlsx');
+  assert.throws(() => prepareDocumentRequest({ format: 'xlsx', action: 'merge', path: 'uploads/budget.xlsx' }, vfs), /Unsupported/);
+  assert.throws(() => prepareDocumentRequest({ format: 'xlsx', action: 'create', out: 'outputs/budget.docx', data: { sheets: [{ rows: [] }] } }, vfs), /correct extension/);
+});
+
 test('document requests reject traversal, protected inputs and accidental overwrites', () => {
   const vfs = createFS({ 'uploads/a.pdf': 'data:application/pdf;base64,YWJj', 'outputs/old.pdf': 'data:application/pdf;base64,YWJj' });
   for (const p of ['../a.pdf', '/a.pdf', 'outputs/../a.pdf', 'internal/a.pdf', '.git/config', 'https://x/a.pdf', 'outputs/a\\b.pdf']) assert.throws(() => documentPath(p));
@@ -133,7 +185,7 @@ test('retired Kimi models stay removed even from stale/live lists, while histori
   assert.ok(isRetiredModel('kimi-k3')); assert.ok(isRetiredModel('kimi-k3[1M]'));
   const models = mergeAvailableModels(['kimi-k3', 'kimi-k3[1M]', 'gemini-3.8-flash'], []);
   assert.deepEqual(models.map(m => m.id), ['__smart_router__', 'gemini-3.8-flash']);
-  assert.match(fs.readFileSync(new URL('../js/state.js', import.meta.url), 'utf8'), /isRetiredModel\(state\.model\)/);
+  assert.match(fs.readFileSync(new URL('../js/state.js', import.meta.url), 'utf8'), /isRetiredModel\(state\.model, state\.gatewayId\)/);
 });
 test('audio billing uses reported usage and labels missing input usage rather than inventing audio minutes', () => {
   const actual = summarizeTurnCost({ messages: [], toolCosts: [{ kind: 'vision', model: AUDIO_MODELS[0].id, audioCount: 1, usage: { input: 100, output: 20 } }] });

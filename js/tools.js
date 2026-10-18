@@ -1,7 +1,8 @@
 import { retrieveSkill } from './skill-library.js';
+import { searchToolDirectory, formatToolDefinitionRead } from './tool-catalog.js';
 import { AUDIO_EXT_RE, normalizeAudioData } from './audio-format.js';
 import { retrieveKnowledge } from './knowledge.js?v=2026.10.11.1';
-import { text } from './locale.js';
+import { text, getLanguage } from './locale.js';
 import { prepareCommandArgs, retainCommandSource, commandRepairNote } from './commandsource.js?v=2026.10.11.1';
 import { sandboxProject, sandboxBrowserRequest } from './localbrowser.js?v=2026.10.11.1';
 // ─── Agent 工具集：定义 + 执行调度 ─────────────────────────────────────
@@ -18,6 +19,7 @@ import { fetchPage, gitRun, relaySearch, relayCrawl, relayDownload, fileNameFrom
 import { createZip, fileBytesFromValue } from './zip.js';
 import { planConversion, runConversion, convertProgressNote, MAX_CONVERT_INPUT } from './convert.js';
 import { readableFileText } from './file-text.js';
+import { DEFAULT_GATEWAY_ID, getGateway, defaultVisionModelForGateway } from './gateway-registry.js?v=2026.10.11.1';
 import { unpackZip, unpackZipFromDataUrl } from './unzip.js';
 import { runRegex, runHash, runCodec, runUnicode } from './codetools.js';
 import { searchFiles, diffText, jsonTool, formatSearch } from './worktools.js';
@@ -34,6 +36,14 @@ import { evaluateMemoryWriteGate } from './memorylife.js?v=2026.10.11.1';
 const STRUCTURED_DIAGRAM_RE = /(图表|统计图|折线图|柱状图|条形图|饼图|环形图|散点图|曲线图|趋势图|位移[-－—–]?时间图|路程[-－—–]?时间图|s[-－—–]?t\s*图|流程图|思维导图|脑图|架构图|时序图|甘特图|chart|line\s+chart|bar\s+chart|pie\s+chart|scatter\s+plot|flowchart|mind\s*map|architecture\s+diagram|sequence\s+diagram|mermaid|graphviz|DOT\s*(?:图|diagram|源码|source)|SVG\s*(?:图|diagram|源码|source|矢量))/i;
 function looksStructuredDiagramPrompt(prompt) {
   return STRUCTURED_DIAGRAM_RE.test(String(prompt || ''));
+}
+function visionModelForContext(ctx) {
+  const gatewayId = ctx && ctx.gatewayId || DEFAULT_GATEWAY_ID;
+  if (gatewayId === DEFAULT_GATEWAY_ID) return resolveVisionModel(ctx && ctx.visionModel);
+  return defaultVisionModelForGateway(gatewayId) || String(ctx && ctx.model || '').trim();
+}
+function gatewayRequestContext(ctx) {
+  return { gatewayId: ctx && ctx.gatewayId || DEFAULT_GATEWAY_ID, gatewayBaseUrl: ctx && ctx.gatewayBaseUrl || '' };
 }
 
 export const TOOL_DEFS = [
@@ -58,6 +68,8 @@ export const TOOL_DEFS = [
 
   { name: 'skill_library', description: 'Discover built-in extension skills on demand (Word/DOCX, PPTX, advanced PDF, audio and document workflows). Search returns a small directory; read loads only one guide. Skill bodies are not preloaded into prompts. Does not execute documents.', parameters: { type: 'object', properties: { action: { type: 'string', enum: ['search','read'] }, query: { type: 'string' }, id: { type: 'string', description: 'ID returned by search' }, offset: { type: 'integer' } } } },
   { name: 'document_tool', description: 'Browser-local DOCX/PPTX/PDF operations in a bounded Worker. Common DOCX/PPTX create needs no skill lookup — call directly. DOCX create data: {title, author?, header?, footer?, paragraphs:["text" | {text, heading:1-3, bold, bullet} | {table:{rows:[["H1","H2"],["a","b"]]}}], tables?:[{rows}], images?:[{path,width,height,alt}]} (inline {table} keeps the table under its section). PPTX create data: {title, slides:[{title, body:"text"|["point"], table?:{rows}, notes?, images?:[{path,x,y,w,h,alt}]}]}. Read skill_library only for PDF form/markup workflows or limitations. Inspect/create DOCX or PPTX; PDF inspect/create/merge/extract/rotate/watermark/form_fields/fill_form/metadata. No document upload, no macros, no Office renderer, no legacy .doc conversion. Defaults to new outputs/ files; pages are 1-based.', parameters: { type: 'object', properties: { format: { type: 'string', enum: ['docx','pptx','pdf'] }, action: { type: 'string', enum: ['inspect','create','merge','extract','rotate','watermark','form_fields','fill_form','metadata'] }, path: { type: 'string' }, paths: { type: 'array', items: { type: 'string' } }, out: { type: 'string' }, pages: { type: 'array', items: { type: 'integer' } }, angle: { type: 'integer', enum: [90,180,270] }, data: { type: 'object', description: 'Structured content/options (DOCX/PPTX create schema in the tool description; PDF details in skill_library)' }, offset: { type: 'integer' }, overwrite: { type: 'boolean' } }, required: ['action'] } },
+  { name: 'tool_library', description: 'Search the compact tool directory and read one full tool schema on demand. Search returns names and short summaries only; read requires a search result from this turn and causes the execution kernel to mount the complete workflow group for the next request. Does not execute the selected tool.', parameters: { type: 'object', properties: { action: { type: 'string', enum: ['search','read'] }, query: { type: 'string', description: 'Search words, tool name, or task / 检索词或能力名称' }, name: { type: 'string', description: 'Exact tool name returned by search' } }, required: ['action'] } },
+  { name: 'xlsx_tool', description: 'Browser-local XLSX workbook operations in a bounded Worker; it mounts together with document_tool for DOCX/PPTX/PDF workflows. Use action=create with data.sheets:[{name,rows:[["Item","Amount"],["A",12]]}] and out="outputs/report.xlsx"; values are written as literal text/numbers/booleans, never formulas. Use inspect with path to read cell values and formulas as untrusted data; does not evaluate formulas, follow external links, render formatting/charts, or preserve merged cells. Output paths must be new outputs/*.xlsx files unless overwrite=true.', parameters: { type: 'object', properties: { action: { type: 'string', enum: ['inspect','create'] }, path: { type: 'string' }, out: { type: 'string' }, data: { type: 'object', description: 'Workbook creation: {sheets:[{name?,rows:[[cellValue,...],...]}]}; numbers and booleans retain their cell types, strings remain literal.' }, offset: { type: 'integer' }, overwrite: { type: 'boolean' } }, required: ['action'] } },
   { name: 'knowledge_search', description: 'Search the bundled bilingual project knowledge for exact rendering grammar, tool/runtime details and product/file policies. No external search; retrieve only needed sections. 核心规则/实时能力优先于历史参考。', parameters: { type:'object', properties: { query:{type:'string',description:'Topic keywords / 关键词'}, topic:{type:'string',enum:['runtime','rendering'],description:'Optional topic filter'}, language:{type:'string',enum:['zh','en']}, offset:{type:'number',description:'Continue a long matched section at this character offset'} }, required:['query'] } },
   {
     name: 'execute_javascript',
@@ -1004,11 +1016,26 @@ async function executeToolBody(outerName, outerArgs, ctx) {
         emit({ status: 'ok', fsChange: false, note: view.binary ? `${path} 是二进制文件` : `读取 ${path}` });
         return `── ${path} ──\n${content}`;
       }
+      case 'tool_library': {
+        const available = Array.isArray(ctx.availableToolDefinitions) && ctx.availableToolDefinitions.length ? ctx.availableToolDefinitions : TOOL_DEFS;
+        const searchResults = ctx.toolSearchResults instanceof Set ? ctx.toolSearchResults : new Set();
+        if (args.action === 'search') {
+          const tools = searchToolDirectory(available, args.query || '', { language: getLanguage() === 'en' ? 'en' : 'zh' });
+          for (const item of tools) searchResults.add(item.name);
+          return JSON.stringify({ tools, next: 'Choose one result and call tool_library(action="read", name="...") to load its full schema. Reading mounts its workflow group.' }, null, 2);
+        }
+        if (args.action !== 'read') return JSON.stringify({ code: 'TOOL_LIBRARY_INVALID_ACTION', retryable: false, allowed: ['search', 'read'] });
+        const name = String(args.name || '');
+        if (!searchResults.has(name)) return JSON.stringify({ code: 'TOOL_SEARCH_REQUIRED', tool: name, retryable: true, next: 'Search the compact catalog first, then read one returned tool name.' });
+        const definition = available.find((tool) => tool.name === name);
+        if (!definition) return JSON.stringify({ code: 'TOOL_UNAVAILABLE', tool: name, retryable: false, message: 'This tool is not in the current capability-allowed set.' });
+        return formatToolDefinitionRead(definition);
+      }
       case 'skill_library': return retrieveSkill(args, { signal: ctx.signal });
-      case 'document_tool': {
+      case 'document_tool': case 'xlsx_tool': {
         emit({ status: 'running', note: '本地文档处理…' });
         const { runDocumentTool } = await import('./document-tools.js');
-        return await runDocumentTool(args, { fs, signal: ctx.signal, onUi: emit });
+        return await runDocumentTool(outerName === 'xlsx_tool' ? { ...args, format: 'xlsx' } : args, { fs, signal: ctx.signal, onUi: emit });
       }
       case 'knowledge_search': return retrieveKnowledge(args, { signal: ctx.signal });
       case 'list_files': {
@@ -1218,14 +1245,27 @@ async function executeToolBody(outerName, outerArgs, ctx) {
           emit({ status: 'error', error: { message: msg } });
           return `generate_image 拒绝执行：${msg}`;
         }
+        const gatewayId = ctx.gatewayId || DEFAULT_GATEWAY_ID;
+        const gateway = getGateway(gatewayId);
         if (!ctx.apiKey) {
-          emit({ status: 'error', error: { message: '未配置 API Key' } });
-          return '未配置 TeamoRouter API Key，无法调用图像模型。';
+          const message = `未配置 ${gateway.name} API Key，无法调用图像模型。`;
+          emit({ status: 'error', error: { message } });
+          return message;
         }
         // 会话菜单选定的生图模型优先：对话模型常在 args.model 里填 gpt-image-2，
         // 会把用户刚选的 Nano Banana 盖掉。args.model 只作纠错提示，不覆盖菜单。
         const session = resolveImageModel(ctx.imageModel || DEFAULT_IMAGE_MODEL, DEFAULT_IMAGE_MODEL);
         const model = session.id;
+        const nano = /^gemini-|nano[-_ ]?banana/i.test(model);
+        const imageRouteSupported = gatewayId === DEFAULT_GATEWAY_ID
+          || (gatewayId === 'openai' && !nano)
+          || (gatewayId === 'gemini' && nano)
+          || (gatewayId === 'custom' && !nano);
+        if (!imageRouteSupported) {
+          const message = `${gateway.name} 网关未提供与当前生图模型「${model}」匹配的已验证生图接口。请选择 TeamoRouter、OpenAI（GPT Image）或 Gemini（Nano Banana），再重试。`;
+          emit({ status: 'error', error: { message } });
+          return `图像调用在发起前失败：${message}`;
+        }
         const format = IMAGE_FORMATS.includes(args.output_format) ? args.output_format : 'png';
         const size = IMAGE_SIZES.includes(args.size) ? args.size : 'auto';
         const quality = IMAGE_QUALITIES.includes(args.quality) ? args.quality : 'auto';
@@ -1251,10 +1291,10 @@ async function executeToolBody(outerName, outerArgs, ctx) {
           if (refs.length) {
             const images = refs.map((p) => ({ name: p.split('/').pop(), dataUrl: readSafe(p) }));
             emit({ status: 'running', note: `图像编辑中（${model} · ${images.length} 张原图）…` });
-            out = await editImage({ model, apiKey: ctx.apiKey, prompt, images, size, quality, format, n: count, signal: ctx.signal, onRetry });
+            out = await editImage({ model, apiKey: ctx.apiKey, prompt, images, size, quality, format, n: count, signal: ctx.signal, onRetry, ...gatewayRequestContext(ctx) });
           } else {
             emit({ status: 'running', note: `图像生成中（${model}${size !== 'auto' ? ` · ${size}` : ''}${count > 1 ? ` · ${count} 张` : ''}）…` });
-            out = await generateImage({ model, apiKey: ctx.apiKey, prompt, size, quality, background, format, n: count, signal: ctx.signal, onRetry });
+            out = await generateImage({ model, apiKey: ctx.apiKey, prompt, size, quality, background, format, n: count, signal: ctx.signal, onRetry, ...gatewayRequestContext(ctx) });
           }
           // 网关也可能只给远程 URL：落地成 data URL，保证沙箱内可再编辑、可打包下载
           const list = (out.images && out.images.length ? out.images : [{ dataUrl: out.dataUrl, mime: out.mime, ext: out.ext, width: out.width, height: out.height }]);
@@ -1326,14 +1366,15 @@ async function executeToolBody(outerName, outerArgs, ctx) {
       }
       case 'analyze_image': {
         if (!ctx.apiKey) {
-          emit({ status: 'error', error: { message: '未配置 API Key' } });
-          return '未配置 TeamoRouter API Key，无法调用识图模型。';
+          const message = `未配置 ${getGateway(ctx.gatewayId || DEFAULT_GATEWAY_ID).name} API Key，无法调用识图模型。`;
+          emit({ status: 'error', error: { message } });
+          return message;
         }
         const listImgs = () => fs.list().filter((f) => /\.(png|jpe?g|webp|gif)$/i.test(f.path)).map((f) => f.path);
         const paths = collectAnalyzePaths(fs, args, listImgs);
         if (paths.error) return paths.error;
         const prompt = String(args.prompt || '').trim();
-        const visionModel = resolveVisionModel(ctx.visionModel);
+        const visionModel = visionModelForContext(ctx);
         try {
           const t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
           const chunks = [];
@@ -1352,6 +1393,7 @@ async function executeToolBody(outerName, outerArgs, ctx) {
               : prompt;
             const pageText = await analyzeImage({
               apiKey: ctx.apiKey,
+              ...gatewayRequestContext(ctx),
               prompt: pagePrompt,
               dataUrl,
               model: visionModel,
@@ -1419,16 +1461,18 @@ async function executeToolBody(outerName, outerArgs, ctx) {
           return `[SVG 文本提取完成] 文件 ${path} · ${text.length} 字${saved ? ` · 已写入 ${outPath}` : ''}\n\n${text}`;
         }
         if (!ctx.apiKey) {
-          emit({ status: 'error', error: { message: '未配置 API Key' } });
-          return '未配置 TeamoRouter API Key，无法调用 SVG 识图模型。可选 mode=ocr/code 在本地处理。';
+          const message = `未配置 ${getGateway(ctx.gatewayId || DEFAULT_GATEWAY_ID).name} API Key，无法调用 SVG 识图模型。可选 mode=ocr/code 在本地处理。`;
+          emit({ status: 'error', error: { message } });
+          return message;
         }
-        const visionModel = resolveVisionModel(ctx.visionModel);
+        const visionModel = visionModelForContext(ctx);
         const t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
         let visionIn = 0, visionOut = 0;
         try {
           emit({ status: 'running', note: `安全清理并本地栅格化 SVG（${path}），随后识图…` });
           const text = await analyzeImage({
             apiKey: ctx.apiKey,
+            ...gatewayRequestContext(ctx),
             prompt: String(args.prompt || '').trim() || '请完整分析这张 SVG 矢量图：描述结构、关系与含义，并按阅读顺序逐字转录全部可见文字。',
             dataUrl: svgDataUrl(safeSvg),
             model: visionModel,
@@ -1452,8 +1496,9 @@ async function executeToolBody(outerName, outerArgs, ctx) {
       case 'analyze_video': {
         // 逻辑照搬 analyze_image：取路径 → 读 data URL → 交给视频识别模型 → 全文落盘 internal/ocr/*.video.md → 计费事件
         if (!ctx.apiKey) {
-          emit({ status: 'error', error: { message: '未配置 API Key' } });
-          return '未配置 TeamoRouter API Key，无法调用视频识别模型。';
+          const message = `未配置 ${getGateway(ctx.gatewayId || DEFAULT_GATEWAY_ID).name} API Key，无法调用视频识别模型。`;
+          emit({ status: 'error', error: { message } });
+          return message;
         }
         const listVideos = () => fs.list().filter((f) => VIDEO_EXT_RE.test(f.path)).map((f) => f.path);
         let path = normalizeFsPath(args.path || '');
@@ -1486,6 +1531,7 @@ async function executeToolBody(outerName, outerArgs, ctx) {
           emit({ status: 'running', note: `视频识别中（${videoModel} · ${path} · ${(bytes / 1024 / 1024).toFixed(1)} MB）…` });
           const text = await analyzeVideo({
             apiKey: ctx.apiKey,
+            ...gatewayRequestContext(ctx),
             prompt,
             dataUrl,
             filename: path.split('/').pop(),
@@ -1523,8 +1569,9 @@ async function executeToolBody(outerName, outerArgs, ctx) {
       case 'analyze_audio': {
         // 逻辑照搬 analyze_image：取路径 → 读 data URL → 交给音频识别模型 → 全文落盘 internal/ocr/*.audio.md → 计费事件
         if (!ctx.apiKey) {
-          emit({ status: 'error', error: { message: '未配置 API Key' } });
-          return '未配置 TeamoRouter API Key，无法调用音频识别模型。';
+          const message = `未配置 ${getGateway(ctx.gatewayId || DEFAULT_GATEWAY_ID).name} API Key，无法调用音频识别模型。`;
+          emit({ status: 'error', error: { message } });
+          return message;
         }
         const listAudio = () => fs.list().filter((f) => (AUDIO_EXT_RE.test(f.path) || /^data:audio\//i.test(String(fs.read(f.path)).slice(0, 80)))).map((f) => f.path);
         let path = normalizeFsPath(args.path || '');
@@ -1549,6 +1596,7 @@ async function executeToolBody(outerName, outerArgs, ctx) {
           emit({ status: 'running', note: `音频识别中（${audioModel} · ${path} · ${(bytes / 1024 / 1024).toFixed(1)} MB）…` });
           const text = await analyzeAudio({
             apiKey: ctx.apiKey,
+            ...gatewayRequestContext(ctx),
             prompt,
             dataUrl,
             filename: path.split('/').pop(),
@@ -1587,7 +1635,7 @@ async function executeToolBody(outerName, outerArgs, ctx) {
         }
       }
       case 'analyze_pdf': {
-        const visionModel = resolveVisionModel(ctx.visionModel);
+        const visionModel = visionModelForContext(ctx);
         const listPdfs = () => fs.list().filter((f) => /\.pdf$/i.test(f.path)).map((f) => f.path);
         let path = normalizeFsPath(args.path || '');
         if (!path) {
@@ -1652,6 +1700,7 @@ async function executeToolBody(outerName, outerArgs, ctx) {
                 const pagePrompt = `${prompt || defaultPrompt}${hint}\n页码：第 ${from} 到第 ${to} 页，请用「## 第 N 页」标出。`;
                 const text = await analyzeImage({
                   apiKey: ctx.apiKey,
+                  ...gatewayRequestContext(ctx),
                   prompt: pagePrompt,
                   dataUrls: batch.map((img) => img.dataUrl),
                   model: visionModel,
