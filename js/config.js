@@ -45,8 +45,8 @@ export const STORAGE_KEY = 'dubhe-agent-state-v1';
 export const SMART_ROUTER_ID = '__smart_router__';
 export const SMART_ROUTER_PROVIDER = 'TeamoRouter';
 
-// 2026-10-14 实际目录快照；仅作未取得实时目录时的兜底，不代表所有账户的可用性。
-// 生图入口仍在设置页；福利档保持隐藏。推荐为应用预设，低价按网关标价阈值判定。
+// 2026-10-18 实际目录快照；仅作未取得实时目录时的兜底，不代表所有账户的可用性。
+// 生图入口仍在设置页；福利档保持隐藏。热门标签为应用精选，Cheap 按网关标价阈值判定；不显示「新收录」徽标。
 export const FALLBACK_MODELS = [
   { id: SMART_ROUTER_ID, provider: SMART_ROUTER_PROVIDER, hot: true },
   ...MODEL_CATALOG.filter(m => m.channel === 'chat' && !m.hidden).map(m => ({ ...m })),
@@ -137,14 +137,14 @@ export const DEFAULT_IMAGE_MODEL = 'gpt-image-2';
 // Claude / GPT / DeepSeek / GLM / Kimi / Grok 经网关要么剥掉视频部件、要么上游 400，不列入。
 export const VISION_MODELS = [
   {"id": "deepseek-v4-flash-vision-exp", "label": "DeepSeek V4 Vision", "tag": "默认 · 实验", "tagEn": "Default · Experimental", "note": "网关标价 $0.22/M 输入；实际账单以网关为准", "noteEn": "Gateway list price $0.22/M input; actual billing may vary"},
-  {"id": "gemini-3.5-flash-lite", "label": "Gemini 3.5 Flash Lite", "tag": "低价", "tagEn": "Low cost", "note": "网关标价 $0.3/M 输入；实际账单以网关为准", "noteEn": "Gateway list price $0.3/M input; actual billing may vary"},
+  {"id": "gemini-3.5-flash-lite", "label": "Gemini 3.5 Flash Lite", "tag": "低价", "tagEn": "Cheap", "note": "网关标价 $0.3/M 输入；实际账单以网关为准", "noteEn": "Gateway list price $0.3/M input; actual billing may vary"},
   {"id": "gemini-3.8-flash", "label": "Gemini 3.8 Flash", "tag": "通用", "tagEn": "General", "note": "网关标价 $0.75/M 输入；实际账单以网关为准", "noteEn": "Gateway list price $0.75/M input; actual billing may vary"},
   {"id": "gemini-3.1-pro-preview", "label": "Gemini 3.1 Pro", "tag": "预览版", "tagEn": "Preview", "note": "网关标价 $2/M 输入；实际账单以网关为准", "noteEn": "Gateway list price $2/M input; actual billing may vary"},
   {"id": "claude-sonnet-5-5", "label": "Claude Sonnet 5.5", "tag": "文档 / 代码截图", "tagEn": "Docs / code shots", "note": "网关标价 $2/M 输入；实际账单以网关为准", "noteEn": "Gateway list price $2/M input; actual billing may vary"},
 ];
 export const DEFAULT_VISION_MODEL = 'deepseek-v4-flash-vision-exp';
 export const VIDEO_MODELS = [
-  {"id": "gemini-3.5-flash-lite", "label": "Gemini 3.5 Flash Lite", "tag": "默认 · 低价", "tagEn": "Default · Low cost", "note": "已验证视频输入；按实际 token 计费，不保证固定每分钟价", "noteEn": "Video input previously verified; token-based billing, not a fixed per-minute price"},
+  {"id": "gemini-3.5-flash-lite", "label": "Gemini 3.5 Flash Lite", "tag": "默认 · 低价", "tagEn": "Default · Cheap", "note": "已验证视频输入；按实际 token 计费，不保证固定每分钟价", "noteEn": "Video input previously verified; token-based billing, not a fixed per-minute price"},
   {"id": "gemini-3.8-flash", "label": "Gemini 3.8 Flash", "tag": "通用", "tagEn": "General", "note": "已验证视频输入；按实际 token 计费，不保证固定每分钟价", "noteEn": "Video input previously verified; token-based billing, not a fixed per-minute price"},
   {"id": "gemini-3.1-pro-preview", "label": "Gemini 3.1 Pro", "tag": "预览版", "tagEn": "Preview", "note": "已验证视频输入；按实际 token 计费，不保证固定每分钟价", "noteEn": "Video input previously verified; token-based billing, not a fixed per-minute price"},
 ];

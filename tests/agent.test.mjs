@@ -4526,12 +4526,13 @@ test('窄屏沙箱面板自底部全屏滑入，面板内关闭键可收回', as
   assert.match(css, /height:\s*100dvh/, '窄屏面板铺满视口高度');
   assert.match(css, /z-index:\s*52/, '全屏面板盖住顶栏，关闭靠面板内 ✕');
 });
-test('模型列表不再标「原生」；底部提示为 AI 生成免责声明', async () => {
+test('模型列表以热门/Popular、低价/Cheap 标记；不显示新收录；底部提示为 AI 生成免责声明', async () => {
   const fsp = await import('node:fs');
   const ui = readUiSource();
   assert.equal(/badge ghost">原生/.test(ui), false, 'Claude 行不应再挂「原生」标签');
-  assert.match(ui, /localeText\('推荐', 'Recommended'\)/);
-  assert.match(ui, /localeText\('低价', 'Low cost'\)/);
+  assert.match(ui, /localeText\('热门', 'Popular'\)/);
+  assert.match(ui, /localeText\('低价', 'Cheap'\)/);
+  assert.doesNotMatch(ui, /新收录|Newly listed|newlyListed/, 'model picker must not render a new-entry badge');
   const html = fsp.readFileSync(new URL('../app.html', import.meta.url), 'utf8');
   assert.match(html, /内容由AI生成，请仔细甄别/);
   assert.equal(html.includes('网关提供路由'), false);
@@ -6291,24 +6292,24 @@ test('2026.9.30.6 八项体验与渲染升级（空状态隐藏最新输出、re
 
 group('2026.9.30.7 40模型全支持与热度版本排序 / 长期记忆自动生效 / 天枢2.5自演进增强 / 黑粒回滚与图表微交互');
 
-test('2026.9.30.7：支持全部固定对话模型（2026.10.5.18 起下架 DeepSeek 两个免费档 → 38 个），且按热度与版本优先级排序', async () => {
-  const expected40 = [
+test('2026.10.18：支持固定对话目录（DeepSeek 两个免费档继续下架，TeamoRouter Flash 1017 已加入 → 39 个），且按热度与版本优先级排序', async () => {
+  const expected41 = [
     'claude-opus-5-5', 'claude-fable-5-1', 'claude-opus-5', 'claude-fable-5', 'claude-sonnet-5',
     'claude-opus-4-8', 'claude-opus-4-7', 'claude-opus-4-6', 'claude-sonnet-4-6', 'claude-haiku-4-5',
     'gpt-6-astra', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini',
     'gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-pro-preview',
-    'deepseek-flash', 'deepseek-v4-pro', 'deepseek-v4-flash',
+    'deepseek-flash', 'deepseek-flash-1017', 'deepseek-v4-pro', 'deepseek-v4-flash',
     'claude-haiku-5-5', 'gemini-4-argon',
     'glm-5.3-flash', 'glm-5.3', 'glm-5.2',
     'grok-4.6',
     'claude-haiku-4-5-20251001', 'claude-sonnet-5-5', 'deepseek-v4-pro-260425', 'gpt-6-luna', 'gpt-6-sol', 'gpt-6.1-sol',
   ];
   const fallbackIds = new Set(cfg.FALLBACK_MODELS.map((m) => m.id));
-  for (const id of expected40) {
+  for (const id of expected41) {
     assert.ok(fallbackIds.has(id), `FALLBACK_MODELS 缺少模型：${id}`);
   }
   const chatModels = cfg.FALLBACK_MODELS.filter((m) => m.id !== cfg.SMART_ROUTER_ID && !cfg.isImageModel(m.id));
-  assert.equal(chatModels.length, 38, '排除智能路由、识图/生图专用模型后应恰好包含 38 个固定对话模型（DeepSeek 免费档已下架）');
+  assert.equal(chatModels.length, 39, '排除智能路由、识图/生图专用模型后应恰好包含 39 个固定对话模型（不含 DeepSeek 免费档）');
   assert.ok(!fallbackIds.has('deepseek-v4-flash-free') && !fallbackIds.has('deepseek-flash-free'), 'DeepSeek 两个免费模型必须下架');
 
   // Claude 与 GPT 新模型热度与组内版本优先级排序验证
@@ -10033,6 +10034,8 @@ test('#10 视频识别默认模型改为 Gemini 3.5 Flash Lite（设置档位 / 
   assert.equal(cfg2.resolveVideoModel(undefined), 'gemini-3.5-flash-lite');
   assert.equal(cfg2.resolveVideoModel('not-a-model'), 'gemini-3.5-flash-lite');
   assert.equal(cfg2.VIDEO_MODELS.find((m) => m.id === 'gemini-3.5-flash-lite').tag, '默认 · 低价');
+  assert.equal(cfg2.VIDEO_MODELS.find((m) => m.id === 'gemini-3.5-flash-lite').tagEn, 'Default · Cheap');
+  assert.equal(cfg2.VISION_MODELS.find((m) => m.id === 'gemini-3.5-flash-lite').tagEn, 'Cheap');
   assert.equal(cfg2.VIDEO_MODELS.find((m) => m.id === 'gemini-3.8-flash').tag, '通用');
   const { createStore } = await import('../js/state.js');
   assert.equal(createStore().state.settings.videoModel, 'gemini-3.5-flash-lite');

@@ -1,5 +1,5 @@
 // ─── 模型官方价格表与费用预估（USD）──────────────────────────────────────
-// 2026-10-14 复核；展示网关 list_cost 标价，不写入账户折扣或声称供应商实测。
+// 2026-10-18 复核；展示网关 list_cost 标价，不写入账户折扣或声称供应商实测。
 // 数据来源：TeamoRouter 官方定价接口（GET /v1/models/pricing 的 list_cost 字段与 per_call_tiers）
 // 独立模块：不修改 config.js / api.js 的既有导出列表，避免 Pages 混版缓存下 ESM link 失败。
 
@@ -45,6 +45,7 @@ export const MODEL_PRICING = {
 
   // DeepSeek
   'deepseek-flash':           { input: 0.15,   output: 0.6,   cachedInput: 0.003 },
+  'deepseek-flash-1017':      { input: 0.15,   output: 0.6,   cachedInput: 0.003 },
   'deepseek-v4-pro':          { input: 0.66,  output: 1.98,  cachedInput: 0.022 },
   'deepseek-v4-pro-260425':   { input: 1.74,  output: 3.48,  cachedInput: 0.145 },
   'deepseek-v4-flash':        { input: 0.44,  output: 1.32,  cachedInput: 0.014 },

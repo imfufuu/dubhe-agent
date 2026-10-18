@@ -405,7 +405,7 @@ export const UI_STRINGS = {
   "对话": "Chat",
   "自动路由": "Auto routing",
   "热门": "Popular",
-  "低价": "Low cost",
+  "低价": "Cheap",
   "未检测到中继（网页抓取工具将被禁用）": "No relay detected (web fetch tools disabled)",
   "不发送思考参数": "No reasoning parameter",
   "极速浅层思考": "Fastest, shallow reasoning",

@@ -16,7 +16,11 @@ const FIRST_PARTY_MODELS = {
     { id: 'gemini-4-argon', provider: 'Google', displayName: 'Gemini 4 Argon' },
     { id: 'gemini-3.8-flash', provider: 'Google', displayName: 'Gemini 3.8 Flash' },
   ],
-  deepseek: [],
+  // Current official GET /models inventory: the stable Flash alias and V4 Pro only.
+  deepseek: [
+    { id: 'deepseek-flash', provider: 'DeepSeek', displayName: 'DeepSeek V4.1 Flash' },
+    { id: 'deepseek-v4-pro', provider: 'DeepSeek', displayName: 'DeepSeek V4 Pro' },
+  ],
   glm: [],
   grok: [
     { id: 'grok-4.7', provider: 'Grok', displayName: 'Grok 4.7' },
@@ -210,8 +214,12 @@ export function gatewayFallbackModels(gatewayId = DEFAULT_GATEWAY_ID) {
       .filter((m) => m.channel === 'chat' && !m.hidden && !isRetiredModel(m.id, spec.id))
       .map((m) => ({ ...m }));
   }
-  const existing = MODEL_CATALOG.filter((m) => m.channel === 'chat' && m.provider === spec.provider && !m.hidden);
   const extra = FIRST_PARTY_MODELS[spec.id] || [];
+  // DeepSeek's current first-party /models inventory is authoritative for fallback too:
+  // do not surface TeamoRouter aliases or retired snapshot IDs when that endpoint is unavailable.
+  const curatedIds = spec.id === 'deepseek' && extra.length ? new Set(extra.map((model) => model.id)) : null;
+  const existing = MODEL_CATALOG.filter((m) => m.channel === 'chat' && m.provider === spec.provider && !m.hidden
+    && (!curatedIds || curatedIds.has(m.id)));
   const merged = new Map();
   for (const model of [...existing, ...extra]) {
     if (spec.id === 'kimi' && isRetiredModel(model.id, DEFAULT_GATEWAY_ID)) {

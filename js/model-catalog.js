@@ -1,13 +1,13 @@
-// Verified through authenticated GET /v1/models and GET /v1/models/pricing, 2026-10-14.
-// Whitelisted catalog + list-price fields only: no key, account discounts or private billing data.
-// 'hot' is retained for sorting compatibility; the UI calls this app-curated 'Recommended', NOT popularity.
-// Cheap: list input <= $1 AND output <= $5 per million tokens. New: newly included in our menu snapshot.
+// Verified through authenticated GET /v1/models and list-price data, 2026-10-18.
+// Whitelisted model IDs and list-price fields only: no API keys, account discounts or private billing data.
+// 'hot' is retained for sorting; the UI label is app-curated Popular, not a live popularity/benchmark ranking.
+// Cheap: list input <= $1 AND output <= $5 per million tokens. newlyListed is internal metadata, not a UI badge.
 // Removed from active choices after user-confirmed retirement; historical billing stays readable.
 export const RETIRED_MODEL_IDS = new Set(['kimi-k3', 'kimi-k3[1M]']);
 // Retirement is scoped to the TeamoRouter directory snapshot. The same ID may remain
 // available from its first-party provider (for example, Moonshot's current kimi-k3).
 export const isRetiredModel = (id, gatewayId = 'teamorouter') => gatewayId === 'teamorouter' && RETIRED_MODEL_IDS.has(String(id || '').trim());
-export const MODEL_CATALOG_DATE = '2026-10-14';
+export const MODEL_CATALOG_DATE = '2026-10-18';
 export const MODEL_CATALOG = [
   {"id":"claude-fable-5","provider":"Anthropic","displayName":"Claude Fable 5","channel":"chat","listPrice":{"currency":"USD","input":10.0,"output":50.0,"cached_input":1.0},"contextWindow":1000000},
   {"id":"claude-fable-5-1","provider":"Anthropic","displayName":"Claude Fable 5.1","channel":"chat","listPrice":{"currency":"USD","input":10.0,"output":50.0,"cached_input":0.25},"contextWindow":1000000},
@@ -23,6 +23,7 @@ export const MODEL_CATALOG = [
   {"id":"claude-sonnet-5","provider":"Anthropic","displayName":"Claude Sonnet 5","channel":"chat","listPrice":{"currency":"USD","input":2.0,"output":10.0,"cached_input":0.2},"contextWindow":1000000},
   {"id":"claude-sonnet-5-5","provider":"Anthropic","displayName":"Claude sonnet 5.5","channel":"chat","hot":true,"listPrice":{"currency":"USD","input":2.0,"output":10.0,"cached_input":0.2},"contextWindow":1000000},
   {"id":"deepseek-flash","provider":"DeepSeek","displayName":"DeepSeek V4.1 Flash","channel":"chat","hot":true,"listPrice":{"currency":"USD","input":0.15,"output":0.6,"cached_input":0.003},"cheap":true,"contextWindow":1000000},
+  {"id":"deepseek-flash-1017","provider":"DeepSeek","displayName":"DeepSeek V4.1 Flash 1017","channel":"chat","listPrice":{"currency":"USD","input":0.15,"output":0.6,"cached_input":0.003},"cheap":true,"contextWindow":1000000},
   {"id":"deepseek-flash-free","provider":"TeamoRouter","displayName":"DeepSeek V4.1 Flash福利版","channel":"chat","hidden":true,"listPrice":{"currency":"USD","input":0.15,"output":0.6,"cached_input":0.003},"cheap":true,"contextWindow":1000000},
   {"id":"deepseek-v4-flash","provider":"DeepSeek","displayName":"DeepSeek V4 Flash","channel":"chat","listPrice":{"currency":"USD","input":0.44,"output":1.32,"cached_input":0.014},"cheap":true,"contextWindow":1000000},
   {"id":"deepseek-v4-flash-free","provider":"TeamoRouter","displayName":"DeepSeek V4 Flash福利版","channel":"chat","hidden":true,"listPrice":{"currency":"USD","input":0.44,"output":1.32,"cached_input":0.014},"cheap":true,"contextWindow":1000000},

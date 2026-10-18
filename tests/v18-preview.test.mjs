@@ -80,12 +80,18 @@ test('reduced-motion popover is immediate and does not create animations', () =>
   pop.set(true);assert.equal(menu.hidden,false);pop.set(false);assert.equal(menu.hidden,true);assert.equal(animations.length,0);
 });
 
-test('live catalog snapshot has 47 entries, two new models and evidence-based low-cost labels', async () => {
+test('live catalog snapshot includes TeamoRouter V4.1 Flash 1017 and evidence-based low-cost labels', async () => {
   const { MODEL_CATALOG, MODEL_CATALOG_BY_ID } = await import('../js/model-catalog.js');
   const { FALLBACK_MODELS, resolveModelAlias } = await import('../js/config.js');
-  assert.equal(MODEL_CATALOG.length,47);assert.equal(new Set(MODEL_CATALOG.map(m=>m.id)).size,47);
+  assert.equal(MODEL_CATALOG.length,48);assert.equal(new Set(MODEL_CATALOG.map(m=>m.id)).size,48);
   assert.deepEqual(MODEL_CATALOG.filter(m=>m.newlyListed).map(m=>m.id).sort(),['claude-haiku-5-5','gemini-4-argon']);
-  assert.equal(FALLBACK_MODELS.length,40);assert.equal(FALLBACK_MODELS.some(m=>m.id.startsWith('kimi')),false);
+  assert.equal(FALLBACK_MODELS.length,41);assert.equal(FALLBACK_MODELS.some(m=>m.id.startsWith('kimi')),false);
+  const flash1017=MODEL_CATALOG_BY_ID.get('deepseek-flash-1017');
+  assert.equal(flash1017.displayName,'DeepSeek V4.1 Flash 1017');
+  assert.equal(flash1017.provider,'DeepSeek');
+  assert.deepEqual(flash1017.listPrice,{currency:'USD',input:0.15,output:0.6,cached_input:0.003});
+  assert.equal(flash1017.contextWindow,1000000);
+  assert.equal(flash1017.cheap,true);
   for(const m of MODEL_CATALOG) {
     assert.equal(!!m.cheap,m.channel==='chat'&&m.listPrice.input<=1&&m.listPrice.output<=5,m.id);
     assert.equal('cost' in m,false);assert.equal('discount_rate' in m,false);
@@ -93,6 +99,12 @@ test('live catalog snapshot has 47 entries, two new models and evidence-based lo
   assert.equal(MODEL_CATALOG_BY_ID.get('deepseek-v4-pro').cheap,true);
   assert.equal(MODEL_CATALOG_BY_ID.get('gemini-3.5-flash').cheap,undefined);
   assert.equal(resolveModelAlias('gemini-3.5-flash'),'gemini-3.5-flash','a catalog-listed choice must not be silently replaced');
+});
+test('DeepSeek fallback matches official /models, and the versioned TeamoRouter alias stays gateway-only', async () => {
+  const { gatewayFallbackModelIds } = await import('../js/gateway-registry.js');
+  assert.deepEqual(gatewayFallbackModelIds('deepseek').sort(),['deepseek-flash','deepseek-v4-pro']);
+  assert.ok(gatewayFallbackModelIds('teamorouter').includes('deepseek-flash-1017'));
+  assert.ok(!gatewayFallbackModelIds('deepseek').includes('deepseek-flash-1017'));
 });
 test('a live model response is authoritative, including an empty result; offline fallback stays available', async()=>{
   const { mergeAvailableModels }=await import('../js/model-catalog.js');
