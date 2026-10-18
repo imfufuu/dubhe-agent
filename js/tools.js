@@ -6,7 +6,8 @@ import { prepareCommandArgs, retainCommandSource, commandRepairNote } from './co
 import { sandboxProject, sandboxBrowserRequest } from './localbrowser.js?v=2026.10.11.1';
 // ─── Agent 工具集：定义 + 执行调度 ─────────────────────────────────────
 import { CODE_TOOL_NAMES as REG_CODE_TOOL_NAMES, LEGACY_TOOL_ALIASES as REG_LEGACY_TOOL_ALIASES } from './capabilities.js';
-import { runJavaScript, runPython, runCpp, pythonAvailable, persistenceNote } from './sandbox.js';
+import { runJavaScript, runPython, runCpp, pythonAvailable, persistenceNote, isSafeFsPath, contentByteSize } from './sandbox.js';
+import { SANDBOX_STORAGE_CAP } from './storagefmt.js';
 import { generateImage, editImage, bytesToDataUrl, dataUrlToBytes, sniffImage } from './api.js?v=2026.10.11.1';
 import { analyzeImage, analyzeVideo, analyzeAudio, VISION_TOOL_MODEL, VIDEO_TOOL_MODEL } from './vision.js';
 import { sanitizeSvgMarkup, svgSourceFromValue, svgDataUrl, extractSvgText } from './svg-safety.js';
@@ -365,6 +366,16 @@ export const TOOL_DEFS = [
     },
   },
   {
+    name: 'pull_github_project',
+    description:
+      '快捷拉取一个公开 GitHub 仓库到会话沙箱。只接受 https://github.com/<owner>/<repo>；可选 ref 指定分支、tag 或 commit SHA，不填时读取默认分支。通过已声明 file 能力的中继 /api/file（支持 Cloudflare Worker）下载 ZIP 源码快照，≤16MB；解压上限 24MB、最多 2048 个文件。默认写入 uploads/github/<owner>/<repo>，也可用 path 指定目录；不覆盖已有文件，先报冲突。只含源码快照、不含 Git 历史；不支持私有仓库或认证令牌。不会执行导入文件。',
+    parameters: { type: 'object', properties: {
+      url: { type: 'string', description: '公开仓库首页，如 https://github.com/octocat/Hello-World' },
+      ref: { type: 'string', description: '可选：分支、tag 或 commit SHA；缺省读取 GitHub 默认分支' },
+      path: { type: 'string', description: '可选：沙箱中的目标目录；默认 uploads/github/<owner>/<repo>' },
+    }, required: ['url'] },
+  },
+  {
     name: 'run_git',
     description:
       '执行 git 命令。下载后的静态页面也内置轻量 Git，可在沙箱文件系统里 init/status/diff/add/commit/log/branch/checkout/reset；' +
@@ -623,6 +634,153 @@ export function normalizeFsPath(p) {
   const parts = String(p == null ? '' : p).trim().split('/').map((s) => s.trim()).filter((s) => s && s !== '.');
   if (!parts.length || parts.includes('..') || /[\u0000-\u001f]/.test(parts.join('/'))) return '';
   return parts.join('/');
+}
+
+const GITHUB_PROJECT_UNPACKED_LIMIT = 24 * 1024 * 1024;
+const GITHUB_PROJECT_MAX_FILES = 2048;
+
+function parsePublicGitHubRepo(raw) {
+  let url;
+  try { url = new URL(String(raw || '').trim()); }
+  catch { return { error: '请提供公开 GitHub 仓库首页 URL，例如 https://github.com/owner/repo' }; }
+  if (url.protocol !== 'https:' || !['github.com', 'www.github.com'].includes(url.hostname.toLowerCase()) || url.port || url.username || url.password) {
+    return { error: '只接受 https://github.com/<owner>/<repo> 公开仓库地址' };
+  }
+  let parts;
+  try { parts = url.pathname.split('/').filter(Boolean).map((part) => decodeURIComponent(part)); }
+  catch { return { error: '仓库 URL 路径编码无效' }; }
+  if (parts.length !== 2) return { error: '请使用 GitHub 仓库首页地址，不要使用文件、子目录或下载链接' };
+  const owner = parts[0];
+  const repo = parts[1].replace(/\.git$/i, '');
+  const slug = /^[A-Za-z0-9_.-]{1,100}$/;
+  if (!slug.test(owner) || !slug.test(repo) || owner === '.' || owner === '..' || repo === '.' || repo === '..') {
+    return { error: 'GitHub owner/repository 名称无效' };
+  }
+  return { owner, repo };
+}
+
+function validGitHubRef(value) {
+  const ref = String(value || '').trim();
+  if (!ref) return '';
+  const badChars = /[\s?#^~:\u0000-\u001f\u007f]/;
+  if (ref.length > 255 || ref.startsWith('-') || ref.startsWith('/') || ref.endsWith('/') || ref.endsWith('.')
+      || ref.includes('..') || ref.includes('@{') || ref.includes('\\') || ref.includes('[') || ref.includes(']')
+      || ref.split('/').some((part) => !part || part === '.' || part === '..' || part.startsWith('.') || part.endsWith('.lock'))
+      || badChars.test(ref)) return null;
+  return ref;
+}
+
+async function pullGitHubProject(args, ctx, fs, emit) {
+  const fail = (message) => {
+    emit({ status: 'error', error: { message } });
+    return `pull_github_project 失败：${message}`;
+  };
+  const repoInfo = parsePublicGitHubRepo(args.url);
+  if (repoInfo.error) return fail(repoInfo.error);
+  if (!fs || typeof fs.list !== 'function' || typeof fs.write !== 'function' || typeof fs.remove !== 'function') {
+    return fail('沙箱文件系统当前不可用');
+  }
+
+  const { owner, repo } = repoInfo;
+  const destination = args.path ? normalizeFsPath(args.path) : `uploads/github/${owner}/${repo}`;
+  if (!destination || !isSafeFsPath(destination) || destination.length >= 512) return fail('目标目录路径无效或过长');
+  if (['internal', '.git'].includes(destination.split('/')[0])) return fail('目标目录不能位于 internal/ 或 .git/');
+  const before = fs.list();
+  const taken = new Set(before.map((file) => String(file.path)));
+  const destinationParts = destination.split('/');
+  let parentConflict = false;
+  for (let i = 1; i < destinationParts.length; i++) {
+    if (taken.has(destinationParts.slice(0, i).join('/'))) { parentConflict = true; break; }
+  }
+  if (parentConflict || [...taken].some((path) => path === destination || path.startsWith(`${destination}/`))) {
+    return fail(`目标目录 ${destination} 已有文件；为避免覆盖，请换一个 path`);
+  }
+
+  let ref = validGitHubRef(args.ref);
+  if (ref === null) return fail('ref 无效；请提供有效的分支名、tag 或 commit SHA');
+  const signal = ctx && ctx.signal;
+  const throwIfAborted = () => {
+    if (signal && signal.aborted) {
+      const error = signal.reason instanceof Error ? signal.reason : new Error('操作已取消');
+      if (!error.name || error.name === 'Error') error.name = 'AbortError';
+      throw error;
+    }
+  };
+  try {
+    throwIfAborted();
+    if (!ref) {
+      emit({ status: 'running', note: `查询 ${owner}/${repo} 默认分支` });
+      const metadata = await fetchPage({
+        url: `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`,
+        mode: 'raw', maxBytes: 128 * 1024, signal, full: true,
+      });
+      if (!metadata.ok) return fail(`无法读取公开仓库信息：${metadata.error}。私有仓库不支持；也可能是 GitHub API 限流或仓库不存在`);
+      let data;
+      try { data = JSON.parse(metadata.text); }
+      catch { return fail('GitHub API 未返回可解析的仓库信息'); }
+      if (data.private === true) return fail('当前只支持公开仓库；不会读取或保存认证令牌');
+      ref = validGitHubRef(data.default_branch);
+      if (!ref) return fail('GitHub 仓库没有有效的默认分支；可显式传入 ref 重试');
+    }
+
+    throwIfAborted();
+    const archiveUrl = `https://codeload.github.com/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/zipball/${encodeURIComponent(ref)}`;
+    emit({ status: 'running', note: `下载 ${owner}/${repo}@${ref}` });
+    const archive = await relayDownload({
+      url: archiveUrl, maxBytes: RELAY_FILE_MAX_BYTES, signal,
+      onProgress: ({ loaded, total }) => emit({ status: 'running', note: `GitHub ZIP ${(loaded / 1024 / 1024).toFixed(1)}${total ? ` / ${(total / 1024 / 1024).toFixed(1)}` : ''} MB` }),
+    });
+    if (!archive.ok) return fail(`下载 GitHub ZIP 失败：${archive.error}`);
+    throwIfAborted();
+
+    const unpacked = await unpackZip(archive.bytes, { maxUncompressed: GITHUB_PROJECT_UNPACKED_LIMIT });
+    if (!unpacked.ok) return fail(`GitHub ZIP 无法安全解压：${unpacked.error}`);
+    if (unpacked.files.length > GITHUB_PROJECT_MAX_FILES) return fail(`项目文件超过 ${GITHUB_PROJECT_MAX_FILES} 个上限`);
+    const roots = new Set(unpacked.files.map((file) => String(file.path).split('/')[0]));
+    if (roots.size !== 1) return fail('ZIP 结构不像 GitHub 仓库源码归档，未写入任何文件');
+    const archiveRoot = [...roots][0];
+    const incoming = [];
+    const seen = new Set();
+    for (const file of unpacked.files) {
+      const rel = String(file.path).slice(archiveRoot.length + 1);
+      if (!rel) continue;
+      const relativeParts = rel.split('/');
+      if (relativeParts[0] === '.git') continue;
+      const path = `${destination}/${rel}`;
+      if (!isSafeFsPath(path) || path.length > 512) return fail(`ZIP 中有不安全或过长的文件路径：${rel}`);
+      if (seen.has(path)) return fail(`ZIP 中有重复文件路径：${rel}`);
+      seen.add(path);
+      incoming.push({ path, content: file.content });
+    }
+    if (!incoming.length) return fail('GitHub ZIP 中没有可导入的文件');
+    if (before.length + incoming.length > 5000) return fail('导入后会超过沙箱 5000 个文件上限');
+    const incomingBytes = incoming.reduce((sum, file) => sum + contentByteSize(file.content), 0);
+    const currentBytes = before.reduce((sum, file) => sum + (Number(file.size) || 0), 0);
+    if (currentBytes + incomingBytes > SANDBOX_STORAGE_CAP) {
+      return fail(`导入后会超过沙箱 ${Math.round(SANDBOX_STORAGE_CAP / 1024 / 1024)} MiB 存储上限`);
+    }
+
+    const written = [];
+    try {
+      for (const file of incoming) {
+        throwIfAborted();
+        fs.write(file.path, file.content);
+        written.push(file.path);
+      }
+    } catch (error) {
+      for (const path of written.reverse()) { try { fs.remove(path); } catch { /* best-effort rollback */ } }
+      if (error && error.name === 'AbortError') throw error;
+      return fail(`写入 ${destination} 失败，已尝试回滚本次导入：${error && error.message ? error.message : error}`);
+    }
+
+    const sizeMb = (incomingBytes / 1024 / 1024).toFixed(2);
+    const transfer = archive.via === 'relay' ? '中继 /api/file' : '浏览器直连（目标站允许 CORS）';
+    emit({ status: 'ok', fsChange: true, note: `${incoming.length} 个文件 · ${sizeMb} MB → ${destination}` });
+    return `[GitHub 项目已拉取] ${owner}/${repo}@${ref}\n路径：${destination}${persistenceNote(fs, destination)} · ${incoming.length} 个文件 · ${sizeMb} MB · ${transfer}\n这是公开仓库的源码 ZIP 快照，不含 Git 历史；未覆盖已有文件，也未执行导入内容。`;
+  } catch (error) {
+    if (error && (error.name === 'AbortError' || signal && signal.aborted)) throw error;
+    return fail(error && error.message ? error.message : String(error));
+  }
 }
 
 const DEFAULT_CODE_TIMEOUT_MS = 30000;
@@ -1012,6 +1170,10 @@ async function executeToolBody(outerName, outerArgs, ctx) {
         const sizeMb = (r.bytes.length / 1024 / 1024).toFixed(2);
         emit({ status: 'ok', fsChange: true, note: `${sizeMb} MB → ${path}` });
         return `[下载完成] ${r.finalUrl || url}\n保存：${path}${persistenceNote(fs, path)} · ${mime} · ${sizeMb} MB · ${kind}${r.via === 'direct' ? '（目标站允许 CORS，浏览器直连）' : '（经中继）'}`;
+      }
+      case 'pull_github_project': {
+        emit({ status: 'running', note: `准备拉取 ${String(args.url || '').slice(0, 46)}` });
+        return await pullGitHubProject(args, ctx, fs, emit);
       }
       case 'run_git': {
         emit({ status: 'running', note: String(args.command || 'git').slice(0, 46) });

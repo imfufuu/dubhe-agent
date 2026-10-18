@@ -5019,7 +5019,7 @@ test('run_git 无中继仍在工具表，且 net.js 含内置沙箱 Git 引擎',
   const ag = fsp.readFileSync(new URL('../js/agent.js', import.meta.url), 'utf8');
   const net = fsp.readFileSync(new URL('../js/net.js', import.meta.url), 'utf8');
   const tools = fsp.readFileSync(new URL('../js/tools.js', import.meta.url), 'utf8');
-  assert.match(ag, /RELAY_ONLY_TOOLS = new Set\(\['fetch_url', 'search_web', 'crawl_site', 'download_file'\]\)/);
+  assert.match(ag, /RELAY_ONLY_TOOLS = new Set\(\['fetch_url', 'search_web', 'crawl_site', 'download_file', 'pull_github_project'\]\)/);
   assert.match(ag, /内置沙箱 Git/);
   assert.match(net, /function localGitRun/);
   assert.match(net, /git version DubheGit/);
@@ -8198,7 +8198,7 @@ test('estimateTokens：同一消息对象重复估算走缓存，字段变化后
 group('V1.7.1 续：同波按类别限流 / ui.js 拆分契约');
 test('runWithCategoryLimits：网络类 ≤ 4、本地 ≤ 8 并发，结果按原序回填，单个失败不拖累其它', async () => {
   const { runWithCategoryLimits, plannedConcurrency, NETWORK_TOOLS, PARALLEL_LIMITS } = await import('../js/agent.js');
-  assert.deepEqual([...NETWORK_TOOLS].sort(), ['crawl_site', 'download_file', 'fetch_url', 'search_web']);
+  assert.deepEqual([...NETWORK_TOOLS].sort(), ['crawl_site', 'download_file', 'fetch_url', 'pull_github_project', 'search_web']);
   assert.deepEqual(PARALLEL_LIMITS, { network: 4, default: 8 });
   const items = [...Array(10)].map((_, i) => ({ index: i, name: 'fetch_url' })).concat([...Array(12)].map((_, i) => ({ index: 10 + i, name: 'regex' })));
   const active = { net: 0, loc: 0 }; const peak = { net: 0, loc: 0 };
@@ -8519,7 +8519,7 @@ test('analyze_video 工具：定义 / 契约 / 并行与访问表 / 执行路径
   assert.match(def.description, /不要传 model/);
   assert.match(def.description, /16MB/);
   assert.deepEqual(Object.keys(def.parameters.properties).sort(), ['path', 'prompt']);
-  assert.equal(TOOL_DEFS.length, 39, '39 工具：媒体转换与 SVG 分析均须登记到能力表和执行契约');
+  assert.equal(TOOL_DEFS.length, 40, '40 工具：媒体转换、SVG 分析与 GitHub 项目拉取均须登记到能力表和执行契约');
   const c = ex.getToolContract('analyze_video');
   assert.equal(c.sideEffect, 'remote');
   assert.equal(c.external, true);
@@ -8682,10 +8682,10 @@ test('download_file 工具：定义 / 契约 / 能力门控 / 网络类限流 / 
   const risk = ex.assessToolRisk ? ex.assessToolRisk('download_file', { url: 'http://127.0.0.1/x.bin' }) : null;
   if (risk) assert.equal(risk.level, 'L3');
   const agentSrc = fsp.readFileSync(new URL('../js/agent.js', import.meta.url), 'utf8');
-  assert.match(agentSrc, /if \(t\.name === 'download_file'\) return relayOk && settings\.webEnabled !== false && relaySupports\('file'\);/);
+  assert.match(agentSrc, /if \(t\.name === 'download_file' \|\| t\.name === 'pull_github_project'\) return relayOk && settings\.webEnabled !== false && relaySupports\('file'\);/);
   const toolrunnerSrc = fsp.readFileSync(new URL('../js/toolrunner.js', import.meta.url), 'utf8');
   assert.match(toolrunnerSrc, /case 'download_file': return \{ reads: \[\], writes: a\.path \? strList\(a\.path\) : \[ACCESS_ANY\] \};/);
-  assert.match(agentSrc, /RELAY_ONLY_TOOLS = new Set\(\['fetch_url', 'search_web', 'crawl_site', 'download_file'\]\)/);
+  assert.match(agentSrc, /RELAY_ONLY_TOOLS = new Set\(\['fetch_url', 'search_web', 'crawl_site', 'download_file', 'pull_github_project'\]\)/);
   const cfgSrc = fsp.readFileSync(new URL('../js/config.js', import.meta.url), 'utf8');
   assert.match(cfgSrc, /- download_file：把 http\(s\) 链接指向的文件/);
   // 执行：非法 URL 直接失败，不发请求
@@ -9026,7 +9026,7 @@ test('工具结果契约：write_file 在临时沙箱里写 outputs/ 会提示�
   assert.equal(strip(r3), '已写入 outputs/b.md（3 字符）', '基座 FS（子代理 / 直接调用）不加说明');
   const fsp = await import('node:fs');
   const tools = fsp.readFileSync(new URL('../js/tools.js', import.meta.url), 'utf8');
-  assert.match(tools, /import \{ runJavaScript, runPython, runCpp, pythonAvailable, persistenceNote \} from '\.\/sandbox\.js';/);
+  assert.match(tools, /import \{ runJavaScript, runPython, runCpp, pythonAvailable, persistenceNote, isSafeFsPath, contentByteSize \} from '\.\/sandbox\.js';/);
   assert.match(tools, /全文已存 \$\{r\.savedTo\}\$\{persistenceNote\(fs, r\.savedTo\)\}/, 'fetch_url 的落盘说明带持久契约');
   assert.match(tools, /保存：\$\{path\}\$\{persistenceNote\(fs, path\)\}/, 'download_file 的落盘说明带持久契约');
   const cfg = fsp.readFileSync(new URL('../js/config.js', import.meta.url), 'utf8');
@@ -9263,7 +9263,7 @@ test('端到端：思考 Off + 中继离线时，agent.previewToolTable().allowe
   } finally { globalThis.fetch = realFetch; await drainSaves(); }
 });
 
-test('端到端：中继在线但只声明 fetch/search 时，【联网】段「未列出的 crawl_site（中继未声明 crawl） / download_file（中继未声明 file） 本轮不可用」来自 dropped', async () => {
+test('端到端：中继在线但只声明 fetch/search 时，【联网】段列出所有缺少中继能力的工具', async () => {
   const calls = [];
   const net = await import('../js/net.js');
   net.resetRelayProbe();
@@ -9293,10 +9293,10 @@ test('端到端：中继在线但只声明 fetch/search 时，【联网】段「
     assert.equal(calls.length, 1);
     const sys = calls[0].body.messages.filter((m) => m.role === 'system').map((m) => (typeof m.content === 'string' ? m.content : JSON.stringify(m.content))).join('\n');
     assert.match(sys, /本轮已开启；中继健康检查通过/);
-    assert.match(sys, /实际网页工具表：search_web（网页搜索）、fetch_url（读取单个网页）。未列出的 crawl_site（中继未声明 crawl） \/ download_file（中继未声明 file） 本轮不可用。/);
-    assert.match(sys, /【工具表】本轮已禁用 \d+ 个：[^\n]*crawl_site（中继未声明 crawl）、download_file（中继未声明 file）/);
+    assert.match(sys, /实际网页工具表：search_web（网页搜索）、fetch_url（读取单个网页）。未列出的 crawl_site（中继未声明 crawl） \/ download_file（中继未声明 file） \/ pull_github_project（中继未声明 file） 本轮不可用。/);
+    assert.match(sys, /【工具表】本轮已禁用 \d+ 个：[^\n]*crawl_site（中继未声明 crawl）、download_file（中继未声明 file）、pull_github_project（中继未声明 file）/);
     const sent = (calls[0].body.tools || []).map((t) => (t.function && t.function.name) || t.name);
-    assert.ok(sent.includes('fetch_url') && sent.includes('search_web') && !sent.includes('crawl_site') && !sent.includes('download_file'));
+    assert.ok(sent.includes('fetch_url') && sent.includes('search_web') && !sent.includes('crawl_site') && !sent.includes('download_file') && !sent.includes('pull_github_project'));
     const pv = agent.previewToolTable({ text: '随便聊聊' });
     assert.deepEqual(sent, pv.mounted, 'P6：请求体 = 预演的按需挂载表');
     assert.ok(sent.every((n) => pv.allowed.includes(n)));
@@ -10116,7 +10116,7 @@ test('能力登记处：TOOL_DEFS ↔ 登记表 ↔ execution.js 契约三方一
   // 派生表（集合）必须与 Helix 2.5 手抄的清单一致——登记处是重构不是改行为
   const same = (a, b) => assert.deepEqual([...a].sort(), [...b].sort());
   same(reg.PARALLEL_TOOL_NAMES, ['skill_library', 'knowledge_search', 'read_file', 'list_files', 'search_files', 'get_current_time', 'get_browser_environment', 'fetch_url', 'search_web', 'regex', 'hash', 'codec', 'unicode', 'evaluate_expression', 'diff_text', 'json_tool', 'date_calc', 'convert_units', 'analyze_image', 'text_tool']);
-  same(reg.NETWORK_TOOL_NAMES, ['fetch_url', 'search_web', 'crawl_site', 'download_file']);
+  same(reg.NETWORK_TOOL_NAMES, ['fetch_url', 'search_web', 'crawl_site', 'download_file', 'pull_github_project']);
   same(reg.READ_ONLY_TOOL_NAMES, ['skill_library', 'knowledge_search', 'read_file', 'list_files', 'search_files', 'get_current_time', 'regex', 'hash', 'codec', 'unicode', 'evaluate_expression', 'diff_text', 'json_tool', 'csv_tool', 'date_calc', 'text_tool', 'convert_units', 'data_tool']);
   same(reg.HEAVY_TOOL_NAMES, ['document_tool', 'browser_sandbox', 'write_file', 'delete_file', 'copy_file', 'zip_files', 'unzip_file', 'convert_file', 'execute_javascript', 'execute_python', 'execute_cpp', 'generate_image', 'dispatch_subagent', 'fetch_url', 'run_git', 'analyze_image', 'render_mermaid', 'render_dot', 'execute_sql']);
   assert.deepEqual([...reg.CORE_TOOL_NAMES], ['execute_javascript', 'execute_python', 'execute_cpp', 'write_file', 'read_file', 'list_files', 'delete_file', 'copy_file', 'fetch_url', 'search_web', 'analyze_image', 'dispatch_subagent', 'knowledge_search', 'skill_library'], '原核心顺序不变，末尾增加只读知识检索');

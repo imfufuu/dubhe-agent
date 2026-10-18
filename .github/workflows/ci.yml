@@ -48,12 +48,18 @@ jobs:
       - name: tests/edit-demo.test.mjs · 文件差异与导航演示回归
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/edit-demo.test.mjs
+      - name: tests/github-project.test.mjs · GitHub 项目 ZIP 导入与 Worker 路由
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/github-project.test.mjs
       - name: tests/page-fx.test.mjs · 页面动效安全与减少动效
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/page-fx.test.mjs
       - name: tests/svg-safety.test.mjs · SVG 安全清理与本地文本提取
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/svg-safety.test.mjs
+      - name: tests/ui-chunks.test.mjs · 流式 Markdown 尾文本浮现
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/ui-chunks.test.mjs
       - name: tests/ui-runtime.test.mjs · 演示动效与 Python 按需依赖
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/ui-runtime.test.mjs

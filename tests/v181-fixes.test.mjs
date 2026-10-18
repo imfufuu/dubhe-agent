@@ -397,6 +397,7 @@ test('快捷导航不抢输入焦点；文件面板可收缩长名称、悬浮�
   const css = read('../css/styles.css');
   assert.match(css, /grid-template-columns:\s*var\(--sbw, 268px\) minmax\(0, 1fr\) var\(--pnw, 290px\)/);
   assert.match(css, /\.fv-actions \.fv-modes[^}]*border-radius:\s*999px/);
+  assert.match(css, /\.fv-actions \.fv-modes button[^}]*height:\s*24px/);
   assert.match(css, /\.fv-modes-thumb[^}]*border-radius:\s*999px[^}]*transition: transform \.42s/);
   assert.match(css, /\.file-list \.ft-row \{ width: 100%; min-width: 0; \}/);
   assert.match(css, /\.ft-name[^}]*overflow: hidden; text-overflow: ellipsis/);
@@ -503,7 +504,7 @@ test('convert_file：三条通路计划、ffmpeg 参数、注册表/契约/挂�
   assert.equal(String.fromCharCode(wav[0], wav[1], wav[2], wav[3]), 'RIFF');
   const { TOOL_DEFS } = await import('../js/tools.js');
   assert.ok(TOOL_DEFS.some((t) => t.name === 'convert_file' && /ffmpeg\.wasm/.test(t.description)));
-  assert.equal(TOOL_DEFS.length, 39, '含新增 analyze_svg 能力');
+  assert.equal(TOOL_DEFS.length, 40, '含 analyze_svg 与 pull_github_project 能力');
   const caps = await import('../js/capabilities.js');
   assert.ok(caps.CAPABILITY_REGISTRY.convert_file, '能力登记');
   assert.ok(caps.TOOL_MOUNT_RULES.convert_file, '按需挂载规则（no-rule 会全量下发）');

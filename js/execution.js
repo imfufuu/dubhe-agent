@@ -691,7 +691,7 @@ export function checkCapabilityConstraints({ name = '', args = {}, capabilities 
   const a = args && typeof args === 'object' ? args : {};
   const names = new Set((Array.isArray(toolNames) ? toolNames : []).map(toolNameOf).filter(Boolean));
 
-  if (['fetch_url', 'search_web', 'crawl_site', 'download_file'].includes(name)) {
+  if (['fetch_url', 'search_web', 'crawl_site', 'download_file', 'pull_github_project'].includes(name)) {
     if (!caps.web.enabled) {
       return {
         allowed: false, decision: 'deny', constraintId: 'capability-web-off',
@@ -699,12 +699,13 @@ export function checkCapabilityConstraints({ name = '', args = {}, capabilities 
         recovery: '启动 `python3 server.py` 或配置可用 Cloudflare Worker，并打开顶栏「联网」；也可改用已提供的本地资料作答',
       };
     }
-    const feature = name === 'search_web' ? 'search' : (name === 'crawl_site' ? 'crawl' : '');
+    const feature = name === 'search_web' ? 'search' : (name === 'crawl_site' ? 'crawl' : (name === 'download_file' || name === 'pull_github_project' ? 'file' : ''));
     if (feature && caps.web[feature] === false) {
+      const labels = { search: '搜索', crawl: '站点爬取', file: '文件下载' };
       return {
         allowed: false, decision: 'deny', constraintId: `relay-${feature}-unavailable`,
-        reason: `当前中继未声明 ${feature === 'search' ? '搜索' : '站点爬取'}能力`,
-        recovery: '部署带有相应 /api/search 或 /api/crawl 路由的新版本 relay/worker.js 后重试',
+        reason: `当前中继未声明 ${labels[feature] || feature}能力`,
+        recovery: `部署带有 /api/${feature} 路由且 health 声明 ${feature} 的新版本 relay/worker.js 后重试`,
       };
     }
     if (name === 'search_web') {
@@ -718,14 +719,37 @@ export function checkCapabilityConstraints({ name = '', args = {}, capabilities 
         recovery: '如确实需要访问内网地址，明确说明用途后由用户确认放行',
       };
     }
-    if (!hostAllowed(host, caps.web.allowedHosts)) {
+    const requiredHosts = name === 'pull_github_project'
+      ? ['github.com', 'api.github.com', 'codeload.github.com']
+      : [host];
+    const blockedHost = requiredHosts.find((targetHost) => !hostAllowed(targetHost, caps.web.allowedHosts));
+    if (blockedHost) {
       return {
         allowed: false, decision: 'deny', constraintId: 'web-host-not-allowed',
-        reason: `目标主机 ${host || '(空)'} 不在本轮允许的域名白名单内`,
+        reason: `目标主机 ${blockedHost || '(空)'} 不在本轮允许的域名白名单内`,
         recovery: `允许的域名：${caps.web.allowedHosts.join('、')}；如需扩展请调整能力约束`,
       };
     }
-    return { allowed: true, decision: 'allow', constraintId: name === 'crawl_site' ? 'web-crawl-ok' : 'web-ok', reason: `主机 ${host || '未指定'} 在白名单策略内` };
+    if (name === 'pull_github_project') {
+      let destination = extractTargetPath(a);
+      if (!destination) {
+        try {
+          const url = new URL(String(a.url || ''));
+          const parts = url.pathname.split('/').filter(Boolean).map((part) => decodeURIComponent(part));
+          if (parts.length === 2) destination = `uploads/github/${parts[0]}/${parts[1].replace(/\.git$/i, '')}`;
+        } catch { /* the tool will provide the precise URL validation error */ }
+      }
+      destination ||= 'uploads/github';
+      if (!pathAllowed(destination, caps.sandbox.allowedPaths)) {
+        return {
+          allowed: false, decision: 'deny', constraintId: 'path-outside-scope',
+          reason: `路径 ${destination} 超出本轮允许范围（${caps.sandbox.allowedPaths.join('、')}）`,
+          recovery: '把仓库快照保存到允许的目录（如 outputs/），或请用户放宽沙箱路径约束',
+        };
+      }
+    }
+    const constraintId = name === 'crawl_site' ? 'web-crawl-ok' : name === 'pull_github_project' ? 'web-github-project-ok' : 'web-ok';
+    return { allowed: true, decision: 'allow', constraintId, reason: `主机 ${requiredHosts.join('、') || '未指定'} 在白名单策略内` };
   }
 
   if (['execute_javascript', 'execute_python', 'execute_cpp', 'browser_sandbox'].includes(name)) {
@@ -864,6 +888,7 @@ export const TOOL_CONTRACTS = Object.freeze({
   search_web: contract({ sideEffect: 'network', idempotent: true, retryPolicy: 'once', timeoutMs: 30000, riskLevel: 'L2', external: true, note: '搜索词会发送给 Worker 配置的搜索服务，结果需核验' }),
   crawl_site: contract({ sideEffect: 'network', idempotent: true, retryPolicy: 'once', timeoutMs: 60000, riskLevel: 'L2', external: true, note: '严格限制同源、页数与深度的只读抓取' }),
   download_file: contract({ sideEffect: 'network', idempotent: true, retryPolicy: 'once', timeoutMs: 120000, riskLevel: 'L2', external: true, verifyAfterRun: true, note: '经中继 /api/file 跨域拉取 ≤16MB 文件写入沙箱 uploads/' }),
+  pull_github_project: contract({ sideEffect: 'network', idempotent: false, retryPolicy: 'never', timeoutMs: 120000, riskLevel: 'L2', external: true, verifyAfterRun: true, note: '经 GitHub API 与中继 /api/file 读取公开仓库 ZIP（≤16MB），安全解压后写入沙箱；无历史、不覆盖' }),
   run_git: contract({ sideEffect: 'filesystem', idempotent: false, timeoutMs: 30000, riskLevel: 'L2', external: true, verifyAfterRun: true, note: '远端操作（clone/push/pull）跨系统边界时升为 L3' }),
   search_files: contract({ idempotent: true, retryPolicy: 'backoff', timeoutMs: 8000, riskLevel: 'L1' }),
   diff_text: contract({ idempotent: true, timeoutMs: 5000, riskLevel: 'L1' }),
@@ -1323,7 +1348,7 @@ export function formatBudgetLedger(gov) {
 // 「还剩几次、该怎么省」，耗尽的通道直接告知「这类调用不会再被放行」，让模型提前收敛而不是事后被拦。
 export const BUDGET_WARN_THRESHOLD = 2;
 // 计 1 次外部副作用的工具（与 classifyToolRisk 的 hasExternalSideEffect 判定一致：external / network / cost / remote）
-const EXTERNAL_TOOL_HINT = 'fetch_url / search_web / crawl_site / download_file / generate_image / analyze_image / analyze_pdf / analyze_svg / analyze_video / analyze_audio / execute_cpp / run_git / dispatch_subagent';
+const EXTERNAL_TOOL_HINT = 'fetch_url / search_web / crawl_site / download_file / pull_github_project / generate_image / analyze_image / analyze_pdf / analyze_svg / analyze_video / analyze_audio / execute_cpp / run_git / dispatch_subagent';
 
 export function formatBudgetForecast(gov, { tools = null } = {}) {
   if (!gov) return '';

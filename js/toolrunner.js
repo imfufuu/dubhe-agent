@@ -105,6 +105,7 @@ export function toolAccessSet(call) {
     case 'fetch_url': return { reads: [], writes: strList(a.save_path) };
     case 'browser_sandbox': return { reads: [ACCESS_ANY], writes: [ACCESS_ANY] };
     case 'download_file': return { reads: [], writes: a.path ? strList(a.path) : [ACCESS_ANY] };
+    case 'pull_github_project': return { reads: [], writes: a.path ? strList(a.path) : [ACCESS_ANY] };
     default:
       if (PARALLEL_TOOLS.has(name)) return { reads: [], writes: [] };
       return { reads: [ACCESS_ANY], writes: [ACCESS_ANY] };

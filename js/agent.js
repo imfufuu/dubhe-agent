@@ -150,11 +150,11 @@ const toolsFor = (sandboxEnabled, { remoteCpp = true } = {}) =>
   (sandboxEnabled ? TOOL_DEFS : TOOL_DEFS.filter((t) => !CODE_TOOL_NAMES.includes(t.name)))
     .filter((t) => remoteCpp || t.name !== 'execute_cpp');
 // 只在具备中继路由时可用的网页工具；搜索/爬虫还须由 Worker health 明确声明对应特性。
-const RELAY_ONLY_TOOLS = new Set(['fetch_url', 'search_web', 'crawl_site', 'download_file']);
+const RELAY_ONLY_TOOLS = new Set(['fetch_url', 'search_web', 'crawl_site', 'download_file', 'pull_github_project']);
 // Helix 3.0：回合的五个显式阶段（runLoop 按此顺序执行；审计事件 turn-pipeline 记录各阶段耗时）
 export const TURN_PIPELINE = Object.freeze(['premise', 'plan', 'select', 'loop', 'finalize']);
 
-const RELAY_OFF_NOTE = '\n\n【工具可用性】本轮健康探测没有发现可用网页中继（没有本地中继，或 Cloudflare Worker 未通过健康检查），fetch_url / search_web / crawl_site 因此不在工具表里；'
+const RELAY_OFF_NOTE = '\n\n【工具可用性】本轮健康探测没有发现可用网页中继（没有本地中继，或 Cloudflare Worker 未通过健康检查），fetch_url / search_web / crawl_site / download_file / pull_github_project 因此不在工具表里；'
   + '失败缓存 60 秒后会自动重探，用户请求网页任务时也会立即重探。若用户问怎么办，给三条路：① 稍后重试或点顶栏「联网」立即重探；② 设置 → 中继地址填自建 Worker（relay/worker.js + wrangler deploy）；③ 本地运行 python3 server.py 作同源中继。'
   + 'run_git 仍可用内置沙箱 Git（不支持 clone/push 等远端网络操作）；不要声称已经搜索或抓取网页。';
 const WEB_RELAY_OFF_NOTE = '\n\n【联网】本轮未联网：本地 server.py / Cloudflare Worker 当前没有通过健康检查，网页工具未加入本轮工具表。若任务需要实时信息，应如实说明暂时无法核实；不要把记忆说成刚查到的。';
@@ -167,7 +167,7 @@ function formatWebCapabilityNote({ relayOk, webEnabled, tools, dropped, deferred
   if (!relayOk) return WEB_RELAY_OFF_NOTE;
   if (!webEnabled) return WEB_SWITCHED_OFF_NOTE;
   const names = [...new Set((Array.isArray(tools) ? tools : []).map(toolName).filter((name) => RELAY_ONLY_TOOLS.has(name)))];
-  // P6：按需未挂载的网页工具（crawl_site / download_file）不是「不可用」，单独一句说清楚
+  // P6：按需未挂载的网页工具（crawl_site / download_file / pull_github_project）不是「不可用」，单独一句说清楚
   const lazy = (Array.isArray(deferred) ? deferred : []).map((d) => (d && d.name) || d).filter((name) => RELAY_ONLY_TOOLS.has(name) && !names.includes(name));
   if (!names.length && !lazy.length) return WEB_NO_TOOL_NOTE;
   const label = {
@@ -175,9 +175,10 @@ function formatWebCapabilityNote({ relayOk, webEnabled, tools, dropped, deferred
     search_web: 'search_web（网页搜索）',
     crawl_site: 'crawl_site（同源站点抓取）',
     download_file: 'download_file（跨域拉取文件进沙箱）',
+    pull_github_project: 'pull_github_project（导入公开 GitHub 仓库源码快照）',
   };
   const reasonOf = new Map((Array.isArray(dropped) ? dropped : []).map((d) => [d.name, d.reason]));
-  const unavailable = ['fetch_url', 'search_web', 'crawl_site', 'download_file'].filter((name) => !names.includes(name) && !lazy.includes(name))
+  const unavailable = ['fetch_url', 'search_web', 'crawl_site', 'download_file', 'pull_github_project'].filter((name) => !names.includes(name) && !lazy.includes(name))
     .map((name) => (reasonOf.has(name) ? `${name}（${describeDropReason(reasonOf.get(name))}）` : name));
   return `\n\n【联网】本轮已开启；中继健康检查通过。实际网页工具表：${names.map((name) => label[name] || name).join('、') || '（本轮无）'}。${lazy.length ? `${lazy.join(' / ')} 本轮按需未挂载（需要时直接调用，内核会当场挂载）。` : ''}${unavailable.length ? `未列出的 ${unavailable.join(' / ')} 本轮不可用。` : ''}${WEB_FACTS_NOTE}`;
 }
@@ -658,7 +659,7 @@ export function createAgent(store, hooks = {}) {
           if (t.name === 'fetch_url') return relayOk && settings.webEnabled !== false;
           if (t.name === 'search_web') return relayOk && settings.webEnabled !== false && relaySupports('search');
           if (t.name === 'crawl_site') return relayOk && settings.webEnabled !== false && relaySupports('crawl');
-          if (t.name === 'download_file') return relayOk && settings.webEnabled !== false && relaySupports('file');
+          if (t.name === 'download_file' || t.name === 'pull_github_project') return relayOk && settings.webEnabled !== false && relaySupports('file');
           return relayOk || !RELAY_ONLY_TOOLS.has(t.name);
         })
         .filter((t) => t.name !== 'dispatch_subagent' || canDispatch);

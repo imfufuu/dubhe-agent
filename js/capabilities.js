@@ -76,6 +76,7 @@ export const CAPABILITY_REGISTRY = Object.freeze({
   search_web: R('workerSearch', 'network', { core: 10, parallel: true }),
   crawl_site: R('siteCrawler', 'network'),
   download_file: R('fileDownload', 'network'),
+  pull_github_project: R('fileDownload', 'network'),
   // ── git（本地 server.py 时走真实 git，否则内置引擎）──
   run_git: R('invariantCore', 'fs-write', { heavy: true }),
   // ── 子智能体（思考档位 Max / Ultra 才有）──

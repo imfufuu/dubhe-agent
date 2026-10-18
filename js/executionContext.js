@@ -42,12 +42,13 @@ const CAPABILITY_TOOLS = Object.freeze([
   ['web', 'search_web', 'search'],       // Worker 可选路由，由 health.capabilities 声明
   ['web', 'crawl_site', 'crawl'],
   ['web', 'download_file', 'file'],    // 跨域文件拉取路由，同样由 health.capabilities 声明
+  ['web', 'pull_github_project', 'file'], // GitHub ZIP 导入复用同一 /api/file 能力
   ['sandbox', 'execute_javascript'],
   ['dispatch', 'dispatch_subagent'],
 ]);
 
 // 只在中继（本地服务）可用、且不依赖具体能力位的工具：中继不在就必须摘掉
-export const RELAY_DEPENDENT_TOOLS = Object.freeze(['fetch_url', 'search_web', 'crawl_site', 'download_file']);
+export const RELAY_DEPENDENT_TOOLS = Object.freeze(['fetch_url', 'search_web', 'crawl_site', 'download_file', 'pull_github_project']);
 
 // 受沙箱能力位管辖的工具（与 js/tools.js 的 CODE_TOOL_NAMES 必须一致；有单测钉住）
 export const SANDBOX_GATED_TOOLS = Object.freeze(['execute_javascript', 'execute_python', 'execute_cpp', 'browser_sandbox']);
@@ -177,7 +178,7 @@ export function deriveToolWhitelist(ctx, allTools = []) {
       dropped.push({ name, reason: 'relay-crawl-unavailable' });
       continue;
     }
-    if (name === 'download_file' && (!webConstraints || webConstraints.file !== true)) {
+    if (['download_file', 'pull_github_project'].includes(name) && (!webConstraints || webConstraints.file !== true)) {
       dropped.push({ name, reason: 'relay-file-unavailable' });
       continue;
     }

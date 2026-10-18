@@ -18,6 +18,7 @@ export const TOOL_MOUNT_RULES_SOURCE = Object.freeze({
   convert_file: { text: /格式转换|转换格式|转码|转成|转为|导出为|压缩(?:成|为)|提取音频|提取音轨|音轨|转 ?(?:mp4|webm|mov|mkv|gif|mp3|wav|m4a|aac|ogg|opus|flac|png|jpe?g|webp)|convert|transcode|\bffmpeg\b|\bgif\b|动图|压缩.{0,6}(?:视频|图片|音频)|(?:视频|图片|音频).{0,4}(?:格式|转换)/i, attachments: ['image', 'audio', 'video'] },
   crawl_site: { text: /爬(?:取|虫|一下)|抓取.{0,6}(?:站|网站|整站|文档|所有页)|整站|\bcrawl\b|站点地图|\bsitemap\b|多页/i },
   download_file: { text: /下载|拉取|\bdownload\b|保存.{0,6}(?:到沙箱|文件)|另存/i },
+  pull_github_project: { text: /拉取.{0,12}(?:GitHub|仓库|项目)|下载.{0,12}(?:GitHub|仓库|项目)|导入.{0,12}(?:GitHub|仓库)|\b(?:pull|clone|import|download)\b.{0,48}\b(?:github|repository|repo|project)\b|\b(?:github|repository|repo|project)\b.{0,48}\b(?:pull|clone|import|download)\b/i },
   browser_sandbox: { text: /网页|网站|页面|截图|截屏|预览|调试|\bhtml\b|\bcss\b|\bchromium\b|\bpuppeteer\b|\blocalhost\b|\bweb(?:site|page)?\b|\bpreview\b/i },
   run_git: { text: /\bgit\b|提交|\bcommit\b|分支|\bbranch\b|仓库|\brepo\b|版本库|\bmerge\b|\brebase\b/i },
   search_files: { text: /搜索|查找|搜一下|找出|找到|找一下|\bgrep\b|全文检索|\bsearch\b|出现在哪|引用|日志|\blogs?\b/i },

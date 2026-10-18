@@ -80,6 +80,11 @@ function sniffEntry(path, bytes) {
     const mime = n.endsWith('.png') ? 'image/png' : n.endsWith('.gif') ? 'image/gif' : n.endsWith('.webp') ? 'image/webp' : 'image/jpeg';
     return { kind: 'image', content: `data:${mime};base64,${u8ToB64(bytes)}` };
   }
+  // Repositories often contain binary assets with no NUL byte (fonts, media, Office files).
+  // Preserve those byte-for-byte instead of decoding them as lossy UTF-8 text.
+  if (/\.(?:pdf|zip|gz|bz2|xz|7z|rar|tar|mp3|wav|ogg|opus|m4a|aac|flac|mp4|m4v|webm|mov|mkv|avi|wmv|woff2?|ttf|otf|eot|ico|bmp|tiff?|avif|heic|psd|ai|sketch|fig|sqlite3?|db|wasm|dll|so|dylib|exe|class|jar|pyc|pyo|o|a|lib|dmg|iso|bin|docx|pptx|xlsx|odt|ods|odp)$/i.test(n) && bytes.length) {
+    return { kind: 'bin', content: `data:application/octet-stream;base64,${u8ToB64(bytes)}` };
+  }
   let binary = false;
   for (let i = 0; i < bytes.length; i++) if (bytes[i] === 0) { binary = true; break; }
   if (binary) return { kind: 'bin', content: `data:application/octet-stream;base64,${u8ToB64(bytes)}` };
