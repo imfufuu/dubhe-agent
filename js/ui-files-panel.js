@@ -33,6 +33,40 @@ const $ = (sel, root = document) => root.querySelector(sel);
 const el = (tag, cls, html) => { const n = document.createElement(tag); if (cls) n.className = cls; if (html != null) n.innerHTML = html; return n; };
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
+function syncFullscreenButton(viewer) {
+  const button = $('#fv-full', viewer);
+  if (!button) return;
+  const on = viewer.classList.contains('fv-fullscreen');
+  button.innerHTML = `${on ? ICON.compress : ICON.expand}<span>${localeText(on ? '退出全屏' : '全屏', on ? 'Exit' : 'Fullscreen')}</span>`;
+  button.title = localeText(on ? '退出全屏预览' : '全屏预览', on ? 'Exit fullscreen preview' : 'Fullscreen preview');
+  button.setAttribute('aria-pressed', String(on));
+}
+
+function setViewerFullscreen(viewer, fullscreen) {
+  if (!viewer) return;
+  const wasFullscreen = viewer.classList.contains('fv-fullscreen');
+  if (wasFullscreen === !!fullscreen) return;
+  const before = viewer.getBoundingClientRect();
+  try { viewer._fullscreenAnimation?.cancel(); } catch { /* noop */ }
+  viewer._fullscreenAnimation = null;
+  viewer.classList.toggle('fv-fullscreen', !!fullscreen);
+  const after = viewer.getBoundingClientRect();
+  if (motionAllowed(document) && typeof viewer.animate === 'function' && before.width > 0 && before.height > 0 && after.width > 0 && after.height > 0) {
+    const sx = before.width / after.width;
+    const sy = before.height / after.height;
+    const dx = before.left - after.left;
+    const dy = before.top - after.top;
+    try {
+      const animation = viewer.animate([
+        { transform: `translate(${dx}px, ${dy}px) scale(${sx}, ${sy})`, transformOrigin: 'top left', borderRadius: fullscreen ? '12px' : '0px' },
+        { transform: 'none', transformOrigin: 'top left', borderRadius: fullscreen ? '0px' : '12px' },
+      ], { duration: 320, easing: 'cubic-bezier(.22,.61,.36,1)' });
+      viewer._fullscreenAnimation = animation;
+      animation.onfinish = () => { if (viewer._fullscreenAnimation === animation) viewer._fullscreenAnimation = null; };
+    } catch { /* the fullscreen state still works if Web Animations are unavailable */ }
+  }
+  syncFullscreenButton(viewer);
+}
 
 // 空状态插画：一叠文件 + 一个被放进来的文件（线稿，currentColor，随深浅主题）
 const FILES_EMPTY_ART = `<svg class="files-empty-art" viewBox="0 0 160 112" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -436,17 +470,9 @@ export function installFilesPanel({ store, agent, toast, fmtSize, highlightCode,
     if (officeBox) renderOfficePreview(officeBox, officeBox.dataset.office || 'zip', rawStr);
     // 全屏预览：所有文件类型共用同一个查看器，一键放大到整个视口（CSS 全屏，兼容不支持 Fullscreen API 的 iOS Safari）
     const fullBtn = $('#fv-full', viewer);
-    const syncFullBtn = () => {
-      if (!fullBtn) return;
-      const on = viewer.classList.contains('fv-fullscreen');
-      fullBtn.innerHTML = `${on ? ICON.compress : ICON.expand}<span>${localeText(on ? '退出全屏' : '全屏', on ? 'Exit' : 'Fullscreen')}</span>`;
-      fullBtn.title = localeText(on ? '退出全屏预览' : '全屏预览', on ? 'Exit fullscreen preview' : 'Fullscreen preview');
-      fullBtn.setAttribute('aria-pressed', String(on));
-    };
-    syncFullBtn();
+    syncFullscreenButton(viewer);
     if (fullBtn) fullBtn.addEventListener('click', () => {
-      viewer.classList.toggle('fv-fullscreen');
-      syncFullBtn();
+      setViewerFullscreen(viewer, !viewer.classList.contains('fv-fullscreen'));
     });
   }
 
@@ -497,6 +523,8 @@ export function installFilesPanel({ store, agent, toast, fmtSize, highlightCode,
     stopViewerMedia();
     const viewer = $('#file-viewer');
     if (viewer) {
+      try { viewer._fullscreenAnimation?.cancel(); } catch { /* noop */ }
+      viewer._fullscreenAnimation = null;
       viewer.classList.remove('open');
       viewer.classList.remove('fv-fullscreen');
     }
@@ -507,7 +535,7 @@ export function installFilesPanel({ store, agent, toast, fmtSize, highlightCode,
     const viewer = $('#file-viewer');
     if (!viewer || !viewer.classList.contains('open')) return;
     if (viewer.classList.contains('fv-fullscreen')) {
-      viewer.classList.remove('fv-fullscreen');
+      setViewerFullscreen(viewer, false);
       e.preventDefault();
       return;
     }

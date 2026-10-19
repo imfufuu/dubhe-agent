@@ -1,13 +1,11 @@
-// Verified through authenticated GET /v1/models and list-price data, 2026-10-18.
+// Snapshot verified from TeamoRouter's public GET /v1/models/pricing directory, 2026-10-19.
 // Whitelisted model IDs and list-price fields only: no API keys, account discounts or private billing data.
 // 'hot' is retained for sorting; the UI label is app-curated Popular, not a live popularity/benchmark ranking.
 // Cheap: list input <= $1 AND output <= $5 per million tokens. newlyListed is internal metadata, not a UI badge.
-// Removed from active choices after user-confirmed retirement; historical billing stays readable.
-export const RETIRED_MODEL_IDS = new Set(['kimi-k3', 'kimi-k3[1M]']);
-// Retirement is scoped to the TeamoRouter directory snapshot. The same ID may remain
-// available from its first-party provider (for example, Moonshot's current kimi-k3).
+// The current Kimi K3 is active again; only the unlisted historical [1M] alias remains retired.
+export const RETIRED_MODEL_IDS = new Set(['kimi-k3[1M]']);
 export const isRetiredModel = (id, gatewayId = 'teamorouter') => gatewayId === 'teamorouter' && RETIRED_MODEL_IDS.has(String(id || '').trim());
-export const MODEL_CATALOG_DATE = '2026-10-18';
+export const MODEL_CATALOG_DATE = '2026-10-19';
 export const MODEL_CATALOG = [
   {"id":"claude-fable-5","provider":"Anthropic","displayName":"Claude Fable 5","channel":"chat","listPrice":{"currency":"USD","input":10.0,"output":50.0,"cached_input":1.0},"contextWindow":1000000},
   {"id":"claude-fable-5-1","provider":"Anthropic","displayName":"Claude Fable 5.1","channel":"chat","listPrice":{"currency":"USD","input":10.0,"output":50.0,"cached_input":0.25},"contextWindow":1000000},
@@ -30,6 +28,7 @@ export const MODEL_CATALOG = [
   {"id":"deepseek-v4-flash-vision-exp","provider":"DeepSeek","displayName":"DeepSeek V4 Flash Vision Exp","channel":"chat","listPrice":{"currency":"USD","input":0.22,"output":0.66,"cached_input":0.007},"cheap":true,"contextWindow":1000000},
   {"id":"deepseek-v4-pro","provider":"DeepSeek","displayName":"DeepSeek V4 Pro 正式版","channel":"chat","hot":true,"listPrice":{"currency":"USD","input":0.66,"output":1.98,"cached_input":0.022},"cheap":true,"contextWindow":1000000},
   {"id":"deepseek-v4-pro-260425","provider":"DeepSeek","displayName":"DeepSeek V4 Pro 260425","channel":"chat","listPrice":{"currency":"USD","input":1.74,"output":3.48,"cached_input":0.145}},
+  {"id":"doubao-seed-2.1-pro","provider":"Doubao","displayName":"Doubao Seed 2.1 Pro","channel":"chat","listPrice":{"currency":"USD","input":0.8571,"output":4.2857,"cached_input":0.1714},"cheap":true},
   {"id":"gemini-3.1-flash-image","provider":"Google","displayName":"Gemini 3.1 Flash Image","channel":"image","listPrice":{"currency":"USD","input":0.5,"output":60.0}},
   {"id":"gemini-3.1-pro-preview","provider":"Google","displayName":"Gemini 3.1 Pro Preview","channel":"chat","listPrice":{"currency":"USD","input":2.0,"output":12.0,"cached_input":0.2},"contextWindow":2000000},
   {"id":"gemini-3.5-flash","provider":"Google","displayName":"Gemini 3.5 Flash","channel":"chat","listPrice":{"currency":"USD","input":1.5,"output":9.0,"cached_input":0.15},"contextWindow":1000000},
@@ -57,6 +56,9 @@ export const MODEL_CATALOG = [
   {"id":"gpt-image-2.5-flare","provider":"OpenAI","displayName":"GPT Image 2.5 Flare","channel":"image","listPrice":{"currency":"USD","input":5.0,"output":30.0,"cached_input":1.25}},
   {"id":"gpt-image-2.5-sunburst","provider":"OpenAI","displayName":"GPT Image 2.5 Sunburst","channel":"image","listPrice":{"currency":"USD","input":5.0,"output":30.0,"cached_input":1.25}},
   {"id":"grok-4.6","provider":"Grok","displayName":"Grok 4.6","channel":"chat","hot":true,"listPrice":{"currency":"USD","input":2.0,"output":6.0,"cached_input":0.5},"contextWindow":500000},
+  {"id":"kimi-k3","provider":"Kimi","displayName":"Kimi K3","channel":"chat","listPrice":{"currency":"USD","input":3.0,"output":15.0,"cached_input":0.3}},
+  {"id":"MiniMax-M3","provider":"MiniMax","displayName":"MiniMax M3","channel":"chat","listPrice":{"currency":"USD","input":0.3,"output":1.2,"cached_input":0.06},"cheap":true,"contextWindow":1000000},
+  {"id":"qwen3.8-max","provider":"Qwen","displayName":"Qwen3.8-Max","channel":"chat","listPrice":{"currency":"USD","input":1.7143,"output":5.1429,"cached_input":0.2143},"contextWindow":1000000},
 ];
 export const MODEL_CATALOG_BY_ID = new Map(MODEL_CATALOG.map(m => [m.id, m]));
 // A successful live response is authoritative. Do not union unavailable fallback IDs back into it.

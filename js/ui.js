@@ -38,6 +38,7 @@ import { buildEditPreview, editFoldLabel, pathsOfEdits, PREVIEW_REFRESH_MS, find
 import { historyWindowStart, previousHistoryWindowStart, HISTORY_WINDOW_MAX_MESSAGES, HISTORY_WINDOW_MAX_CHARS } from './history.js?v=2026.10.11.1';
 import { installLightbox } from './ui-lightbox.js?v=2026.10.11.1';
 import { installFilesPanel } from './ui-files-panel.js?v=2026.10.11.1';
+import { createMessageScrollManager } from './ui-message-scroll.js?v=2026.10.11.1';
 import { installAttachments } from './ui-attachments.js?v=2026.10.11.1';
 import { installCapabilityPop } from './ui-capability.js?v=2026.10.11.1';
 import { installModelPicker } from './ui-model-picker.js?v=2026.10.11.1';
@@ -68,6 +69,11 @@ export function mountUI(store, agent) {
   const msgList = $('#messages');
   const composer = $('#composer-input');
   let pendingSendOrigin = null, sendAnimation = null;
+  const jumpBtn = $('#jump-bottom');
+  const { captureMessageScroll, restoreMessageScroll, jumpToBottom, scrollToBottom } = createMessageScrollManager({
+    msgList, jumpBtn, isAnimating: () => Boolean(sendAnimation),
+    isEmpty: () => !store.state.messages || store.state.messages.length === 0 || Boolean($('.empty-state', msgList)),
+  });
   installCaretEffect(composer);
   const sendBtn = $('#send-btn');
   const statusDot = $('#status-dot');
@@ -663,15 +669,22 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       if (del) del.addEventListener('click', (e) => {
         e.stopPropagation();
         const wasActive = s.id === store.state.activeSessionId;
-        if (getBusy() && wasActive) return toast('当前会话正在输出，不能删这一条', 'warn');
+        const busyAtDelete = getBusy();
+        if (busyAtDelete && wasActive) return toast('当前会话正在输出，不能删这一条', 'warn');
         if (!confirm(`删除会话「${s.title || '新对话'}」？不可恢复。`)) return;
         store.deleteSession(s.id);
-        // 删除任意一条后都回到空白主页；当前会话仍有内容时复用 store 的空草稿/新建草稿。
-        if ((store.state.messages || []).length && typeof store.ensureDraft === 'function') store.ensureDraft();
-        agent.loadFiles(store.state.files);
-        wrapLazyInit = false; lazyLoadedFrom = 0;
-        rebuildMessages(); renderSessions(); renderFiles(); updateStats(); renderTimeStats(); updateModelBtn();
-        toast('会话已删除，已回到新对话');
+        if (wasActive) {
+          // 删除当前会话后，若自动落到另一个有内容的会话，则切回空白草稿；非当前会话绝不打断正在运行的任务。
+          if ((store.state.messages || []).length && typeof store.ensureDraft === 'function') store.ensureDraft();
+          agent.loadFiles(store.state.files);
+          wrapLazyInit = false; lazyLoadedFrom = 0;
+          rebuildMessages({ scroll: 'bottom' }); renderFiles(); renderTimeStats(); updateModelBtn();
+          syncThinking(); syncCapLine();
+        }
+        renderSessions(); updateStats();
+        setPanelCollapsed(true);
+        if (!busyAtDelete) setStatus('idle');
+        toast(wasActive ? '会话已删除，已回到新对话' : '会话已删除');
       });
       const rename = $('.sess-rename', node);
       if (rename) {
@@ -725,7 +738,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     // 切换会话时重置懒加载窗口
     wrapLazyInit = false; lazyLoadedFrom = 0;
     // 模型随会话恢复：切回来后模型按钮显示该会话自己的模型，而不是上一次的全局选择
-    rebuildMessages(); renderSessions(); renderFiles(); updateStats(); renderTimeStats(); updateModelBtn();
+    rebuildMessages({ scroll: 'bottom' }); renderSessions(); renderFiles(); updateStats(); renderTimeStats(); updateModelBtn();
     syncThinking(); syncCapLine();
   }
   $('#new-session').addEventListener('click', () => {
@@ -736,7 +749,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     if (emptyNow) { composer.focus(); return toast('已在新对话中', 'ok', 1800); }
     (store.ensureDraft ? store.ensureDraft() : store.createSession());
     agent.loadFiles({});
-    rebuildMessages(); renderSessions(); renderFiles(); updateStats(); renderTimeStats(); updateModelBtn();
+    rebuildMessages({ scroll: 'bottom' }); renderSessions(); renderFiles(); updateStats(); renderTimeStats(); updateModelBtn();
     syncThinking(); syncCapLine();
     composer.focus();
   });
@@ -752,7 +765,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     }
     const removed = store.clearAllSessions();
     agent.loadFiles({});
-    rebuildMessages(); renderSessions(); renderFiles(); updateStats(); renderTimeStats(); updateModelBtn();
+    rebuildMessages({ scroll: 'bottom' }); renderSessions(); renderFiles(); updateStats(); renderTimeStats(); updateModelBtn();
     toast(`已清除 ${removed || n} 条会话记录`, 'ok');
     composer.focus();
   });
@@ -907,6 +920,13 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
   // ── 沙箱文件面板：见 ui-files-panel.js（文件树 / 下载 ZIP / 单文件 / 预览窗）──
   const { renderFiles, openFileViewer, closeViewer } = installFilesPanel({ store, agent, toast, fmtSize, highlightCode, sanitizeSvgRaw, safeImgSrc });
   viewerCloser = closeViewer;
+  const openMessageFile = (path) => {
+    if (!path || typeof openFileViewer !== 'function') return;
+    setPanelCollapsed(false);
+    const filesTab = $('[data-panel-tab="files"]');
+    if (filesTab && !filesTab.classList.contains('on')) filesTab.click();
+    openFileViewer(path);
+  };
   renderFiles();
 
   // ── 消息渲染 ──────────────────────────────────────────────────────────
@@ -1992,7 +2012,8 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
   let lazyLoadedFrom = 0;   // 已加载的消息数组起始下标
   let wrapLazyInit = false; // 标记 rebuildMessages 是否已做过首次窗口计算
 
-  function rebuildMessages() {
+  function rebuildMessages({ scroll = 'preserve' } = {}) {
+    const scrollSnapshot = captureMessageScroll();
     pendingSendOrigin = null; sendAnimation?.cancel(); sendAnimation = null;
     cancelRollbackAnim();
     clearConfirmCards(); syncPresentationScope(); pendingPaints.clear();
@@ -2027,14 +2048,10 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     for (const m of store.state.messages) if (m.role === 'tool') attachToolResult(m);
     settleTurnToolbars();
     refreshActionVisibility();
-    jumpToBottom();
+    if (scroll === 'bottom') jumpToBottom();
+    else restoreMessageScroll(scrollSnapshot);
   }
-  // V1.8.1：重建（进入旧会话 / 回滚 / 展开更早消息）直接落到最新处——不再从顶部平滑滑下来
-  function jumpToBottom() {
-    msgList.style.scrollBehavior = 'auto';
-    msgList.scrollTop = msgList.scrollHeight;
-    requestAnimationFrame(() => { msgList.scrollTop = msgList.scrollHeight; requestAnimationFrame(() => { msgList.style.scrollBehavior = ''; }); });
-  }
+  // Rebuilds that change sessions opt into the tail; ordinary repaints preserve the reader's anchor.
 
   function attachToolResult(toolMsg) {
     const id = String(toolMsg && toolMsg.toolCallId != null ? toolMsg.toolCallId : '');
@@ -2056,27 +2073,6 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     syncToolChip(chip);
     renderToolChipDetail(chip);
   }
-
-  function scrollToBottom(force) {
-    if (sendAnimation) return;
-    const near = msgList.scrollHeight - msgList.scrollTop - msgList.clientHeight < 160;
-    if (near || force) msgList.scrollTo({ top: msgList.scrollHeight, behavior: 'smooth' });
-  }
-
-  // ── 定位到最新输出（向上滚动超过阈值时浮现；空状态初始页绝不显示）─────
-  const jumpBtn = $('#jump-bottom');
-  msgList.addEventListener('scroll', () => {
-    if (!store.state.messages || store.state.messages.length === 0 || $('.empty-state', msgList)) {
-      jumpBtn.classList.remove('show');
-      return;
-    }
-    const dist = msgList.scrollHeight - msgList.scrollTop - msgList.clientHeight;
-    jumpBtn.classList.toggle('show', dist > 240);
-  }, { passive: true });
-  jumpBtn.addEventListener('click', () => {
-    jumpBtn.classList.remove('show');
-    scrollToBottom(true);
-  });
 
   // ── 状态栏（连接/生成过程可见化：脉冲状态点 + 跳动点 + 实时耗时）──────
   const STATUS = {
@@ -2244,7 +2240,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       const s = store.importSession(data);
       if (!s) return toast('导入失败：文件里没有有效的 messages 数组', 'err');
       agent.loadFiles(store.state.files);
-      rebuildMessages(); renderSessions(); renderFiles(); updateStats(); renderTimeStats();
+      rebuildMessages({ scroll: 'bottom' }); renderSessions(); renderFiles(); updateStats(); renderTimeStats();
       toast(`已导入会话「${s.title}」（${s.messages.length} 条消息）`, 'ok');
     } catch (err) {
       toast('导入失败：' + err.message, 'err');
@@ -2428,7 +2424,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     if (sbOpen) {
       e.preventDefault();
       const path = sbOpen.getAttribute('data-sb-open') || '';
-      if (path && typeof openFileViewer === 'function') openFileViewer(path);
+      openMessageFile(path);
       return;
     }
     const dl = e.target.closest('[data-sb-dl]');
@@ -2642,13 +2638,13 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
         appendMessage(msg, { scroll: !origin });
         if (origin) {
           const wrap = msgNodes.get(msg.id);
+          jumpToBottom();
           wrap?.classList.remove('enter'); // do not combine popIn with the flight
-          msgList.scrollTo({ top: msgList.scrollHeight, behavior: 'instant' });
           sendAnimation?.cancel();
           const flight = animateMessageSend(wrap?.querySelector('.bubble'), origin);
           sendAnimation = flight;
           flight?.finished.catch(() => {}).finally(() => {
-            if (sendAnimation === flight) { sendAnimation = null; scrollToBottom(); }
+            if (sendAnimation === flight) { sendAnimation = null; scrollToBottom(true); }
           });
         }
       }

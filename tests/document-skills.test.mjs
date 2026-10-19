@@ -181,10 +181,10 @@ test('read-only document inspection does not falsely demand filesystem side effe
   assert.equal(r.issues.length, 0);
   const write = validateToolResultPost({ name: 'document_tool', args: { action: 'create' }, result: 'done', fsBefore: { digest: 'same' }, fsAfter: { digest: 'same' } }); assert.ok(write.issues.some(i => i.id === 'side-effect-missing'));
 });
-test('retired Kimi models stay removed even from stale/live lists, while historical prices remain', () => {
-  assert.ok(isRetiredModel('kimi-k3')); assert.ok(isRetiredModel('kimi-k3[1M]'));
+test('current Kimi K3 is selectable while only the unlisted historical 1M alias stays retired', () => {
+  assert.equal(isRetiredModel('kimi-k3'), false); assert.ok(isRetiredModel('kimi-k3[1M]'));
   const models = mergeAvailableModels(['kimi-k3', 'kimi-k3[1M]', 'gemini-3.8-flash'], []);
-  assert.deepEqual(models.map(m => m.id), ['__smart_router__', 'gemini-3.8-flash']);
+  assert.deepEqual(models.map(m => m.id), ['__smart_router__', 'kimi-k3', 'gemini-3.8-flash']);
   assert.match(fs.readFileSync(new URL('../js/state.js', import.meta.url), 'utf8'), /isRetiredModel\(state\.model, state\.gatewayId\)/);
 });
 test('audio billing uses reported usage and labels missing input usage rather than inventing audio minutes', () => {

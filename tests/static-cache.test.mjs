@@ -295,7 +295,9 @@ test('cache-refresh settings expose a one-click updater with accessible progress
   const css = fs.readFileSync(new URL('../css/styles.css', import.meta.url), 'utf8');
   assert.match(app, /id="set-update-cache"[^>]*>检查并更新<\/button>/);
   assert.match(app, /id="set-cache-update-progress"[^>]*aria-label="脚本缓存更新进度"/);
-  assert.match(settings, /updateScriptCache\(\{ currentVersion: APP_VERSION, onProgress: paintUpdateProgress \}\)/);
+  assert.match(settings, /clearThenUpdateScriptCache\(\{[\s\S]*?currentVersion: APP_VERSION, onProgress: paintUpdateProgress/);
+  const clearThenUpdate = settings.slice(settings.indexOf('export async function clearThenUpdateScriptCache'));
+  assert.match(clearThenUpdate, /await clear\(\)[\s\S]*await update\(options\)/, '清缓存必须先于更新');
   assert.match(css, /\.cache-refresh-progress progress::-webkit-progress-value/);
 });
 

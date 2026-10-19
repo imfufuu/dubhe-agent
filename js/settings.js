@@ -490,6 +490,7 @@ export function mountSettings(store, { onRelayChanged, onKeySaved, onSettingChan
       case 'unsupported': return localeText('此环境不支持 Service Worker 缓存更新（请使用 HTTPS 或 localhost）。', 'Service Worker cache updates require HTTPS or localhost.');
       case 'cache-install-failed': return localeText('脚本缓存更新失败；旧缓存仍保留，请检查网络或存储空间后重试。', 'Script cache update failed; the previous cache is intact. Check network/storage and retry.');
       case 'cache-update-timeout': return localeText('缓存更新超时；旧缓存仍保留，请检查网络后重试。', 'Cache update timed out; the previous cache is intact. Check your connection and retry.');
+      case 'cache-clear-failed': return localeText('应用缓存清理失败，尚未开始更新；请稍后重试。', 'Could not clear app caches, so the update was not started. Try again later.');
       case 'no-worker-update': return localeText('发现新版，但浏览器未启动缓存安装。请稍后重试。', 'A newer build exists, but the browser did not start cache installation. Try again later.');
       default: return localeText('缓存更新失败，请检查网络后重试。', 'Cache update failed. Check your connection and retry.');
     }
@@ -500,9 +501,11 @@ export function mountSettings(store, { onRelayChanged, onKeySaved, onSettingChan
     updateCacheBtn.textContent = localeText('检查中…', 'Checking…');
     if (progressWrap) progressWrap.hidden = true;
     if (progressBar) progressBar.value = 0;
-    setUpdateStatus(localeText('正在检查线上最新版本…', 'Checking the latest online build…'));
+    setUpdateStatus(localeText('正在清除应用缓存…', 'Clearing app caches…'));
     try {
-      const result = await updateScriptCache({ currentVersion: APP_VERSION, onProgress: paintUpdateProgress });
+      const { result } = await clearThenUpdateScriptCache({
+        options: { currentVersion: APP_VERSION, onProgress: paintUpdateProgress },
+      });
       if (result.status === 'current') {
         if (progressWrap) progressWrap.hidden = true;
         setUpdateStatus(localeText(`当前已是最新版本（v${result.version}）。`, `Already on the latest version (v${result.version}).`));
@@ -568,6 +571,24 @@ export async function clearTransientCaches() {
   } catch { /* 隐私模式可能抛 */ }
   try { resetRelayProbe(); out.relayProbeReset = true; } catch { /* noop */ }
   return out;
+}
+
+/** Clear this app's transient caches before querying/installing the current static build. */
+export async function clearThenUpdateScriptCache({
+  clear = clearTransientCaches,
+  update = updateScriptCache,
+  options = {},
+} = {}) {
+  let cleared;
+  try { cleared = await clear(); }
+  catch (cause) {
+    const error = new Error('cache-clear-failed');
+    error.code = 'cache-clear-failed';
+    error.cause = cause;
+    throw error;
+  }
+  const result = await update(options);
+  return { cleared, result };
 }
 
 // ── 界面动效偏好（.32）──

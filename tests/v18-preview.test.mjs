@@ -83,9 +83,14 @@ test('reduced-motion popover is immediate and does not create animations', () =>
 test('live catalog snapshot includes TeamoRouter V4.1 Flash 1017 and evidence-based low-cost labels', async () => {
   const { MODEL_CATALOG, MODEL_CATALOG_BY_ID } = await import('../js/model-catalog.js');
   const { FALLBACK_MODELS, resolveModelAlias } = await import('../js/config.js');
-  assert.equal(MODEL_CATALOG.length,48);assert.equal(new Set(MODEL_CATALOG.map(m=>m.id)).size,48);
+  assert.equal(MODEL_CATALOG.length,52);assert.equal(new Set(MODEL_CATALOG.map(m=>m.id)).size,52);
   assert.deepEqual(MODEL_CATALOG.filter(m=>m.newlyListed).map(m=>m.id).sort(),['claude-haiku-5-5','gemini-4-argon']);
-  assert.equal(FALLBACK_MODELS.length,41);assert.equal(FALLBACK_MODELS.some(m=>m.id.startsWith('kimi')),false);
+  assert.equal(FALLBACK_MODELS.length,45);assert.equal(FALLBACK_MODELS.some(m=>m.id.startsWith('kimi')),true);
+  for(const [id,provider] of [['doubao-seed-2.1-pro','Doubao'],['kimi-k3','Kimi'],['MiniMax-M3','MiniMax'],['qwen3.8-max','Qwen']]) {
+    const model=MODEL_CATALOG_BY_ID.get(id);assert.equal(model?.provider,provider,id);assert.ok(FALLBACK_MODELS.some(m=>m.id===id),id+' offline fallback');
+  }
+  assert.equal(MODEL_CATALOG_BY_ID.get('MiniMax-M3').contextWindow,1000000);
+  assert.equal(MODEL_CATALOG_BY_ID.get('qwen3.8-max').contextWindow,1000000);
   const flash1017=MODEL_CATALOG_BY_ID.get('deepseek-flash-1017');
   assert.equal(flash1017.displayName,'DeepSeek V4.1 Flash 1017');
   assert.equal(flash1017.provider,'DeepSeek');
@@ -98,6 +103,9 @@ test('live catalog snapshot includes TeamoRouter V4.1 Flash 1017 and evidence-ba
   }
   assert.equal(MODEL_CATALOG_BY_ID.get('deepseek-v4-pro').cheap,true);
   assert.equal(MODEL_CATALOG_BY_ID.get('gemini-3.5-flash').cheap,undefined);
+  assert.equal(MODEL_CATALOG_BY_ID.get('doubao-seed-2.1-pro').cheap,true);
+  assert.equal(MODEL_CATALOG_BY_ID.get('MiniMax-M3').cheap,true);
+  assert.equal(MODEL_CATALOG_BY_ID.get('qwen3.8-max').cheap,undefined);
   assert.equal(resolveModelAlias('gemini-3.5-flash'),'gemini-3.5-flash','a catalog-listed choice must not be silently replaced');
 });
 test('DeepSeek fallback matches official /models, and the versioned TeamoRouter alias stays gateway-only', async () => {
@@ -113,15 +121,20 @@ test('a live model response is authoritative, including an empty result; offline
   assert.deepEqual(mergeAvailableModels([],FALLBACK_MODELS,true).map(m=>m.id),['__smart_router__']);
   assert.equal(mergeAvailableModels([],FALLBACK_MODELS).length,FALLBACK_MODELS.length);
   assert.ok(mergeAvailableModels(['future-chat-model'],FALLBACK_MODELS).some(m=>m.id==='future-chat-model'),'live directory may introduce new models');
-  assert.ok(!mergeAvailableModels(['kimi-k3','kimi-k3[1M]'],FALLBACK_MODELS).some(m=>m.id.startsWith('kimi-')),'用户确认下线的 Kimi 不由旧目录复活');
+  const kimiFallback=mergeAvailableModels(['kimi-k3','kimi-k3[1M]'],FALLBACK_MODELS).map(m=>m.id);
+  assert.ok(kimiFallback.includes('kimi-k3'),'当前公开目录中的 Kimi K3 可用');
+  assert.ok(!kimiFallback.includes('kimi-k3[1M]'),'历史 1M 变体不由旧目录复活');
 });
-test('updated gateway list prices cover all visible catalog models',async()=>{
+test('updated gateway list prices cover all visible catalog models, including MiniMax context tiers',async()=>{
   const { FALLBACK_MODELS }=await import('../js/config.js');
   const { getModelPricing }=await import('../js/pricing.js');
   for(const model of FALLBACK_MODELS.filter(m=>m.listPrice)) {
     const price=getModelPricing(model.id);assert.ok(price,model.id);
     assert.equal(price.input,model.listPrice.input,model.id+' input');assert.equal(price.output,model.listPrice.output,model.id+' output');
   }
+  const { estimateChatCost }=await import('../js/pricing.js');
+  const tiered=estimateChatCost('MiniMax-M3',{input_tokens:512001,output_tokens:1000});
+  assert.equal(tiered.inRate,0.6);assert.equal(tiered.outRate,2.4);
 });
 test('thumb down has its own downward path, with no second CSS or SVG rotation',async()=>{
   const { ICON }=await import('../js/icons.js');

@@ -31,7 +31,7 @@ const cfg = await import('../js/config.js');
 const api = await import('../js/api.js?v=2026.10.11.1');
 // V1.7.1：ui.js 已拆出 ui-files-panel.js / ui-lightbox.js / quickviz.js。源码级断言（grep 字符串）
 // 一律读「UI 层整体」，拆分不应改变这些契约；只需精确到某个文件的断言请直接 readFileSync 该文件。
-const UI_SOURCE_PARTS = ['../js/ui.js', '../js/ui-common.js', '../js/ui-choices.js', '../js/ui-toolflow.js', '../js/ui-editpreview.js', '../js/ui-markdown.js', '../js/ui-model-picker.js', '../js/ui-popovers.js', '../js/ui-command-palette.js', '../js/ui-system-commands.js', '../js/ui-files-panel.js', '../js/ui-lightbox.js', '../js/ui-attachments.js', '../js/ui-capability.js', '../js/quickviz.js', '../js/ui-rollback-fx.js', '../js/ui-file-viewer.js', '../js/ui-gateway-key.js'];
+const UI_SOURCE_PARTS = ['../js/ui.js', '../js/ui-message-scroll.js', '../js/ui-common.js', '../js/ui-choices.js', '../js/ui-toolflow.js', '../js/ui-editpreview.js', '../js/ui-markdown.js', '../js/ui-model-picker.js', '../js/ui-popovers.js', '../js/ui-command-palette.js', '../js/ui-system-commands.js', '../js/ui-files-panel.js', '../js/ui-lightbox.js', '../js/ui-attachments.js', '../js/ui-capability.js', '../js/quickviz.js', '../js/ui-rollback-fx.js', '../js/ui-file-viewer.js', '../js/ui-gateway-key.js'];
 function readUiSource() {
   const fsp = _fs;
   return UI_SOURCE_PARTS.map((rel) => fsp.readFileSync(new URL(rel, import.meta.url), 'utf8')).join('\n');
@@ -1669,8 +1669,37 @@ test('Kimi 供应商识别与品牌图标映射', async () => {
   assert.equal(PROVIDER_ICON.Kimi.file, 'kimi.svg');
   const fs = await import('node:fs');
   const svg = fs.readFileSync(new URL('../assets/icons/kimi.svg', import.meta.url), 'utf8');
-  assert.ok(svg.includes('#1783FF') && svg.includes('#FFFFFF'), '图标含品牌蓝折角与白色 K 字形');
-  assert.ok(svg.length < 4096, '图标已精简（原始 1.0MB 描摹文件 → <4KB）');
+  assert.match(svg, /^<\?xml[\s\S]*?<svg[\s>]/, '上传的 SVG 文件已原样保存为 .svg');
+  assert.match(svg, /<path[\s>]/, 'Kimi 图稿含矢量路径');
+});
+test('TeamoRouter 新增 Doubao / Kimi / Qwen / MiniMax，品牌图标均为本地资源', async () => {
+  const { MODEL_CATALOG_BY_ID, MODEL_CATALOG_DATE } = await import('../js/model-catalog.js');
+  const expected = [
+    ['doubao-seed-2.1-pro', 'Doubao'], ['kimi-k3', 'Kimi'],
+    ['qwen3.8-max', 'Qwen'], ['MiniMax-M3', 'MiniMax'],
+  ];
+  for (const [id, provider] of expected) {
+    assert.equal(MODEL_CATALOG_BY_ID.get(id)?.provider, provider, id);
+    assert.equal(providerOf(id), provider, `${id} provider recognition`);
+    assert.ok(cfg.FALLBACK_MODELS.some((model) => model.id === id), `${id} offline fallback`);
+    assert.ok(cfg.PROVIDER_ORDER.includes(provider), `${provider} has a group`);
+  }
+  assert.equal(MODEL_CATALOG_DATE, '2026-10-19');
+  const { PROVIDER_ICON, providerIcon } = await import('../js/icons.js');
+  const fs = await import('node:fs');
+  for (const [provider, file] of [['Doubao', 'doubao.svg'], ['Kimi', 'kimi.svg'], ['Qwen', 'qwen.svg'], ['MiniMax', 'minimax.svg']]) {
+    assert.equal(PROVIDER_ICON[provider].file, file);
+    assert.ok(providerIcon(provider).includes(`assets/icons/${file}`));
+    const svg = fs.readFileSync(new URL(`../assets/icons/${file}`, import.meta.url), 'utf8');
+    assert.match(svg, /<svg[\s>]/i);
+    assert.doesNotMatch(svg, /<script|<foreignObject|href=["']https?:|url\(["']?https?:/i, `${provider} SVG must not contain active or external content`);
+  }
+  const qwen = fs.readFileSync(new URL('../assets/icons/qwen.svg', import.meta.url), 'utf8');
+  assert.match(qwen, /viewBox="0 0 200 200"/);
+  const readme = fs.readFileSync(new URL('../README.md', import.meta.url), 'utf8');
+  assert.match(readme, /Wikimedia Commons: Qwen logo\.svg/);
+  assert.match(readme, /版权状态信息可能不正确的警告/);
+  assert.match(readme, /Zonalogo\.com/);
 });
 
 group('图生文 / 文生图 API 层');
@@ -5117,13 +5146,17 @@ test('移动端顶栏思考胶囊从左侧露出可横滑', async () => {
   assert.match(css, /\.topbar-right \{[\s\S]*justify-content:\s*flex-start/);
   assert.equal(/max-width:\s*min\(72vw/.test(css), false);
 });
-test('打开会话强制滚到最新；忙时只禁删当前会话', async () => {
-  const fsp = await import('node:fs');
+test('消息滚动保留读者位置；切换会话才显式落底，忙时只禁删当前会话', async () => {
   const ui = readUiSource();
   const rb = ui.slice(ui.indexOf('function rebuildMessages'), ui.indexOf('function attachToolResult'));
-  assert.match(rb, /jumpToBottom\(\)/); // V1.8.1：瞬时落到最新，不再平滑滑动一次
-  assert.match(rb, /function jumpToBottom\(\) \{\s*msgList\.style\.scrollBehavior = 'auto';\s*msgList\.scrollTop = msgList\.scrollHeight;/);
-  assert.match(ui, /getBusy\(\) && wasActive/);
+  assert.match(rb, /captureMessageScroll\(\)/);
+  assert.match(rb, /if \(scroll === 'bottom'\) jumpToBottom\(\);[\s\S]*restoreMessageScroll\(scrollSnapshot\)/);
+  assert.doesNotMatch(rb, /^\s*jumpToBottom\(\);/m, '普通重绘不应无条件抢回最新消息');
+  assert.match(ui, /let followLatest = true/);
+  assert.match(ui, /if \(dist <= 48\) followLatest = true/);
+  assert.match(ui, /else if \(Math\.abs\(top - lastMessageScrollTop\) > 0\.5\) followLatest = false/);
+  assert.match(ui, /rebuildMessages\(\{ scroll: 'bottom' \}\)/);
+  assert.match(ui, /const busyAtDelete = getBusy\(\);[\s\S]*busyAtDelete && wasActive/);
   assert.match(ui, /不能删这一条/);
 });
 test('文学字体本地 OFL 文件与 :::font 提示词', async () => {
@@ -6226,13 +6259,14 @@ test('2026.9.30.6 八项体验与渲染升级（空状态隐藏最新输出、re
   const homeCss = fsp.readFileSync(new URL('../css/home.css', import.meta.url), 'utf8');
   const homeJs = fsp.readFileSync(new URL('../js/home.js', import.meta.url), 'utf8');
   const uiJs = readUiSource();
+  const uiScroll = fsp.readFileSync(new URL('../js/ui-message-scroll.js', import.meta.url), 'utf8');
   const indexHtml = fsp.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
   const appHtml = fsp.readFileSync(new URL('../app.html', import.meta.url), 'utf8');
   const docsHtml = fsp.readFileSync(new URL('../docs.html', import.meta.url), 'utf8');
 
   // 1. 初始页不显示「最新输出」按钮
   assert.match(stylesCss, /\.messages:has\(\.empty-state\)\s*~\s*#jump-bottom/, '空状态时应通过 CSS 强制隐藏 #jump-bottom');
-  assert.match(uiJs, /\.empty-state[\s\S]{0,80}jumpBtn\.classList\.remove\('show'\)/, '滚动监听在空状态时应移除 jump-bottom.show');
+  assert.match(uiScroll, /if \(isEmpty\(\)\) \{ jumpBtn\?\.classList\.remove\('show'\)/, '滚动监听在空状态时应移除 jump-bottom.show');
 
   // 2. render_dot 渲染错位修复（不将边属性覆盖目标节点 label、字面量 \n 多行折行、闭环回边不反转层级）
   const { renderDot } = await import('../js/diagram.js');
@@ -6292,7 +6326,7 @@ test('2026.9.30.6 八项体验与渲染升级（空状态隐藏最新输出、re
 
 group('2026.9.30.7 40模型全支持与热度版本排序 / 长期记忆自动生效 / 天枢2.5自演进增强 / 黑粒回滚与图表微交互');
 
-test('2026.10.18：支持固定对话目录（DeepSeek 两个免费档继续下架，TeamoRouter Flash 1017 已加入 → 39 个），且按热度与版本优先级排序', async () => {
+test('2026.10.19：支持固定对话目录（DeepSeek 两个免费档继续下架，TeamoRouter 新增模型已加入 → 43 个），且按热度与版本优先级排序', async () => {
   const expected41 = [
     'claude-opus-5-5', 'claude-fable-5-1', 'claude-opus-5', 'claude-fable-5', 'claude-sonnet-5',
     'claude-opus-4-8', 'claude-opus-4-7', 'claude-opus-4-6', 'claude-sonnet-4-6', 'claude-haiku-4-5',
@@ -6309,7 +6343,7 @@ test('2026.10.18：支持固定对话目录（DeepSeek 两个免费档继续下�
     assert.ok(fallbackIds.has(id), `FALLBACK_MODELS 缺少模型：${id}`);
   }
   const chatModels = cfg.FALLBACK_MODELS.filter((m) => m.id !== cfg.SMART_ROUTER_ID && !cfg.isImageModel(m.id));
-  assert.equal(chatModels.length, 39, '排除智能路由、识图/生图专用模型后应恰好包含 39 个固定对话模型（不含 DeepSeek 免费档）');
+  assert.equal(chatModels.length, 43, '排除智能路由、识图/生图专用模型后应恰好包含 43 个固定对话模型（不含 DeepSeek 免费档）');
   assert.ok(!fallbackIds.has('deepseek-v4-flash-free') && !fallbackIds.has('deepseek-flash-free'), 'DeepSeek 两个免费模型必须下架');
 
   // Claude 与 GPT 新模型热度与组内版本优先级排序验证
@@ -8446,7 +8480,7 @@ test('runWithCategoryLimits：网络类 ≤ 4、本地 ≤ 8 并发，结果按�
 test('ui.js 拆分：文件面板 / 全屏预览 / 附件 / 图表各自成模块，mountUI 只保留装配调用', async () => {
   const fsp = await import('node:fs');
   const ui = fsp.readFileSync(new URL('../js/ui.js', import.meta.url), 'utf8');
-  for (const [mod, fn] of [['ui-files-panel', 'installFilesPanel'], ['ui-lightbox', 'installLightbox'], ['ui-attachments', 'installAttachments'], ['ui-capability', 'installCapabilityPop'], ['quickviz', 'renderQuickChart'],
+  for (const [mod, fn] of [['ui-files-panel', 'installFilesPanel'], ['ui-message-scroll', 'createMessageScrollManager'], ['ui-lightbox', 'installLightbox'], ['ui-attachments', 'installAttachments'], ['ui-capability', 'installCapabilityPop'], ['quickviz', 'renderQuickChart'],
     // P4：Markdown 渲染 / 模型选择器 / Token·路由弹层 / 命令面板
     ['ui-markdown', 'renderMarkdown'], ['ui-model-picker', 'installModelPicker'], ['ui-popovers', 'installPopovers'], ['ui-command-palette', 'installCommandPalette'], ['ui-system-commands', 'installSystemCommands']]) {
     const src = fsp.readFileSync(new URL(`../js/${mod}.js`, import.meta.url), 'utf8');
@@ -8470,7 +8504,7 @@ test('ui.js 拆分：文件面板 / 全屏预览 / 附件 / 图表各自成模�
   // （P4 起 ui.js 也从 ui-markdown.js 导入 $ / $$，所以要在这里显式剔除）
   const uiImported = [...ui.matchAll(/^import\s*\{([^}]*)\}/gm)].flatMap((m) => m[1].split(',').map((x) => x.trim().split(/\s+as\s+/).pop().trim()).filter(Boolean)).filter((n) => n !== '$' && n !== '$$');
   const uiHelpers = ['el', 'esc', 'fmtSize', 'safeImgSrc', 'safeHref', 'sanitizeSvgRaw', 'highlightCode', 'toast', 'renderMarkdown', 'sandboxPath', 'headingSlug'];
-  for (const mod of ['ui-files-panel', 'ui-lightbox', 'ui-attachments', 'ui-capability', 'quickviz', 'ui-markdown', 'ui-model-picker', 'ui-popovers', 'ui-command-palette', 'ui-system-commands']) {
+  for (const mod of ['ui-files-panel', 'ui-message-scroll', 'ui-lightbox', 'ui-attachments', 'ui-capability', 'quickviz', 'ui-markdown', 'ui-model-picker', 'ui-popovers', 'ui-command-palette', 'ui-system-commands']) {
     const src = fsp.readFileSync(new URL(`../js/${mod}.js`, import.meta.url), 'utf8');
     // 去注释时放过 URL 里的 //（xmlns="http://www.w3.org/2000/svg" 这类内联 SVG 会把整行吃掉）
     const code = src.replace(/(^|[^:'"`\\])\/\/.*$/gm, '$1').replace(/`(?:[^`\\]|\\.)*`|'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"/g, '""');
@@ -10080,7 +10114,22 @@ test('#11 设置 → 清除临时缓存：只清 Cache Storage / sessionStorage 
   assert.equal(r0.cacheStores, 0);
 });
 
-test('#12 管理员模式下 /key 不可用：别名 = 口令，首尾各露几位等于整段泄露', async () => {
+test('#12 一键脚本更新严格先清除应用缓存，再拉取并安装版本', async () => {
+  const { clearThenUpdateScriptCache } = await import('../js/settings.js');
+  const order = [];
+  const result = await clearThenUpdateScriptCache({
+    clear: async () => { order.push('clear'); return { cacheStores: 2 }; },
+    update: async (options) => { order.push('update'); assert.equal(options.currentVersion, '2026.10.19.1'); return { status: 'updated' }; },
+    options: { currentVersion: '2026.10.19.1' },
+  });
+  assert.deepEqual(order, ['clear', 'update']);
+  assert.deepEqual(result, { cleared: { cacheStores: 2 }, result: { status: 'updated' } });
+  const failedOrder = [];
+  await assert.rejects(clearThenUpdateScriptCache({ clear: async () => { failedOrder.push('clear'); throw Error('denied'); }, update: async () => failedOrder.push('update') }), (e) => e.code === 'cache-clear-failed');
+  assert.deepEqual(failedOrder, ['clear'], '清缓存失败时不能误启动更新');
+});
+
+test('#13 管理员模式下 /key 不可用：别名 = 口令，首尾各露几位等于整段泄露', async () => {
   const fsp = await import('node:fs');
   const src = fsp.readFileSync(new URL('../js/ui-system-commands.js', import.meta.url), 'utf8');
   assert.match(src, /import \{ isAdminAlias \} from '\.\/adminkey\.js';/);

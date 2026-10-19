@@ -238,7 +238,7 @@ html { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
   border-right: 1px solid var(--line);
   background: var(--bg);
   min-width: 0; overflow: hidden;
-  transition: background-color var(--theme-speed) var(--ease), border-color var(--theme-speed) var(--ease);
+  transition: transform .34s var(--ease), box-shadow .34s var(--ease), background-color var(--theme-speed) var(--ease), border-color var(--theme-speed) var(--ease);
 }
 .app:has(.sidebar.collapsed) .sidebar { border-right-color: transparent; }
 .logo { display: flex; align-items: center; gap: 10px; padding: 20px 14px 16px 20px; min-width: 0; }
@@ -599,7 +599,7 @@ html { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
 }
 
 /* 消息区（min-height:0 保证 flex 子项可收缩，滚动被限制在本区域） */
-.messages { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 32px 0 12px; scroll-behavior: smooth; overscroll-behavior: contain; }
+.messages { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 32px 0 12px; scroll-behavior: auto; overscroll-behavior: contain; }
 /* 长会话「展开更早对话」接缝（.36 重做）：与消息同在 min(760px,100%) 中轴线上，两侧发丝线收进中间胶囊。
    旧版是 inline-flex + margin:auto 挂在 .messages 里 —— 中轴线的 auto 外边距对行内级盒子无效，于是整条贴左边缘。 */
 .lazy-seam { display: flex; align-items: center; gap: 12px; max-width: min(760px, 100%); margin: 2px auto 18px; padding: 0 28px; }
@@ -2543,6 +2543,7 @@ html[data-motion="off"] .tok-pop[data-sheet]:not([hidden]) { animation: none; }
 @media (prefers-reduced-motion: reduce) {
   html:not([data-motion="on"]) .msg-user.enter .bubble, html:not([data-motion="on"]) .tool-chips .chip, html:not([data-motion="on"]) .attach-chip, html:not([data-motion="on"]) .attach-menu-item, html:not([data-motion="on"]) .suggest, html:not([data-motion="on"]) .settings-body .set-sec, html:not([data-motion="on"]) .pill.on, html:not([data-motion="on"]) .status .dot {animation: none !important; }
   html:not([data-motion="on"]) .sess-item, html:not([data-motion="on"]) .pill, html:not([data-motion="on"]) .attach-chip, html:not([data-motion="on"]) #send-btn, html:not([data-motion="on"]) .ghost-btn, html:not([data-motion="on"]) .primary-btn, html:not([data-motion="on"]) .icon-btn, html:not([data-motion="on"]) #sidebar-fab {transition: none !important; }
+  html:not([data-motion="on"]) .sidebar, html:not([data-motion="on"]) #sandbox-panel {transition: none !important; }
 }
 
 /* 沙箱文件查看器：PDF 页图预览 */
@@ -2624,6 +2625,7 @@ html[data-motion="off"] .pill.ultra::before, html[data-motion="off"] .think-item
 html[data-motion="off"] .turn-bar::after {animation: none; transform: none; background: var(--line-2); }
 html[data-motion="off"] .msg.enter, html[data-motion="off"] .empty-state, html[data-motion="off"] .dd-menu.open, html[data-motion="off"] .toast, html[data-motion="off"] .chip.expanded .chip-detail, html[data-motion="off"] .file-viewer.open {animation-duration: .01ms; animation-iteration-count: 1; }
 html[data-motion="off"] * {scroll-behavior: auto; }
+html[data-motion="off"] .sidebar, html[data-motion="off"] #sandbox-panel {transition: none !important; }
 html[data-motion="off"] .boot-card, html[data-motion="off"] .boot-ring, html[data-motion="off"] .boot-ring::after, html[data-motion="off"] .boot-progress-bar::after, html[data-motion="off"] .boot-steps li.active b {animation: none !important; }
 html[data-motion="off"] .msg-user.enter .bubble, html[data-motion="off"] .tool-chips .chip, html[data-motion="off"] .attach-chip, html[data-motion="off"] .attach-menu-item, html[data-motion="off"] .suggest, html[data-motion="off"] .settings-body .set-sec, html[data-motion="off"] .pill.on, html[data-motion="off"] .status .dot {animation: none !important; }
 html[data-motion="off"] .sess-item, html[data-motion="off"] .pill, html[data-motion="off"] .attach-chip, html[data-motion="off"] #send-btn, html[data-motion="off"] .ghost-btn, html[data-motion="off"] .primary-btn, html[data-motion="off"] .icon-btn, html[data-motion="off"] #sidebar-fab {transition: none !important; }

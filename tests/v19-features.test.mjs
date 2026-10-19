@@ -114,6 +114,7 @@ test('[[file:路径]] 文件小卡片：渲染可点卡片、非法路径保持�
   const ui = read('../js/ui.js');
   assert.match(ui, /const sbOpen = e\.target\.closest\('\[data-sb-open\]'\);/, '点击卡片打开 openFileViewer');
   assert.match(ui, /openFileViewer\(path\)/);
+  assert.match(ui, /const openMessageFile = \(path\) => \{[\s\S]*setPanelCollapsed\(false\)[\s\S]*filesTab\.click\(\)[\s\S]*openFileViewer\(path\)/);
   const share = read('../js/share-document.js');
   assert.match(share, /\.sb-file-card\[data-sb-open\]/, '导出分享文档时卡片转为下载链接');
   const prompt = read('../js/prompt-core.js');
@@ -121,12 +122,24 @@ test('[[file:路径]] 文件小卡片：渲染可点卡片、非法路径保持�
   assert.match(prompt, /\[\[file:相对路径\]\]/);
 });
 
-test('全屏预览：所有沙箱文件可用；按钮可切换；Esc 退出；CSS 全屏不依赖 Fullscreen API', () => {
+test('移动端左侧栏展开/收起动效未被基础侧栏规则覆盖，且尊重减少动效', () => {
+  const css = read('../css/styles.css');
+  const base = css.slice(css.indexOf('.sidebar {\n  display: flex'), css.indexOf('.app:has(.sidebar.collapsed) .sidebar'));
+  assert.match(base, /transition:[^}]*transform \.34s/);
+  const mobile = css.slice(css.indexOf('@media (max-width: 860px)'), css.indexOf('/* 宽屏 iPad'));
+  assert.match(mobile, /\.sidebar\.sidebar-open \{ transform: none;/);
+  assert.match(css, /html:not\(\[data-motion="on"\]\) \.sidebar[^}]*transition: none !important/);
+  assert.match(css, /html\[data-motion="off"\] \.sidebar[^}]*transition: none !important/);
+});
+
+test('全屏预览：按钮与 Esc 可切换；视口变形动画遵循减少动效偏好', () => {
   const panel = read('../js/ui-files-panel.js');
   const css = read('../css/styles.css');
   assert.match(panel, /id="fv-full"/);
-  assert.match(panel, /viewer\.classList\.toggle\('fv-fullscreen'\)/);
-  assert.match(panel, /viewer\.classList\.remove\('fv-fullscreen'\)/);
+  assert.match(panel, /function setViewerFullscreen\(viewer, fullscreen\)/);
+  assert.match(panel, /viewer\.classList\.toggle\('fv-fullscreen', !!fullscreen\)/);
+  assert.match(panel, /motionAllowed\(document\)[\s\S]*viewer\.animate\(/);
+  assert.match(panel, /setViewerFullscreen\(viewer, false\)/, 'Esc 退出全屏');
   assert.match(css, /\.file-viewer\.fv-fullscreen \{[^}]*position: fixed; inset: 0;/);
 });
 

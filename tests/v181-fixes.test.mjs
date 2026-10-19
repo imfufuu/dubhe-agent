@@ -477,11 +477,16 @@ test('日常对话不再打「收到任务 / 方向与计划」回执；多步�
   assert.doesNotMatch(core, /接到任务第一时间先在正文回执/);
 });
 
-test('重建消息（进入旧会话 / 回滚 / 展开更早）瞬时落底，不再平滑滑一次', () => {
+test('消息重绘遵循读者滚动状态；只有明确切换时才落底', () => {
   const ui = read('../js/ui.js');
+  const scroll = read('../js/ui-message-scroll.js');
   const rb = ui.slice(ui.indexOf('function rebuildMessages'), ui.indexOf('function attachToolResult'));
-  assert.match(rb, /jumpToBottom\(\);/);
-  assert.match(ui, /msgList\.style\.scrollBehavior = 'auto';\s*msgList\.scrollTop = msgList\.scrollHeight;/);
+  assert.match(rb, /captureMessageScroll\(\)/);
+  assert.match(rb, /if \(scroll === 'bottom'\) jumpToBottom\(\);[\s\S]*restoreMessageScroll\(scrollSnapshot\)/);
+  assert.doesNotMatch(rb, /^\s*jumpToBottom\(\);/m);
+  assert.match(ui, /createMessageScrollManager/);
+  assert.match(scroll, /followLatest = false/);
+  assert.match(scroll, /msgList\.scrollTop = msgList\.scrollHeight;/);
 });
 
 test('连接模型：气泡里是 12px 深色呼吸点，圆环退场；状态栏维持原状（三点跳动还在）', () => {

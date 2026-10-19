@@ -1,5 +1,5 @@
-// ─── 供应商图标：真实品牌 Logo ─────────────────────────────────────────
-// SVG 下载自 Wikimedia Commons / Wikipedia（见 README「图标来源与版权」）
+// ─── 供应商图标：本地 SVG ───────────────────────────────────────────────
+// Wikimedia 与用户提供图稿的来源、许可提示见 README「图标来源与版权」及 THIRD-PARTY-NOTICES.md。
 // mono = 纯黑 Logo（暗色主题下 CSS 反色）；word = 横排 wordmark（宽度自适应）
 
 export const PROVIDER_ICON = {
@@ -8,7 +8,10 @@ export const PROVIDER_ICON = {
   Google:    { file: 'gemini.svg',    mono: false, word: false }, // Gemini 图标 2025
   DeepSeek:  { file: 'deepseek.svg',  mono: false, word: false }, // DeepSeek 鲸图标（品牌蓝）
   GLM:       { file: 'zhipu.svg',     mono: false, word: false }, // Z.ai（智谱）
-  Kimi:      { file: 'kimi.svg',      mono: false, word: false }, // Kimi（月之暗面）：黑底白 K + 品牌蓝 #1783FF 折角
+  Kimi:      { file: 'kimi.svg',      mono: false, word: false }, // 用户上传的 Zonalogo.com SVG
+  Doubao:    { file: 'doubao.svg',    mono: false, word: false }, // 用户上传的 Zonalogo.com SVG
+  Qwen:      { file: 'qwen.svg',      mono: false, word: false }, // 用户指定的 Wikimedia Commons 方形图标
+  MiniMax:   { file: 'minimax.svg',   mono: false, word: false }, // 用户上传的 Zonalogo.com SVG
   Grok:      { file: 'grok.svg',      mono: false, word: false, white: true }, // 白色图标 → 亮色主题反色
 };
 

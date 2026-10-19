@@ -181,20 +181,31 @@ ok('确认后所有会话被清空', store.state.sessions.length === 1 && $$('.s
 ok('清空后回到空状态引导语', !!$('#session-list .sess-empty-hint') && $$('#messages .empty-state').length === 1);
 ok('清空后消息数组也是空的', store.state.messages.length === 0);
 
-console.log('\n⑩ 删除任意会话后回到含任务示例的空白主页');
+console.log('\n⑩ 删除会话：折叠沙箱、清理陈旧状态，但不打断其他活动会话');
 store.pushMessage({ role: 'user', text: '待删除的旧会话' });
 const toDeleteId = store.state.activeSessionId;
 store.createSession();
 store.pushMessage({ role: 'user', text: '当前仍打开的会话' });
+ui.rebuildMessages();
 ui.renderSessions();
 const rowToDelete = $$('.sess-item').find((n) => n.dataset.id === toDeleteId || n.querySelector('.sess-title')?.textContent === '待删除的旧会话');
+click($('#panel-toggle'));
+const originalGetStatus = agent.getStatus;
+agent.getStatus = () => 'streaming';
+ui.setStatus('streaming');
 click(rowToDelete.querySelector('.sess-del'));
-ok('删除非活动会话也切到空白草稿', store.state.messages.length === 0 && !!$('#messages .empty-state'));
-ok('空白主页重新显示任务示例', $$('#messages .empty-state .suggest').length > 0);
+ok('删除非活动会话保留当前活动会话内容', store.state.messages.some((m) => m.text === '当前仍打开的会话') && !$('#messages .empty-state'), JSON.stringify({ active: store.state.activeSessionId, messages: store.state.messages.map((m) => m.text), rows: $$('.sess-item').map((n) => [n.dataset.id, n.querySelector('.sess-title')?.textContent]) }));
+ok('删除会话自动收起沙箱面板', $('#sandbox-panel').classList.contains('collapsed'));
+ok('Agent 正在输出时删除其他会话不清除运行状态', $('#status-text').textContent.includes('生成中'));
+agent.getStatus = originalGetStatus;
+ui.setStatus('error');
+click($('#panel-toggle'));
 const preservedRow = $$('.sess-item').find((n) => n.querySelector('.sess-title')?.textContent === '当前仍打开的会话');
 click(preservedRow);
 click(preservedRow.querySelector('.sess-del'));
-ok('删除活动会话同样落到空白主页', store.state.messages.length === 0 && !!$('#messages .empty-state') && $$('#messages .empty-state .suggest').length > 0);
+ok('删除活动会话回到空白主页', store.state.messages.length === 0 && !!$('#messages .empty-state') && $$('#messages .empty-state .suggest').length > 0);
+ok('删除后清空出错状态', $('#status-text').textContent === '' && $('#status-dot').className.includes('ok'));
+ok('删除活动会话后面板也收起', $('#sandbox-panel').classList.contains('collapsed'));
 
 console.log('\n③ 连接动画（状态栏 + 顶栏进度条）');
 ui.setStatus('connecting');
@@ -455,13 +466,14 @@ ok('不会重复插入同一节点', $$('#messages .msg[data-id="' + oldStyle.id
 ui.onUserMessage('旧式调用只给文本');
 ok('重复调用被去重', $$('#messages .msg[data-id="' + oldStyle.id + '"]').length === 1);
 
-console.log('\n⑥ Kimi 品牌图标');
-const { providerIcon } = await import(path.join(ROOT, 'js/icons.js'));
-ok('providerIcon(Kimi) 指向 kimi.svg', providerIcon('Kimi').includes('assets/icons/kimi.svg'), providerIcon('Kimi'));
-ok('kimi.svg 存在且已精简', (() => {
-  const p = path.join(ROOT, 'assets/icons/kimi.svg');
-  return fs.existsSync(p) && fs.statSync(p).size < 4096;
-})());
+console.log('\n⑥ 新增供应商本地图标');
+const { PROVIDER_ICON, providerIcon } = await import(path.join(ROOT, 'js/icons.js'));
+for (const [provider, file] of [['Kimi', 'kimi.svg'], ['Doubao', 'doubao.svg'], ['Qwen', 'qwen.svg'], ['MiniMax', 'minimax.svg']]) {
+  const iconPath = path.join(ROOT, 'assets/icons', file);
+  ok(`providerIcon(${provider}) 指向本地 ${file}`, PROVIDER_ICON[provider]?.file === file
+    && providerIcon(provider).includes(`assets/icons/${file}`)
+    && fs.existsSync(iconPath) && fs.readFileSync(iconPath, 'utf8').includes('<svg'));
+}
 
 console.log('\n⑩ 操作条：输出结束才出现，复制按钮带 SVG 图标');
 {
@@ -908,13 +920,34 @@ await new Promise((r) => setTimeout(r, 30));
 ok('ZIP 在查看器内列出条目清单', /a\.txt/.test($('#file-viewer .fv-office')?.innerHTML || '') && /b\/c\.md/.test($('#file-viewer .fv-office')?.innerHTML || ''), ($('#file-viewer .fv-office')?.innerHTML || '空').slice(0, 80));
 click($('#fv-close'));
 
-// —— [[file:]] 文件小卡片：消息内嵌、点击打开 ——
+// —— 用户已上滚时，重绘与流入的新消息不应强制拽回底部 ——
+{
+  const box = $('#messages');
+  const oldClient = Object.getOwnPropertyDescriptor(box, 'clientHeight');
+  const oldHeight = Object.getOwnPropertyDescriptor(box, 'scrollHeight');
+  Object.defineProperty(box, 'clientHeight', { configurable: true, get: () => 240 });
+  Object.defineProperty(box, 'scrollHeight', { configurable: true, get: () => 1800 });
+  box.scrollTop = 450;
+  box.dispatchEvent(new window.Event('scroll'));
+  ui.rebuildMessages();
+  ok('重绘保留当前消息区阅读位置', box.scrollTop === 450, String(box.scrollTop));
+  const incoming = store.pushMessage({ role: 'user', text: '测试：保留上滚位置', ts: Date.now() });
+  ui.onUserMessage(incoming);
+  ok('新消息到达时不把已上滚的读者弹回底部', box.scrollTop === 450, String(box.scrollTop));
+  if (oldClient) Object.defineProperty(box, 'clientHeight', oldClient); else delete box.clientHeight;
+  if (oldHeight) Object.defineProperty(box, 'scrollHeight', oldHeight); else delete box.scrollHeight;
+  box.scrollTop = 0;
+}
+
+// —— [[file:]] 文件小卡片：自动展开沙箱、切到文件标签并打开查看器 ——
+click($('[data-panel-tab="memory"]'));
 store.state.messages.push({ id: 'fc-1', role: 'assistant', text: '交付 [[file:uploads/spec.md|规格书]] 请查收', done: true, ts: Date.now() });
 ui.rebuildMessages();
 const card = $('#messages .sb-file-card');
 ok('消息内渲染文件小卡片（图标 + 显示名）', !!card && card.dataset.sbOpen === 'uploads/spec.md' && /规格书/.test(card.textContent), $('#messages .msg[data-id="fc-1"] .md')?.innerHTML.slice(0, 100));
 ok('卡片补上文件元信息（类型 · 体积）', /md · \d/.test(card.querySelector('[data-sb-meta]')?.textContent || ''), card?.querySelector('[data-sb-meta]')?.textContent);
 click(card);
+ok('卡片自动展开沙箱并切回文件标签', !$('#sandbox-panel').classList.contains('collapsed') && $('[data-panel-tab="files"]').classList.contains('on') && !$('#tab-files').hidden);
 ok('点击卡片打开沙箱文件查看器', $('#file-viewer').classList.contains('open') && /规格/.test($('#file-viewer').textContent || ''));
 click($('#fv-close'));
 store.state.messages.push({ id: 'fc-2', role: 'assistant', text: '缺文件 [[file:outputs/nope.bin]] 一个', done: true, ts: Date.now() });

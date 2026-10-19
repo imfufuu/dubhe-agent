@@ -41,7 +41,7 @@ npm ci && npm test   # 一条命令跑完 tests/ 下全部 .mjs + Python 护栏�
 - **如实披露边界**：旧版 `.doc` 请先在本机另存 `.docx`；不把改后缀当转换。不提供 Office 保真渲染、任意旧稿无损编辑、PDF 安全涂黑、动态 XFA、密码破解或证书签名。PDF 内置字体目前为 Latin，非 Latin 水印/表单/新建正文可能报错。结构检查不是视觉排版验收。
 - **音频分析**：支持 MP3/WAV/M4A/AAC/OGG/FLAC/WebM Audio，单份≤16MB。音视频解析模型合并为一项设置：`analyze_audio` 与 `analyze_video` 共用 Gemini 3.5 Flash Lite、3.8 Flash 或 3.1 Pro 中的一档；`analyze_audio` 与视频一样发送 `file: {filename,file_data}`，返回全文并存入 `internal/ocr/*.audio.md`。时间点/说话人标签为近似分析，不是强制对齐或真实身份认证。
 - **隐私与费用**：文档解析/生成在本地，并不代表整个 Agent 对话离线：提取文字作为工具结果会进入后续网关对话。音频原件及启用视觉识别的 PDF 页图会上传网关。没有本地语音内容审核。音频请求做了协议与流程回归，未冒充真实付费模型质量评测；网关不回传完整用量时明确标记，而非编造每分钟价格。
-- **模型目录**：优先采用网关实时目录，离线时使用经核验快照。DeepSeek 官方 API 目录当前列出 `deepseek-flash` 与 `deepseek-v4-pro`；TeamoRouter 新增 `deepseek-flash-1017`，实测由网关映射到 `deepseek-flash`。热门标签是应用精选，不代表实时使用量或基准测试排名；英文低价标为 Cheap，按公开标价阈值判定。模型列表不显示「新收录」徽标。两个 Kimi 选项已停用，旧会话自动回到默认路由；保留历史计价记录，不宣称账户目录等于全平台目录。
+- **模型目录**：优先采用网关实时目录，离线时使用经核验快照。DeepSeek 官方 API 目录当前列出 `deepseek-flash` 与 `deepseek-v4-pro`；TeamoRouter 新增 `deepseek-flash-1017`，实测由网关映射到 `deepseek-flash`。热门标签是应用精选，不代表实时使用量或基准测试排名；英文低价标为 Cheap，按公开标价阈值判定。模型列表不显示「新收录」徽标。TeamoRouter 当前目录包含 Doubao Seed 2.1 Pro、Kimi K3、Qwen3.8-Max 与 MiniMax M3；历史 `kimi-k3[1M]` 变体仍停用，旧会话会回到默认路由。目录为公开标价快照，不宣称等于所有账户的实时可用性。
 
 ### 浏览器增量资源缓存
 
@@ -541,7 +541,7 @@ python3 server.py --workspace ~/code   # 换工作区（git 的根，越界一�
 
 ## 图标来源与版权
 
-供应商 Logo 为各公司商标，SVG 下载自 Wikimedia（仅用于识别对应服务）：`Anthropic`=Claude AI symbol.svg · `OpenAI`=OpenAI logo 2025 (symbol).svg · `Google`=Google Gemini icon 2025.svg · `DeepSeek`=DeepSeek-icon.svg · `GLM`=Z.ai (company logo).svg · `Kimi`=kimi.svg（由用户提供的官方 Logo 精简：保留黑底 + 白色 K 字形 + 品牌蓝 `#1783FF` 折角，剔除 2691 条在黑色底上不可见的矢量描摹噪声路径，1.0MB → 1.7KB） · `Grok`=Grok-icon.svg（白色图标，亮色主题自动反色）。纯黑 Logo 在暗色主题下 CSS 反色；加载失败自动降级为首字母徽章。
+供应商 Logo 保存在本地，仅用于识别对应服务，不构成背书：`Anthropic`=Claude AI symbol.svg · `OpenAI`=OpenAI logo 2025 (symbol).svg · `Google`=Google Gemini icon 2025.svg · `DeepSeek`=DeepSeek-icon.svg · `GLM`=Z.ai (company logo).svg · `Kimi`=`assets/icons/kimi.svg`、`Doubao`=`assets/icons/doubao.svg`、`MiniMax`=`assets/icons/minimax.svg`，均按用户指示由上传的 Zonalogo.com 文本文件原样改扩展名而来（非 Wikimedia 文件；附件未含许可信息） · `Qwen`=`assets/icons/qwen.svg`，按用户指定链接下载自 [Wikimedia Commons: Qwen logo.svg](https://commons.wikimedia.org/wiki/File:Qwen_logo.svg)。Commons 页面列明上传者 Mr. Ibrahem 的 CC0 1.0 声明，同时显示版权状态信息可能不正确的警告；该文件按用户指定采用，但不宣称是阿里巴巴官方上传或已消除许可争议。详见 `THIRD-PARTY-NOTICES.md`。纯黑 Logo 在暗色主题下 CSS 反色；加载失败自动降级为首字母徽章。
 
 **容错**：429/5xx 指数退避重试一次；HTTP 错误映射中文提示（401 查 Key / 402 充值 / 404 模型名）；直连失败自动切换 `/api/proxy` 中继并回放请求；中断按钮随时终止流。
 

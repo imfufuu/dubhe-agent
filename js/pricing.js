@@ -1,5 +1,5 @@
 // ─── 模型官方价格表与费用预估（USD）──────────────────────────────────────
-// 2026-10-18 复核；展示网关 list_cost 标价，不写入账户折扣或声称供应商实测。
+// 2026-10-19 复核；展示网关 list_cost 标价，不写入账户折扣或声称供应商实测。
 // 数据来源：TeamoRouter 官方定价接口（GET /v1/models/pricing 的 list_cost 字段与 per_call_tiers）
 // 独立模块：不修改 config.js / api.js 的既有导出列表，避免 Pages 混版缓存下 ESM link 失败。
 
@@ -56,9 +56,18 @@ export const MODEL_PRICING = {
   'glm-5.3-flash-free':       { input: 0.114, output: 0.4,   cachedInput: 0.03,  freeTier: true },
   'glm-5.2':                  { input: 1.4,   output: 4.4,   cachedInput: 0.26 },
 
+  // Doubao / 火山引擎
+  'doubao-seed-2.1-pro':      { input: 0.8571, output: 4.2857, cachedInput: 0.1714 },
+
   // Moonshot Kimi
   'kimi-k3':                  { input: 3.0,   output: 15.0,  cachedInput: 0.3 },
   'kimi-k3[1M]':              { input: 3.0,   output: 15.0,  cachedInput: 0.3 },
+
+  // MiniMax · 512k 以上上下文输入/输出均按 2x 标价
+  'minimax-m3':               { input: 0.3,   output: 1.2,   cachedInput: 0.06, contextTier: { thresholdTokens: 512000, inputMultiplier: 2.0, outputMultiplier: 2.0, cachedInputMultiplier: 2.0 } },
+
+  // Qwen / 通义千问
+  'qwen3.8-max':              { input: 1.7143, output: 5.1429, cachedInput: 0.2143 },
 
   // xAI Grok
   'grok-4.6':                 { input: 2.0,   output: 6.0,   cachedInput: 0.5 },
@@ -197,10 +206,13 @@ export function estimateChatCost(modelId, usage, opts = {}) {
 
   const fast = !!(opts.fastMode || p.isFast) && (p.fastMultiplier || 1) > 1;
   const fastMult = fast ? p.fastMultiplier : 1;
-  const overTier = !!(p.contextTier && inputTok > 272000);
-  const inRate = p.input * fastMult * (overTier ? 2.0 : 1.0);
-  const outRate = p.output * fastMult * (overTier ? 1.5 : 1.0);
-  const cachedRate = (p.cachedInput != null ? p.cachedInput : p.input * 0.1) * fastMult * (overTier ? 2.0 : 1.0);
+  const tier = p.contextTier && typeof p.contextTier === 'object'
+    ? p.contextTier
+    : { thresholdTokens: 272000, inputMultiplier: 2.0, outputMultiplier: 1.5, cachedInputMultiplier: 2.0 };
+  const overTier = !!p.contextTier && inputTok > tier.thresholdTokens;
+  const inRate = p.input * fastMult * (overTier ? tier.inputMultiplier : 1.0);
+  const outRate = p.output * fastMult * (overTier ? tier.outputMultiplier : 1.0);
+  const cachedRate = (p.cachedInput != null ? p.cachedInput : p.input * 0.1) * fastMult * (overTier ? tier.cachedInputMultiplier : 1.0);
 
   const costUsd = (uncachedInput * inRate + cachedTok * cachedRate + outputTok * outRate) / 1e6;
   return {
