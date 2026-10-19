@@ -154,7 +154,7 @@ export function isSmartRouter(modelId) {
 // 单色 currentColor、viewBox 32、无渐变与品牌色。取自候选稿 git 历史 d259a28 的 design/smart-router-icon/candidate-b-hub.svg，
 // 旧版是 TeamoRouter 产品 LOGO 的重绘，已弃用；改坐标请直接改这里并同步 tests/agent.test.mjs。
 export const SMART_ROUTER_LABEL = 'smart_router';
-export const SMART_ROUTER_PROVIDER_LABEL = 'TEAMOROUTER';
+export const SMART_ROUTER_PROVIDER_LABEL = 'DUBHEROUTER';
 // 任何要把模型 ID 给用户看的地方都走这里：路由器统一显示 smart_router（用户要求：所有位置都用这个名字，不用中文「智能」），/system 显示 system-commands，其余原样
 export function modelDisplayName(modelId) {
   if (modelId === SMART_ROUTER_ID) return SMART_ROUTER_LABEL;

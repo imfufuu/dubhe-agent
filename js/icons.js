@@ -78,5 +78,6 @@ export function providerIcon(provider) {
   const def = PROVIDER_ICON[provider];
   if (!def) return `<span class="p-icon-fallback">${String(provider || '?').slice(0, 1)}</span>`;
   const cls = ['p-icon', def.mono ? 'mono' : '', def.word ? 'word' : '', def.white ? 'white' : ''].filter(Boolean).join(' ');
-  return `<img class="${cls}" src="assets/icons/${def.file}" alt="${provider}" loading="lazy">`;
+  // These same-origin SVGs are pre-cached by the service worker; eager loading avoids a blank logo when the picker opens.
+  return `<img class="${cls}" src="assets/icons/${def.file}" alt="${provider}" loading="eager" decoding="async">`;
 }

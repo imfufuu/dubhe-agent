@@ -2,48 +2,54 @@
 // Default model IDs are curated fallback suggestions only; a successful live model-list
 // response is authoritative. Provider keys are never retried against another gateway.
 import { MODEL_CATALOG, isRetiredModel } from './model-catalog.js?v=2026.10.11.1';
+import { text as localeText } from './locale.js';
 
 export const DEFAULT_GATEWAY_ID = 'teamorouter';
 
+// No-key fallbacks are a curated public-documentation list of text/chat model IDs,
+// not an account-entitlement promise. Successful per-key model-list responses remain authoritative.
+const suggestions = (provider, ids) => ids.map((id) => ({ id, provider, displayName: id }));
 const FIRST_PARTY_MODELS = {
-  anthropic: [
-    { id: 'claude-haiku-5-5', provider: 'Anthropic', displayName: 'Claude Haiku 5.5' },
-    { id: 'claude-sonnet-5-5', provider: 'Anthropic', displayName: 'Claude Sonnet 5.5' },
-    { id: 'claude-opus-5-5', provider: 'Anthropic', displayName: 'Claude Opus 5.5' },
-  ],
-  openai: [],
-  gemini: [
-    { id: 'gemini-4-argon', provider: 'Google', displayName: 'Gemini 4 Argon' },
-    { id: 'gemini-3.8-flash', provider: 'Google', displayName: 'Gemini 3.8 Flash' },
-  ],
+  anthropic: suggestions('Anthropic', [
+    'claude-fable-5-1', 'claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5',
+  ]),
+  openai: suggestions('OpenAI', [
+    'gpt-6-astra', 'gpt-6.1-sol', 'gpt-6-luna', 'gpt-6-sol',
+    'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna',
+    'gpt-5.5', 'gpt-5.5-pro', 'gpt-5.4', 'gpt-5.4-pro', 'gpt-5.4-mini',
+    'gpt-5.2', 'gpt-5.2-pro', 'gpt-5', 'gpt-5-mini', 'gpt-5-nano', 'gpt-5-pro', 'o3-pro', 'o3',
+  ]),
+  gemini: suggestions('Google', [
+    'gemini-4-argon', 'gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-3.5-flash-lite',
+    'gemini-3.1-flash-lite', 'gemini-3.1-pro-preview', 'gemini-3-flash-preview',
+    'gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite',
+  ]),
   // Current official GET /models inventory: the stable Flash alias and V4 Pro only.
   deepseek: [
     { id: 'deepseek-flash', provider: 'DeepSeek', displayName: 'DeepSeek V4.1 Flash' },
     { id: 'deepseek-v4-pro', provider: 'DeepSeek', displayName: 'DeepSeek V4 Pro' },
   ],
-  glm: [],
-  grok: [
-    { id: 'grok-4.7', provider: 'Grok', displayName: 'Grok 4.7' },
-    { id: 'latest', provider: 'Grok', displayName: 'latest' },
-  ],
-  kimi: [
-    { id: 'kimi-k3', provider: 'Kimi', displayName: 'Kimi K3' },
-    { id: 'kimi-k2.7-code', provider: 'Kimi', displayName: 'Kimi K2.7 Code' },
-    { id: 'kimi-k2.7-code-highspeed', provider: 'Kimi', displayName: 'Kimi K2.7 Code Highspeed' },
-    { id: 'kimi-k2.6', provider: 'Kimi', displayName: 'Kimi K2.6' },
-  ],
-  doubao: [
-    { id: 'doubao-seed-2-1-pro-260915', provider: 'Doubao', displayName: 'Doubao Seed 2.1 Pro' },
-    { id: 'doubao-seed-2-1-lite-260915', provider: 'Doubao', displayName: 'Doubao Seed 2.1 Lite' },
-    { id: 'doubao-seed-2-1-turbo-260915', provider: 'Doubao', displayName: 'Doubao Seed 2.1 Turbo' },
-    { id: 'doubao-seed-evolving', provider: 'Doubao', displayName: 'Doubao Seed Evolving' },
-  ],
-  qwen: [
-    { id: 'qwen3.8-max', provider: 'Qwen', displayName: 'Qwen 3.8 Max' },
-    { id: 'qwen3.8-flash', provider: 'Qwen', displayName: 'Qwen 3.8 Flash' },
-    { id: 'qwen3.7-plus', provider: 'Qwen', displayName: 'Qwen 3.7 Plus' },
-    { id: 'qwen3.8-omni-flash', provider: 'Qwen', displayName: 'Qwen 3.8 Omni Flash' },
-  ],
+  glm: suggestions('GLM', [
+    'glm-5.3', 'glm-5.3-flash', 'glm-5.3-flashx', 'glm-5.2', 'glm-5.1', 'glm-5', 'glm-5-turbo',
+    'glm-4.7', 'glm-4.7-flashx', 'glm-4.7-flash', 'glm-4.6',
+    'glm-4.5-air', 'glm-4.5-airx', 'glm-4.5-flash', 'glm-4-long',
+    'glm-4-flashx-250414', 'glm-4-flash-250414',
+  ]),
+  grok: suggestions('Grok', ['grok-4.7', 'latest']),
+  kimi: suggestions('Kimi', [
+    'kimi-k3', 'kimi-k2.7-code', 'kimi-k2.7-code-highspeed', 'kimi-k2.6',
+  ]),
+  doubao: suggestions('Doubao', [
+    'doubao-seed-evolving',
+    'doubao-seed-2-1-pro-260915', 'doubao-seed-2-1-lite-260915', 'doubao-seed-2-1-turbo-260628',
+    'doubao-seed-2-1-pro-260628', 'doubao-seed-2-0-lite-260428', 'doubao-seed-2-0-mini-260428',
+    'doubao-seed-character-260628', 'doubao-seed-character-251128', 'doubao-seed-translation-250915',
+  ]),
+  qwen: suggestions('Qwen', [
+    'qwen3.8-max', 'qwen3.8-max-0902', 'qwen3.8-flash', 'qwen3.8-omni-flash',
+    'qwen3.8-2.4t-a95b', 'qwen3.8-27b',
+    'qwen3.7-plus', 'qwen3.7-flash', 'qwen3.6-plus', 'qwen3.6-flash', 'qwen3.5-plus', 'qwen3.5-flash',
+  ]),
   custom: [],
 };
 
@@ -197,14 +203,15 @@ function providerFromModelId(modelId) {
   return '';
 }
 
-export function isModelForGateway(gatewayId, modelId, manualIds = []) {
+export function isModelForGateway(gatewayId, modelId, availableIds = null) {
   const spec = getGateway(gatewayId);
   const id = String(modelId || '').trim();
   if (!id || id === '__system__') return false;
   if (spec.id === DEFAULT_GATEWAY_ID || spec.id === 'custom') return id !== '__smart_router__' || spec.id === DEFAULT_GATEWAY_ID;
-  if (id === '__smart_router__') return false;
-  if (Array.isArray(manualIds) && manualIds.includes(id)) return true;
-  return providerFromModelId(id) === spec.provider;
+  if (id === '__smart_router__' || providerFromModelId(id) !== spec.provider) return false;
+  // A successful provider listing is authoritative, even for a same-provider ID left by an old manual entry.
+  if (Array.isArray(availableIds)) return availableIds.includes(id);
+  return (FIRST_PARTY_MODELS[spec.id] || []).some((model) => model.id === id);
 }
 
 export function gatewayFallbackModels(gatewayId = DEFAULT_GATEWAY_ID) {
@@ -214,20 +221,9 @@ export function gatewayFallbackModels(gatewayId = DEFAULT_GATEWAY_ID) {
       .filter((m) => m.channel === 'chat' && !m.hidden && !isRetiredModel(m.id, spec.id))
       .map((m) => ({ ...m }));
   }
-  const extra = FIRST_PARTY_MODELS[spec.id] || [];
-  // DeepSeek's current first-party /models inventory is authoritative for fallback too:
-  // do not surface TeamoRouter aliases or retired snapshot IDs when that endpoint is unavailable.
-  const curatedIds = spec.id === 'deepseek' && extra.length ? new Set(extra.map((model) => model.id)) : null;
-  const existing = MODEL_CATALOG.filter((m) => m.channel === 'chat' && m.provider === spec.provider && !m.hidden
-    && (!curatedIds || curatedIds.has(m.id)));
-  const merged = new Map();
-  for (const model of [...existing, ...extra]) {
-    if (spec.id === 'kimi' && isRetiredModel(model.id, DEFAULT_GATEWAY_ID)) {
-      // Kimi IDs retired from the TeamoRouter directory may still be current on Moonshot.
-    }
-    merged.set(model.id, { ...(MODEL_CATALOG.find((m) => m.id === model.id) || {}), ...model, channel: 'chat' });
-  }
-  return [...merged.values()];
+  // First-party fallbacks are only the model IDs checked against that provider's own docs.
+  // Never inherit TeamoRouter's directory snapshot (IDs, prices, or entitlements) for direct APIs.
+  return (FIRST_PARTY_MODELS[spec.id] || []).map((model) => ({ ...model, channel: 'chat' }));
 }
 
 export function gatewayFallbackModelIds(gatewayId = DEFAULT_GATEWAY_ID) {
@@ -235,10 +231,9 @@ export function gatewayFallbackModelIds(gatewayId = DEFAULT_GATEWAY_ID) {
   return gatewayFallbackModels(gatewayId).map((m) => m.id);
 }
 
-export function defaultModelForGateway(gatewayId = DEFAULT_GATEWAY_ID, preferred = '') {
+export function defaultModelForGateway(gatewayId = DEFAULT_GATEWAY_ID, preferred = '', availableIds = null) {
   const spec = getGateway(gatewayId);
-  const manualIds = [];
-  if (preferred && isModelForGateway(spec.id, preferred, manualIds) && preferred !== '__smart_router__') return preferred;
+  if (preferred && isModelForGateway(spec.id, preferred, availableIds) && preferred !== '__smart_router__') return preferred;
   if (spec.id === DEFAULT_GATEWAY_ID) return '__smart_router__';
   const defaults = {
     anthropic: 'claude-haiku-5-5', openai: 'gpt-6-luna', gemini: 'gemini-3.8-flash',
@@ -246,6 +241,7 @@ export function defaultModelForGateway(gatewayId = DEFAULT_GATEWAY_ID, preferred
     doubao: 'doubao-seed-2-1-lite-260915', qwen: 'qwen3.8-flash', custom: '',
   };
   const want = defaults[spec.id];
+  if (Array.isArray(availableIds)) return availableIds.includes(want) ? want : (availableIds[0] || '');
   return gatewayFallbackModelIds(spec.id).includes(want) ? want : (gatewayFallbackModelIds(spec.id)[0] || '');
 }
 
@@ -297,9 +293,10 @@ export function filterGatewayChatModels(gatewayId, ids) {
 
 export function gatewayModelListLabel(gatewayId) {
   const spec = getGateway(gatewayId);
-  if (spec.id === 'qwen') return '百炼 API Key 与网关 URL 必须属于同一地域；可在基础 URL 填入控制台提供的业务空间专属兼容端点。';
-  if (spec.listMode === 'static') return '该官方网关未提供已核实的通用模型目录接口；显示内置建议，具体可用性以控制台为准，可手动添加模型 ID。';
-  return '模型列表仅用于发现可用 ID；新 Key 保存后会从当前网关直接刷新。';
+  if (spec.id === 'custom') return localeText('手动添加仅适用于自定义网关；已添加的模型可点 × 移除。上游是否支持以该网关返回为准。', 'Manual model IDs are only for the custom gateway. Click × to remove one; the upstream must still support it.');
+  if (spec.id === 'qwen') return localeText('百炼 API Key 与网关 URL 必须属于同一地域；可在基础 URL 填入控制台提供的业务空间专属兼容端点。', 'The Model Studio API key and gateway URL must use the same region. You can enter the workspace-specific compatible endpoint from the console.');
+  if (spec.listMode === 'static') return localeText('当前网关没有已核实的通用模型目录接口；此处仅列出官方文档中的文本模型 ID，账号权限和地域可能影响实际可用性。', 'No verified general model-list API is configured for this gateway. This is a documentation-based text-model list; account access and region may affect availability.');
+  return localeText('模型列表仅用于发现可用 ID；新 Key 保存后会从当前网关直接刷新。', 'The model list discovers available IDs; after saving a key, refreshes query this gateway directly.');
 }
 
 export function validateGatewayApiKey(gatewayId, value) {

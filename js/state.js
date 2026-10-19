@@ -1,5 +1,5 @@
 import { isRetiredModel } from './model-catalog.js?v=2026.10.11.1';
-import { defaultModelForGateway } from './gateway-registry.js?v=2026.10.11.1';
+import { defaultModelForGateway, isModelForGateway } from './gateway-registry.js?v=2026.10.11.1';
 import { normalizeFeedback } from './feedback.js';
 // ─── 会话状态：多会话记录、消息、检查点（回滚）、持久化 ────────────────
 // 侧栏展示「会话记录」；回滚操作全部发生在对话区（消息级按钮 + 撤销浮条）
@@ -253,6 +253,11 @@ export function createStore(onChange) {
     state.models = state.modelsByGateway[state.gatewayId] || [];
     state.modelsFetchedAt = Number(state.modelsFetchedAtByGateway[state.gatewayId]) || 0;
     state.model = sessionModel(s) || state.model;
+    // Legacy/manual IDs cannot bypass the curated fallback or a successful live per-key listing.
+    const availableIds = state.modelsFetchedAt || (state.models || []).length ? (state.models || []) : null;
+    if (state.model && !isModelForGateway(state.gatewayId, state.model, availableIds)) {
+      state.model = defaultModelForGateway(state.gatewayId) || (state.gatewayId === 'custom' ? '' : DEFAULT_CHAT_MODEL);
+    }
     // 生图模型只能由 generate_image 工具调用：历史数据若存着它，回落到当前网关默认模型。
     if (isImageModel(state.model) || isJevModel(state.model) || isRetiredModel(state.model, state.gatewayId)) state.model = defaultModelForGateway(state.gatewayId) || DEFAULT_CHAT_MODEL;
     s.model = state.model;

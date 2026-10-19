@@ -13,7 +13,7 @@ import { ICON, providerIcon } from './icons.js';
 import { ROUTER_ICON_SVG, isSmartRouter, SMART_ROUTER_LABEL, SMART_ROUTER_PROVIDER_LABEL } from './smartrouter.js?v=2026.10.11.1';
 import { fetchModels } from './api.js?v=2026.10.11.1';
 import { effectiveApiKey } from './adminkey.js';
-import { DEFAULT_GATEWAY_ID, gatewayFallbackModels, defaultModelForGateway, gatewayModelListLabel } from './gateway-registry.js?v=2026.10.11.1';
+import { DEFAULT_GATEWAY_ID, gatewayFallbackModels, defaultModelForGateway, gatewayModelListLabel, isModelForGateway } from './gateway-registry.js?v=2026.10.11.1';
 
 export function installModelPicker({ store, agent, toast, getBusy, openKeyModal, rebuildMessages, renderSessions, renderFiles, updateStats, syncCapLine, syncWeb }) {
   // ── 模型下拉 ──
@@ -27,10 +27,12 @@ export function installModelPicker({ store, agent, toast, getBusy, openKeyModal,
   function mergedModels() {
     const gatewayId = store.state.gatewayId || DEFAULT_GATEWAY_ID;
     const presets = gatewayFallbackModels(gatewayId);
-    const extraIds = (store.state.manualModelsByGateway || {})[gatewayId] || [];
-    return mergeAvailableModels(store.state.models, presets,
-      !!store.state.modelsFetchedAt || (store.state.models || []).length > 0,
+    const extraIds = gatewayId === 'custom' ? ((store.state.manualModelsByGateway || {})[gatewayId] || []) : [];
+    const liveKnown = !!store.state.modelsFetchedAt || (store.state.models || []).length > 0;
+    return mergeAvailableModels(store.state.models, presets, liveKnown,
       { gatewayId, includeRouter: gatewayId === DEFAULT_GATEWAY_ID, extraIds })
+      // A live first-party listing is an exact allowlist; otherwise use the checked-in documentation list.
+      .filter(m => isModelForGateway(gatewayId, m.id, liveKnown ? (store.state.models || []) : null))
       .filter(m => !HIDDEN_MODELS.has(m.id) && !isImageModel(m.id) && !isJevModel(m.id))
       .map(m => ({ ...m, provider: m.provider || providerOf(m.id) }));
   }
@@ -44,7 +46,7 @@ export function installModelPicker({ store, agent, toast, getBusy, openKeyModal,
     if (q === '/system' || q.startsWith('/system ')) {
       ddMenu.querySelectorAll('.dd-group, .dd-empty').forEach((n) => n.remove());
       const g = el('div', 'dd-group');
-      g.appendChild(el('div', 'dd-group-title', `<span class="sys-gear">${ICON.system}</span><span>Dubhe Agent</span>`));
+      g.appendChild(el('div', 'dd-group-title', `<span class="sys-gear">${ICON.system}</span><span>DUBHEAGENT</span>`));
       const item = el('button', 'dd-item' + (store.state.model === '__system__' ? ' active' : ''));
       item.type = 'button';
       // 简约：一行式条目（图标 + 名称），介绍信息省略
@@ -173,7 +175,7 @@ export function installModelPicker({ store, agent, toast, getBusy, openKeyModal,
     if (sys) {
       icon = `<span class="sys-gear">${ICON.system || '⚙'}</span>`;
       name = 'system-commands';
-      prov = 'Dubhe Agent';
+      prov = 'DUBHEAGENT';
     } else if (router) {
       icon = `<span class="router-ico">${ROUTER_ICON_SVG}</span>`;
       name = SMART_ROUTER_LABEL;
@@ -249,6 +251,9 @@ export function installModelPicker({ store, agent, toast, getBusy, openKeyModal,
       store.state.modelsFetchedAtByGateway[gatewayId] = Date.now();
       store.state.models = list;
       store.state.modelsFetchedAt = store.state.modelsFetchedAtByGateway[gatewayId];
+      if (store.state.model !== '__system__' && !isModelForGateway(gatewayId, store.state.model, list)) {
+        store.state.model = defaultModelForGateway(gatewayId, '', list);
+      }
       store.notify();
       syncGateway();
       if (!silent) toast(`已从 ${gatewayId} 获取 ${list.length} 个模型`, 'ok');

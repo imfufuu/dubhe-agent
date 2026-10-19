@@ -1,6 +1,6 @@
 /* Dubhe Agent: manifest-verified incremental static cache.
- * Core scripts/styles/pages are prepared atomically; large assets (including
- * assets/geo, audio, PDF/OCR models) and pinned Pyodide dependencies stay lazy.
+ * Core scripts/styles/pages, local UI logos/app icons and required fonts are prepared atomically;
+ * large assets (including assets/geo, audio, PDF/OCR models) and pinned Pyodide dependencies stay lazy.
  * No API responses, credentials, conversations or user workspace files are cached.
  * Waiting workers never interrupt active tabs; old caches are removed on activation.
  */
@@ -49,7 +49,10 @@ function staticPath(path) {
 function corePath(path) {
   return /^js\/.*\.m?js$/.test(path) || /^css\/.*\.css$/.test(path)
     || /^(?:index|app|docs)\.html$/.test(path) || /^demo\/.*\.(?:html|css)$/.test(path)
-    || /^assets\/(?:md|hljs|katex)\/.*\.(?:js|css)$/.test(path);
+    || /^assets\/(?:md|hljs|katex)\/.*\.(?:js|css)$/.test(path)
+    || /^assets\/icons\/[^/]+\.svg$/i.test(path) || /^assets\/app-icon-\d+\.png$/i.test(path)
+    || /^assets\/katex\/fonts\/.*\.(?:woff2?|ttf|otf)$/i.test(path)
+    || /^fonts\/.*\.(?:css|woff2?|ttf|otf)$/i.test(path);
 }
 function relativePath(url) {
   const u = new URL(url);

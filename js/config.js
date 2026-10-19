@@ -43,7 +43,7 @@ export const STORAGE_KEY = 'dubhe-agent-state-v1';
 // 智能路由器 ID（客户端内置元模型）：根据任务类型/难度自动选择合适的模型。
 // 用户完成任务后可以点击路由器图表查看服务提供商，但不能看到具体模型。
 export const SMART_ROUTER_ID = '__smart_router__';
-export const SMART_ROUTER_PROVIDER = 'TeamoRouter';
+export const SMART_ROUTER_PROVIDER = 'DUBHEROUTER';
 
 // 2026-10-19 实际目录快照；仅作未取得实时目录时的兜底，不代表所有账户的可用性。
 // 生图入口仍在设置页；福利档保持隐藏。热门标签为应用精选，Cheap 按网关标价阈值判定；不显示「新收录」徽标。

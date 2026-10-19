@@ -116,6 +116,34 @@ function syncBudgetInputs(store) {
   }
 }
 
+function renderManualModelList(store) {
+  const row = $('#set-manual-model-list-row');
+  const host = $('#set-manual-model-list');
+  const gatewayId = store?.state?.gatewayId || DEFAULT_GATEWAY_ID;
+  if (!row || !host) return;
+  host.replaceChildren();
+  const saved = (store.state.manualModelsByGateway || {}).custom;
+  const ids = gatewayId === 'custom' && Array.isArray(saved)
+    ? saved.filter((id) => typeof id === 'string' && id.trim())
+    : [];
+  row.hidden = gatewayId !== 'custom' || ids.length === 0;
+  for (const id of ids) {
+    const chip = document.createElement('span');
+    chip.className = 'manual-model-chip';
+    const code = document.createElement('code');
+    code.textContent = id;
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'manual-model-remove';
+    remove.dataset.removeManualModel = id;
+    remove.textContent = '×';
+    remove.title = localeText(`删除模型 ${id}`, `Remove model ${id}`);
+    remove.setAttribute('aria-label', localeText(`删除模型 ${id}`, `Remove model ${id}`));
+    chip.append(code, remove);
+    host.appendChild(chip);
+  }
+}
+
 function syncGatewayFields(store) {
   const id = store.state.gatewayId || DEFAULT_GATEWAY_ID;
   const spec = getGateway(id);
@@ -135,8 +163,13 @@ function syncGatewayFields(store) {
   }
   const note = $('#set-gateway-note');
   if (note) note.textContent = gatewayModelListLabel(id);
+  const manualRow = $('#set-manual-model-row');
+  if (manualRow) manualRow.hidden = id !== 'custom';
   const manual = $('#set-manual-model');
-  if (manual) manual.value = '';
+  if (manual) { manual.value = ''; manual.disabled = id !== 'custom'; }
+  const addModelButton = $('#set-add-model');
+  if (addModelButton) addModelButton.disabled = id !== 'custom';
+  renderManualModelList(store);
 }
 
 export function openSettingsModal({ store } = {}) {
@@ -309,7 +342,8 @@ export function mountSettings(store, { onRelayChanged, onKeySaved, onSettingChan
     store.state.modelsFetchedAtByGateway = store.state.modelsFetchedAtByGateway || {};
     store.state.models = Array.isArray(store.state.modelsByGateway[nextId]) ? store.state.modelsByGateway[nextId] : [];
     store.state.modelsFetchedAt = Number(store.state.modelsFetchedAtByGateway[nextId]) || 0;
-    store.state.model = defaultModelForGateway(nextId);
+    const availableIds = store.state.modelsFetchedAt || store.state.models.length ? store.state.models : null;
+    store.state.model = defaultModelForGateway(nextId, '', availableIds);
     const active = (store.state.sessions || []).find((s) => s.id === store.state.activeSessionId);
     if (active) { active.gatewayId = nextId; active.model = store.state.model; }
     store.notify();
@@ -325,18 +359,21 @@ export function mountSettings(store, { onRelayChanged, onKeySaved, onSettingChan
   });
 
   const addModel = () => {
+    const gatewayId = store.state.gatewayId || DEFAULT_GATEWAY_ID;
+    if (gatewayId !== 'custom') { toast('手动添加模型 ID 仅适用于自定义网关', 'warn'); return; }
     const input = $('#set-manual-model');
     const id = String(input && input.value || '').trim();
     if (!id) return;
     if (!/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$/.test(id)) {
       toast('模型 ID 只能包含字母、数字、点、下划线、冒号、斜杠或连字符', 'err'); return;
     }
-    const gatewayId = store.state.gatewayId || DEFAULT_GATEWAY_ID;
     store.state.manualModelsByGateway = store.state.manualModelsByGateway || {};
-    const list = Array.isArray(store.state.manualModelsByGateway[gatewayId]) ? store.state.manualModelsByGateway[gatewayId] : [];
-    if (!list.includes(id)) list.push(id);
-    store.state.manualModelsByGateway[gatewayId] = list;
+    const list = Array.isArray(store.state.manualModelsByGateway.custom) ? store.state.manualModelsByGateway.custom : [];
+    if (list.includes(id)) { toast(`模型 ID 已存在：${id}`, 'warn'); return; }
+    list.push(id);
+    store.state.manualModelsByGateway.custom = list;
     if (input) input.value = '';
+    renderManualModelList(store);
     store.notify();
     onGatewayChanged && onGatewayChanged(gatewayId, { manualModel: id, hasKey: !!store.state.apiKey });
     changed('manualModels', id);
@@ -346,6 +383,27 @@ export function mountSettings(store, { onRelayChanged, onKeySaved, onSettingChan
   if (addModelButton) addModelButton.addEventListener('click', addModel);
   const manualInput = $('#set-manual-model');
   if (manualInput) manualInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addModel(); } });
+  const manualList = $('#set-manual-model-list');
+  if (manualList) manualList.addEventListener('click', (e) => {
+    const button = e.target.closest('[data-remove-manual-model]');
+    if (!button || (store.state.gatewayId || DEFAULT_GATEWAY_ID) !== 'custom') return;
+    const id = button.dataset.removeManualModel;
+    store.state.manualModelsByGateway = store.state.manualModelsByGateway || {};
+    const list = Array.isArray(store.state.manualModelsByGateway.custom) ? store.state.manualModelsByGateway.custom : [];
+    const next = list.filter((item) => item !== id);
+    if (next.length) store.state.manualModelsByGateway.custom = next;
+    else delete store.state.manualModelsByGateway.custom;
+    if (store.state.model === id) {
+      store.state.model = defaultModelForGateway('custom');
+      const active = (store.state.sessions || []).find((s) => s.id === store.state.activeSessionId);
+      if (active && active.model === id) active.model = store.state.model;
+    }
+    renderManualModelList(store);
+    store.notify();
+    onGatewayChanged && onGatewayChanged('custom', { manualModelRemoved: id, hasKey: !!store.state.apiKey });
+    changed('manualModels', id);
+    toast(`已移除模型 ID：${id}`, 'ok');
+  });
 
   $('#set-relay').addEventListener('change', async () => {
     const v = $('#set-relay').value.trim();

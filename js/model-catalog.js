@@ -66,7 +66,11 @@ export const MODEL_CATALOG_BY_ID = new Map(MODEL_CATALOG.map(m => [m.id, m]));
 export function mergeAvailableModels(liveIds, presets, liveKnown = Array.isArray(liveIds) && liveIds.length > 0, { gatewayId = 'teamorouter', includeRouter = true, extraIds = [] } = {}) {
   const metadata = new Map((presets || []).map(m => [m.id, m]));
   const ids = liveKnown ? (liveIds || []) : (presets || []).map(m => m.id);
-  const merged = [...(includeRouter ? ['__smart_router__'] : []), ...ids, ...(Array.isArray(extraIds) ? extraIds : [])]
+  // Manual IDs are deliberately scoped to OpenAI-compatible custom gateways only.
+  const manualIds = gatewayId === 'custom' && Array.isArray(extraIds) ? extraIds : [];
+  const merged = [...(includeRouter ? ['__smart_router__'] : []), ...ids, ...manualIds]
     .filter(id => typeof id === 'string' && id.trim() && !isRetiredModel(id, gatewayId));
-  return [...new Set(merged)].map(id => ({ ...(metadata.get(id) || MODEL_CATALOG_BY_ID.get(id) || { id }) }));
+  return [...new Set(merged)].map(id => ({
+    ...(metadata.get(id) || (gatewayId === 'teamorouter' ? MODEL_CATALOG_BY_ID.get(id) : null) || { id }),
+  }));
 }
