@@ -161,7 +161,7 @@ function cellValue(type, body, sharedStrings) {
   return value;
 }
 
-export async function inspectXlsxWorkbook(input, { offset = 0, maxUncompressed = 24 * 1024 * 1024 } = {}) {
+export async function readXlsxWorkbook(input, { maxUncompressed = 24 * 1024 * 1024 } = {}) {
   const raw = input instanceof Uint8Array ? input : new Uint8Array(input || []);
   const unpacked = await unpackZip(raw, { maxUncompressed });
   if (!unpacked.ok) throw Error(unpacked.error || 'Invalid XLSX package');
@@ -205,12 +205,17 @@ export async function inspectXlsxWorkbook(input, { offset = 0, maxUncompressed =
     sheets.push({ name, rowCount: declaredRows.length ? Math.max(...declaredRows) : 0, cellCount: cells.length, cells });
   }
   const externalRelationships = [...entries].filter(([path]) => path.endsWith('.rels')).reduce((n, [, xml]) => n + (xml.match(/TargetMode\s*=\s*["']External["']/gi) || []).length, 0);
-  const result = { format: 'xlsx', sheetCount: sheets.length, sheets, formulaCount, externalRelationships,
+  return { format: 'xlsx', sheetCount: sheets.length, sheets, formulaCount, externalRelationships,
     warnings: ['Structural inspection only: formatting, charts, drawings, and merged-cell layout are not rendered.', 'Formulas are reported as text and are never evaluated; external relationships are never followed.'] };
+}
+
+// 供 document_tool 分页回传：在 readXlsxWorkbook 的结构化结果上做 JSON 序列化截断。
+export async function inspectXlsxWorkbook(input, { offset = 0, maxUncompressed = 24 * 1024 * 1024 } = {}) {
+  const result = await readXlsxWorkbook(input, { maxUncompressed });
   const serialized = JSON.stringify(result, null, 2);
   const start = Math.max(0, Math.floor(Number(offset) || 0));
   const end = start + 12000;
-  return { format: 'xlsx', sheetCount: sheets.length, formulaCount, externalRelationships,
+  return { format: 'xlsx', sheetCount: result.sheetCount, formulaCount: result.formulaCount, externalRelationships: result.externalRelationships,
     text: serialized.slice(start, end), totalChars: serialized.length, nextOffset: end < serialized.length ? end : null,
     warnings: result.warnings };
 }

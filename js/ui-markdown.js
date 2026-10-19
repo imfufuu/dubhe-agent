@@ -122,6 +122,24 @@ export function sanitizeSvgRaw(raw) {
 
 export function hydrateSandboxMedia(root, fs) {
   if (!root || !fs) return;
+  // 文件小卡片（[[file:路径]]）：补体积/类型元信息；沙箱里没有该文件时标记为 missing
+  for (const card of root.querySelectorAll('.sb-file-card[data-sb-open]')) {
+    const p = card.getAttribute('data-sb-open') || '';
+    let raw = '';
+    try { raw = fs.read(p); } catch { raw = ''; }
+    const meta = card.querySelector('[data-sb-meta]');
+    if (!raw) {
+      card.classList.add('missing');
+      if (meta) meta.textContent = messageLocaleText('沙箱中没有这个文件', 'not in sandbox');
+      continue;
+    }
+    if (meta && !meta.textContent) {
+      const s = String(raw);
+      const size = /^data:[^;,]+;base64,/.test(s) ? Math.floor((s.length - s.indexOf(',') - 1) * 0.75) : s.length;
+      const ext = (p.split('.').pop() || '').toLowerCase();
+      meta.textContent = `${ext || 'file'} · ${fmtSize(size)}`;
+    }
+  }
   for (const img of root.querySelectorAll('img[data-sandbox]')) {
     const p = img.getAttribute('data-sandbox') || '';
     let raw = '';
@@ -647,6 +665,16 @@ export function renderMarkdown(src) {
     .replace(/\$([^\s$](?:[^$\n]*?[^\s$])?)\$/g, (_, x) => mathOk(x) ? pushMath(x, false, false) : _)
     // 行内未闭合 $ 不处理（$ 单独出现太容易误判）——只处理 $$ 和 \[ 开头的块级
 
+  // 沙箱文件小卡片：[[file:相对路径]] 或 [[file:相对路径|显示名]] → 可点击卡片，点开沙箱文件查看器。
+  // 放在围栏/行内代码/数学之后提取：代码里的字面量不会被当卡片。
+  const fileCards = [];
+  t = t.replace(/\[\[\s*file:\s*([^\]|]+?)\s*(?:\|\s*([^\]|]*?)\s*)?\]\]/gi, (_, rawPath, label) => {
+    const sb = sandboxPath(`sandbox:${String(rawPath).trim()}`);
+    if (!sb) return _;
+    fileCards.push({ path: sb, label: String(label || '').trim() });
+    return `\uE000FILE${fileCards.length - 1}\uE000`;
+  });
+
   const peeled = peelChoices(t);
   t = peeled.rest;
   // 模型有时会把块结束符写成 `:::>`（紧接着引用块的 > 警告标记连在同一行），
@@ -772,6 +800,15 @@ export function renderMarkdown(src) {
       const d = diagrams[+i];
       return renderQuickDiagram(d.kind, d.body, d.title);
     };
+    const fileAt = (_, i) => {
+      const f = fileCards[+i];
+      if (!f) return '';
+      const name = f.label || (f.path.split('/').pop() || f.path);
+      return `<button type="button" class="sb-file-card" data-sb-open="${esc(f.path)}" data-sb-name="${esc(name)}" title="${esc(f.path)} · ${esc(messageLocaleText('点击打开预览', 'click to preview'))}">`
+        + `<span class="sb-file-card-ico">${ICON.file || ''}</span>`
+        + `<span class="sb-file-card-name mono">${esc(name)}</span>`
+        + `<span class="sb-file-card-meta mono" data-sb-meta></span></button>`;
+    };
     let out = html.replace(/<p>\s*\uE000FOLD(\d+)\uE000\s*<\/p>/g, foldAt)
       .replace(/\uE000FOLD(\d+)\uE000/g, foldAt)
       .replace(/<p>\s*\uE000ALIGN(\d+)\uE000\s*<\/p>/g, alignAt)
@@ -780,6 +817,8 @@ export function renderMarkdown(src) {
       .replace(/\uE000CHART(\d+)\uE000/g, chartAt)
       .replace(/<p>\s*\uE000DIAGRAM(\d+)\uE000\s*<\/p>/g, diagramAt)
       .replace(/\uE000DIAGRAM(\d+)\uE000/g, diagramAt)
+      .replace(/<p>\s*\uE000FILE(\d+)\uE000\s*<\/p>/g, fileAt)
+      .replace(/\uE000FILE(\d+)\uE000/g, fileAt)
       .replace(/<p>\s*\uE000FONT(\d+)\uE000\s*<\/p>/g, fontAt)
       .replace(/\uE000FONT(\d+)\uE000/g, fontAt)
       .replace(/<p>\s*\uE000COLOR(\d+)\uE000\s*<\/p>/g, colorAt)

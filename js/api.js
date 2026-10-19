@@ -71,7 +71,9 @@ async function request(path, { method = 'POST', headers = {}, body, signal, gate
     catch (err) {
       if (signal?.aborted) throw err;
       if (isNetworkError(err)) {
-        const wrapped = new Error(`${spec.name} 直连失败（浏览器 CORS、网络或网关地址可能不允许）；为保护 API Key，未改发 TeamoRouter。${err.message || ''}`);
+        // 浏览器把「CSP connect-src 拦截 / 目标站拒绝 CORS / DNS·连接失败」都抛成同一种 TypeError；
+        // 提示里把 CSP 放在最前——第一方直连最常见的根因就是页面 CSP 没放行该网关域名。
+        const wrapped = new Error(`${spec.name} 直连失败（页面 CSP 未放行该域名、目标站不允许浏览器跨域、网络或网关地址有误）；为保护 API Key，未改发 TeamoRouter。${err.message || ''}`);
         wrapped.cause = err;
         throw wrapped;
       }

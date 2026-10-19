@@ -8711,7 +8711,7 @@ test('识图 / 视频识别模型表：只给少数有特点的档位，默认�
   assert.equal(cfg.resolveVideoModel('gemini-3.5-flash-lite'), 'gemini-3.5-flash-lite');
 });
 
-test('设置页「多模态模型」：两个下拉 + 默认值进 state + settings.js 绑定并透传到工具 ctx', async () => {
+test('设置页「多模态模型」：音视频解析合并为一个下拉 + 默认值进 state + settings.js 绑定并透传到工具 ctx', async () => {
   const fsp = await import('node:fs');
   const app = fsp.readFileSync(new URL('../app.html', import.meta.url), 'utf8');
   const settings = fsp.readFileSync(new URL('../js/settings.js', import.meta.url), 'utf8');
@@ -8720,11 +8720,16 @@ test('设置页「多模态模型」：两个下拉 + 默认值进 state + setti
     + fsp.readFileSync(new URL('../js/toolrunner.js', import.meta.url), 'utf8'); // P4：toolCtxFor 住在 toolrunner.js
   assert.match(app, /<h4>多模态模型<\/h4>/);
   assert.match(app, /<select id="set-vision-model" class="set-select"/);
-  assert.match(app, /<select id="set-video-model" class="set-select"/);
+  assert.match(app, /<select id="set-av-model" class="set-select"/);
+  assert.doesNotMatch(app, /id="set-video-model"|id="set-audio-model"/, '音视频解析模型已合并为 set-av-model，不再有两个独立下拉');
+  assert.match(app, /<div class="set-title">音视频解析模型<\/div>/);
   assert.match(settings, /bindModelSelect\('#set-vision-model', 'visionModel', resolveVisionModel\)/);
-  assert.match(settings, /bindModelSelect\('#set-video-model', 'videoModel', resolveVideoModel\)/);
+  assert.match(settings, /\$\('#set-av-model'\)/, 'settings.js 绑定合并后的音视频解析下拉');
+  assert.match(settings, /store\.state\.settings\.videoModel = id;\s*store\.state\.settings\.audioModel = id;/, '一次选择同时写入 videoModel / audioModel（共用一档）');
   assert.match(settings, /function syncMultimodalSelects\(store\)/);
   assert.equal((state.match(/visionModel: 'deepseek-v4-flash-vision-exp', videoModel: 'gemini-3.5-flash-lite', audioModel: 'gemini-3.5-flash-lite', imageRemoteReview: true/g) || []).length, 2, '初始 state 与旧快照补默认两处都要有');
+  assert.match(state, /if \(!state\.settings\.videoModel && state\.settings\.audioModel\) state\.settings\.videoModel = state\.settings\.audioModel;/, '旧快照只有 audioModel 时收敛到 videoModel');
+  assert.match(state, /state\.settings\.audioModel = state\.settings\.videoModel \|\| 'gemini-3\.5-flash-lite';\s*state\.settings\.videoModel = state\.settings\.audioModel;/, '两者永远收敛到同一档位');
   assert.match(agent, /visionModel: settings\.visionModel \|\| null,\s*videoModel: settings\.videoModel \|\| null,/);
   assert.match(agent, /visionModel: turn\.visionModel,\s*videoModel: turn\.videoModel,\s*audioModel: turn\.audioModel,\s*sandboxEnabled: turn\.sandboxEnabled,/, '主回合工具 ctx 透传');
   assert.match(agent, /visionModel: visionModel \|\| null, videoModel: videoModel \|\| null/, '子智能体工具 ctx 透传');
@@ -8858,9 +8863,9 @@ test('沙箱视频可播放：文件面板 <video>（blob URL）、气泡海报�
   const app = fsp.readFileSync(new URL('../app.html', import.meta.url), 'utf8');
   const css = fsp.readFileSync(new URL('../css/styles.css', import.meta.url), 'utf8');
   const ui = readUiSource();
-  assert.match(panel, /const videoUrl = \/\^data:video\\\/\/i\.test\(rawStr\) \? videoBlobUrl\(rawStr\) : '';/);
+  assert.match(panel, /const videoUrl = \/\^data:video\\\/\/i\.test\(rawStr\) \? mediaBlobUrl\(rawStr\) : '';/);
   assert.match(panel, /<div class="fv-video"><video controls playsinline preload="metadata" src="\$\{esc\(videoUrl\)\}"/);
-  assert.match(panel, /URL\.revokeObjectURL\(videoUrl\)/, '关闭时释放 blob');
+  assert.match(panel, /URL\.revokeObjectURL\(blobUrl\)/, '关闭时释放 blob');
   assert.match(panel, /isVideo: \/\^data:video\\\/\/\.test\(str\)/);
   assert.match(app, /media-src 'self' blob: data:;/, 'CSP 必须放行 blob: 媒体，否则 <video> 不出声不出画');
   assert.match(ui, /export function videoBlobUrl\(dataUrl\)/);
@@ -10749,7 +10754,7 @@ test('设置页文案瘦身：说明只留「什么时候会用到这条设置�
     assert.ok(!app.includes(gone), `设置页不应再有冗长说明：${gone}`);
   }
   const st = fsp.readFileSync(new URL('../js/settings.js', import.meta.url), 'utf8');
-  assert.match(st, /note\.textContent = `\$\{im\.label \|\| image\} · \$\{vi\.label \|\| vision\} · \$\{vd\.label \|\| video\}`;/, '多模态一行只报当前三档标签');
+  assert.match(st, /note\.textContent = `\$\{im\.label \|\| image\} · \$\{vi\.label \|\| vision\} · \$\{vd\.label \|\| av\}`;/, '多模态一行只报当前三档标签');
   assert.match(st, /note\.textContent = custom\s*\?\s*`自定义（默认 \$\{DEFAULT_TURN_BUDGET\.maxExternalSideEffects\} \/ \$\{DEFAULT_TURN_BUDGET\.maxToolCalls\}）`\s*:\s*'默认值';/, '预算脚注缩成一行');
   assert.match(st, /if \(note\) note\.textContent = `已清除 \$\{r\.cacheStores\} 个缓存（\$\{r\.cacheEntries\} 条）· 请在任务结束后刷新，重新建立资源缓存`;/);
 });

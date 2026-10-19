@@ -4,7 +4,7 @@ import { sandboxProject, sandboxBrowserRequest, probeLocalBrowser } from './loca
 // 职责：文件树渲染（容量条 / 折叠目录 / 行内操作）、单文件与整包 ZIP 下载、文件预览窗。
 // 只依赖 store.state.files 与少量渲染工具；通过 installFilesPanel(deps) 注入，返回 { renderFiles, openFileViewer, downloadFile }。
 import { createZip, fileBytesFromValue, withExtension, mimeFromPath } from './zip.js';
-import { buildFileTree, collectPaths, treeStats, flattenTree } from './filetree.js';
+import { buildFileTree, treeStats, flattenTree } from './filetree.js';
 import { ICON } from './icons.js';
 import { SANDBOX_STORAGE_CAP, sandboxQuotaLabel } from './storagefmt.js';
 import { pdfToImages } from './pdfpages.js';
@@ -15,8 +15,8 @@ import { readableFileText } from './file-text.js';
 import { fvNoticeHtml, csvTableHtml, dualViewKind, DUAL_VIEW_MAX, viewModesHtml, applyViewMode, openFileSwitcher } from './ui-file-viewer.js';
 import { motionAllowed } from './page-fx.js?v=2026.10.11.1';
 
-// data:video/… → blob URL（与 ui.js 气泡播放同一做法；独立实现以免 split 模块反向 import ui.js）
-function videoBlobUrl(dataUrl) {
+// data:video/…、data:audio/… → blob URL（与 ui.js 气泡播放同一做法；独立实现以免 split 模块反向 import ui.js）
+function mediaBlobUrl(dataUrl) {
   const s = String(dataUrl || '');
   const m = /^data:([^;,]+);base64,/.exec(s);
   if (!m) return '';
@@ -27,6 +27,7 @@ function videoBlobUrl(dataUrl) {
     return URL.createObjectURL(new Blob([u8], { type: m[1] }));
   } catch { return ''; }
 }
+const videoBlobUrl = mediaBlobUrl;
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const el = (tag, cls, html) => { const n = document.createElement(tag); if (cls) n.className = cls; if (html != null) n.innerHTML = html; return n; };
@@ -240,32 +241,28 @@ export function installFilesPanel({ store, agent, toast, fmtSize, highlightCode,
         row.setAttribute('role', 'button');
         row.tabIndex = 0;
         row.setAttribute('aria-expanded', String(!closed));
+        // 目录行不放复制 / 下载按钮（点整行折叠展开）；最外层目录（如 uploads）直接给出文件总数与总体积
+        const countLabel = localeText(`${Number(r.count) || 0} 个文件`, `${Number(r.count) || 0} files`);
+        const meta = r.depth === 0
+          ? `${countLabel} · ${fmtSize(Number(r.size) || 0)}`
+          : countLabel;
         row.innerHTML = `<span class="ft-chev">${ICON.chevRight}</span>`
           + `<span class="ft-ico">${closed ? ICON.folder : ICON.folderOpen}</span>`
           + `<span class="ft-name">${esc(r.name)}</span>`
-          + `<span class="ft-meta ft-dir-count">${localeText(`${Number(r.count) || 0} 个文件`, `${Number(r.count) || 0} files`)}</span>`
-          + `<span class="ft-actions"><button class="files-icon-btn ft-copy" type="button" title="${localeText('复制文件夹名', 'Copy folder name')}" aria-label="${localeText('复制文件夹名', 'Copy folder name')}">${ICON.copy}</button><button class="files-icon-btn ft-zip" type="button" title="${esc(localeText(`下载文件夹 ZIP：${r.name}`, `Download folder ZIP: ${r.name}`))}" aria-label="${esc(localeText(`下载文件夹 ZIP：${r.name}`, `Download folder ZIP: ${r.name}`))}">${ICON.download}</button></span>`;
+          + `<span class="ft-meta ft-dir-count">${meta}</span>`;
         const toggle = () => toggleDirectory(r, row);
         row.addEventListener('click', toggle);
         row.addEventListener('keydown', (e) => {
-          if (e.target !== row && e.target.closest('.ft-actions')) return;
           if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
-        });
-        $('.ft-copy', row).addEventListener('click', (e) => {
-          e.stopPropagation();
-          navigator.clipboard.writeText(r.name).then(() => toast(localeText('已复制文件夹名', 'Folder name copied'), 'ok', 1200), () => toast(localeText('复制失败：浏览器拒绝了剪贴板权限', 'Copy failed: clipboard permission was denied'), 'err'));
-        });
-        $('.ft-zip', row).addEventListener('click', (e) => {
-          e.stopPropagation();
-          saveZip(zipEntriesOf(collectPaths(r)), `dubhe-${r.name || 'folder'}`);
         });
       } else {
         const fr = wsFiles.find((ff) => ff.path === r.path);
         const isSvgFile = !!(fr && fr.isSvg);
+        // 复制 / 下载按钮仅在鼠标悬浮（或键盘聚焦）该行时显示；下载在左、复制靠右
         row.innerHTML = `<span class="ft-sp"></span>`
           + `<span class="ft-ico">${videoSet.has(r.path) ? (ICON.video || '🎬') : (imageSet.has(r.path) || isSvgFile ? ICON.image : ICON.file)}</span>`
           + `<span class="ft-name file-path">${esc(r.name)}</span>`
-          + `<span class="ft-actions"><button class="files-icon-btn ft-copy" type="button" title="${localeText('复制文件名', 'Copy file name')}" aria-label="${localeText('复制文件名', 'Copy file name')}">${ICON.copy}</button><button class="files-icon-btn file-dl" type="button" title="${localeText('下载此文件', 'Download file')}" aria-label="${localeText('下载此文件', 'Download file')}">${ICON.download}</button></span>`;
+          + `<span class="ft-actions"><button class="files-icon-btn file-dl" type="button" title="${localeText('下载此文件', 'Download file')}" aria-label="${localeText('下载此文件', 'Download file')}">${ICON.download}</button><button class="files-icon-btn ft-copy" type="button" title="${localeText('复制文件名', 'Copy file name')}" aria-label="${localeText('复制文件名', 'Copy file name')}">${ICON.copy}</button></span>`;
         $('.ft-copy', row).addEventListener('click', (e) => {
           e.stopPropagation();
           navigator.clipboard.writeText(r.name).then(() => toast(localeText('已复制文件名', 'File name copied'), 'ok', 1200), () => toast(localeText('复制失败：浏览器拒绝了剪贴板权限', 'Copy failed: clipboard permission was denied'), 'err'));
@@ -306,9 +303,32 @@ export function installFilesPanel({ store, agent, toast, fmtSize, highlightCode,
     const textStr = textView && !textView.binary ? textView.text : rawStr;
     let bodyHtml = '';
     // 视频（uploads/*.mp4 等 data:video/…）：转 blob URL 交给 <video controls>（CSP media-src 放行 blob:）
-    const videoUrl = /^data:video\//i.test(rawStr) ? videoBlobUrl(rawStr) : '';
+    const videoUrl = /^data:video\//i.test(rawStr) ? mediaBlobUrl(rawStr) : '';
+    // 音频（mp3/wav/m4a/… data:audio/…）：同样转 blob 交给 <audio controls>
+    const audioUrl = /^data:audio\//i.test(rawStr) ? mediaBlobUrl(rawStr) : '';
+    const isAudio = !!audioUrl || /\.(mp3|wav|m4a|aac|ogg|oga|flac|weba)$/i.test(lower);
+    // Office 三件套与 ZIP：结构化预览（office-preview.js 按需加载）；旧版 .doc/.ppt/.xls 只给说明
+    const officeKind = /\.(xlsx|xlsm)$/i.test(lower) ? 'xlsx'
+      : /\.docx$/i.test(lower) ? 'docx'
+        : /\.pptx$/i.test(lower) ? 'pptx'
+          : /\.zip$/i.test(lower) ? 'zip' : '';
+    const isLegacyOffice = /\.(doc|ppt|xls)$/i.test(lower);
+    const FV_OFFICE_MAX = 16 * 1024 * 1024;
     if (videoUrl) {
       bodyHtml = `<div class="fv-video"><video controls playsinline preload="metadata" src="${esc(videoUrl)}" title="${esc(path)}"></video><div class="fv-video-meta mono">${esc(path.split('/').pop())} · ${fmtSize(byteLen)}</div></div>`;
+    } else if (isAudio) {
+      // 上传的音频以 data:audio/… 存放；没有可解码内容时给下载提示
+      bodyHtml = audioUrl
+        ? `<div class="fv-audio"><audio controls preload="metadata" src="${esc(audioUrl)}" title="${esc(path)}"></audio><div class="fv-video-meta mono">${esc(path.split('/').pop())} · ${fmtSize(byteLen)}</div></div>`
+        : fvNoticeHtml('binary', localeText('无法在浏览器内播放此音频', 'Cannot play this audio file here'), localeText('文件内容不可解码，请下载后播放。', 'The content is not decodable here. Download it to play.'));
+    } else if (officeKind && byteLen <= FV_OFFICE_MAX) {
+      bodyHtml = `<div class="fv-office-host" data-office="${officeKind}"><div class="fv-pdf-loading">${localeText('正在解析预览…', 'Preparing preview…')}</div></div>`;
+    } else if (officeKind) {
+      bodyHtml = fvNoticeHtml('tooBig', localeText(`此文件 <strong>${fmtSize(byteLen)}</strong>，超过预览上限 16MB`, `This file is <strong>${fmtSize(byteLen)}</strong>, above the 16MB preview limit`),
+        localeText('为避免界面卡顿已禁用内联预览，请下载后用本地程序打开。', 'Inline preview is disabled to keep the UI responsive; download it to view.'));
+    } else if (isLegacyOffice) {
+      bodyHtml = fvNoticeHtml('binary', localeText('旧版 Office 格式 · <strong>不支持内联预览</strong>', 'Legacy Office format · <strong>no inline preview</strong>'),
+        localeText('请先在本机用 Office / WPS 另存为 .docx / .pptx / .xlsx 再上传，或下载后用本地程序打开。', 'Save it as .docx / .pptx / .xlsx in Office or WPS first, or download and open it locally.'));
     } else if (imgSrc) {
       bodyHtml = `<div class="fv-img"><img src="${esc(imgSrc)}" alt="${esc(path)}"></div>`;
     } else if (svgContent) {
@@ -352,6 +372,7 @@ export function installFilesPanel({ store, agent, toast, fmtSize, highlightCode,
       + (dualPreview ? viewModesHtml(viewMode) : '')
       + `<button id="fv-dl" type="button" title="${localeText('下载此文件', 'Download file')}" aria-label="${localeText('下载此文件', 'Download file')}">${ICON.download}<span>下载</span></button>`
       + (/\.html?$/i.test(lower) ? `<button id="fv-run" type="button" title="在本地沙箱服务运行并用 Chromium 调试">${ICON.terminal || ICON.tool}<span>运行网页</span></button>` : '')
+      + `<button id="fv-full" type="button" title="${localeText('全屏预览', 'Fullscreen preview')}" aria-label="${localeText('全屏预览', 'Fullscreen preview')}" aria-pressed="false">${ICON.expand}<span>${localeText('全屏', 'Fullscreen')}</span></button>`
       + `<button id="fv-close" type="button" title="关闭">${ICON.x}</button></span></div>`
       + bodyHtml;
     viewer.classList.add('open');
@@ -376,11 +397,13 @@ export function installFilesPanel({ store, agent, toast, fmtSize, highlightCode,
         files: agent.fs.list().filter((f) => !isInternal(f.path)),
         onPick: (next) => openFileViewer(next), onClose: () => { closeSwitcher = null; } });
     });
-    if (videoUrl) {
+    if (videoUrl || audioUrl) {
       // 关闭 / 切换文件时释放 blob，避免反复打开把内存吃满
-      const vid = $('.fv-video video', viewer);
-      const release = () => { try { URL.revokeObjectURL(videoUrl); } catch { /* noop */ } };
-      const mo = new MutationObserver(() => { if (!vid || !vid.isConnected || !viewer.classList.contains('open')) { release(); mo.disconnect(); } });
+      const mediaEl = $('.fv-video video, .fv-audio audio', viewer);
+      const blobUrl = videoUrl || audioUrl;
+      const release = () => { try { URL.revokeObjectURL(blobUrl); } catch { /* noop */ } };
+      const MO = globalThis.MutationObserver || window.MutationObserver;
+      const mo = new MO(() => { if (!mediaEl || !mediaEl.isConnected || !viewer.classList.contains('open')) { release(); mo.disconnect(); } });
       mo.observe(viewer, { childList: true, attributes: true, attributeFilter: ['class'] });
     }
     $('#fv-close').addEventListener('click', () => closeViewer());
@@ -409,6 +432,49 @@ export function installFilesPanel({ store, agent, toast, fmtSize, highlightCode,
     });
     const pdfBox = $('.fv-pdf', viewer);
     if (pdfBox) renderPdfPreview(pdfBox, rawStr, path);
+    const officeBox = $('.fv-office-host', viewer);
+    if (officeBox) renderOfficePreview(officeBox, officeBox.dataset.office || 'zip', rawStr);
+    // 全屏预览：所有文件类型共用同一个查看器，一键放大到整个视口（CSS 全屏，兼容不支持 Fullscreen API 的 iOS Safari）
+    const fullBtn = $('#fv-full', viewer);
+    const syncFullBtn = () => {
+      if (!fullBtn) return;
+      const on = viewer.classList.contains('fv-fullscreen');
+      fullBtn.innerHTML = `${on ? ICON.compress : ICON.expand}<span>${localeText(on ? '退出全屏' : '全屏', on ? 'Exit' : 'Fullscreen')}</span>`;
+      fullBtn.title = localeText(on ? '退出全屏预览' : '全屏预览', on ? 'Exit fullscreen preview' : 'Fullscreen preview');
+      fullBtn.setAttribute('aria-pressed', String(on));
+    };
+    syncFullBtn();
+    if (fullBtn) fullBtn.addEventListener('click', () => {
+      viewer.classList.toggle('fv-fullscreen');
+      syncFullBtn();
+    });
+  }
+
+  // Office / ZIP 预览：按需加载 office-preview.js，结果直接内嵌到查看器（失败给可下载的提示）
+  async function renderOfficePreview(box, kind, rawStr) {
+    const generation = viewerGeneration;
+    try {
+      const mod = await import('./office-preview.js?v=2026.10.11.1');
+      const html = kind === 'xlsx' ? await mod.xlsxPreviewHtml(rawStr)
+        : kind === 'docx' ? await mod.docxPreviewHtml(rawStr)
+          : kind === 'pptx' ? await mod.pptxPreviewHtml(rawStr)
+            : await mod.zipListHtml(rawStr);
+      if (generation !== viewerGeneration || !box.isConnected) return;
+      box.innerHTML = html;
+      box.classList.remove('fv-office-host');
+      box.classList.add('fv-office-wrap');
+      // xlsx 工作表选项卡
+      const tabs = [...box.querySelectorAll('.fv-sheet-tab')];
+      tabs.forEach((tab) => tab.addEventListener('click', () => {
+        tabs.forEach((t) => t.classList.toggle('active', t === tab));
+        box.querySelectorAll('[data-sheet-pane]').forEach((pane) => {
+          pane.hidden = pane.dataset.sheetPane !== tab.dataset.sheet;
+        });
+      }));
+    } catch (err) {
+      if (generation !== viewerGeneration || !box.isConnected) return;
+      box.innerHTML = fvNoticeHtml('binary', localeText('预览失败', 'Preview failed'), `${esc(err.message || String(err))} · ${localeText('请下载后用本地程序打开', 'download and open it locally')}`);
+    }
   }
 
   // 关闭查看器：只摘 .open 类的话 <video> 还挂在 DOM 里继续出声（.26 前的 bug：点 ✕ 后音频照放）。
@@ -430,8 +496,23 @@ export function installFilesPanel({ store, agent, toast, fmtSize, highlightCode,
   function closeViewer() {
     stopViewerMedia();
     const viewer = $('#file-viewer');
-    if (viewer) viewer.classList.remove('open');
+    if (viewer) {
+      viewer.classList.remove('open');
+      viewer.classList.remove('fv-fullscreen');
+    }
   }
+  // Esc：全屏预览先退出全屏（不关查看器）；再按一次关闭查看器（与灯箱一致）
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    const viewer = $('#file-viewer');
+    if (!viewer || !viewer.classList.contains('open')) return;
+    if (viewer.classList.contains('fv-fullscreen')) {
+      viewer.classList.remove('fv-fullscreen');
+      e.preventDefault();
+      return;
+    }
+    closeViewer();
+  });
 
   const FV_PDF_PAGES = 6;
   async function renderPdfPreview(box, rawStr, path) {

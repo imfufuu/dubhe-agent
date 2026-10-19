@@ -14,6 +14,13 @@
 - 2026-10-18 工作台修整：文件模式切换按钮从 28px 压低到 24px；流式 Markdown 除新块整段淡入外，同一段落持续增长时也只淡入本次新增尾文本，并尊重减少动效偏好。
 - 新增 `pull_github_project` 快捷工具：公开 GitHub 仓库 URL + 可选 ref，自动读取默认分支，复用现有 Worker `/api/file` 路由下载 ZIP（≤16MB），解压 ≤24MB / 2048 个文件，默认落到 `uploads/github/<owner>/<repo>`；支持 Cloudflare Worker，不覆盖已有文件，失败回滚。明确是源码快照，不含 Git 历史、不支持私有仓库或认证；补齐文件数/存储/路径边界和常见二进制资源字节保真。
 - 2026-10-18 验证：新增 GitHub Worker 导入与流式尾文本动画专项回归并接入 CI；完整 `npm test` 1008 项、16 个测试文件、0 跳过，全部通过。
+- 2026-10-19 第一方直连修复：app 页面 CSP `connect-src` 放行 DeepSeek、Anthropic、OpenAI、Gemini、智谱、xAI、Moonshot、火山方舟、DashScope 官方 API 域名，DeepSeek 等第一方直连不再被页面 CSP 拦成 `Failed to fetch`；直连失败提示点名 CSP/CORS/网络而非「Key 无效」。切换网关不再弹出 API Key 输入框，仅在真正缺 Key 发送时提示；切换后地址栏同步新域名。
+- 2026-10-19 文件面板按钮：复制/下载按钮仅悬浮或键盘聚焦时显示（下载在左、复制靠右）；目录行不再有复制/下载/打包按钮；最外层目录行显示文件总数目与总体积。
+- 2026-10-19 沙箱文件预览增强：xlsx/xlsm 多工作表表格（标签切换）、docx 标题/段落/列表/表格、pptx 按页大纲、zip 条目清单内联预览（≤16MB，本地解析按需加载）；音频内联播放；旧版 .doc/.ppt/.xls 给另存为提示。文件查看器新增全屏预览（全部文件类型），Esc 先退全屏再关闭查看器，不依赖 Fullscreen API，iframe 等脚本隔离预览不受影响。
+- 2026-10-19 `[[file:相对路径]]` / `[[file:相对路径|显示名]]` 文件小卡片：模型输出内嵌可点卡片（图标 + 名称 + 类型体积，缺失标「沙箱中没有这个文件」），点击打开沙箱文件查看器；导出分享文档时转为下载链接；系统提示词与技能库渲染指南同步该语法。
+- 2026-10-19 链接预览：index / app / docs 补齐 Open Graph 与 Twitter 卡片元数据（图标、标题、简介、canonical），转发到聊天平台可见网页图标与摘要。
+- 2026-10-19 音视频解析模型设置合并：`analyze_video` / `analyze_audio` 共用一档 Gemini 设置（videoModel / audioModel 双键同写、旧快照自动收敛），设置页少一行。
+- 2026-10-19 验证：新增 `tests/v19-features.test.mjs` 9 项专项回归（接入 CI）与 dom-smoke 15 项 DOM 冒烟（Office/音频/ZIP 预览、工作表切换、全屏、Esc 分层、文件卡片点击/缺失态）；完整 `npm test` 全绿。
 
 ## Dubhe Agent V1.8.1 · 2026-10-15
 

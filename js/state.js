@@ -428,6 +428,11 @@ export function createStore(onChange) {
       Object.assign(state, parsed);
       // 旧快照里没有的开关要补上默认值（整块 settings 被 parsed 覆盖时不能留下 undefined）
       state.settings = Object.assign({ sandboxEnabled: true, remoteCppEnabled: true, fastMode: false, theme: 'light', thinking: true, reasoningLevel: 'medium', webEnabled: true, jevEnabled: true, visionModel: 'deepseek-v4-flash-vision-exp', videoModel: 'gemini-3.5-flash-lite', audioModel: 'gemini-3.5-flash-lite', imageRemoteReview: true, cleanupUnreferencedFiles: false }, state.settings || {});
+      // 音视频解析模型合并为一个设置：以 videoModel 为准收敛 audioModel（两者同一档位，analyze_video / analyze_audio 共用）；
+      // 旧快照只有 audioModel 时用它顶替 videoModel，两者都有则统一到 videoModel。
+      if (!state.settings.videoModel && state.settings.audioModel) state.settings.videoModel = state.settings.audioModel;
+      state.settings.audioModel = state.settings.videoModel || 'gemini-3.5-flash-lite';
+      state.settings.videoModel = state.settings.audioModel;
       state.memory = pruneMemoryFacts(Array.isArray(state.memory) ? state.memory : []);
       state.learnedSkills = pruneLearnedSkills(Array.isArray(state.learnedSkills) ? state.learnedSkills : []);
       normalizeP1State(); // 旧快照没有这些键 → 补默认；坏形状 → 丢弃而不是带着跑

@@ -1451,7 +1451,7 @@ html[data-motion="off"] .panel-body.panel-tab-enter { animation: none !important
 .ft-row { padding-left: calc(9px + var(--d, 0) * 13px); }
 /* Grid keeps the filename in its own shrinkable track and pins actions to the far edge. */
 .ft-row.ft-file { display: grid; grid-template-columns: 12px 14px minmax(0, 1fr) auto; column-gap: 5px; }
-.ft-row.ft-dir { display: grid; grid-template-columns: 12px 14px minmax(0, 1fr) max-content auto; column-gap: 5px; }
+.ft-row.ft-dir { display: grid; grid-template-columns: 12px 14px minmax(0, 1fr) max-content; column-gap: 5px; }
 .ft-dir { background: transparent; }
 .ft-dir .ft-name { font-weight: 650; letter-spacing: .01em; }
 .ft-chev, .ft-ico, .ft-sp { width: 12px; height: 12px; display: inline-flex; flex-shrink: 0; color: var(--fg-3); }
@@ -1466,8 +1466,8 @@ html[data-motion="off"] .panel-body.panel-tab-enter { animation: none !important
 .ft-actions { display: flex; gap: 2px; flex: 0 0 auto; align-items: center; justify-self: end; margin-left: 0; }
 .ft-row .files-icon-btn { width: 18px; height: 18px; opacity: 0; transition: opacity .16s var(--ease), color .16s var(--ease), background-color .16s var(--ease); }
 .ft-row .files-icon-btn .ico, .ft-row .files-icon-btn svg { width: 12px; height: 12px; }
+/* 复制 / 下载按钮只在悬浮（或键盘聚焦）行时出现；目录行根本没有这两个按钮 */
 .ft-row:hover .files-icon-btn, .ft-row:focus-within .files-icon-btn { opacity: 1; }
-.ft-row.ft-dir .files-icon-btn, .ft-row.ft-file .ft-copy { opacity: 1; }
 #file-list .ft-row.ft-row-collapsing { overflow: hidden; pointer-events: none; animation: ft-row-collapse .19s var(--ease) both; }
 #file-list .ft-row.ft-row-expanding { overflow: hidden; animation: ft-row-expand .22s var(--ease) both; }
 @keyframes ft-row-collapse {
@@ -1496,6 +1496,38 @@ html[data-motion="off"] .panel-body.panel-tab-enter { animation: none !important
 .fv-video { flex: 1; overflow: auto; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 8px; padding: 12px; background: var(--bg-soft); }
 .fv-video video { max-width: 100%; max-height: calc(100% - 28px); border-radius: 8px; border: 1px solid var(--line); background: #000; }
 .fv-video-meta { font-size: var(--ui-fs-11px, 11px); color: var(--fg-3); }
+/* 音频播放器：与视频同风格的居中卡片 */
+.fv-audio { flex: 1; overflow: auto; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 8px; padding: 12px; background: var(--bg-soft); }
+.fv-audio audio { width: min(560px, 100%); }
+/* 全屏预览：所有文件类型一键放大到视口（CSS 全屏，不依赖 Fullscreen API，iOS Safari 也可用） */
+.file-viewer.fv-fullscreen {
+  position: fixed; inset: 0; z-index: 110;
+  border: 0; border-radius: 0; box-shadow: none;
+}
+.file-viewer.fv-fullscreen .file-viewer-head { padding: 12px 16px; }
+.file-viewer.fv-fullscreen .fv-img img { max-height: calc(100vh - 64px); }
+/* Office / ZIP 预览 */
+.fv-office-wrap, .fv-office-host { flex: 1; overflow: auto; }
+.fv-office { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px 18px; }
+.fv-office-meta { font-size: var(--ui-fs-11px, 11px); color: var(--fg-3); }
+.fv-office-note { display: flex; flex-direction: column; gap: 6px; padding: 28px 18px; text-align: center; color: var(--fg-2); }
+.fv-office-note-title { font-size: var(--ui-fs-12_5px, 12.5px); color: var(--fg); }
+.fv-sheet-tabs { display: flex; gap: 4px; flex-wrap: wrap; }
+.fv-sheet-tab {
+  font: inherit; font-size: var(--ui-fs-11px, 11px); padding: 3px 10px; cursor: pointer;
+  color: var(--fg-2); background: var(--bg-soft); border: 1px solid var(--line); border-radius: 999px;
+}
+.fv-sheet-tab.active { color: var(--fg); border-color: var(--fg); background: var(--bg); }
+.fv-sheet-pane { display: flex; flex-direction: column; gap: 8px; }
+.fv-sheet-pane[hidden] { display: none; }
+.fv-docx-body { display: flex; flex-direction: column; gap: 8px; max-width: 860px; }
+.fv-docx-h { margin: 6px 0 0; font-size: var(--ui-fs-13px, 13px); font-weight: 700; color: var(--fg); }
+.fv-docx-p { margin: 0; font-size: var(--ui-fs-12px, 12px); line-height: 1.7; color: var(--fg-2); white-space: pre-wrap; }
+.fv-docx-list { margin: 0; padding-left: 20px; font-size: var(--ui-fs-12px, 12px); line-height: 1.7; color: var(--fg-2); }
+.fv-slides { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+.fv-slide { margin: 0; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: var(--bg-soft); }
+.fv-slide figcaption { font-size: var(--ui-fs-10px, 10px); color: var(--fg-3); margin-bottom: 6px; }
+.fv-slide-text { margin: 0; padding-left: 18px; font-size: var(--ui-fs-11_5px, 11.5px); line-height: 1.65; color: var(--fg-2); }
 .file-viewer.open { display: flex; animation: fadeUp .3s var(--ease) both; }
 .file-viewer.switching > :not(.file-viewer-head) { animation: fvContentSwap .34s cubic-bezier(.22,1,.36,1) both; }
 @keyframes fvContentSwap { from { opacity: 0; transform: translateY(8px) scale(.993); filter: blur(2px); } to { opacity: 1; transform: none; filter: none; } }
@@ -1830,6 +1862,21 @@ html[data-motion="off"] .file-viewer.switching > :not(.file-viewer-head) { anima
 }
 .sb-file.missing { color: var(--fg-3); }
 .sb-dl { font-size: var(--ui-fs-11px, 11px); color: var(--link); text-decoration: underline; text-underline-offset: 2px; }
+/* 文件小卡片（[[file:路径]]）：正文内嵌、点开沙箱文件查看器 */
+.sb-file-card {
+  display: inline-flex; align-items: center; gap: 7px; vertical-align: baseline;
+  margin: 3px 2px; padding: 5px 10px; max-width: 100%;
+  border: 1px solid var(--line); border-radius: 9px; background: var(--bg-soft);
+  color: var(--fg); font: inherit; cursor: pointer; text-align: left;
+  transition: border-color .16s var(--ease), background-color .16s var(--ease), transform .16s var(--ease);
+}
+.sb-file-card:hover, .sb-file-card:focus-visible { border-color: var(--fg-2); background: var(--bg-hover); }
+.sb-file-card:active { transform: translateY(1px); }
+.sb-file-card-ico { display: inline-flex; color: var(--fg-2); flex-shrink: 0; }
+.sb-file-card-ico svg { width: 15px; height: 15px; display: block; }
+.sb-file-card-name { font-size: var(--ui-fs-12px, 12px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px; }
+.sb-file-card-meta { font-size: var(--ui-fs-10px, 10px); color: var(--fg-3); flex-shrink: 0; }
+.sb-file-card.missing { opacity: .68; border-style: dashed; }
 .md-fold { margin: 0; width: 100%; } /* .16 行距统一：与思考/芯片同一节奏 */
 .md-fold-body { margin: 0; padding: 0; }
 .md-align { margin: .35em 0; }

@@ -119,8 +119,9 @@ mountSettings(store, {
   onGatewayChanged: (_gatewayId, details = {}) => {
     if (ui && ui.syncGateway) ui.syncGateway();
     if (details.manualModel) return;
+    // 切换网关/改基础 URL 后不再自动弹出 API Key 输入框：用户已保存的 Key 按网关各自保留，
+    // 真正需要 Key 时（发送消息 / 手动刷新模型）仍会经 onNeedKey / openKeyModal 提示，不打断当前操作。
     if (details.hasKey && ui && ui.refreshModels) ui.refreshModels({ silent: true });
-    else if (!details.hasKey && window.openKeyModal) window.openKeyModal();
   },
   // 设置页任何开关 / 档位 / 主题变化 → 顶栏 pill（沙箱 / 联网 / 快速 / 思考）、能力行、主题按钮同步
   onSettingChanged: (key) => { if (ui && ui.syncToolbar) ui.syncToolbar(); if (key === 'sandboxEnabled') warmSandbox(); },

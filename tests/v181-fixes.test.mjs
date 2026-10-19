@@ -452,7 +452,9 @@ test('快捷导航不抢输入焦点；文件面板可收缩长名称、目录�
   assert.match(css, /\.ft-name[^}]*overflow: hidden; text-overflow: ellipsis/);
   assert.match(css, /\.ft-actions[^}]*justify-self: end; margin-left: 0/);
   assert.match(css, /\.ft-row\.ft-file \{[^}]*grid-template-columns: 12px 14px minmax\(0, 1fr\) auto/);
-  assert.match(css, /\.ft-row\.ft-dir \.files-icon-btn, \.ft-row\.ft-file \.ft-copy \{ opacity: 1; \}/);
+  assert.match(css, /\.ft-row\.ft-dir \{[^}]*grid-template-columns: 12px 14px minmax\(0, 1fr\) max-content;/, '目录行没有操作按钮列');
+  assert.match(css, /\.ft-row:hover \.files-icon-btn, \.ft-row:focus-within \.files-icon-btn \{ opacity: 1; \}/);
+  assert.doesNotMatch(css, /\.ft-row\.ft-dir \.files-icon-btn, \.ft-row\.ft-file \.ft-copy \{ opacity: 1; \}/, '复制/下载按钮只在悬浮时显示，不允许常显规则');
   assert.match(css, /#file-list \.ft-row\.ft-row-collapsing/);
   assert.match(css, /#file-list \.ft-row\.ft-row-expanding/);
   assert.match(css, /\.ft-dir-count/);

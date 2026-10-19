@@ -84,11 +84,12 @@ async function embedMedia(node, selected, fs) {
     for (const v of scope?.querySelectorAll('.att-video[data-att-idx]') || []) {
       const a = m.attachments?.[Number(v.dataset.attIdx)]; if (a?.dataUrl?.startsWith('data:video/')) v.dataset.shareVideo = a.dataUrl;
     }
-    for (const a of scope?.querySelectorAll('a[href^="sandbox:"],.sb-dl[data-sb-dl]') || []) {
-      const path = a.dataset.sbDl || (a.getAttribute('href') || '').replace(/^sandbox:\/\//, '');
+    for (const a of scope?.querySelectorAll('a[href^="sandbox:"],.sb-dl[data-sb-dl],.sb-file-card[data-sb-open]') || []) {
+      const path = a.dataset.sbDl || a.dataset.sbOpen || (a.getAttribute('href') || '').replace(/^sandbox:\/\//, '');
       let raw; try { raw = fs.read(path); } catch { raw = null; }
       if (raw == null) { a.removeAttribute('href'); continue; }
-      const link = document.createElement('a'); link.className = 'share-file'; link.textContent = a.textContent || path;
+      const link = document.createElement('a'); link.className = 'share-file';
+      link.textContent = a.dataset.sbName || a.textContent || path.split('/').pop() || path;
       link.href = /^data:/i.test(raw) ? raw : await dataURL(new Blob([raw], { type: 'text/plain;charset=utf-8' })); link.download = path.split('/').pop(); a.replaceWith(link);
     }
   }

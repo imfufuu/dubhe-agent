@@ -79,6 +79,10 @@ jobs:
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/v181-fixes.test.mjs
 
+      - name: tests/v19-features.test.mjs · V1.9 直连/文件卡片/Office 预览/全屏/OG/音视频合并
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/v19-features.test.mjs
+
       - name: '汇总测试计数（::notice:: + job summary）'
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs --summary

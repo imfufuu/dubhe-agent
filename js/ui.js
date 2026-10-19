@@ -2423,6 +2423,14 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       showRouterPop(routerChip, ri, realModel);
       return;
     }
+    // 文件小卡片（[[file:路径]]）：点开沙箱文件查看器
+    const sbOpen = e.target.closest('[data-sb-open]');
+    if (sbOpen) {
+      e.preventDefault();
+      const path = sbOpen.getAttribute('data-sb-open') || '';
+      if (path && typeof openFileViewer === 'function') openFileViewer(path);
+      return;
+    }
     const dl = e.target.closest('[data-sb-dl]');
     if (dl) {
       e.preventDefault();

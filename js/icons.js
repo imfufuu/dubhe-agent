@@ -41,6 +41,8 @@ export const ICON = {
   video: ico('<rect x="3" y="5" width="13" height="14" rx="2.2"/><path d="m16 10 5-3v10l-5-3z"/><path d="m8.2 9.6 4 2.4-4 2.4z"/>'),
   chevRight: ico('<path d="m9.5 5.5 6.5 6.5-6.5 6.5"/>'),
   x: ico('<path d="M6 6 18 18"/><path d="M18 6 6 18"/>'),
+  expand: ico('<path d="M9 3.5H4.5a1 1 0 0 0-1 1V9"/><path d="M15 3.5h4.5a1 1 0 0 1 1 1V9"/><path d="M9 20.5H4.5a1 1 0 0 1-1-1V15"/><path d="M15 20.5h4.5a1 1 0 0 0 1-1V15"/>'),
+  compress: ico('<path d="M4 9h4.5V4.5"/><path d="M20 9h-4.5V4.5"/><path d="M4 15h4.5v4.5"/><path d="M20 15h-4.5v4.5"/>'),
   // 消息操作条 / 侧栏按钮（同一 24 视图 + 1.9 描边，与 pill 一致）
   copy: ico('<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M15 5.5A2.5 2.5 0 0 0 12.5 3H6a3 3 0 0 0-3 3v6.5A2.5 2.5 0 0 0 5.5 15"/>'),
   share: ico('<path d="M3.5 21C3.5 12.5 7.7 7 14 7V3l8 8-8 7v-5c-4.5 0-8 2.8-10.5 8Z"/>'),

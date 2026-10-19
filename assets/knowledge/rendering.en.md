@@ -3,7 +3,7 @@
 - Avoid decorative emoji by default. Never alter code, paths, commands or original error text to add emoji. Use bold/italic/strikethrough/==highlight== for emphasis, inline code for identifiers; do not emit raw HTML tags.
 - Code: fenced blocks with a language name. Each submitted file or command must be runnable; never replace implementation with ellipses. Split large projects into files and small steps.
 - Math: $...$ for inline math and $$...$$ for display math. Use valid LaTeX; plain prose is not a formula.
-- Deliver workspace files with [label](sandbox://relative/path). Embed images and SVG with ![label](sandbox://outputs/name.png). Never use host paths, file:// or invented download URLs.
+- Deliver workspace files with [label](sandbox://relative/path) or as clickable file cards with [[file:relative/path]] (optional display name via [[file:path|name]] — clicking opens the sandbox file viewer). Embed images and SVG with ![label](sandbox://outputs/name.png). Never use host paths, file:// or invented download URLs.
 - Statistics and physical relationships: :::chart, not generate_image. Available charts include bar, line, area, pie, donut, stacked, histogram, box, scatter, bubble, funnel, sankey and geographic map. Include meaningful labels, units, legend and source where applicable.
 - Use :::flow for process diagrams, :::mind for mind maps, render_mermaid for flow/sequence diagrams and render_dot or SVG for architecture/dependencies. Do not draw structured diagrams using image generation.
 - Important decisions may use complete :::choice Question blocks, with one - option per line and a closing :::, anywhere in a final summary. Prose may precede or follow a complete block; never emit choices mid-tool-loop.

@@ -2,8 +2,8 @@ import { installModerationSetting } from './ui-moderation-setting.js';
 import { updateScriptCache } from './cache-update.js';
 import { text as localeText } from './locale.js';
 import { getLanguage, onLanguageChange } from './locale.js';
-// 设置弹窗：API Key / 中继地址 / 主题 / 字号 / 沙箱 / 联网 / 快速 / 思考 / 识图·视频识别模型 / 清空数据 / 关于
-import { APP_RELEASE, APP_VERSION, STORAGE_KEY, VISION_MODELS, VIDEO_MODELS, AUDIO_MODELS, IMAGE_MODELS, DEFAULT_IMAGE_MODEL, isImageGenModel, imageModelLabel, resolveVisionModel, resolveVideoModel, resolveAudioModel } from './config.js?v=2026.10.11.1';
+// 设置弹窗：API Key / 中继地址 / 主题 / 字号 / 沙箱 / 联网 / 快速 / 思考 / 识图·音视频解析模型 / 清空数据 / 关于
+import { APP_RELEASE, APP_VERSION, STORAGE_KEY, VISION_MODELS, VIDEO_MODELS, IMAGE_MODELS, DEFAULT_IMAGE_MODEL, isImageGenModel, imageModelLabel, resolveVisionModel, resolveVideoModel } from './config.js?v=2026.10.11.1';
 import { DEFAULT_GATEWAY_ID, getGateway, validateGatewayApiKey, validateGatewayBaseUrl, gatewayModelListLabel, defaultModelForGateway } from './gateway-registry.js?v=2026.10.11.1';
 import { currentRelay, resetRelayProbe, RELAY_OVERRIDE_KEY } from './net.js';
 import { DEFAULT_TURN_BUDGET } from './execution.js?v=2026.10.11.1';
@@ -85,19 +85,19 @@ function fillModelSelect(el, list, current) {
 function syncMultimodalSelects(store) {
   const settings = (store && store.state && store.state.settings) || {};
   const vision = resolveVisionModel(settings.visionModel);
-  const video = resolveVideoModel(settings.videoModel);
+  // 音视频解析模型已合并为一个设置：videoModel 为存档主键，audioModel 与其保持同值（兼容旧快照与工具 ctx）
+  const av = resolveVideoModel(settings.videoModel || settings.audioModel);
   // 生图模型随会话保存（store.state.imageModel），不在 settings 里；不在目录内的值退回默认
   const image = isImageGenModel(store && store.state && store.state.imageModel) ? store.state.imageModel : DEFAULT_IMAGE_MODEL;
   fillModelSelect($('#set-image-model'), IMAGE_MODELS, image);
   fillModelSelect($('#set-vision-model'), VISION_MODELS, vision);
-  fillModelSelect($('#set-video-model'), VIDEO_MODELS, video);
-  fillModelSelect($('#set-audio-model'), AUDIO_MODELS, resolveAudioModel(settings.audioModel));
+  fillModelSelect($('#set-av-model'), VIDEO_MODELS, av);
   const note = $('#set-mm-note');
   if (note) {
     const vi = VISION_MODELS.find((m) => m.id === vision) || {};
-    const vd = VIDEO_MODELS.find((m) => m.id === video) || {};
+    const vd = VIDEO_MODELS.find((m) => m.id === av) || {};
     const im = IMAGE_MODELS.find((m) => m.id === image) || {};
-    note.textContent = `${im.label || image} · ${vi.label || vision} · ${vd.label || video}`;
+    note.textContent = `${im.label || image} · ${vi.label || vision} · ${vd.label || av}`;
   }
 }
 
@@ -437,11 +437,19 @@ export function mountSettings(store, { onRelayChanged, onKeySaved, onSettingChan
     toast(`生图模型已切换为 ${imageModelLabel(id)}（由 Agent 的 generate_image 工具调用，随当前会话保存）`, 'ok');
   });
   bindModelSelect('#set-vision-model', 'visionModel', resolveVisionModel);
-  bindModelSelect('#set-video-model', 'videoModel', resolveVideoModel);
-  bindModelSelect('#set-audio-model', 'audioModel', resolveAudioModel);
+  // 音视频解析模型合并为一个设置：analyze_video / analyze_audio 共用同一档位。
+  // videoModel 是存档主键；audioModel 同步同值，旧快照与工具 ctx 的读取路径无需改动。
+  const avSel = $('#set-av-model');
+  if (avSel) avSel.addEventListener('change', () => {
+    const id = resolveVideoModel(avSel.value);
+    store.state.settings.videoModel = id;
+    store.state.settings.audioModel = id;
+    store.notify();
+    syncMultimodalSelects(store);
+  });
   // 语言切换：模型档位的 tag/note 有中英两版，切换后立刻重排（面板开着时也生效）
   onLanguageChange(() => {
-    for (const sel of ['#set-image-model', '#set-vision-model', '#set-video-model', '#set-audio-model']) { const el = $(sel); if (el) el._lang = ''; }
+    for (const sel of ['#set-image-model', '#set-vision-model', '#set-av-model']) { const el = $(sel); if (el) el._lang = ''; }
     syncMultimodalSelects(store);
   });
 

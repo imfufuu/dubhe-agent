@@ -54,6 +54,7 @@ const { createAgent, copyAttachmentsToFS } = await import(path.join(ROOT, 'js/ag
 const { mountUI } = await import(path.join(ROOT, 'js/ui.js'));
 const { ROUTER_ICON_SVG } = await import(path.join(ROOT, 'js/smartrouter.js'));
 const { createZip } = await import(path.join(ROOT, 'js/zip.js'));
+const { createXlsxWorkbook } = await import(path.join(ROOT, 'js/xlsx.js'));
 
 const store = createStore();
 store.state.apiKey = 'sk-teamo-test';
@@ -242,7 +243,14 @@ const dirs = $$('#file-list .ft-dir').map(rowPath);
 ok('文件行按 data-path 记录完整路径', paths.includes('uploads/cat.png') && paths.includes('uploads/spec.md'), paths.join(','));
 ok('目录节点被识别（uploads / outputs / outputs/nested）', dirs.join(',') === 'outputs,outputs/nested,uploads', dirs.join(','));
 ok('目录行带 aria-expanded', $$('#file-list .ft-dir').every((n) => n.getAttribute('aria-expanded') === 'true'));
-ok('目录名后显示精简的文件数，不让体积挤占行内空间', $$('#file-list .ft-dir')[2].querySelector('.ft-dir-count')?.textContent === '2 个文件' && !/·/.test($$('#file-list .ft-dir')[2].querySelector('.ft-dir-count').textContent), $$('#file-list .ft-dir')[2].textContent);
+ok('最外层目录显示文件总数目与总体积', (() => {
+  const t = $$('#file-list .ft-dir').find((n) => rowPath(n) === 'uploads')?.querySelector('.ft-dir-count')?.textContent || '';
+  return /^2 个文件 · \d/.test(t);
+})(), $$('#file-list .ft-dir').map((n) => `${rowPath(n)}=${n.querySelector('.ft-dir-count')?.textContent}`).join(' | '));
+ok('嵌套目录仍只显示精简的文件数，不让体积挤占行内空间', (() => {
+  const t = $$('#file-list .ft-dir').find((n) => rowPath(n) === 'outputs/nested')?.querySelector('.ft-dir-count')?.textContent || '';
+  return t === '1 个文件' && !/·/.test(t);
+})());
 ok('文件行显示文件名，整条路径挂到行 title', (() => {
   const row = $$('#file-list .ft-file').find((n) => rowPath(n) === 'uploads/cat.png');
   return !!row && row.querySelector('.ft-name').textContent === 'cat.png' && row.title === 'uploads/cat.png';
@@ -252,9 +260,12 @@ ok('目录行 title 提示折叠与数量', (() => {
   return /共 2 个文件/.test(row.title) && /点击折叠/.test(row.title);
 })(), $$('#file-list .ft-dir').map((n) => n.title).join(' | '));
 ok('缩进由 --d 驱动', $$('#file-list .ft-row').some((n) => n.style.getPropertyValue('--d') === '2'), $$('#file-list .ft-row').map((n) => n.style.getPropertyValue('--d')).join(','));
-ok('每行有下载按钮（目录行只有 ZIP）', $$('#file-list .file-dl').length === 3, `${$$('#file-list .file-dl').length} 个`);
-ok('目录行有打包按钮', $$('#file-list .ft-zip').length === 3, `${$$('#file-list .ft-zip').length} 个`);
-ok('目录行显示复制名称与下载 ZIP 操作，且有无障碍名称', $$('#file-list .ft-dir').every((row) => !!row.querySelector('.ft-copy[aria-label]') && !!row.querySelector('.ft-zip[aria-label]') && /复制文件夹名/.test(row.querySelector('.ft-copy').title)), $$('#file-list .ft-dir').map((row) => `${row.querySelector('.ft-copy')?.title} / ${row.querySelector('.ft-zip')?.title}`).join(' | '));
+ok('每个文件行有下载与复制按钮（均带无障碍名），下载在左、复制靠右', $$('#file-list .file-dl').length === 3 && $$('#file-list .ft-file').every((row) => {
+  const acts = [...row.querySelectorAll('.ft-actions .files-icon-btn')].map((b) => b.className);
+  return acts.length === 2 && acts[0].includes('file-dl') && acts[1].includes('ft-copy')
+    && !!row.querySelector('.ft-copy[aria-label]') && !!row.querySelector('.file-dl[aria-label]');
+}), $$('#file-list .ft-file').map((row) => [...row.querySelectorAll('.ft-actions .files-icon-btn')].map((b) => b.className).join(',')).join(' | '));
+ok('目录行不显示复制按钮和下载按钮（也无目录级打包按钮）', $$('#file-list .ft-dir').every((row) => !row.querySelector('.ft-copy') && !row.querySelector('.file-dl') && !row.querySelector('.ft-zip')) && $$('#file-list .ft-zip').length === 0, `ft-zip=${$$('#file-list .ft-zip').length} 个`);
 ok('目录/文件图标为内联 SVG', $$('#file-list .ft-ico').every((n) => !!n.querySelector('svg')));
 ok('文件数单独显示', /3 个文件/.test($('#files-n').textContent), $('#files-n').textContent);
 ok('容量单独显示已用/上限（按字节动态切换 KB/MB）', /\d+\.\d(?:KB|MB)\/120\.0MB/.test($('#files-count').textContent), $('#files-count').textContent);
@@ -266,7 +277,8 @@ ok('折叠时目录子行播放收起动画', $$('#file-list .ft-row-collapsing'
 ui.renderFiles();
 ok('折叠后子文件不再渲染', !$$('#file-list .ft-file').map(rowPath).includes('uploads/cat.png'), $$('#file-list .ft-file').map(rowPath).join(','));
 ok('折叠后 aria-expanded=false 且带 closed 类', uploadsRow().getAttribute('aria-expanded') === 'false' && uploadsRow().classList.contains('closed'));
-ok('文件夹操作始终可见并贴右，文件名使用独立可收缩列', /\.ft-row\.ft-dir \.files-icon-btn[^}]*opacity: 1/.test(cssText) && /\.ft-row\.ft-file \{[^}]*grid-template-columns: 12px 14px minmax\(0, 1fr\) auto/.test(cssText) && /\.ft-actions \{[^}]*justify-self: end/.test(cssText));
+ok('复制/下载按钮只在悬浮或聚焦时显示（无常显规则），文件名使用独立可收缩列', /\.ft-row:hover \.files-icon-btn, \.ft-row:focus-within \.files-icon-btn \{ opacity: 1; \}/.test(cssText) && !/\.ft-row\.ft-dir \.files-icon-btn, \.ft-row\.ft-file \.ft-copy \{ opacity: 1; \}/.test(cssText) && /\.ft-row\.ft-file \{[^}]*grid-template-columns: 12px 14px minmax\(0, 1fr\) auto/.test(cssText) && /\.ft-actions \{[^}]*justify-self: end/.test(cssText));
+ok('目录行网格不再留操作按钮列', /\.ft-row\.ft-dir \{[^}]*grid-template-columns: 12px 14px minmax\(0, 1fr\) max-content;/.test(cssText));
 ok('文件行复制按钮定位在操作区，不与文件名叠压', /\.ft-row\.ft-file \{[^}]*grid-template-columns: 12px 14px minmax\(0, 1fr\) auto/.test(cssText) && /\.ft-row \.files-icon-btn \{ width: 18px; height: 18px;/.test(cssText));
 ok('触屏文件行紧凑至 36px，保留操作按钮触控目标', /\.file-item, \.ft-row \{ min-height: 36px; padding-top: 0; padding-bottom: 0; \}/.test(cssText) && /\.ft-row \.files-icon-btn, \.file-item \.file-dl \{ width: 36px; height: 36px; \}/.test(cssText));
 ok('双视图滑块视觉轨道为 24px，透明触控区仍有 40px', /\.fv-actions \.fv-modes \{[^}]*height: 24px; min-height: 24px/.test(cssText) && /\.fv-actions \.fv-modes button \{[^}]*height: 18px; min-height: 0/.test(cssText) && /\.fv-actions \.fv-modes button::after \{ content:\s*["']{2}; position: absolute; inset: -11px 0; \}/.test(cssText));
@@ -290,10 +302,7 @@ window.HTMLAnchorElement.prototype.click = function () { downloadName = this.get
 click($$('#file-list .file-dl').find((n) => n.closest('.ft-file').dataset.path === 'uploads/spec.md'));
 ok('单文件下载触发且文件名正确', !!download && /spec\.md$/.test(downloadName || ''), String(downloadName));
 ok('单文件下载按钮是 SVG 图标（不是 emoji）', !/⬇|↓/.test($$('#file-list .file-dl')[0].innerHTML) && !!$$('#file-list .file-dl')[0].querySelector('svg'));
-download = null; downloadName = null;
-click($$('#file-list .ft-zip').find((n) => n.closest('.ft-dir').dataset.path === 'uploads'));
-ok('目录 ZIP 下载触发', !!download && download.size > 100, `size=${download?.size}`);
-ok('目录 ZIP 以目录名命名', /^dubhe-uploads-\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}\.zip$/.test(downloadName || ''), String(downloadName));
+ok('目录行点击展开/折叠而不是触发下载（无 ft-zip 按钮可点）', $$('#file-list .ft-zip').length === 0);
 download = null; downloadName = null;
 click($('#download-zip'));
 ok('整包 ZIP 下载触发', !!download && download.size > 100, `size=${download?.size}`);
@@ -848,6 +857,72 @@ console.log('\n㉑ P8 单点依赖：失败态点「联网」胶囊 = 重置探�
     globalThis.fetch = oldFetch; net.__setRelayClockForTests(null); net.resetRelayProbe();
   }
 }
+
+
+console.log('\n⑫ 沙箱文件预览增强（V1.9）：Office/音频/ZIP + 全屏 + [[file:]] 卡片');
+// —— xlsx 工作簿：真实查看器路径（含异步 office-preview 模块加载）——
+const toDataUrl = (bytes, mime) => `data:${mime};base64,${Buffer.from(bytes).toString('base64')}`;
+const xlsxBytes = await createXlsxWorkbook({ sheets: [{ name: '销量', rows: [['产品', '数量'], ['苹果', 7], ['香蕉', 3]] }, { name: '备注', rows: [['说明'], ['好']] }] });
+agent.fs.write('outputs/report.xlsx', toDataUrl(xlsxBytes, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'));
+store.state.files = agent.fs.export();
+store.notify();
+ui.renderFiles();
+click($$('#file-list .ft-file').find((n) => rowPath(n) === 'outputs/report.xlsx'));
+await new Promise((r) => setTimeout(r, 30));
+ok('xlsx 在查看器内渲染出表格与工作表标签', !!$('#file-viewer .fv-office .fv-sheet-tab') && /苹果/.test($('#file-viewer .fv-office')?.innerHTML || ''), ($('#file-viewer .fv-office')?.innerHTML || '空').slice(0, 80));
+ok('xlsx 默认停在第一张表', $('#file-viewer .fv-sheet-tab.active')?.textContent === '销量', $('#file-viewer .fv-sheet-tab.active')?.textContent);
+const secondTab = $$('#file-viewer .fv-sheet-tab').find((t) => t.textContent === '备注');
+click(secondTab);
+ok('切换工作表标签只显示对应表', secondTab.classList.contains('active') && /好/.test($$('#file-viewer .fv-sheet-pane').find((p) => !p.hidden)?.textContent || ''), $$('#file-viewer .fv-sheet-pane').map((p) => p.hidden).join(','));
+ok('Office 预览时头部「下载」按钮仍在（兜底另存）', !!$('#file-viewer #fv-dl svg') && /下载/.test($('#file-viewer #fv-dl').textContent));
+
+// —— 全屏预览：按钮切换 + Esc 只退全屏，再 Esc 关查看器 ——
+ok('查看器头部带全屏按钮（SVG + 无障碍名）', !!$('#file-viewer #fv-full svg') && /全屏/.test($('#file-viewer #fv-full').getAttribute('title') || ''), $('#file-viewer #fv-full')?.getAttribute('title'));
+click($('#fv-full'));
+ok('点击全屏后查看器进入全屏态', $('#file-viewer').classList.contains('fv-fullscreen') && /退出全屏/.test($('#fv-full')?.getAttribute('title') || ''));
+window.document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+ok('Esc 退出全屏但不关查看器', !$('#file-viewer').classList.contains('fv-fullscreen') && $('#file-viewer').classList.contains('open'));
+window.document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+ok('再 Esc 关闭查看器', !$('#file-viewer').classList.contains('open'));
+click($$('#file-list .ft-file').find((n) => rowPath(n) === 'uploads/spec.md'));
+click($('#fv-full'));
+ok('文本文件同样可全屏', $('#file-viewer').classList.contains('fv-fullscreen'));
+click($('#fv-full'));
+click($('#fv-close'));
+
+// —— 音频与 ZIP 清单 ——
+agent.fs.write('outputs/song.mp3', 'data:audio/mpeg;base64,AAAA');
+store.state.files = agent.fs.export();
+store.notify();
+ui.renderFiles();
+click($$('#file-list .ft-file').find((n) => rowPath(n) === 'outputs/song.mp3'));
+await new Promise((r) => setTimeout(r, 10));
+ok('音频文件用 <audio> 播放器预览', !!$('#file-viewer .fv-audio audio[controls]'), $('#file-viewer .fv-body')?.innerHTML.slice(0, 60));
+click($('#fv-close'));
+agent.fs.write('outputs/bundle.zip', toDataUrl(await (await createZip([{ name: 'a.txt', bytes: new TextEncoder().encode('hi') }, { name: 'b/c.md', bytes: new TextEncoder().encode('# c') }])).arrayBuffer(), 'application/zip'));
+store.state.files = agent.fs.export();
+store.notify();
+ui.renderFiles();
+click($$('#file-list .ft-file').find((n) => rowPath(n) === 'outputs/bundle.zip'));
+await new Promise((r) => setTimeout(r, 30));
+ok('ZIP 在查看器内列出条目清单', /a\.txt/.test($('#file-viewer .fv-office')?.innerHTML || '') && /b\/c\.md/.test($('#file-viewer .fv-office')?.innerHTML || ''), ($('#file-viewer .fv-office')?.innerHTML || '空').slice(0, 80));
+click($('#fv-close'));
+
+// —— [[file:]] 文件小卡片：消息内嵌、点击打开 ——
+store.state.messages.push({ id: 'fc-1', role: 'assistant', text: '交付 [[file:uploads/spec.md|规格书]] 请查收', done: true, ts: Date.now() });
+ui.rebuildMessages();
+const card = $('#messages .sb-file-card');
+ok('消息内渲染文件小卡片（图标 + 显示名）', !!card && card.dataset.sbOpen === 'uploads/spec.md' && /规格书/.test(card.textContent), $('#messages .msg[data-id="fc-1"] .md')?.innerHTML.slice(0, 100));
+ok('卡片补上文件元信息（类型 · 体积）', /md · \d/.test(card.querySelector('[data-sb-meta]')?.textContent || ''), card?.querySelector('[data-sb-meta]')?.textContent);
+click(card);
+ok('点击卡片打开沙箱文件查看器', $('#file-viewer').classList.contains('open') && /规格/.test($('#file-viewer').textContent || ''));
+click($('#fv-close'));
+store.state.messages.push({ id: 'fc-2', role: 'assistant', text: '缺文件 [[file:outputs/nope.bin]] 一个', done: true, ts: Date.now() });
+ui.rebuildMessages();
+const miss = $('#messages .msg[data-id="fc-2"] .sb-file-card');
+ok('沙箱里没有的文件标 missing 并提示', miss.classList.contains('missing') && /沙箱中没有这个文件/.test(miss.textContent));
+store.state.messages = store.state.messages.filter((m) => !m.id.startsWith('fc-'));
+ui.rebuildMessages();
 
 console.log(failures ? `\n${failures} 项失败 ❌` : '\nDOM 冒烟测试全部通过 ✅');
 process.exit(failures ? 1 : 0);
