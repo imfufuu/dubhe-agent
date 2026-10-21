@@ -9,7 +9,7 @@ import { installFeedback } from './ui-feedback.js';
 import { installSpeechInput } from './ui-speech.js';
 import { createToolPresentation, presentationCallSettled, turnToolResults } from './toolpresentation.js?v=2026.10.11.1';
 import { paintEditFoldContent, syncEditingFold } from './ui-editpreview.js?v=2026.10.11.1';
-import { paintOrderedAssistant, renderToolChipDetail, paintCommandRows, syncToolMenuCursor, ownerOfTool, paintVisibleTurn, activeToolOwner, persistTurnTiming } from './ui-toolflow.js?v=2026.10.11.1';
+import { paintOrderedAssistant, renderToolChipDetail, paintCommandRows, paintKnowledgeFold, syncToolMenuCursor, ownerOfTool, paintVisibleTurn, activeToolOwner, persistTurnTiming } from './ui-toolflow.js?v=2026.10.11.1';
 import { classifyToolResult, toolResultFailed } from './toolwindows.js?v=2026.10.11.1';
 import { adjacentToolMessages, appendToolStream, toolFamily, commandRunFor } from './toolflow.js?v=2026.10.11.1';
 import { createRollbackFx } from './ui-rollback-fx.js?v=2026.10.11.1';
@@ -62,7 +62,7 @@ import { toast, MAX_TOAST_STACK, fmtClock, fmtAgo } from './ui-common.js?v=2026.
 export { toast, MAX_TOAST_STACK };
 
 // 这些工具不进 Ran Commands，而是各自的文件折叠（Explored / Edited File(s)）
-const FILE_FOLD_TOOLS = new Set(['write_file', 'read_file', 'analyze_image', 'analyze_pdf', 'analyze_svg', 'analyze_video', 'analyze_audio']);
+const FILE_FOLD_TOOLS = new Set(['write_file', 'read_file', 'analyze_image', 'analyze_pdf', 'analyze_svg', 'analyze_video', 'analyze_audio', 'knowledge_search']);
 
 export function mountUI(store, agent) {
   let feedbackUI, sharingUI;
@@ -138,7 +138,7 @@ export function mountUI(store, agent) {
   }
   function syncCompletedToolFolds() {
     for (const fold of $$('.ran-commands', msgList)) syncRanCommandsFold(fold);
-    for (const fold of $$('.edited-files, .explored-files', msgList)) syncFileFold(fold);
+    for (const fold of $$('.edited-files, .explored-files, .searched-library', msgList)) syncFileFold(fold);
   }
 
   // 未决的高风险确认卡（每个回合结束时由 agent 作废；重绘消息时一并清掉，避免残留旧卡）
@@ -1662,7 +1662,8 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       }
       return $('.edited-files', wrap) || afterEl;
     };
-    const afterRead = paintPathFold('explored-files', 'read_file', ICON.file, 'Explored file', 'Explored files', chips, pathsOfExplored);
+    const afterKnowledge = paintKnowledgeFold(wrap, m, chips, { msgsAll, msgNodes, syncFileFold, syncAssistantShell, decodeRawJsonString });
+    const afterRead = paintPathFold('explored-files', 'read_file', ICON.file, 'Explored file', 'Explored files', afterKnowledge, pathsOfExplored);
     const currentTurn = idxA >= msgsAll.findLastIndex((x) => x.role === 'user' && !x.silent);
     const resultIds = new Set(toolResults(m.id).keys());
     const writing = currentTurn && getBusy() && !m.cancelled && !presentationStopped && fileCluster('write_file').flatMap((x) => x.toolCalls || []).some((c) => c.name === 'write_file' && !presentationCallSettled(c, resultIds));
@@ -1693,7 +1694,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     let hasFlow = false;
     for (const frag of w.querySelector(':scope > .assistant-flow')?.children || []) {
       const b = frag.querySelector(':scope > .md-body');
-      const empty = !frag.querySelector(':scope > .reasoning, :scope > .explored-files, :scope > .edited-files')
+      const empty = !frag.querySelector(':scope > .reasoning, :scope > .explored-files, :scope > .edited-files, :scope > .searched-library')
         && !frag.querySelector(':scope > .tool-chips')?.children.length && !(b && !b.classList.contains('empty') && b.innerHTML.trim());
       frag.classList.toggle('frag-empty', empty);
       hasFlow ||= !empty;

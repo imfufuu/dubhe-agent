@@ -744,7 +744,7 @@ html { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
 .tool-chips { display: flex; flex-direction: column; gap: 0; margin-top: 0; }
 .chip { border: none; }
 .chip:hover { color: var(--fg-2); }
-.chip, .ran-commands, .reasoning, .md-fold, .edited-files, .explored-files {
+.chip, .ran-commands, .reasoning, .md-fold, .edited-files, .explored-files, .searched-library {
   border: none; background: transparent; padding: 5px 0; margin: 0;
   display: flex; align-items: center; column-gap: 8px; row-gap: 0; flex-wrap: wrap; cursor: pointer;
   font-size: var(--ui-fs-12px, 12px); color: var(--fg-2); line-height: 1.6;
@@ -752,6 +752,8 @@ html { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
   -webkit-tap-highlight-color: transparent;
   outline: none;
 }
+/* 检索行不是开关：完成后不可展开，指针保持默认（2026.10.21） */
+.searched-library { cursor: default; }
 /* 行距统一：思考行 / 工具芯片 / 文件行共用同一垂直节奏（截图中参差不齐的修复） */
 .tool-chips { gap: 0; margin-top: 0; }
 .reasoning { margin: 0; }
@@ -804,6 +806,7 @@ html { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
 .md-fold.expanded > .chip-detail,
 .edited-files.expanded > .chip-detail,
 .explored-files.expanded > .chip-detail,
+.searched-library.expanded > .chip-detail,
 .ran-commands.expanded > .chip-detail,
 .ran-commands.live > .chip-detail,
 .reasoning.live > .chip-detail,
@@ -814,7 +817,8 @@ html { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
 .chip.expanded > .chip-detail > .fold-inner,
 .reasoning.expanded > .chip-detail > .fold-inner,
 .md-fold.expanded > .chip-detail > .fold-inner, .edited-files.expanded > .chip-detail > .fold-inner,
-.explored-files.expanded > .chip-detail > .fold-inner, .ran-commands.expanded > .chip-detail > .fold-inner,
+.explored-files.expanded > .chip-detail > .fold-inner, .searched-library.expanded > .chip-detail > .fold-inner,
+.ran-commands.expanded > .chip-detail > .fold-inner,
 .ran-commands.live > .chip-detail > .fold-inner, .reasoning.live > .chip-detail > .fold-inner, .chip.live > .chip-detail > .fold-inner {
   transform: translate3d(0, 0, 0) scale(1); transition: transform var(--pop-dur) var(--pop-ease);
 }
@@ -1271,7 +1275,7 @@ html[data-motion="off"] .reasoning .think-stream .think-line.entered { animation
   html:not([data-motion="on"]) .reasoning .think-stream .think-line.entered { animation: none !important; }
 }
 .reasoning .chip-state { color: var(--fg-3); font-family: var(--mono); }
-.md-fold .chip-name, .edited-files .chip-name, .explored-files .chip-name { color: var(--fg-3); font-weight: 500; }
+.md-fold .chip-name, .edited-files .chip-name, .explored-files .chip-name, .searched-library .chip-name { color: var(--fg-3); font-weight: 500; }
 .md-fold .chip-ico { transition: transform .28s var(--ease); }
 .md-fold.expanded .chip-ico { transform: rotate(90deg); }
 .reasoning .chip-detail > :first-child { margin-top: 0; }
@@ -2113,9 +2117,9 @@ polyline.md-chart-line, path.md-chart-line { fill: none; stroke: #4f46e5; stroke
 .choice-back:disabled { opacity: .35; text-decoration: none; cursor: default; }
 .choice-box.stale { display: none; }
 .trunc-note { margin-top: 8px; font-size: var(--ui-fs-12px, 12px); color: var(--fg-3); }
-.edited-files, .explored-files { width: 100%; color: var(--fg-2); }
-.edited-files ul, .explored-files ul { margin: 0; padding: 0; list-style: none; }
-.edited-files li, .explored-files li { font-family: var(--mono); font-size: var(--ui-fs-11_5px, 11.5px); color: var(--fg-2); line-height: 1.65; padding: 2.5px 0; } /* V1.8.1：读取 / 写入列表行距加大（19px → 24px） */
+.edited-files, .explored-files, .searched-library { width: 100%; color: var(--fg-2); }
+.edited-files ul, .explored-files ul, .searched-library ul { margin: 0; padding: 0; list-style: none; }
+.edited-files li, .explored-files li, .searched-library li { font-family: var(--mono); font-size: var(--ui-fs-11_5px, 11.5px); color: var(--fg-2); line-height: 1.65; padding: 2.5px 0; } /* V1.8.1：读取 / 写入列表行距加大（19px → 24px） */
 .edited-files li.edit-path-row { padding: 0; line-height: normal; }
 .chip-time { color: var(--fg-3); font-family: var(--mono); font-size: var(--ui-fs-10_5px, 10.5px); }
 
@@ -2575,7 +2579,7 @@ html[data-motion="off"] .tok-pop[data-sheet]:not([hidden]) { animation: none; }
 .chip-state .chip-fail { animation: badgeIn .34s var(--ease-spring) both, shake .4s var(--ease) .34s; }
 .chip-state .chip-time { display: inline-block; line-height: 1; animation: chipIn .3s var(--ease-out) both .08s; }
 /* 命令 / 文件折叠：展开箭头旋转，清单项错落进入 */
-.ran-commands > .chip-ico, .md-fold > .chip-ico, .edited-files > .chip-ico, .explored-files > .chip-ico { transition: transform .26s var(--ease-spring), color .2s var(--ease); }
+.ran-commands > .chip-ico, .md-fold > .chip-ico, .edited-files > .chip-ico, .explored-files > .chip-ico, .searched-library > .chip-ico { transition: transform .26s var(--ease-spring), color .2s var(--ease); }
 .md-fold.expanded > .chip-ico { transform: rotate(90deg); }
 .ran-commands.done:hover > .chip-ico, .md-fold:hover > .chip-ico { transform: translateX(1px); }
 .md-fold.expanded:hover > .chip-ico { transform: rotate(90deg) translateY(-1px); }
@@ -2585,10 +2589,10 @@ html[data-motion="off"] .tok-pop[data-sheet]:not([hidden]) { animation: none; }
 .ran-commands.expanded > .chip-detail .tool-call-chip:nth-child(2) { animation-delay: 40ms; }
 .ran-commands.expanded > .chip-detail .tool-call-chip:nth-child(3) { animation-delay: 80ms; }
 .ran-commands.expanded > .chip-detail .tool-call-chip:nth-child(n+4) { animation-delay: 120ms; }
-.edited-files.expanded .fold-inner li, .explored-files.expanded .fold-inner li { animation: rowIn .24s var(--ease-out) both; }
-.edited-files.expanded .fold-inner li:nth-child(2), .explored-files.expanded .fold-inner li:nth-child(2) { animation-delay: 35ms; }
-.edited-files.expanded .fold-inner li:nth-child(3), .explored-files.expanded .fold-inner li:nth-child(3) { animation-delay: 70ms; }
-.edited-files.expanded .fold-inner li:nth-child(n+4), .explored-files.expanded .fold-inner li:nth-child(n+4) { animation-delay: 100ms; }
+.edited-files.expanded .fold-inner li, .explored-files.expanded .fold-inner li, .searched-library.expanded .fold-inner li { animation: rowIn .24s var(--ease-out) both; }
+.edited-files.expanded .fold-inner li:nth-child(2), .explored-files.expanded .fold-inner li:nth-child(2), .searched-library.expanded .fold-inner li:nth-child(2) { animation-delay: 35ms; }
+.edited-files.expanded .fold-inner li:nth-child(3), .explored-files.expanded .fold-inner li:nth-child(3), .searched-library.expanded .fold-inner li:nth-child(3) { animation-delay: 70ms; }
+.edited-files.expanded .fold-inner li:nth-child(n+4), .explored-files.expanded .fold-inner li:nth-child(n+4), .searched-library.expanded .fold-inner li:nth-child(n+4) { animation-delay: 100ms; }
 /* 侧栏文件树：新行滑入 + 刚变更的文件左侧亮一下；悬停微位移 */
 .ft-row { animation: rowIn .22s var(--ease-out) both; transition: background-color .18s var(--ease), transform .18s var(--ease); }
 .ft-row:hover { transform: translateX(2px); }
@@ -2619,7 +2623,7 @@ html[data-motion="off"] .tok-pop[data-sheet]:not([hidden]) { animation: none; }
 /* 图片编辑器：非旋转类工具图标悬停微放大 */
 .photo-tool-button:hover:not(:disabled):not([data-photo-action^="rotate"]) svg { transform: scale(1.12); }
 @media (prefers-reduced-motion: reduce) {
-  html:not([data-motion="on"]) .chip-state .chip-ok, html:not([data-motion="on"]) .chip-state .chip-fail, html:not([data-motion="on"]) .chip-state .chip-time, html:not([data-motion="on"]) .ran-commands.expanded > .chip-detail .tool-call-chip, html:not([data-motion="on"]) .edited-files.expanded .fold-inner li, html:not([data-motion="on"]) .explored-files.expanded .fold-inner li, html:not([data-motion="on"]) .ft-row, html:not([data-motion="on"]) .tok-pop:not([hidden]), html:not([data-motion="on"]) .tok-pop .tok-row, html:not([data-motion="on"]) #model-menu .dd-item, html:not([data-motion="on"]) .boot-steps li.done b, html:not([data-motion="on"]) .att-row .att-img, html:not([data-motion="on"]) .att-row .att-file, html:not([data-motion="on"]) .fv-pdf-page, html:not([data-motion="on"]) .attach-menu, html:not([data-motion="on"]) .cmd-card, html:not([data-motion="on"]) .cmd-palette, html:not([data-motion="on"]) .bubble-in, html:not([data-motion="on"]) #think-menu .dd-item, html:not([data-motion="on"]) .cmd-item, html:not([data-motion="on"]) .ran-commands.live > .chip-ico .term-caret {animation: none !important; }
+  html:not([data-motion="on"]) .chip-state .chip-ok, html:not([data-motion="on"]) .chip-state .chip-fail, html:not([data-motion="on"]) .chip-state .chip-time, html:not([data-motion="on"]) .ran-commands.expanded > .chip-detail .tool-call-chip, html:not([data-motion="on"]) .edited-files.expanded .fold-inner li, html:not([data-motion="on"]) .explored-files.expanded .fold-inner li, html:not([data-motion="on"]) .searched-library.expanded .fold-inner li, html:not([data-motion="on"]) .ft-row, html:not([data-motion="on"]) .tok-pop:not([hidden]), html:not([data-motion="on"]) .tok-pop .tok-row, html:not([data-motion="on"]) #model-menu .dd-item, html:not([data-motion="on"]) .boot-steps li.done b, html:not([data-motion="on"]) .att-row .att-img, html:not([data-motion="on"]) .att-row .att-file, html:not([data-motion="on"]) .fv-pdf-page, html:not([data-motion="on"]) .attach-menu, html:not([data-motion="on"]) .cmd-card, html:not([data-motion="on"]) .cmd-palette, html:not([data-motion="on"]) .bubble-in, html:not([data-motion="on"]) #think-menu .dd-item, html:not([data-motion="on"]) .cmd-item, html:not([data-motion="on"]) .ran-commands.live > .chip-ico .term-caret {animation: none !important; }
   html:not([data-motion="on"]) .dd-menu, html:not([data-motion="on"]) .md-chart-tooltip, html:not([data-motion="on"]) .chip-detail, html:not([data-motion="on"]) .chip-detail > .fold-inner {transition: none !important; }
   html:not([data-motion="on"]) .chip-detail > .fold-inner {transform: none !important; }
   html:not([data-motion="on"]) .ran-commands > .chip-ico, html:not([data-motion="on"]) .md-fold > .chip-ico, html:not([data-motion="on"]) .ft-row, html:not([data-motion="on"]) .router-chip, html:not([data-motion="on"]) .photo-tool-button {transition: none !important; }
@@ -2639,7 +2643,7 @@ html[data-motion="off"] .sidebar, html[data-motion="off"] #sandbox-panel {transi
 html[data-motion="off"] .boot-card, html[data-motion="off"] .boot-ring, html[data-motion="off"] .boot-ring::after, html[data-motion="off"] .boot-progress-bar::after, html[data-motion="off"] .boot-steps li.active b {animation: none !important; }
 html[data-motion="off"] .msg-user.enter .bubble, html[data-motion="off"] .tool-chips .chip, html[data-motion="off"] .attach-chip, html[data-motion="off"] .attach-menu-item, html[data-motion="off"] .suggest, html[data-motion="off"] .settings-body .set-sec, html[data-motion="off"] .pill.on, html[data-motion="off"] .status .dot {animation: none !important; }
 html[data-motion="off"] .sess-item, html[data-motion="off"] .pill, html[data-motion="off"] .attach-chip, html[data-motion="off"] #send-btn, html[data-motion="off"] .ghost-btn, html[data-motion="off"] .primary-btn, html[data-motion="off"] .icon-btn, html[data-motion="off"] #sidebar-fab {transition: none !important; }
-html[data-motion="off"] .chip-state .chip-ok, html[data-motion="off"] .chip-state .chip-fail, html[data-motion="off"] .chip-state .chip-time, html[data-motion="off"] .ran-commands.expanded > .chip-detail .tool-call-chip, html[data-motion="off"] .edited-files.expanded .fold-inner li, html[data-motion="off"] .explored-files.expanded .fold-inner li, html[data-motion="off"] .ft-row, html[data-motion="off"] .tok-pop:not([hidden]), html[data-motion="off"] .tok-pop .tok-row, html[data-motion="off"] #model-menu .dd-item, html[data-motion="off"] .boot-steps li.done b, html[data-motion="off"] .att-row .att-img, html[data-motion="off"] .att-row .att-file, html[data-motion="off"] .fv-pdf-page, html[data-motion="off"] .attach-menu, html[data-motion="off"] .cmd-card, html[data-motion="off"] .cmd-palette, html[data-motion="off"] .bubble-in, html[data-motion="off"] #think-menu .dd-item, html[data-motion="off"] .cmd-item, html[data-motion="off"] .ran-commands.live > .chip-ico .term-caret {animation: none !important; }
+html[data-motion="off"] .chip-state .chip-ok, html[data-motion="off"] .chip-state .chip-fail, html[data-motion="off"] .chip-state .chip-time, html[data-motion="off"] .ran-commands.expanded > .chip-detail .tool-call-chip, html[data-motion="off"] .edited-files.expanded .fold-inner li, html[data-motion="off"] .explored-files.expanded .fold-inner li, html[data-motion="off"] .searched-library.expanded .fold-inner li, html[data-motion="off"] .ft-row, html[data-motion="off"] .tok-pop:not([hidden]), html[data-motion="off"] .tok-pop .tok-row, html[data-motion="off"] #model-menu .dd-item, html[data-motion="off"] .boot-steps li.done b, html[data-motion="off"] .att-row .att-img, html[data-motion="off"] .att-row .att-file, html[data-motion="off"] .fv-pdf-page, html[data-motion="off"] .attach-menu, html[data-motion="off"] .cmd-card, html[data-motion="off"] .cmd-palette, html[data-motion="off"] .bubble-in, html[data-motion="off"] #think-menu .dd-item, html[data-motion="off"] .cmd-item, html[data-motion="off"] .ran-commands.live > .chip-ico .term-caret {animation: none !important; }
 html[data-motion="off"] .dd-menu, html[data-motion="off"] .md-chart-tooltip, html[data-motion="off"] .chip-detail, html[data-motion="off"] .chip-detail > .fold-inner {transition: none !important; }
 html[data-motion="off"] .chip-detail > .fold-inner {transform: none !important; }
 html[data-motion="off"] .ran-commands > .chip-ico, html[data-motion="off"] .md-fold > .chip-ico, html[data-motion="off"] .ft-row, html[data-motion="off"] .router-chip, html[data-motion="off"] .photo-tool-button {transition: none !important; }
@@ -2655,8 +2659,8 @@ html[data-motion="off"] .md-chart-map-loading, html[data-motion="off"] .md-chart
 .assistant-flow > .assistant-fragment.frag-empty { display: none; }
 .tool-chips:empty { display: none; }
 /* One header rhythm. A zero-height flex detail must not leave a flex row-gap. */
-:is(.chip, .ran-commands, .edited-files, .explored-files, .reasoning, .md-fold) > .chip-detail > .fold-inner { min-height: 0; }
-:is(.chip, .ran-commands, .edited-files, .explored-files, .reasoning, .md-fold):not(.expanded):not(.live) > .chip-detail {
+:is(.chip, .ran-commands, .edited-files, .explored-files, .searched-library, .reasoning, .md-fold) > .chip-detail > .fold-inner { min-height: 0; }
+:is(.chip, .ran-commands, .edited-files, .explored-files, .searched-library, .reasoning, .md-fold):not(.expanded):not(.live) > .chip-detail {
   grid-template-rows: 0fr; min-height: 0; margin-block: 0; padding-block: 0;
 }
 .message-tail { display: block; margin-top: 8px; }
@@ -2780,10 +2784,10 @@ html[data-ui-language="en"] .side-label { text-transform: none; letter-spacing: 
 @keyframes voice-ripple { 0% { transform: scale(.8); opacity: .7; } 100% { transform: scale(1.9); opacity: 0; } }
 
 /* Only operation labels/progress shimmer, never tool names or file paths. */
-:is(.ran-commands, .edited-files, .explored-files).is-working > .chip-name,
+:is(.ran-commands, .edited-files, .explored-files, .searched-library).is-working > .chip-name,
 .is-working > .chip-state { color: var(--fg-2); }
 @supports ((background-clip: text) or (-webkit-background-clip: text)) {
-  :is(.ran-commands, .edited-files, .explored-files).is-working > .chip-name,
+  :is(.ran-commands, .edited-files, .explored-files, .searched-library).is-working > .chip-name,
   .is-working > .chip-state {
     background-color: var(--fg-2);
     background-image: linear-gradient(105deg, var(--polish-ink) 30%, var(--polish-shine) 48%, var(--polish-ink) 65%);

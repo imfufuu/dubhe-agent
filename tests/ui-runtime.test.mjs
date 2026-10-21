@@ -86,7 +86,7 @@ test('polish is spatial grayscale with an opaque fallback and excludes names', (
   assert.match(rule, /background-color: var\(--fg-2\)/);
   assert.match(rule, /background-repeat: repeat/);
   assert.match(rule, /from \{ background-position: 120% 0; \} to \{ background-position: -120% 0;/);
-  assert.match(rule, /\.ran-commands, \.edited-files, \.explored-files\)\.is-working > \.chip-name/);
+  assert.match(rule, /\.ran-commands, \.edited-files, \.explored-files, \.searched-library\)\.is-working > \.chip-name/);
   assert.doesNotMatch(rule, /\.tool-call-chip[^{}]*\.chip-name|\.edit-path[^{}]*tool-ink-polish/);
   assert.match(rule, /--polish-ink: #252525; --polish-shine: #707070/);
   assert.match(rule, /-webkit-text-fill-color: currentColor/);

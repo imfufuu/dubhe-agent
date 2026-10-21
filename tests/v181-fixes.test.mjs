@@ -701,3 +701,31 @@ test('2026.10.21：「自动路由」徽标改为「自动」、设置网关栏�
   assert.match(demo, /onLanguageChange\(onLangSwitch\)/);
   assert.match(demo, /e\.key === LANGUAGE_KEY/);
 });
+
+test('2026.10.21：knowledge_search 独立消息块（toolflow 家族 / UI 接线 / 抛光 CSS）', async () => {
+  const { toolFamily, displayParts, commandRunFor } = await import('../js/toolflow.js');
+  assert.equal(toolFamily({ name: 'knowledge_search' }), 'knowledge');
+  assert.equal(toolFamily({ name: 'read_file' }), 'explored');
+  assert.equal(toolFamily({ name: 'list_files' }), 'commands');
+  // 检索与命令分成不同的显示段；检索段是命令合并的屏障（partIndex 0 不属于任何命令 run）
+  const msg = { id: 'a', role: 'assistant', toolCalls: [
+    { id: 'k1', name: 'knowledge_search' }, { id: 'c1', name: 'list_files' }, { id: 'c2', name: 'copy_file' },
+  ] };
+  assert.deepEqual(displayParts(msg).map((p) => p.kind), ['knowledge', 'commands']);
+  const turn = [{ id: 'u', role: 'user', text: 'x' }, msg];
+  assert.equal(commandRunFor(turn, 'a', 0), null, '检索段不参与命令合并');
+  assert.equal(commandRunFor(turn, 'a', 1)?.isHost, true, '命令段照常合并成 Ran commands');
+  // UI 接线：命令菜单排除 + 独立折叠行 + 英文进行时/过去时标签
+  const ui = read('../js/ui.js');
+  assert.match(ui, /FILE_FOLD_TOOLS = new Set\(\[[^\]]*'knowledge_search'/);
+  assert.match(ui, /paintKnowledgeFold\(wrap, m, chips, \{ msgsAll, msgNodes, syncFileFold, syncAssistantShell, decodeRawJsonString \}\)/);
+  const toolflowUi = read('../js/ui-toolflow.js');
+  assert.match(toolflowUi, /export function paintKnowledgeFold/);
+  assert.match(toolflowUi, /'Searching library'/);
+  assert.match(toolflowUi, /'Searched library'/);
+  // 抛光扫光与「不可展开」的光标约定
+  const css = read('../css/styles.css');
+  assert.match(css, /\.searched-library\)\.is-working > \.chip-name/);
+  assert.match(css, /\.searched-library \{ cursor: default; \}/);
+  assert.match(read('../js/icons.js'), /search: ico\(/);
+});

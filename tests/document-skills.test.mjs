@@ -194,7 +194,7 @@ test('audio billing uses reported usage and labels missing input usage rather th
   assert.equal(missing.incomplete, true); assert.equal(missing.formatted, '用量不完整'); assert.match(missing.tooltip, /不完整/);
 });
 test('shared tool headers have uniform, slightly wider vertical padding', () => {
-  const css = fs.readFileSync(new URL('../css/styles.css', import.meta.url), 'utf8'); assert.match(css, /\.chip, \.ran-commands, \.reasoning, \.md-fold, \.edited-files, \.explored-files \{\s*border: none; background: transparent; padding: 5px 0;/);
+  const css = fs.readFileSync(new URL('../css/styles.css', import.meta.url), 'utf8'); assert.match(css, /\.chip, \.ran-commands, \.reasoning, \.md-fold, \.edited-files, \.explored-files, \.searched-library \{\s*border: none; background: transparent; padding: 5px 0;/);
 });
 test('the real tool runner forwards independent audio selection and preserves billing only once', async () => {
   const { createToolRunner } = await import('../js/toolrunner.js');

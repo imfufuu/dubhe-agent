@@ -16,6 +16,9 @@ export function recordOutputTool(message, index) {
 }
 export function toolFamily(call) {
   if (call?.name === 'write_file') return 'edited';
+  // 2026.10.21：知识库检索是独立消息块（进行中显示检索词的抛光行，完成后收起且不可展开），
+  // 不再混进 Ran command 命令菜单。
+  if (call?.name === 'knowledge_search') return 'knowledge';
   if (['read_file', 'analyze_image', 'analyze_pdf', 'analyze_svg', 'analyze_video', 'analyze_audio'].includes(call?.name)) return 'explored';
   return 'commands';
 }

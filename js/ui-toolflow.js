@@ -1,5 +1,5 @@
 // Stable DOM fragments in persisted SSE order plus lightweight UI lifecycle helpers.
-import { displayParts } from './toolflow.js?v=2026.10.11.1';
+import { displayParts, toolFamily, adjacentToolMessages } from './toolflow.js?v=2026.10.11.1';
 export function syncToolMenuCursor(chips, live) {
   if (!chips) return null;
   let cursor = chips.querySelector(':scope > .tool-menu-cursor');
@@ -35,7 +35,7 @@ export function paintOrderedAssistant(wrap, m, { paintPart, paintMeta, paintFoot
       let flow = wrap.querySelector(':scope > .assistant-flow');
       if (!flow) {
         flow = document.createElement('div'); flow.className = 'assistant-flow';
-        for (const child of [...wrap.children]) if (child.matches('.md-body,.tool-chips,.reasoning,.explored-files,.edited-files,.message-tail')) child.remove();
+        for (const child of [...wrap.children]) if (child.matches('.md-body,.tool-chips,.reasoning,.explored-files,.edited-files,.searched-library,.message-tail')) child.remove();
         const anchor = wrap.querySelector(':scope > .msg-foot') || wrap.querySelector(':scope > .msg-actions');
         wrap.insertBefore(flow, anchor || null);
       }
@@ -92,6 +92,51 @@ export function renderToolChipDetail(chip) {
 
 import { $, $$, el, esc } from './ui-markdown.js?v=2026.10.11.1';
 import { ICON } from './icons.js';
+
+// 2026.10.21：知识库检索 = 独立消息块。检索中：英文进行时「Searching library」+ 与命令/文件行
+// 同一套抛光扫光（is-working），详情列表实时显示检索词；检索结束自动收起，且整行不可展开——
+// 检索回来的内容属于系统提示词素材，不在界面展示（结果窗口/出参一律不渲染）。
+export function paintKnowledgeFold(wrap, m, afterEl, { msgsAll, msgNodes, syncFileFold, syncAssistantShell, decodeRawJsonString }) {
+  const cluster = m._displayFragment ? [m] : adjacentToolMessages(msgsAll, m.id, (t) => toolFamily(t) === 'knowledge');
+  const isHost = !!cluster.length && cluster[cluster.length - 1].id === m.id;
+  const calls = isHost ? cluster.flatMap((x) => x.toolCalls || []).filter((c) => c && c.name === 'knowledge_search') : [];
+  let node = $('.searched-library', wrap);
+  // 没有检索调用（别的家族分段 / 纯文本消息 / 折叠归属集群里更早的消息）→ 不渲染，旧的收走
+  if (!calls.length) {
+    if (node) { node.remove(); syncAssistantShell(wrap); }
+    return $('.searched-library', wrap) || afterEl;
+  }
+  const queries = [...new Set(calls.map((c) => {
+    const args = c.args && typeof c.args === 'object' ? c.args : {};
+    const q = String(args.query || '').trim() || decodeRawJsonString(String(args.__raw || ''), 'query');
+    const topic = String(args.topic || '').trim();
+    return topic ? `${q} · ${topic}` : q;
+  }).filter(Boolean))];
+  if (!node) {
+    node = el('div', 'searched-library');
+    afterEl.after(node);
+  } else if (node.previousElementSibling !== afterEl) afterEl.after(node);
+  // 检索词列表只在内容变化时重建（同 explored-files：避免流式期间反复重启抛光动画）
+  const qSig = JSON.stringify(queries);
+  if (node._querySig !== qSig) {
+    node.innerHTML = `<span class="chip-ico">${ICON.search || ICON.file || ''}</span><span class="mono chip-name"></span><div class="chip-detail"><div class="fold-inner"><ul>${queries.map((x) => `<li class="mono">${esc(x)}</li>`).join('')}</ul></div></div>`;
+    node._querySig = qSig;
+  }
+  node.dataset.ownerId = m.id;
+  node._activeCalls = calls;
+  // 不绑 click、不写 _toggleKey/_userToggle：检索中由 syncEditingFold 自动展开显示检索词，
+  // 结束后自动收起，用户点不开（隐藏检索结果 = 系统提示词素材）。
+  syncFileFold(node);
+  const label = $('.chip-name', node);
+  if (label) label.textContent = node._active ? 'Searching library' : (queries.length > 1 ? `Searched library ${queries.length}` : 'Searched library');
+  if (!m._displayFragment) {
+    for (const x of cluster.slice(0, -1)) {
+      const w = msgNodes.get(x.id), old = w && $('.searched-library', w);
+      if (old) { old.remove(); syncAssistantShell(w); }
+    }
+  }
+  return $('.searched-library', wrap) || afterEl;
+}
 
 // Append newly-revealed calls without replacing earlier widgets or their windows.
 export function paintCommandRows(chips, { groups, sig, scope, ownerId, commandToggle, callToggle, liveToolCallIds }) {
