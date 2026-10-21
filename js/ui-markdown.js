@@ -9,7 +9,7 @@ import { contextBudgetFor } from './context.js';
 import { ICON } from './icons.js';
 import { sanitizeSvgMarkup, svgSourceFromValue } from './svg-safety.js';
 import { prepareMarkdownExtensions, parsePandocAttributes, pandocAttributesHtml } from './markdown-extensions.js?v=2026.10.11.1';
-import { parseChartInfo, parseDiagramInfo, renderQuickChart, renderQuickDiagram, CHART_DIRECT_ALIASES } from './quickviz.js?v=2026.10.11.1';
+import { CHART_ALIAS, parseChartInfo, parseDiagramInfo, renderQuickChart, renderQuickDiagram, CHART_DIRECT_ALIASES } from './quickviz.js?v=2026.10.11.1';
 
 export const $ = (sel, el = document) => el.querySelector(sel);
 export const $$ = (sel, el = document) => [...el.querySelectorAll(sel)];
@@ -99,7 +99,7 @@ const choiceHtml = (blocks) => {
 };
 
 // :::chart 围栏正则：直接别名按长度降序，避免「柱状」抢先吃掉「柱状图」
-const CHART_FENCE_RE = new RegExp(`^:::(?:chart[ \\t]+([^\\n]+)|(${[...CHART_DIRECT_ALIASES].sort((a, b) => b.length - a.length).map((k) => k.replace(/[.*+?^${}()|[\]\\-]/g, '\\$&')).join('|')})[ \\t]*([^\\n]*))\\n([\\s\\S]*?)^:::[ \\t]*$`, 'gm');
+const CHART_FENCE_RE = new RegExp(`^:::(?:chart[ \\t]+([^\\n]+)|(${[...CHART_DIRECT_ALIASES].sort((a, b) => b.length - a.length).map((k) => k.replace(/[.*+?^${}()|[\]\\-]/g, '\\$&')).join('|')})[ \\t]*([^\\n]*))\\n([\\s\\S]*?)^:::[ \\t]*$`, 'gim');
 
 export function sanitizeSvgRaw(raw) {
   let s = '';
@@ -479,6 +479,36 @@ function stripBlockquoteDepth(line, depth) {
   return { matched: true, rest };
 }
 
+const CHART_CODE_ALIASES = Object.entries(CHART_ALIAS).sort((a, b) => b[0].length - a[0].length);
+const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+function chartCodeFenceSpec(info, preceding = '') {
+  const marker = /^:::chart(?:[ \t]+([\s\S]+?))?[ \t]*$/i.exec(String(info || '').trim());
+  if (!marker) return null;
+  const tail = String(marker[1] || '').trim();
+  let inferredKind = '', inferredTitle = '';
+  const contextLines = String(preceding || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean).slice(-12).reverse();
+  for (const raw of contextLines) {
+    const line = raw.replace(/^>\s?/, '').replace(/^\s*(?:#{1,6}[ \t]+|\d+[.)、][ \t]*|[-*+][ \t]+)/, '').trim();
+    if (!line) continue;
+    const hit = CHART_CODE_ALIASES.find(([alias]) => {
+      if (/^[A-Za-z][A-Za-z0-9-]*$/.test(alias)) return new RegExp(`(?:^|[^A-Za-z0-9])${escapeRegExp(alias)}(?=$|[^A-Za-z0-9])`, 'i').test(line);
+      return line.includes(alias);
+    });
+    if (!hit) continue;
+    inferredKind = hit[1];
+    const titleMatch = /(?:—|–|-|:|：|\|)[ \t]*(.+)$/.exec(line);
+    if (titleMatch) inferredTitle = titleMatch[1].trim();
+    break;
+  }
+  let kind = '', title = tail;
+  if (tail) {
+    const first = tail.split(/[ \t]+/, 1)[0];
+    kind = CHART_ALIAS[first] || CHART_ALIAS[first.toLowerCase()] || '';
+    if (kind) title = tail.slice(first.length).replace(/^[ \t—–:：|\-]+/, '').trim();
+  }
+  return { kind: kind || inferredKind || 'bar', title: title || inferredTitle || '' };
+}
+
 function extractCodeFences(source, codeBlocks) {
   const lines = [];
   for (let start = 0; start < source.length;) {
@@ -527,7 +557,9 @@ function extractCodeFences(source, codeBlocks) {
     }).join('');
     const attrMatch = /\{[^{}]*\}[ \t]*$/.exec(info);
     const attrs = attrMatch ? parsePandocAttributes(attrMatch[0]) : null;
-    codeBlocks.push({ lang, code, open: !closed, attrs });
+    const chartInfo = attrMatch ? info.slice(0, attrMatch.index).trim() : info;
+    const chart = chartCodeFenceSpec(chartInfo, source.slice(0, line.start));
+    codeBlocks.push({ lang, code, open: !closed, attrs, chart });
     out += `${quote.prefix}\uE000CB${codeBlocks.length - 1}\uE000`;
     cursor = closed ? closeEnd : source.length;
     i = closeLine;
@@ -755,7 +787,8 @@ export function renderMarkdown(src) {
 
   const restoreCb = (html) => {
     const draw = (i) => {
-      const { lang, code, open, attrs } = codeBlocks[+i] || {};
+      const { lang, code, open, attrs, chart } = codeBlocks[+i] || {};
+      if (chart && String(code || '').trim()) return renderQuickChart(chart.kind, code, chart.title);
       return fenceHtml(lang, code, esc, !!open, attrs);
     };
     const token = /\uE000CB(\d+)\uE000/g;

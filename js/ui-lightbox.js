@@ -50,6 +50,14 @@ export function installLightbox() {
       // 视图框为 SVG 补上固有宽高，防止没有 width/height 的图表在 flex viewer 中塌成一个点。
       const clone = content.cloneNode(true);
       clone.removeAttribute('id');
+      if (opts.staticChart && clone.matches?.('.md-chart-svg')) {
+        clone.classList.add('md-chart-static-view');
+        for (const datum of clone.querySelectorAll('[data-chart-label]')) {
+          datum.classList.remove('is-active');
+          datum.removeAttribute('tabindex');
+          datum.removeAttribute('role');
+        }
+      }
       const svgs = clone.matches?.('svg') ? [clone] : [...(clone.querySelectorAll?.('svg') || [])];
       for (const svg of svgs) {
         const vb = (svg.getAttribute('viewBox') || '').trim().split(/[\s,]+/).map(Number);
@@ -162,8 +170,9 @@ export function installLightbox() {
     const expandChart = e.target.closest('.md-chart-expand');
     if (expandChart) {
       e.preventDefault(); e.stopPropagation();
-      const svg = expandChart.closest('.md-chart, .md-diagram')?.querySelector('.md-chart-svg');
-      if (svg) openLightbox(svg, { alt: svg.getAttribute('aria-label') || '图表' });
+      const chartBox = expandChart.closest('.md-chart, .md-diagram');
+      const svg = chartBox?.querySelector('.md-chart-svg');
+      if (svg) openLightbox(svg, { alt: svg.getAttribute('aria-label') || '图表', staticChart: !!expandChart.closest('.md-chart') });
       return;
     }
     // 1) 普通 <img>（消息正文 / 附件 / 文件预览）

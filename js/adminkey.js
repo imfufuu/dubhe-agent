@@ -13,24 +13,29 @@
 //      再用校验密钥对密文做 HMAC-SHA256（TAG）。校验先于解密：口令不对 → TAG 不匹配 → 直接拒绝，
 //      改动密文 / 改动有效期 → TAG 不匹配 → 同样拒绝（有效期藏在密文里，没有口令既看不到也改不了）。
 //   ③ **有效期**：解封后若 `now > exp`，即使口令正确也判定过期，密钥不进内存；
-//      已解封的会话到期那一刻起 `effectiveApiKey` 不再替换别名（请求会带着别名发出去而被网关拒绝）。
+//      已解封的会话到期后 `effectiveApiKey` 返回空值，避免把别名误发到网关。
 //   ④ 还原只发生在内存：解封后的密钥只存在本模块的变量里，不写 localStorage、
 //      不进导出 JSON、不进控制台、不渲染到界面（界面只显示「管理员密钥已启用 · 有效期至 …」）。
 //
 // 诚实说明：这是客户端秘密，谁有正确口令谁就能拿到它（这是需求本身）。有效期到期后
 // 请同时在网关侧作废这把密钥——客户端的到期判断能挡住正常使用，挡不住改代码的人。
 //
-// 换口令 / 换密钥 / 续期：`node tools/seal-admin.mjs --gen <管理员密钥> [有效天数]`
-// 会生成随机口令并打印新的 SALT / SEALED / TAG 常量，替换进下方即可。源码里永远不出现明文。
+// 换口令 / 换密钥 / 续期：先设置 DUBHE_ADMIN_PHRASE 环境变量，再运行 `node tools/seal-admin.mjs --gen <管理员密钥> [有效天数]`
+// 会生成随机 10 位口令并打印新的 SALT / SEALED / TAG 常量，替换进下方即可。源码里永远不出现明文。
+// 管理员别名解封还需通过独立暗号校验；暗号以 scrypt 派生值保存，不存明文。该前端校验是额外门槛，不能代替服务端认证。
 
 export const ADMIN_PREFIX = 'admin-';
-export const ADMIN_PASSWORD_BODY = 8;          // 口令格式：admin-{8 位数字/字母}
+export const ADMIN_PASSWORD_BODY = 10;         // 口令格式：admin-{10 位字母/数字}
 export const SCRYPT_PARAMS = Object.freeze({ N: 65536, r: 8, p: 1, dkLen: 64 });
 
+// 暗号仅保存为 scrypt 派生值（随机盐 + N=2^16），源码不含暗号明文。
+const ADMIN_PHRASE_SALT = 'f33mSNzGd891QU0YwMpMyw==';
+const ADMIN_PHRASE_DERIVED = 'lDbTcbvHFBVbx3AeeuM373mv2fQolmu9PAKbkzB/ZS21Amydh60tpAFrksfWHngETMpK87o6MXuEE+Y56Dq23A==';
+
 // 公开常量：盐（随机）、密封后的 JSON（base64）、密文 HMAC（base64）。
-const SALT = 'dc+R+m/hKqqXUK5hJwYS7A==';
-const SEALED = 'EunFWW0ntNueAwTNbrwgIPoZvu1owDT1ldCbbg7TS5zws1HaDCni7Pmxc/wpMhwwBONpkHUBhAjQsm+KGVgvgNQVy47THcxoWx3IXHoBJn+eN4cJTeS//DggONObSAvm9YC316YwyJ/J';
-const TAG = '89eOHjngBpSisLFgjioingxzNwlLlA1AAvRMNxVB40I=';
+const SALT = 'LTRnCpZoB9vhVad/18jhqQ==';
+const SEALED = 'ErVX5A1iFhZ5Jb/voayCHLHymlHwWENOXZiqY8rH7WvufRVsDEpvLuiyDvyVqEJVSUSIrltspU9EopK6dr7rhe8FFII4CVbUg2o3HdizXMNAU2lDHRkxHgm4sy5tEqVfDik/JrXBPFRw';
+const TAG = '69f/GoM3TCnoNgpgxSoYOQaZWquWqRuRXOpvZ/t30B4=';
 
 const te = new TextEncoder();
 const td = new TextDecoder();
@@ -194,6 +199,16 @@ export async function scrypt(pw, salt, { N, r, p, dkLen } = SCRYPT_PARAMS) {
   return pbkdf2One(pw, out, dkLen);
 }
 
+/** 额外管理员暗号校验：派生值仅在内存中比较，不保存暗号或输入值。 */
+export async function verifyAdminPhrase(input) {
+  const phrase = String(input ?? '').normalize('NFC').trim();
+  if (!phrase) return false;
+  try {
+    const derived = await scrypt(te.encode(phrase), b64ToBytes(ADMIN_PHRASE_SALT), SCRYPT_PARAMS);
+    return ctEqual(derived, b64ToBytes(ADMIN_PHRASE_DERIVED));
+  } catch { return false; }
+}
+
 /** 与加密密钥绑定的密钥流：k_i = HMAC(encKey, i)，依次拼接 */
 async function keystream(encKey, length) {
   const out = new Uint8Array(length);
@@ -238,11 +253,12 @@ export function isAdminAlias(input) { return String(input || '').startsWith(ADMI
 export function adminUnlocked() { return !!unlocked && Date.now() <= unlockedExp; }
 /** 已解封时返回到期时间（ms），否则 0 */
 export function adminExpiresAt() { return unlocked ? unlockedExp : 0; }
-/** 只有「当前会话已用正确口令解开且未过期」时，管理员别名才会被替换成真密钥 */
+/** 只有「当前会话已用正确口令与暗号解开且未过期」时，管理员别名才会被替换成真密钥 */
 export function effectiveApiKey(raw) {
   const s = String(raw || '');
-  if (!isAdminAlias(s) || !unlocked) return s;
-  if (Date.now() > unlockedExp) { lockAdminKey(); return s; }   // 到期即失效，不等刷新
+  if (!isAdminAlias(s)) return s;
+  if (!unlocked) return ''; // 刷新后别名默认锁定，要求重新输入管理员暗号
+  if (Date.now() > unlockedExp) { lockAdminKey(); return ''; }   // 到期即失效，不等刷新
   return unlocked;
 }
 export function lockAdminKey() { unlocked = null; unlockedExp = 0; }
@@ -250,8 +266,8 @@ export function lockAdminKey() { unlocked = null; unlockedExp = 0; }
 /**
  * 用输入的口令解封管理员密钥。
  * @param {string} input 用户输入（admin-…）
- * @param {{now?:number, bundle?:{salt:string, sealed:string, tag:string, params?:object}}} [opts] 测试注入
- * @returns {Promise<{ok:boolean, reason?:'not-admin'|'bad-password'|'unsupported'|'expired', exp?:number}>}
+ * @param {{now?:number, phrase?:string, bundle?:{salt:string, sealed:string, tag:string, params?:object}}} [opts] 暗号及测试工具注入
+ * @returns {Promise<{ok:boolean, reason?:'not-admin'|'bad-password'|'bad-phrase'|'unsupported'|'expired', exp?:number}>}
  */
 export async function unlockAdminKey(input, opts = {}) {
   const s = String(input || '');
@@ -265,6 +281,7 @@ export async function unlockAdminKey(input, opts = {}) {
   const sealed = b64ToBytes(bundle.sealed);
   const tag = await hmacSha256(macKey, sealed);
   if (!ctEqual(tag, b64ToBytes(bundle.tag))) { lockAdminKey(); return { ok: false, reason: 'bad-password' }; }
+  if (!(await verifyAdminPhrase(opts.phrase))) { lockAdminKey(); return { ok: false, reason: 'bad-phrase' }; }
   const ks = await keystream(encKey, sealed.length);
   const plain = new Uint8Array(sealed.length);
   for (let i = 0; i < sealed.length; i++) plain[i] = sealed[i] ^ ks[i];

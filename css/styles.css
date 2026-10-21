@@ -29,6 +29,7 @@
   --ui-fs-42px: 42px;
   --bg: #ffffff;
   --bg-soft: #fafafa;
+  --conversation-bg: #fcfaf6; /* 浅色对话主区：极淡米白；输入框继续用 --bg-soft */
   --bg-hover: #f4f4f4;
   --fg: #0a0a0a;
   --fg-2: #555555;
@@ -114,6 +115,7 @@ html[data-fontsize="large"] {
 [data-theme="dark"] {
   --bg: #0b0b0b;
   --bg-soft: #121212;
+  --conversation-bg: var(--bg);
   --bg-hover: #1a1a1a;
   --fg: #f4f4f4;
   --fg-2: #a3a3a3;
@@ -248,7 +250,7 @@ html { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
 .empty-logo { display: flex; justify-content: center; }
 .empty-logo svg { width: 56px; height: 56px; display: block; animation: none; transform: none; }
 /* 产品 Logo 保持静态；等待连接时只有 .connect-dot 呼吸，避免将品牌标识误作加载动画。 */
-.logo-mark { font-size: var(--ui-fs-22px, 22px); display: inline-block; color: inherit; text-decoration: none; cursor: pointer; }
+.logo-mark { font-size: var(--ui-fs-22px, 22px); display: inline-flex; align-items: center; justify-content: center; width: 21px; height: 21px; flex: 0 0 21px; color: inherit; text-decoration: none; cursor: pointer; }
 .logo-text { font-weight: 500; letter-spacing: .14em; font-size: var(--ui-fs-13px, 13px); flex-shrink: 0; white-space: nowrap; color: inherit; text-decoration: none; }
 .logo-text i { font-style: normal; color: var(--fg-3); }
 
@@ -274,7 +276,7 @@ html { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
 /* 侧栏 Logo 旁的稳定版徽章（低调的等宽小字，不抢主标题）*/
 .ver-badge {
   font-family: var(--mono); font-size: var(--ui-fs-9_5px, 9.5px); font-weight: 700; letter-spacing: .04em;
-  color: var(--fg-2); border: 1px solid var(--line-2); border-radius: 5px;
+  color: var(--fg-2); border: 1px solid var(--line-2); border-radius: 999px;
   padding: 1px 5px; flex-shrink: 0; white-space: nowrap;
 }
 
@@ -451,7 +453,7 @@ html { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
 .side-footer-btns > .mini-btn { flex: 1 1 auto; min-width: 0; padding: 6px 4px; justify-content: center; font-size: var(--ui-fs-11_5px, 11.5px); white-space: nowrap; }
 
 /* ── 主区 ────────────────────────────────────────────────────────────── */
-.main { display: flex; flex-direction: column; min-width: 0; background: var(--bg); transition: background-color var(--theme-speed) var(--ease); }
+.main { display: flex; flex-direction: column; min-width: 0; background: var(--conversation-bg, var(--bg)); transition: background-color var(--theme-speed) var(--ease); }
 .topbar {
   display: flex; align-items: center; gap: 10px;
   padding: 12px 24px; border-bottom: 1px solid var(--line);
@@ -530,7 +532,7 @@ html { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
 .topbar-right { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; min-width: 0; margin-left: auto; flex: 0 0 auto; }
 .topbar-right .pill { flex: 0 0 auto; white-space: nowrap; }
 .think-picker { position: relative; flex: 0 0 auto; }
-.think-menu { padding: 6px; }
+.think-menu { padding: 6px; border-left: 1px solid color-mix(in srgb, var(--fg) 18%, var(--bg)); }
 .think-item {
   display: flex; flex-direction: column; align-items: flex-start; gap: 1px;
   width: 100%; text-align: left; padding: 7px 10px; border-radius: 8px;
@@ -1624,6 +1626,9 @@ html[data-motion="off"] .file-viewer.switching > :not(.file-viewer-head) { anima
   transition: border-color .25s, box-shadow .25s;
 }
 .key-input:focus { border-color: var(--fg); box-shadow: var(--shadow); }
+.key-admin-phrase-wrap { display: grid; gap: 6px; margin-top: 12px; }
+.key-admin-phrase-wrap[hidden] { display: none; }
+.key-admin-phrase-wrap label { font-size: var(--ui-fs-11_5px, 11.5px); color: var(--fg-2); }
 .modal-actions { display: flex; justify-content: flex-end; align-items: center; gap: 10px; margin-top: 18px; flex-wrap: wrap; }
 .primary-btn {
   padding: 9px 26px; background: var(--fg); color: var(--bg); border-radius: 10px;
@@ -1994,6 +1999,9 @@ polyline.md-chart-line, path.md-chart-line { fill: none; stroke: #4f46e5; stroke
 .md-chart-region-empty { cursor: default; }
 .md-chart-region:hover, .md-chart-region:focus-visible, .md-chart-region.is-active { stroke: var(--fg); stroke-width: 1; }
 .md-chart-svg:has(.md-chart-region:hover, .md-chart-region.is-active) .md-chart-region:not(:hover):not(.is-active):not(.md-chart-region-empty) { opacity: .62; }
+/* 全屏快捷图表作为静态画布展示；外层 lightbox 仍可缩放/拖动，图内悬浮高亮与过渡全部停用。 */
+.md-chart-svg.md-chart-static-view, .md-chart-svg.md-chart-static-view * { animation: none !important; transition: none !important; }
+.md-chart-svg.md-chart-static-view [data-chart-label] { pointer-events: none !important; cursor: default !important; }
 .md-chart-map-label { font-family: var(--sans); font-size: var(--ui-fs-9px, 9px); fill: var(--fg); opacity: .78; paint-order: stroke; stroke: var(--bg); stroke-width: 2px; stroke-linejoin: round; }
 .md-chart-map-loading { animation: mdChartPulse 1.4s ease-in-out infinite; }
 .md-chart-map[data-map-state="ready"] .md-chart-svg { animation: mdChartFadeIn .36s ease; }
@@ -2121,6 +2129,9 @@ polyline.md-chart-line, path.md-chart-line { fill: none; stroke: #4f46e5; stroke
 .edited-files ul, .explored-files ul, .searched-library ul { margin: 0; padding: 0; list-style: none; }
 .edited-files li, .explored-files li, .searched-library li { font-family: var(--mono); font-size: var(--ui-fs-11_5px, 11.5px); color: var(--fg-2); line-height: 1.65; padding: 2.5px 0; } /* V1.8.1：读取 / 写入列表行距加大（19px → 24px） */
 .edited-files li.edit-path-row { padding: 0; line-height: normal; }
+/* 检索词一直贴在「Searched library」右侧；它不是结果正文，也不进入可展开窗口。 */
+.searched-library-query { flex: 1 1 14rem; min-width: 0; color: var(--fg-3); font-size: var(--ui-fs-11_5px, 11.5px); line-height: 1.45; overflow-wrap: anywhere; }
+.searched-library-query:empty { display: none; }
 .chip-time { color: var(--fg-3); font-family: var(--mono); font-size: var(--ui-fs-10_5px, 10.5px); }
 
 /* ── 编辑差异预览（逐文件增删行，稳定增量 DOM）────────────────── */
@@ -2680,9 +2691,9 @@ html[data-motion="off"] .md-chart-map-loading, html[data-motion="off"] .md-chart
 .feedback-btn{position:relative;isolation:isolate;transition:color .32s var(--ease),background-color .32s var(--ease),box-shadow .32s var(--ease),translate .25s var(--ease)}
 .feedback-btn svg{width:15px;height:15px;transition:scale .45s cubic-bezier(.34,1.56,.64,1)}
 .feedback-btn svg path{fill:currentColor;fill-opacity:0;transition:fill-opacity .45s var(--ease)}
-.feedback-btn:hover{translate:0 -1px}
+.feedback-btn:hover{translate:0 -1px;background:transparent;border-color:transparent}
 .feedback-btn:hover svg{scale:1.07}
-.feedback-btn[aria-pressed="true"]{background:var(--bg-hover);box-shadow:inset 0 0 0 1px var(--line)}
+.feedback-btn[aria-pressed="true"]{background:transparent;border-color:transparent;box-shadow:none}
 .feedback-btn[aria-pressed="true"] svg path{fill-opacity:.2}
 .feedback-btn[data-vote="up"][aria-pressed="true"]{color:#0f7a3d}
 .feedback-btn[data-vote="down"][aria-pressed="true"]{color:#b42318}

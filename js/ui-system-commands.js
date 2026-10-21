@@ -173,7 +173,7 @@ export function installSystemCommands({ store, agent, toast, inSystem, isSystemI
     } else if (name === 'key') {
       const k = store.state.apiKey || '';
       // 管理员模式：别名本身就是口令（admin-8 位），首尾各露几位等于整段泄露；真实密钥明文从不落盘也不上屏 → 此命令直接不可用
-      if (isAdminAlias(k)) out = localeText('管理员模式下 /key 不可用：管理员口令与实际密钥都不回显。要换回普通 API Key 请点底部「管理员」按钮重新填写。', 'Unavailable in admin mode: neither the admin passphrase nor the real key is shown. To switch back to a regular API key, tap the "Admin" button at the bottom and re-enter it.');
+      if (isAdminAlias(k)) out = localeText('管理员模式下 /key 不可用：管理员口令与实际密钥都不回显。要换回普通 API Key 请点底部「管理员」按钮重新输入管理员口令与暗号。', 'Unavailable in admin mode: neither the admin passphrase nor the real key is shown. To switch back to a regular API key, tap the "Admin" button at the bottom and re-enter the admin key and phrase.');
       else out = k ? localeText(`API Key：${k.slice(0, 10)}…${k.slice(-4)}（已配置；完整 Key 不回显）`, `API key: ${k.slice(0, 10)}…${k.slice(-4)} (set; full key not shown)`) : localeText('尚未配置 API Key（普通对话需要；/system 通道本身不需要）', 'No API key set (needed for normal chat; the /system channel does not need one)');
     } else if (name === 'export') {
       try {

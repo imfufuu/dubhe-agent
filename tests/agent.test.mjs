@@ -1081,6 +1081,18 @@ test('renderMarkdown：完整 Markdown（markdown-it）+ KaTeX 公式', async ()
   assert.match(chart, /class="md-chart-expand"[^>]*aria-label="全屏查看图表"/);
   assert.match(chart, /<svg viewBox="0 0 \d+ \d+" width="\d+" height="\d+"/);
   assert.match(chart, /月销量/);
+  const pastedQuickChart = renderMarkdown([
+    '1. 折线图 — 月度营收趋势', '', '```:::CHART', '月份，营收', '一月，120', '二月，135', '三月，148', '```',
+  ].join('\n'));
+  assert.match(pastedQuickChart, /class="md-chart md-chart-line"/, '截图中的 ```:::CHART 围栏应作为快捷折线图渲染');
+  assert.match(pastedQuickChart, /aria-label="月度营收趋势"/);
+  assert.match(pastedQuickChart, /data-chart-label="一月" data-chart-val="120"/);
+  assert.doesNotMatch(pastedQuickChart, /class="code-block"|<pre data-lang=":::CHART"/, '图表源数据不再作为普通代码块显示');
+  const explicitPastedChart = renderMarkdown('```:::CHART line 月度营收\n一月，120\n二月，135\n```');
+  assert.match(explicitPastedChart, /class="md-chart md-chart-line"/);
+  assert.match(explicitPastedChart, /aria-label="月度营收"/);
+  const uppercaseChartFence = renderMarkdown(':::CHART line 月度营收\n一月，120\n二月，135\n:::');
+  assert.match(uppercaseChartFence, /class="md-chart md-chart-line"/, '直接写法也接受大写 CHART');
   // 2026.10.5.17：专用 s-t 图语法已移除，:::st 不再是图表围栏；位移-时间关系直接用折线 / 散点表达
   const stChart = renderMarkdown(':::st 匀速直线运动\n0, 0\n1, 5\n2, 10\n:::');
   assert.doesNotMatch(stChart, /md-chart-st/);
@@ -3479,7 +3491,7 @@ test('scrypt 纯 JS 实现与 Node 原生 scrypt 逐字节一致（N=2^16 · r=8
   const crypto = await import('node:crypto');
   const ak = await import('../js/adminkey.js');
   assert.deepEqual({ ...ak.SCRYPT_PARAMS }, { N: 65536, r: 8, p: 1, dkLen: 64 });
-  const pw = Buffer.from('admin-Ab12Cd34', 'utf8');
+  const pw = Buffer.from('admin-Ab12Cd34Xy', 'utf8');
   const salt = crypto.randomBytes(16);
   // 小参数快速比对 + 正式参数各一次
   for (const params of [{ N: 1024, r: 8, p: 1, dkLen: 64 }, { N: 2048, r: 4, p: 2, dkLen: 48 }, ak.SCRYPT_PARAMS]) {
@@ -3493,35 +3505,40 @@ test('scrypt 纯 JS 实现与 Node 原生 scrypt 逐字节一致（N=2^16 · r=8
 });
 test('密封 / 解封往返：错口令拒绝、篡改密文或有效期被 HMAC 拦下、到期后口令正确也拒绝', async () => {
   const ak = await import('../js/adminkey.js');
-  const pw = 'admin-Zz9Yy8Xx';
+  const pw = 'admin-Zz9Yy8XxQa';
   const key = 'sk-' + 'teamo-' + 'f'.repeat(48);
   const params = { N: 1024, r: 8, p: 1, dkLen: 64 };   // 小参数让测试快；算法路径与正式一致
   // 相对时间夹具：effectiveApiKey 用真实 Date.now() 判有效期，写死绝对日期会在 14 天后让本测试过期失败
   const iat = Date.now() - 86400000;
+  const phrase = String.fromCodePoint(0x5929, 0x67a2, 0x667a, 0x6838, 0xff0c, 0x70b9, 0x4eae, 0x672a, 0x6765);
   const b = await ak.sealAdmin(pw, { key, iat, days: 14, params });
   assert.equal(b.exp - iat, 14 * 86400000, '默认有效期 14 天');
   assert.equal(b.sealed.includes('sk-'), false);
   const bundle = { salt: b.salt, sealed: b.sealed, tag: b.tag, params };
   // 正确口令、未过期
-  const ok = await ak.unlockAdminKey(pw, { bundle, now: iat + 1000 });
+  const ok = await ak.unlockAdminKey(pw, { bundle, phrase, now: iat + 1000 });
   assert.equal(ok.ok, true); assert.equal(ok.exp, b.exp);
   assert.equal(ak.effectiveApiKey(pw), key);
   assert.equal(ak.adminExpiresAt(), b.exp);
   ak.lockAdminKey();
   // 错口令
-  const bad = await ak.unlockAdminKey('admin-Zz9Yy8Xy', { bundle, now: iat + 1000 });
+  const bad = await ak.unlockAdminKey('admin-Zz9Yy8XxQb', { bundle, phrase, now: iat + 1000 });
   assert.equal(bad.reason, 'bad-password'); assert.equal(ak.adminUnlocked(), false);
   // 到期后：口令正确也拒绝，且不留下解封状态
-  const late = await ak.unlockAdminKey(pw, { bundle, now: b.exp + 1 });
+  const late = await ak.unlockAdminKey(pw, { bundle, phrase, now: b.exp + 1 });
   assert.equal(late.ok, false); assert.equal(late.reason, 'expired'); assert.equal(ak.adminUnlocked(), false);
-  assert.equal(ak.effectiveApiKey(pw), pw, '过期后别名原样透传，不会换成真密钥');
+  assert.equal(ak.effectiveApiKey(pw), '', '过期后管理员别名不再发送到网关');
+  const badPhrase = await ak.unlockAdminKey(pw, { bundle, phrase: 'wrong', now: iat + 1000 });
+  assert.equal(badPhrase.ok, false); assert.equal(badPhrase.reason, 'bad-phrase'); assert.equal(ak.adminUnlocked(), false);
+  const noPhrase = await ak.unlockAdminKey(pw, { bundle, now: iat + 1000 });
+  assert.equal(noPhrase.ok, false); assert.equal(noPhrase.reason, 'bad-phrase', '只有管理员口令不能绕过暗号校验');
   // 篡改密文（试图改有效期）：TAG 不匹配 → 当作错口令拒绝
   const raw = Buffer.from(b.sealed, 'base64'); raw[raw.length - 3] ^= 0x01;
-  const tam = await ak.unlockAdminKey(pw, { bundle: { ...bundle, sealed: raw.toString('base64') }, now: iat + 1000 });
+  const tam = await ak.unlockAdminKey(pw, { bundle: { ...bundle, sealed: raw.toString('base64') }, phrase, now: iat + 1000 });
   assert.equal(tam.ok, false); assert.equal(tam.reason, 'bad-password');
   // 篡改 TAG 同样拒绝
   const tagRaw = Buffer.from(b.tag, 'base64'); tagRaw[0] ^= 0x80;
-  const tam2 = await ak.unlockAdminKey(pw, { bundle: { ...bundle, tag: tagRaw.toString('base64') }, now: iat + 1000 });
+  const tam2 = await ak.unlockAdminKey(pw, { bundle: { ...bundle, tag: tagRaw.toString('base64') }, phrase, now: iat + 1000 });
   assert.equal(tam2.ok, false);
   // 内置常量已是密封好的正式值（不再是占位符）
   const src = (await import('node:fs')).readFileSync(new URL('../js/adminkey.js', import.meta.url), 'utf8');
@@ -3538,31 +3555,46 @@ test('密封常量不含任何明文片段，且解封逻辑正确', async () =>
   assert.equal(needles.some((n) => src.includes(n)), false, '源码里不能出现口令明文');
   const self = (await import('node:fs')).readFileSync(new URL(import.meta.url), 'utf8');
   assert.equal(needles.some((n) => self.includes(n)), false, '测试文件里也不能出现口令明文');
-  const { buildNothing } = { buildNothing: null };
   const ak = await import('../js/adminkey.js');
   assert.equal(ak.isAdminAlias('admin-anything'), true);
   assert.equal(ak.isAdminAlias('sk-teamo-xxx'), false);
   // 错口令：拒绝，且不会留下已解封状态
-  const bad = await ak.unlockAdminKey('admin-wrong-password');
+  const adminPhrase = String.fromCodePoint(0x5929, 0x67a2, 0x667a, 0x6838, 0xff0c, 0x70b9, 0x4eae, 0x672a, 0x6765);
+  const bad = await ak.unlockAdminKey('admin-wrong-password', { phrase: adminPhrase });
   assert.equal(bad.ok, false);
   assert.equal(bad.reason, 'bad-password');
-  // 口令格式：admin-{8 位数字/字母}
-  assert.equal(ak.ADMIN_PASSWORD_BODY, 8);
-  if (process.env.DUBHE_ADMIN_PW) assert.match(process.env.DUBHE_ADMIN_PW, /^admin-[A-Za-z0-9]{8}$/);
+  const wrongPhrase = await ak.unlockAdminKey('admin-wrong-password', { phrase: 'wrong' });
+  assert.equal(wrongPhrase.reason, 'bad-password', '口令错误优先于暗号错误');
+  // 口令格式：admin-{10 位字母/数字}
+  assert.equal(ak.ADMIN_PASSWORD_BODY, 10);
+  if (process.env.DUBHE_ADMIN_PW) assert.match(process.env.DUBHE_ADMIN_PW, /^admin-[A-Za-z0-9]{10}$/);
   assert.equal(ak.adminUnlocked(), false);
-  // 未解封时别名原样透传（绝不会把半截密钥发出去）
-  assert.equal(ak.effectiveApiKey('admin-<示例别名>'), 'admin-<示例别名>');
+  // 未解封时返回空值（绝不会把管理员别名误发出去）
+  assert.equal(ak.effectiveApiKey('admin-<示例别名>'), '', '未解封时不得把管理员别名发送到网关');
   assert.equal(ak.effectiveApiKey('sk-teamo-plain'), 'sk-teamo-plain');
   // 有环境变量时做一次真解封（口令不进仓库：CI/本地按需给）
   if (process.env.DUBHE_ADMIN_PW) {
-    const ok = await ak.unlockAdminKey(process.env.DUBHE_ADMIN_PW);
+    const ok = await ak.unlockAdminKey(process.env.DUBHE_ADMIN_PW, { phrase: process.env.DUBHE_ADMIN_PHRASE });
     assert.equal(ok.ok, true, '正确口令必须能解封');
     const key = ak.effectiveApiKey(process.env.DUBHE_ADMIN_PW);
     assert.match(key, /^sk-teamo-[a-z0-9]{40,}$/, '解封出来的应是真密钥');
     assert.notEqual(key, process.env.DUBHE_ADMIN_PW, '别名必须被替换成真密钥');
     ak.lockAdminKey();
-    assert.equal(ak.effectiveApiKey(process.env.DUBHE_ADMIN_PW), process.env.DUBHE_ADMIN_PW, '上锁后不再替换');
+    assert.equal(ak.effectiveApiKey(process.env.DUBHE_ADMIN_PW), '', '上锁后管理员密钥必须保持不可用');
   }
+});
+
+test('管理员别名刷新后默认锁定：先提示重新校验，且不进入远程审核或创建消息', async () => {
+  const store = createStore();
+  store.state.apiKey = 'admin-1234567890';
+  store.state.settings.contentModeration = true;
+  let needKey = 0, moderationBlocked = 0;
+  const agent = createAgent(store, { onNeedKey: () => needKey++, onModerationFailClosed: () => moderationBlocked++ });
+  const before = store.state.messages.length;
+  await agent.send('测试管理员二次校验', [{ kind: 'image', name: 'locked.png' }]);
+  assert.equal(needKey, 1, '管理员别名未解锁时立即弹出 Key / 暗号输入');
+  assert.equal(store.state.messages.length, before, '未通过校验不创建或持久化本轮消息');
+  assert.equal(moderationBlocked, 0, '未通过校验不尝试远程图片审核');
 });
 
 test('管理员密钥不会被写进会话导出、也不进 localStorage 的明文位置', async () => {

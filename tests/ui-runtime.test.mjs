@@ -79,6 +79,33 @@ test('completed file folds auto-collapse even before assistant text; manual open
   call.status = 'ok'; syncEditingFold(node, context); assert.equal(node.classList.contains('expanded'), false);
   node._userToggle = true; syncEditingFold(node, context); assert.equal(node.classList.contains('expanded'), true);
 });
+test('quick chart fullscreen opens a static canvas and removes point microinteractions', async () => {
+  const { installLightbox } = await import('../js/ui-lightbox.js?test=static-chart');
+  const dom = new JSDOM('<body><div class="md-chart"><button class="md-chart-expand"></button><svg class="md-chart-svg" aria-label="Trend"><circle class="md-chart-hit-area is-active" data-chart-label="Jan" tabindex="0" role="button" aria-label="Jan: 120"></circle></svg></div><div id="img-lightbox" class="img-lightbox" hidden><button class="img-lightbox-x"></button><div class="img-lightbox-stage"><div id="img-lightbox-pic"></div></div></div></body>');
+  const keys = ['document', 'window', 'Node'];
+  const saved = new Map(keys.map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
+  try {
+    globalThis.document = dom.window.document;
+    globalThis.window = dom.window;
+    globalThis.Node = dom.window.Node;
+    installLightbox();
+    dom.window.document.querySelector('.md-chart-expand').dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+    const clone = dom.window.document.querySelector('#img-lightbox-pic .md-chart-svg');
+    const datum = clone?.querySelector('[data-chart-label]');
+    assert.equal(dom.window.document.querySelector('#img-lightbox').hidden, false);
+    assert.ok(clone?.classList.contains('md-chart-static-view'));
+    assert.equal(datum?.classList.contains('is-active'), false);
+    assert.equal(datum?.hasAttribute('tabindex'), false);
+    assert.equal(datum?.hasAttribute('role'), false);
+  } finally {
+    for (const key of keys) {
+      const descriptor = saved.get(key);
+      if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+      else delete globalThis[key];
+    }
+    dom.window.close();
+  }
+});
 test('polish is spatial grayscale with an opaque fallback and excludes names', () => {
   const src = fs.readFileSync(new URL('../css/styles.css', import.meta.url), 'utf8');
   const rule = src.slice(src.indexOf('/* Only operation labels/progress shimmer'));

@@ -719,13 +719,77 @@ test('2026.10.21：knowledge_search 独立消息块（toolflow 家族 / UI 接�
   const ui = read('../js/ui.js');
   assert.match(ui, /FILE_FOLD_TOOLS = new Set\(\[[^\]]*'knowledge_search'/);
   assert.match(ui, /paintKnowledgeFold\(wrap, m, chips, \{ msgsAll, msgNodes, syncFileFold, syncAssistantShell, decodeRawJsonString \}\)/);
+  assert.match(ui, /const hasSearched = !!\$\('\.searched-library', w\);/);
+  assert.match(ui, /!hasEdited && !hasSearched && !hasFoot/, '知识检索独立回合不能被空消息壳规则隐藏');
   const toolflowUi = read('../js/ui-toolflow.js');
   assert.match(toolflowUi, /export function paintKnowledgeFold/);
   assert.match(toolflowUi, /'Searching library'/);
   assert.match(toolflowUi, /'Searched library'/);
+  assert.match(toolflowUi, /searched-library-query/);
   // 抛光扫光与「不可展开」的光标约定
   const css = read('../css/styles.css');
   assert.match(css, /\.searched-library\)\.is-working > \.chip-name/);
   assert.match(css, /\.searched-library \{ cursor: default; \}/);
+  assert.match(css, /\.searched-library-query \{ flex: 1 1 14rem;/);
   assert.match(read('../js/icons.js'), /search: ico\(/);
+});
+
+test('2026.10.21：快捷图表全屏静态显示、赞踩无灰底、对话主区米白且输入框不变', () => {
+  const css = read('../css/styles.css');
+  const lightbox = read('../js/ui-lightbox.js');
+  assert.match(lightbox, /staticChart: !!expandChart\.closest\('\.md-chart'\)/);
+  assert.match(lightbox, /opts\.staticChart && clone\.matches\?\.\('\.md-chart-svg'\)/);
+  assert.match(lightbox, /md-chart-static-view/);
+  assert.match(css, /\.md-chart-svg\.md-chart-static-view, \.md-chart-svg\.md-chart-static-view \* \{ animation: none !important; transition: none !important; \}/);
+  assert.match(css, /\.md-chart-svg\.md-chart-static-view \[data-chart-label\] \{ pointer-events: none !important; cursor: default !important; \}/);
+  assert.match(css, /\.feedback-btn\[aria-pressed="true"\]\{background:transparent;border-color:transparent;box-shadow:none\}/);
+  assert.match(css, /\.feedback-btn:hover\{translate:0 -1px;background:transparent;border-color:transparent\}/);
+  assert.doesNotMatch(css, /\.feedback-btn\[aria-pressed="true"\]\{[^}]*background:var\(--bg-hover\)/);
+  assert.match(css, /--conversation-bg: #fcfaf6/);
+  assert.match(css, /\[data-theme="dark"\] \{[^}]*--conversation-bg: var\(--bg\)/s);
+  assert.match(css, /\.main \{[^}]*background: var\(--conversation-bg, var\(--bg\)\)/);
+  assert.match(css, /\.composer \{[^}]*background: var\(--bg-soft\)/);
+  assert.match(css, /#composer-input \{[^}]*background: none/);
+});
+
+test('导航、对话与文档页统一品牌图标规格；首页不加版本徽章，字标保持细字重', () => {
+  const home = read('../index.html'), app = read('../app.html'), docs = read('../docs.html');
+  const logoSvg = (html) => html.match(/<(?:span|a) class="logo-mark"[^>]*><svg[^>]*>([\s\S]*?)<\/svg>/)?.[1] || '';
+  assert.ok(logoSvg(home) && logoSvg(app) && logoSvg(docs), '三页都应包含同一产品图标');
+  assert.equal(logoSvg(home), logoSvg(app));
+  assert.equal(logoSvg(app), logoSvg(docs));
+  assert.doesNotMatch(home, /class="(?:ver-badge|ver)"/, '导航页不挂版本徽章');
+  assert.match(read('../css/home.css'), /\.nav \.logo-text \{[^}]*font-weight:\s*500;/);
+  assert.match(read('../css/styles.css'), /\.ver-badge\s*\{[^}]*border-radius:\s*999px;/);
+  assert.match(docs, /\.ver-badge\s*\{[^}]*border-radius:\s*999px;/);
+  for (const css of [read('../css/home.css'), read('../css/styles.css'), docs]) {
+    assert.match(css, /\.logo-mark svg \{ width: 21px; height: 21px; display: block; \}/);
+  }
+});
+
+test('文档页部署清单链接为清晰的主题化圆角按钮，具备 hover 与键盘焦点反馈', () => {
+  const docs = read('../docs.html');
+  assert.match(docs, /<a class="build-manifest-link" href="\.\/build\.json">部署清单 ↗<\/a>/);
+  assert.match(docs, /\.build-manifest-link\{[^}]*border-radius:999px[^}]*text-decoration:none/);
+  assert.match(docs, /\.build-manifest-link:hover\{/);
+  assert.match(docs, /\.build-manifest-link:focus-visible\{/);
+});
+
+test('思考强度菜单左侧带浅灰细线，不影响各档位按钮布局', () => {
+  const css = read('../css/styles.css');
+  assert.match(css, /\.think-menu \{ padding: 6px; border-left: 1px solid color-mix\(in srgb, var\(--fg\) 18%, var\(--bg\)\); \}/);
+  assert.match(read('../app.html'), /id="think-menu" class="dd-menu think-menu"/);
+});
+
+test('管理员 API Key 弹窗仅对 TeamoRouter 管理员别名显示暗号输入；暗号不以明文写入源码', () => {
+  const app = read('../app.html'), ui = read('../js/ui.js'), admin = read('../js/adminkey.js');
+  assert.match(app, /id="key-admin-phrase-wrap" class="key-admin-phrase-wrap" hidden/);
+  assert.match(app, /id="key-admin-phrase" class="key-input mono" type="password"/);
+  assert.match(ui, /isAdminAlias\(keyInput\.value\.trim\(\)\).*DEFAULT_GATEWAY_ID/);
+  assert.match(ui, /unlockAdminKey\(typed, \{ phrase \}\)/);
+  assert.equal(translateUI('管理员暗号', 'en'), 'Admin phrase');
+  assert.match(admin, /ADMIN_PASSWORD_BODY = 10/);
+  assert.match(admin, /reason: 'bad-phrase'/);
+  const phrase = String.fromCodePoint(0x5929, 0x67a2, 0x667a, 0x6838, 0xff0c, 0x70b9, 0x4eae, 0x672a, 0x6765);
+  assert.equal(admin.includes(phrase), false, '管理员暗号只保存为派生值');
 });

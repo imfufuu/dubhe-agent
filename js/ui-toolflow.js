@@ -94,8 +94,7 @@ import { $, $$, el, esc } from './ui-markdown.js?v=2026.10.11.1';
 import { ICON } from './icons.js';
 
 // 2026.10.21：知识库检索 = 独立消息块。检索中：英文进行时「Searching library」+ 与命令/文件行
-// 同一套抛光扫光（is-working），详情列表实时显示检索词；检索结束自动收起，且整行不可展开——
-// 检索回来的内容属于系统提示词素材，不在界面展示（结果窗口/出参一律不渲染）。
+// 同一套抛光扫光（is-working）；检索词在标签右侧持续可见。检索结果属于系统提示词素材，不在界面展示。
 export function paintKnowledgeFold(wrap, m, afterEl, { msgsAll, msgNodes, syncFileFold, syncAssistantShell, decodeRawJsonString }) {
   const cluster = m._displayFragment ? [m] : adjacentToolMessages(msgsAll, m.id, (t) => toolFamily(t) === 'knowledge');
   const isHost = !!cluster.length && cluster[cluster.length - 1].id === m.id;
@@ -116,19 +115,23 @@ export function paintKnowledgeFold(wrap, m, afterEl, { msgsAll, msgNodes, syncFi
     node = el('div', 'searched-library');
     afterEl.after(node);
   } else if (node.previousElementSibling !== afterEl) afterEl.after(node);
-  // 检索词列表只在内容变化时重建（同 explored-files：避免流式期间反复重启抛光动画）
+  // 检索词仅在内容变化时更新；在状态标签右侧保持可见，不复用可展开的结果窗口。
   const qSig = JSON.stringify(queries);
   if (node._querySig !== qSig) {
-    node.innerHTML = `<span class="chip-ico">${ICON.search || ICON.file || ''}</span><span class="mono chip-name"></span><div class="chip-detail"><div class="fold-inner"><ul>${queries.map((x) => `<li class="mono">${esc(x)}</li>`).join('')}</ul></div></div>`;
+    node.innerHTML = `<span class="chip-ico">${ICON.search || ICON.file || ''}</span><span class="mono chip-name"></span><span class="searched-library-query mono"></span>`;
     node._querySig = qSig;
   }
   node.dataset.ownerId = m.id;
   node._activeCalls = calls;
-  // 不绑 click、不写 _toggleKey/_userToggle：检索中由 syncEditingFold 自动展开显示检索词，
-  // 结束后自动收起，用户点不开（隐藏检索结果 = 系统提示词素材）。
+  // 不绑 click、不写 _toggleKey/_userToggle：整行始终不可展开；只显示检索词，不显示检索结果。
   syncFileFold(node);
   const label = $('.chip-name', node);
   if (label) label.textContent = node._active ? 'Searching library' : (queries.length > 1 ? `Searched library ${queries.length}` : 'Searched library');
+  const queryEl = $('.searched-library-query', node);
+  if (queryEl) {
+    queryEl.textContent = queries.join(' · ');
+    queryEl.title = queries.join('\n');
+  }
   if (!m._displayFragment) {
     for (const x of cluster.slice(0, -1)) {
       const w = msgNodes.get(x.id), old = w && $('.searched-library', w);

@@ -25,7 +25,7 @@ import { probeLocalBrowser, localBrowserAvailable } from './localbrowser.js?v=20
 import { recordOutputText, recordOutputTool } from './toolflow.js?v=2026.10.11.1';
 import { relayAvailable, relaySupports, relayState } from './net.js';
 import { createFS, createTempFS } from './sandbox.js';
-import { effectiveApiKey } from './adminkey.js';
+import { effectiveApiKey, isAdminAlias } from './adminkey.js';
 import { compactMessages, contextBudgetFor } from './context.js';
 import { subagentGuide, specialistPrompt } from './subagents.js';
 import { TOOL_LOOP_MAX, SUBAGENT_LOOP_MAX, systemPrompt, OUTPUT_SPEC, outputSpec, compactOutputSpec, DEFAULT_IMAGE_MODEL, SMART_ROUTER_ID, FALLBACK_MODELS, resolveModelAlias } from './config.js?v=2026.10.11.1';
@@ -1708,6 +1708,8 @@ export function createAgent(store, hooks = {}) {
     },
 
     async send(userText, attachments = []) {
+      // 管理员别名刷新后默认锁定；先要求重新输入密钥与暗号，不能让空 Key 进入远程图片审核。
+      if (isAdminAlias(store.state.apiKey) && !effectiveApiKey(store.state.apiKey)) { emit('onNeedKey'); return; }
       clearTransientModeration();
       // 视频附件带着 5 张审核抽帧进来：只给审核用，不进消息 / 不落 localStorage（海报图 poster 保留给气泡缩略图）
       const videoFrames = new Map();

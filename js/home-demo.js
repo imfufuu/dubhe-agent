@@ -5,6 +5,7 @@ import { buildFileEditPreview } from './editpreview.js?v=2026.10.11.1';
 import { paintEditFoldContent } from './ui-editpreview.js?v=2026.10.11.1';
 import { ICON } from './icons.js';
 import { animateMessageSend } from './ui-send-animation.js?v=2026.10.11.1';
+import { revealChunks } from './ui-chunks.js?v=2026.10.11.1';
 import { readThemePreference } from './theme.js';
 import { getLanguage, LANGUAGE_KEY, onLanguageChange } from './locale.js';
 
@@ -139,21 +140,30 @@ export function mountHomeDemo(root, { autoStart = true, delay = (ms) => new Prom
       if (n._userToggle == null) n.classList.remove('expanded');
       n._syncFold?.(); scroll();
     };
-    const stream = async (node, value, { inputMode = false } = {}) => {
-      if (!inputMode) node.classList.add('demo-stream');
+    const streamInput = async (node, value) => {
       const chars = Array.from(value), stride = reduce ? chars.length : 1;
       for (let i = 0; i < chars.length; i += stride) {
-        await wait(demoCharacterDelay(chars[i], i, inputMode));
-        const part = chars.slice(0, i + stride).join('');
-        if (inputMode) { node.value = part; node.style.height = 'auto'; node.style.height = `${Math.min(node.scrollHeight, 70)}px`; }
-        else node.textContent = part;
+        await wait(demoCharacterDelay(chars[i], i, true));
+        node.value = chars.slice(0, i + stride).join('');
+        node.style.height = 'auto'; node.style.height = `${Math.min(node.scrollHeight, 70)}px`;
         scroll();
       }
-      node.classList.remove('demo-stream');
+    };
+    const streamChunks = async (body, node, value) => {
+      const chars = Array.from(value), stride = 10;
+      const state = body._chunk || (body._chunk = { blocks: 0, texts: [] });
+      const animate = document.documentElement.dataset.motion !== 'off';
+      for (let at = 0; at < chars.length; at += stride) {
+        const end = Math.min(chars.length, at + stride);
+        await wait(animate ? demoCharacterDelay(chars[end - 1], Math.floor(at / stride), false) : 0);
+        node.textContent = chars.slice(0, end).join('');
+        revealChunks(body, state, animate);
+        scroll();
+      }
     };
     const say = async (text) => {
       const n = assistant(), body = make('div', 'md-body'), p = make('p', ''); body.append(p); n.append(body);
-      await wait(220); await stream(p, text); await wait(180); return n;
+      await wait(220); await streamChunks(body, p, text); await wait(180); return n;
     };
     const edit = async (specs) => {
       const n = make('div', 'edited-files expanded'); assistant().append(n);
@@ -194,7 +204,7 @@ export function mountHomeDemo(root, { autoStart = true, delay = (ms) => new Prom
       n.classList.toggle('fail', failed); scroll(); await settleFold(n);
     };
     try {
-      await wait(700); await stream(input, S.prompt, { inputMode: true }); await wait(650);
+      await wait(700); await streamInput(input, S.prompt); await wait(650);
       const origin = input.getBoundingClientRect();
       // Clear BEFORE inserting/animating the bubble: never show two copies in flight.
       input.value = ''; input.style.height = ''; root.dataset.phase = 'sending';

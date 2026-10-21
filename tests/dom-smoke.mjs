@@ -696,7 +696,9 @@ console.log('\n⑰ 工具折叠 / 出参回填 / 识图路径回归');
   ok('检索完成后标签为过去时 Searched library 且自动收起', !!know && know.querySelector('.chip-name').textContent === 'Searched library' && !know.classList.contains('expanded'));
   click(know);
   ok('检索行点不开（完成后不可展开）', !!know && !know.classList.contains('expanded'));
-  ok('检索词保留在详情里，检索结果（系统提示词素材）不出现在界面', !!know && know.textContent.includes('chart 围栏语法')
+  ok('检索词显示在状态标签右侧，检索结果（系统提示词素材）不出现在界面', !!know
+    && know.querySelector('.chip-name')?.nextElementSibling === know.querySelector('.searched-library-query')
+    && know.querySelector('.searched-library-query')?.textContent === 'chart 围栏语法'
     && !document.body.textContent.includes('系统提示词素材'));
 }
 
@@ -715,7 +717,9 @@ console.log('\n⑰b 知识库检索行：直播态（抛光 + 英文进行时 + 
   const live = $('.searched-library');
   ok('检索中：is-working（抛光扫光生效态）+ 英文进行时 Searching library', !!live && live.classList.contains('is-working')
     && live.querySelector('.chip-name').textContent === 'Searching library');
-  ok('检索中：自动展开并显示检索内容（query · topic）', !!live && live.classList.contains('expanded') && live.textContent.includes('rendering chart · rendering'));
+  ok('仅 knowledge_search 的助手消息壳不会被空壳规则隐藏', !!live?.closest('.msg-assistant') && !live.closest('.msg-assistant').classList.contains('msg-collapsed'));
+  ok('检索中：状态标签右侧实时显示检索内容（query · topic）', !!live && live.classList.contains('expanded')
+    && live.querySelector('.searched-library-query')?.textContent === 'rendering chart · rendering');
   agent.getStatus = priorGetStatus;
   store.state.messages = [
     ...store.state.messages,
@@ -724,8 +728,10 @@ console.log('\n⑰b 知识库检索行：直播态（抛光 + 英文进行时 + 
   store.state.messages[1].done = true;
   ui.rebuildMessages();
   const done = $('.searched-library');
-  ok('检索结束：自动收起 + Searched library，结果内容不上屏', !!done && !done.classList.contains('expanded')
-    && done.querySelector('.chip-name').textContent === 'Searched library' && !document.body.textContent.includes('围栏语法细则'));
+  ok('检索结束：保留右侧检索词、不可展开，结果内容不上屏', !!done && !done.classList.contains('expanded')
+    && done.querySelector('.chip-name').textContent === 'Searched library'
+    && done.querySelector('.searched-library-query')?.textContent === 'rendering chart · rendering'
+    && !document.body.textContent.includes('围栏语法细则'));
 }
 
 console.log('\n⑱ 设置页字号 / 深度思考 / 本地会话数回归');

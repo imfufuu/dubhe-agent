@@ -167,6 +167,8 @@ test('demo clears input before send, streams, folds, offers one final copy, and 
   } });
   await demo.play();
   assert.equal(root.dataset.phase, 'complete'); assert.ok(checkedSend && checkedAgent);
+  assert.ok(root.querySelector('.msg-assistant .chunk'), '演示回复正文复用对话页的新块淡入类');
+  assert.ok(root.querySelector('.msg-assistant .chunk-tail'), '演示回复正文复用对话页的新增尾文本淡入类');
   assert.equal(root.querySelectorAll('[data-act="copy"]').length, 1);
   assert.equal(root.querySelectorAll('.is-working').length, 0);
   assert.equal(root.querySelectorAll('.explored-files pre').length, 0);

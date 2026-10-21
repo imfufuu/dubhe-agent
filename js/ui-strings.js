@@ -52,6 +52,8 @@ export const UI_STRINGS = {
   "已添加的自定义模型 ID": "Added custom model IDs",
   "仅 TeamoRouter 后端中继；官方网关不走此中继": "Relays TeamoRouter only; official gateways bypass this relay",
   "API Key 仅保存在本机浏览器，随请求头直发所选网关。": "API keys are stored only in this browser and sent to the selected gateway in request headers.",
+  "管理员暗号": "Admin phrase",
+  "请输入管理员暗号": "Enter the admin phrase",
   "同源中继可用（本地 server.py / Pages Functions）": "Origin relay available (local server.py / Pages Functions)",
   "智谱 API Key": "Zhipu API Key",
   "火山方舟 API Key": "Volcano Ark API Key",

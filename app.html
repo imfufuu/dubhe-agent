@@ -442,6 +442,10 @@
     <div class="modal-head"><h3 id="key-modal-title">API Key</h3><button id="key-close" class="icon-btn" type="button" aria-label="关闭"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6 18 18"/><path d="M18 6 6 18"/></svg></button></div>
     <p id="key-desc" class="modal-desc">API Key 仅保存在本机浏览器，随请求头直发所选网关。</p>
     <input id="key-input" class="key-input mono" type="password" placeholder="API Key" spellcheck="false" autocomplete="off" />
+    <div id="key-admin-phrase-wrap" class="key-admin-phrase-wrap" hidden>
+      <label for="key-admin-phrase">管理员暗号</label>
+      <input id="key-admin-phrase" class="key-input mono" type="password" placeholder="请输入管理员暗号" spellcheck="false" autocomplete="off" />
+    </div>
     <div class="modal-actions">
       <button id="key-save" class="primary-btn" type="button">保存</button>
     </div>

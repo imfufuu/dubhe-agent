@@ -426,18 +426,28 @@ export function mountUI(store, agent) {
   // ── API Key 弹窗（role=dialog + Esc 关闭 + 焦点圈定，a11y P2-3）──
   const keyModal = $('#key-modal');
   const keyInput = $('#key-input');
+  const adminPhraseWrap = $('#key-admin-phrase-wrap');
+  const adminPhraseInput = $('#key-admin-phrase');
+  const syncAdminPhraseField = () => {
+    const needed = isAdminAlias(keyInput.value.trim()) && (store.state.gatewayId || DEFAULT_GATEWAY_ID) === DEFAULT_GATEWAY_ID;
+    if (adminPhraseWrap) adminPhraseWrap.hidden = !needed;
+    if (!needed && adminPhraseInput) adminPhraseInput.value = '';
+  };
   let modalReturnFocus = null;
   window.openKeyModal = openKeyModal;
   function openKeyModal() {
     modalReturnFocus = document.activeElement;
     syncGatewayKeyModal(store.state.gatewayId || DEFAULT_GATEWAY_ID, keyInput, $('#key-modal-title'), $('#key-desc'));
     keyInput.value = store.state.apiKey;
+    if (adminPhraseInput) adminPhraseInput.value = '';
+    syncAdminPhraseField();
     keyModal.classList.add('open');
-    setTimeout(() => keyInput.focus(), 100);
+    setTimeout(() => (adminPhraseWrap && !adminPhraseWrap.hidden ? adminPhraseInput : keyInput).focus(), 100);
   }
   function closeKeyModal() {
     if (!keyModal.classList.contains('open')) return;
     keyModal.classList.remove('open');
+    if (adminPhraseInput) adminPhraseInput.value = '';
     // 归还焦点，键盘用户不迷失
     if (modalReturnFocus && modalReturnFocus.focus) modalReturnFocus.focus();
     modalReturnFocus = null;
@@ -451,7 +461,7 @@ export function mountUI(store, agent) {
     if (e.key === 'Escape') { closeKeyModal(); return; }
     // 焦点圈定：Tab 只在弹窗内循环
     if (e.key === 'Tab') {
-      const focusables = [$('#key-close'), keyInput, $('#key-save')];
+      const focusables = [$('#key-close'), keyInput, ...(adminPhraseWrap && !adminPhraseWrap.hidden ? [adminPhraseInput] : []), $('#key-save')];
       const idx = focusables.indexOf(document.activeElement);
       if (idx < 0) return;
       if (e.shiftKey && idx === 0) { e.preventDefault(); focusables[focusables.length - 1].focus(); }
@@ -471,12 +481,15 @@ const fmtAdminExp = (ms) => {
     if (!chk.ok) { toast('Key 格式错误：' + chk.reason, 'err', 5000); keyInput.focus(); keyInput.select(); return; }
     // 管理员别名：先用口令解封（解不开就拒绝保存，避免存进去一把用不了的 key）
     if (isAdminAlias(typed)) {
-      toast(localeText('正在校验管理员口令…', 'Verifying admin passphrase…'), 'ok', 1500);
-      const r = await unlockAdminKey(typed);
+      toast(localeText('正在校验管理员口令与暗号…', 'Verifying admin key and phrase…'), 'ok', 1500);
+      const phrase = adminPhraseInput ? adminPhraseInput.value : '';
+      const r = await unlockAdminKey(typed, { phrase });
       if (!r.ok) {
-        const why = r.reason === 'bad-password' ? localeText('管理员口令不正确（admin- 开头的密钥会被当作管理员口令）', 'Incorrect admin passphrase (keys starting with admin- are treated as admin passphrases)')
-          : r.reason === 'expired' ? localeText(`管理员密钥已于 ${fmtAdminExp(r.exp)} 过期：口令正确也无法再使用，请联系管理员换发`, `Admin key expired on ${fmtAdminExp(r.exp)}: the passphrase is correct but can no longer be used. Ask the admin to reissue it.`)
-            : localeText('管理员密钥不可用', 'Admin key unavailable');
+        const why = r.reason === 'bad-password' ? localeText('管理员口令不正确（admin- 开头的密钥会被当作管理员口令）', 'Incorrect admin key (values starting with admin- are treated as admin aliases)')
+          : r.reason === 'bad-phrase' ? localeText('管理员暗号不正确', 'Incorrect admin phrase')
+            : r.reason === 'expired' ? localeText(`管理员密钥已于 ${fmtAdminExp(r.exp)} 过期：口令正确也无法再使用，请联系管理员换发`, `Admin key expired on ${fmtAdminExp(r.exp)}: the key is correct but can no longer be used. Ask the admin to reissue it.`)
+              : localeText('管理员密钥不可用', 'Admin key unavailable');
+        if (r.reason === 'bad-phrase') adminPhraseInput && adminPhraseInput.focus();
         return toast(why, 'err', 6000);
       }
       store.state.apiKey = typed;
@@ -511,13 +524,15 @@ const fmtAdminExp = (ms) => {
     b.classList.toggle('admin-mode', admin);
     b.classList.toggle('configured-mode', configured);
     b.title = admin
-      ? (adminUnlocked() ? localeText(`管理员密钥已启用（有效期至 ${fmtAdminExp(adminExpiresAt())}，明文不落盘）`, `Admin key active (valid until ${fmtAdminExp(adminExpiresAt())}; never stored in plain text)`) : localeText('管理员密钥未解封或已过期：点开重新输入口令', 'Admin key locked or expired: open to re-enter the passphrase'))
+      ? (adminUnlocked() ? localeText(`管理员密钥已启用（有效期至 ${fmtAdminExp(adminExpiresAt())}，明文不落盘）`, `Admin key active (valid until ${fmtAdminExp(adminExpiresAt())}; never stored in plain text)`) : localeText('管理员密钥未解封或已过期：点开重新输入口令和暗号', 'Admin key locked or expired: open to re-enter the key and phrase'))
       : configured
         ? localeText(`${gateway.name} API Key 已配置并保存在本机，点击可管理`, `${gateway.name} API key is stored locally; click to manage`)
         : localeText(`填入 ${gateway.name} API Key`, `Enter a ${gateway.name} API key`);
   }
   updateKeyBtn();
+  keyInput.addEventListener('input', syncAdminPhraseField);
   keyInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#key-save').click(); });
+  if (adminPhraseInput) adminPhraseInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#key-save').click(); });
 
   // ── 会话记录（侧栏只做记录与切换；回滚全部在对话区）─────────────────
   function sessionActivityAt(s) {
@@ -1705,9 +1720,10 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     const hasChips = !!(chipsEl && chipsEl.children.length > 0);
     const hasExplored = !!$('.explored-files', w);
     const hasEdited = !!$('.edited-files', w);
+    const hasSearched = !!$('.searched-library', w);
     const footEl = $('.msg-foot', w);
     const hasFoot = !!(footEl && !footEl.hidden && String(footEl.textContent || '').trim());
-    const emptyShell = !hasHead && !hasBody && !hasReason && !hasChips && !hasExplored && !hasEdited && !hasFoot;
+    const emptyShell = !hasHead && !hasBody && !hasReason && !hasChips && !hasExplored && !hasEdited && !hasSearched && !hasFoot;
     w.classList.toggle('msg-collapsed', emptyShell);
   }
 

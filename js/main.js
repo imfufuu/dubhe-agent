@@ -11,7 +11,6 @@ import { mountUI, toast } from './ui.js?v=2026.10.11.1';
 import { relayAvailable } from './net.js';
 import { text as localeText } from './locale.js';
 import { probeGatewayHosts } from './endpoint.js';
-import { isAdminAlias, unlockAdminKey } from './adminkey.js';
 import { mountDebugWindow, toggleDebug, debugActive, setDebug } from './debugwindow.js?v=2026.10.11.1';
 import { mountSettings, applyFontSize, applyMotion, browserFeatureReport } from './settings.js?v=2026.10.11.1';
 import { APP_RELEASE } from './config.js?v=2026.10.11.1';
@@ -161,14 +160,6 @@ document.addEventListener('visibilitychange', () => {
 // 网页中继探测（一次）：本地 server.py 提供单页抓取/Git；Worker health 另行声明 search/crawl 特性。
 // 未声明的路由不会进入工具表，避免模型调用旧版本地 relay 的 404；内置沙箱 Git 仍可离线用。
 relayAvailable().then((ok) => { store.state.relayOk = ok; if (ui && ui.syncWeb) ui.syncWeb(); }).catch(() => {});
-
-// 刷新后如果存的还是管理员别名，重新解封一次（口令就是别名本身，不需要再问用户）
-if (isAdminAlias(store.state.apiKey)) {
-  unlockAdminKey(store.state.apiKey).then((r) => {
-    if (!r.ok) toast(r.reason === 'expired' ? localeText('管理员密钥已过期：口令正确也无法再使用，请联系管理员换发', 'Admin key expired: the passphrase is correct but can no longer be used. Ask the admin to reissue it.') : localeText('管理员密钥未解封：请在 API Key 里重新输入口令', 'Admin key not unlocked: re-enter the passphrase in the API Key field'), 'warn', 6000);
-    else if (ui && ui.refreshKeyBtn) ui.refreshKeyBtn();
-  }).catch(() => {});
-}
 
 // 网关接入点择路（一次性）：国内网络下 api.teamorouter.com 常常打不开，
 // 而 api.teamorouter.cn 正常。并行探测两个域名，把能用的记下来，之后请求都用它。

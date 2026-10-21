@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 // ─── 生成 / 续期管理员密钥的密封常量 ──────────────────────────────────────
 // 用法：
-//   node tools/seal-admin.mjs --gen <管理员密钥> [有效天数=14]     随机生成 admin-{8 位数字/字母} 口令并密封
-//   node tools/seal-admin.mjs <口令> <管理员密钥> [有效天数=14]    用指定口令密封（口令必须 admin- 开头）
-// 输出 SALT / SEALED / TAG 三个常量，替换进 js/adminkey.js；口令只打印一次，自己收好。
-// 算法与 js/adminkey.js 完全同源（直接 import sealAdmin），并用 Node 原生 scrypt 做一次交叉自检。
+//   DUBHE_ADMIN_PHRASE='<暗号>' node tools/seal-admin.mjs --gen <管理员密钥> [有效天数=14]
+//   DUBHE_ADMIN_PHRASE='<暗号>' node tools/seal-admin.mjs <口令> <管理员密钥> [有效天数=14]
+// --gen 随机生成 admin-{10 位字母/数字} 口令；所有调用都必须设置管理员暗号供自检。
+// 输出 SALT / SEALED / TAG 常量，替换进 js/adminkey.js；口令只打印一次，自己收好。
+// 暗号只从环境变量读取、不回显；工具用同一暗号完成解封自检，并以 Node 原生 scrypt 交叉验证。
 import crypto from 'node:crypto';
 import { sealAdmin, unlockAdminKey, scrypt, SCRYPT_PARAMS, ADMIN_PREFIX, ADMIN_PASSWORD_BODY } from '../js/adminkey.js';
 
@@ -28,6 +29,7 @@ if (!pw || !key) {
   process.exit(2);
 }
 if (!pw.startsWith(ADMIN_PREFIX)) { console.error(`口令必须以 ${ADMIN_PREFIX} 开头`); process.exit(2); }
+if (!process.env.DUBHE_ADMIN_PHRASE) { console.error('请通过 DUBHE_ADMIN_PHRASE 环境变量提供管理员暗号（不会回显）'); process.exit(2); }
 if (!(days > 0)) { console.error('有效天数必须 > 0'); process.exit(2); }
 
 // 交叉自检：纯 JS scrypt 与 Node 原生 scrypt 必须逐字节一致
@@ -40,10 +42,10 @@ const t0 = performance.now();
 const out = await sealAdmin(pw, { key, days, salt: salt.toString('base64') });
 const sealMs = Math.round(performance.now() - t0);
 const t1 = performance.now();
-const check = await unlockAdminKey(pw, { bundle: { salt: out.salt, sealed: out.sealed, tag: out.tag } });
+const check = await unlockAdminKey(pw, { bundle: { salt: out.salt, sealed: out.sealed, tag: out.tag }, phrase: process.env.DUBHE_ADMIN_PHRASE });
 const verifyMs = Math.round(performance.now() - t1);
-const bad = await unlockAdminKey(pw.slice(0, -1) + (pw.endsWith('x') ? 'y' : 'x'), { bundle: { salt: out.salt, sealed: out.sealed, tag: out.tag } });
-const expired = await unlockAdminKey(pw, { bundle: { salt: out.salt, sealed: out.sealed, tag: out.tag }, now: out.exp + 1 });
+const bad = await unlockAdminKey(pw.slice(0, -1) + (pw.endsWith('x') ? 'y' : 'x'), { bundle: { salt: out.salt, sealed: out.sealed, tag: out.tag }, phrase: process.env.DUBHE_ADMIN_PHRASE });
+const expired = await unlockAdminKey(pw, { bundle: { salt: out.salt, sealed: out.sealed, tag: out.tag }, now: out.exp + 1, phrase: process.env.DUBHE_ADMIN_PHRASE });
 
 console.log(`口令（只显示这一次）：${pw}`);
 console.log(`有效期：${new Date(out.iat).toISOString()} → ${new Date(out.exp).toISOString()}（${days} 天）`);
