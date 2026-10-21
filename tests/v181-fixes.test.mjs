@@ -734,7 +734,7 @@ test('2026.10.21：knowledge_search 独立消息块（toolflow 家族 / UI 接�
   assert.match(read('../js/icons.js'), /search: ico\(/);
 });
 
-test('2026.10.21：快捷图表全屏静态显示、赞踩无灰底、对话主区米白且输入框不变', () => {
+test('2026.10.22：快捷图表静态显示、赞踩无灰底、对话主区/侧栏/面板同为米白且输入框不变', () => {
   const css = read('../css/styles.css');
   const lightbox = read('../js/ui-lightbox.js');
   assert.match(lightbox, /staticChart: !!expandChart\.closest\('\.md-chart'\)/);
@@ -748,6 +748,8 @@ test('2026.10.21：快捷图表全屏静态显示、赞踩无灰底、对话主�
   assert.match(css, /--conversation-bg: #fcfaf6/);
   assert.match(css, /\[data-theme="dark"\] \{[^}]*--conversation-bg: var\(--bg\)/s);
   assert.match(css, /\.main \{[^}]*background: var\(--conversation-bg, var\(--bg\)\)/);
+  assert.match(css, /\.sidebar \{[^}]*background: var\(--conversation-bg, var\(--bg\)\)/);
+  assert.match(css, /\.panel \{[^}]*background: var\(--conversation-bg, var\(--bg\)\)/);
   assert.match(css, /\.composer \{[^}]*background: var\(--bg-soft\)/);
   assert.match(css, /#composer-input \{[^}]*background: none/);
 });

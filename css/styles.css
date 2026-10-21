@@ -29,7 +29,7 @@
   --ui-fs-42px: 42px;
   --bg: #ffffff;
   --bg-soft: #fafafa;
-  --conversation-bg: #fcfaf6; /* 浅色对话主区：极淡米白；输入框继续用 --bg-soft */
+  --conversation-bg: #fcfaf6; /* 浅色对话主区、侧栏与面板：统一极淡米白；输入框继续用 --bg-soft */
   --bg-hover: #f4f4f4;
   --fg: #0a0a0a;
   --fg-2: #555555;
@@ -238,7 +238,7 @@ html { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
 .sidebar {
   display: flex; flex-direction: column;
   border-right: 1px solid var(--line);
-  background: var(--bg);
+  background: var(--conversation-bg, var(--bg));
   min-width: 0; overflow: hidden;
   transition: transform .34s var(--ease), box-shadow .34s var(--ease), background-color var(--theme-speed) var(--ease), border-color var(--theme-speed) var(--ease);
 }
@@ -1369,7 +1369,7 @@ html[data-motion="off"] .reasoning .think-stream .think-line.entered { animation
 .overlay-backdrop.show { opacity: 1; pointer-events: auto; }
 .panel {
   border-left: 1px solid var(--line); display: flex; flex-direction: column;
-  min-width: 0; overflow: hidden; background: var(--bg);
+  min-width: 0; overflow: hidden; background: var(--conversation-bg, var(--bg));
   transition: transform .35s var(--ease), background-color var(--theme-speed) var(--ease), border-color var(--theme-speed) var(--ease);
 }
 .panel.collapsed { border-left-color: transparent; }
