@@ -21,6 +21,8 @@ export function translateUI(value, language = getLanguage()) {
     [/^显示最近 (\d+) 条.*$/, 'Showing the latest $1 messages'],
     [/^当前沙箱 (.+)$/, 'Workspace: $1'], [/^已连接：(.+)$/, 'Connected: $1'],
     [/^自定义地址不可用：(.+)$/, 'Custom relay unavailable: $1'],
+    [/^已添加模型 ID：(.+)$/, 'Added model ID: $1'], [/^已移除模型 ID：(.+)$/, 'Removed model ID: $1'],
+    [/^(.+) 官方文档$/, '$1 official docs'],
   ];
   for (const [re, replacement] of rules) if (re.test(key)) return raw.replace(key, key.replace(re, replacement));
   return raw;

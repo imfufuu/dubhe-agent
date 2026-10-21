@@ -668,3 +668,36 @@ test('文档扫描：算法核（合成纸面检出四角）、PDF 结构、入�
   assert.deepEqual(bottomRight, { x: 820, y: 470 }, '源图四角映射到显示画布范围内，而非裁剪结果之外');
   assert.deepEqual(geometry.scannerOverlayToImage(bottomRight, metrics), { x: 1600, y: 900 }, '拖动坐标反算回全分辨率源图');
 });
+
+test('2026.10.21：「自动路由」徽标改为「自动」、设置网关栏目补英文翻译、演示跟随语言清空重播', () => {
+  // 1. 路由徽标只显示「自动」；旧文案全仓绝迹
+  const picker = read('../js/ui-model-picker.js');
+  assert.match(picker, /localeText\('自动', 'Auto'\)/);
+  assert.equal(picker.includes('自动路由'), false);
+  assert.equal(read('../js/ui-strings.js').includes('自动路由'), false);
+  assert.equal(translateUI('自动', 'en'), 'Auto');
+
+  // 2. 设置页网关栏目（含 Key 弹窗与校验文案）都有英文翻译
+  for (const zh of [
+    '模型网关', '切换后使用该网关独立的 Key 与模型目录', 'TeamoRouter（第三方）', 'Claude / Anthropic（官方）',
+    '自定义 OpenAI 兼容网关', '按网关独立保存；仅本机存储，直连所选服务', '网关基础 URL（可选）',
+    '留空使用官方默认；自定义网关必填 HTTPS URL', '例如 model-id', '添加', '已添加的自定义模型 ID',
+    '仅 TeamoRouter 后端中继；官方网关不走此中继', '同源中继可用（本地 server.py / Pages Functions）',
+    'Key 长度过短，请检查是否复制完整', '仅允许 HTTPS 网关地址', '在 TeamoRouter 控制台创建',
+    '管理员别名只适用于 TeamoRouter', '智谱 API Key', '自定义网关 API Key',
+    'API Key 仅保存在本机浏览器，随请求头直发所选网关。',
+  ]) {
+    assert.notEqual(translateUI(zh, 'en'), zh, `网关栏目缺英文翻译：${zh}`);
+  }
+  assert.equal(translateUI('已添加模型 ID：my-model', 'en'), 'Added model ID: my-model');
+  assert.equal(translateUI('已移除模型 ID：my-model', 'en'), 'Removed model ID: my-model');
+  assert.equal(translateUI('Kimi / Moonshot AI 官方文档', 'en'), 'Kimi / Moonshot AI official docs');
+
+  // 3. 演示脚本 zh/en 两份，切语言（同文档 onLanguageChange / iframe storage 事件）都会清空重播
+  const demo = read('../js/home-demo.js');
+  assert.match(demo, /DEMO_SCRIPTS = \{/);
+  assert.match(demo, /zh: \{/); assert.match(demo, /en: \{/);
+  assert.match(demo, /const onLangSwitch = \(\) => \{ syncChrome\(\); if \(started\) play\(\); \};/);
+  assert.match(demo, /onLanguageChange\(onLangSwitch\)/);
+  assert.match(demo, /e\.key === LANGUAGE_KEY/);
+});

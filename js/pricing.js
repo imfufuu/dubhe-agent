@@ -64,6 +64,10 @@ export const MODEL_PRICING = {
   'kimi-k3':                  { input: 3.0,   output: 15.0,  cachedInput: 0.3 },
   'kimi-k3[1M]':              { input: 3.0,   output: 15.0,  cachedInput: 0.3 },
 
+  // Xiaomi MiMo（官方 API 标价，网关上架后以网关 list_cost 复核）
+  'mimo-v2.6-pro':            { input: 0.435, output: 0.87,  cachedInput: 0.0036 },
+  'mimo-v2.6-flash':          { input: 0.14,  output: 0.28,  cachedInput: 0.0028 },
+
   // MiniMax · 512k 以上上下文输入/输出均按 2x 标价
   'minimax-m3':               { input: 0.3,   output: 1.2,   cachedInput: 0.06, contextTier: { thresholdTokens: 512000, inputMultiplier: 2.0, outputMultiplier: 2.0, cachedInputMultiplier: 2.0 } },
 

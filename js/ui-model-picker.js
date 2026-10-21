@@ -82,7 +82,7 @@ export function installModelPicker({ store, agent, toast, getBusy, openKeyModal,
         item.innerHTML = isRouter
           ? `<span class="dd-item-id mono router-name">${esc(SMART_ROUTER_LABEL)}</span>
             <span class="dd-item-badges">
-              <span class="badge hot" title="按任务类型 / 难度自动选模型">自动路由</span>
+              <span class="badge hot" title="${localeText('按任务类型 / 难度自动选模型', 'Auto-selects a model by task type and difficulty')}">${localeText('自动', 'Auto')}</span>
             </span>`
           : `<span class="dd-item-id mono">${esc(m.id)}</span>
             <span class="dd-item-badges">

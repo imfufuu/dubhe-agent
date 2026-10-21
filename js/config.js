@@ -52,7 +52,7 @@ export const FALLBACK_MODELS = [
   ...MODEL_CATALOG.filter(m => m.channel === 'chat' && !m.hidden).map(m => ({ ...m })),
 ];
 
-export const PROVIDER_ORDER = [SMART_ROUTER_PROVIDER, 'Anthropic', 'OpenAI', 'Google', 'DeepSeek', 'GLM', 'Grok', 'Kimi', 'Doubao', 'Qwen', 'MiniMax', '其他'];
+export const PROVIDER_ORDER = [SMART_ROUTER_PROVIDER, 'Anthropic', 'OpenAI', 'Google', 'DeepSeek', 'GLM', 'Grok', 'Kimi', 'Doubao', 'Qwen', 'MiniMax', 'Xiaomi', '其他'];
 
 // ── 厂商组内模型排序：热度优先级 + 版本号降序 + 旗舰档位权重 ──────────────
 const PINNED_FAMILY_RANK = new Map(FALLBACK_MODELS.map((m, idx) => [m.id, idx]));
@@ -246,6 +246,7 @@ export function providerOf(modelId) {
   if (m.startsWith('doubao') || m.startsWith('seed-')) return 'Doubao';
   if (m.startsWith('qwen')) return 'Qwen';
   if (m.startsWith('minimax')) return 'MiniMax';
+  if (m.startsWith('mimo')) return 'Xiaomi';
   return '其他';
 }
 

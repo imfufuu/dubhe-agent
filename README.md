@@ -541,7 +541,7 @@ python3 server.py --workspace ~/code   # 换工作区（git 的根，越界一�
 
 ## 图标来源与版权
 
-供应商 Logo 保存在本地，仅用于识别对应服务，不构成背书：`Anthropic`=Claude AI symbol.svg · `OpenAI`=OpenAI logo 2025 (symbol).svg · `Google`=Google Gemini icon 2025.svg · `DeepSeek`=DeepSeek-icon.svg · `GLM`=Z.ai (company logo).svg · `Kimi`=`assets/icons/kimi.svg`、`Doubao`=`assets/icons/doubao.svg`、`MiniMax`=`assets/icons/minimax.svg`，均按用户指示由上传的 Zonalogo.com 文本文件原样改扩展名而来（非 Wikimedia 文件；附件未含许可信息） · `Qwen`=`assets/icons/qwen.svg`，按用户指定链接下载自 [Wikimedia Commons: Qwen logo.svg](https://commons.wikimedia.org/wiki/File:Qwen_logo.svg)。Commons 页面列明上传者 Mr. Ibrahem 的 CC0 1.0 声明，同时显示版权状态信息可能不正确的警告；该文件按用户指定采用，但不宣称是阿里巴巴官方上传或已消除许可争议。详见 `THIRD-PARTY-NOTICES.md`。纯黑 Logo 在暗色主题下 CSS 反色；加载失败自动降级为首字母徽章。
+供应商 Logo 保存在本地，仅用于识别对应服务，不构成背书：`Anthropic`=Claude AI symbol.svg · `OpenAI`=OpenAI logo 2025 (symbol).svg · `Google`=Google Gemini icon 2025.svg · `DeepSeek`=DeepSeek-icon.svg · `GLM`=Z.ai (company logo).svg · `Kimi`=`assets/icons/kimi.svg`、`Doubao`=`assets/icons/doubao.svg`、`MiniMax`=`assets/icons/minimax.svg`，均按用户指示由上传的 Zonalogo.com 文本文件原样改扩展名而来（非 Wikimedia 文件；附件未含许可信息） · `Xiaomi`=`assets/icons/xiaomi.svg`，按用户指示由上传的「XiaomiMiMo」单色 SVG 文本原样改扩展名而来（附件未含许可信息） · `Qwen`=`assets/icons/qwen.svg`，按用户指定链接下载自 [Wikimedia Commons: Qwen logo.svg](https://commons.wikimedia.org/wiki/File:Qwen_logo.svg)。Commons 页面列明上传者 Mr. Ibrahem 的 CC0 1.0 声明，同时显示版权状态信息可能不正确的警告；该文件按用户指定采用，但不宣称是阿里巴巴官方上传或已消除许可争议。详见 `THIRD-PARTY-NOTICES.md`。纯黑 Logo 在暗色主题下 CSS 反色；加载失败自动降级为首字母徽章。
 
 **容错**：429/5xx 指数退避重试一次；HTTP 错误映射中文提示（401 查 Key / 402 充值 / 404 模型名）；直连失败自动切换 `/api/proxy` 中继并回放请求；中断按钮随时终止流。
 

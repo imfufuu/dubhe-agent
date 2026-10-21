@@ -1677,6 +1677,7 @@ test('TeamoRouter 新增 Doubao / Kimi / Qwen / MiniMax，品牌图标均为本�
   const expected = [
     ['doubao-seed-2.1-pro', 'Doubao'], ['kimi-k3', 'Kimi'],
     ['qwen3.8-max', 'Qwen'], ['MiniMax-M3', 'MiniMax'],
+    ['mimo-v2.6-pro', 'Xiaomi'], ['mimo-v2.6-flash', 'Xiaomi'],
   ];
   for (const [id, provider] of expected) {
     assert.equal(MODEL_CATALOG_BY_ID.get(id)?.provider, provider, id);
@@ -1687,7 +1688,7 @@ test('TeamoRouter 新增 Doubao / Kimi / Qwen / MiniMax，品牌图标均为本�
   assert.equal(MODEL_CATALOG_DATE, '2026-10-21');
   const { PROVIDER_ICON, providerIcon } = await import('../js/icons.js');
   const fs = await import('node:fs');
-  for (const [provider, file] of [['Doubao', 'doubao.svg'], ['Kimi', 'kimi.svg'], ['Qwen', 'qwen.svg'], ['MiniMax', 'minimax.svg']]) {
+  for (const [provider, file] of [['Doubao', 'doubao.svg'], ['Kimi', 'kimi.svg'], ['Qwen', 'qwen.svg'], ['MiniMax', 'minimax.svg'], ['Xiaomi', 'xiaomi.svg']]) {
     assert.equal(PROVIDER_ICON[provider].file, file);
     assert.ok(providerIcon(provider).includes(`assets/icons/${file}`));
     const svg = fs.readFileSync(new URL(`../assets/icons/${file}`, import.meta.url), 'utf8');
@@ -4570,7 +4571,7 @@ test('模型列表以热门/Popular、低价/Cheap 标记；不显示新收录�
   const sonnet = cfg.FALLBACK_MODELS.find((m) => m.id === 'claude-sonnet-5');
   assert.equal(!!sonnet.hot, false, '旧版 Sonnet 不再占用推荐标签');
   const fable = cfg.FALLBACK_MODELS.find((m) => m.id === 'claude-fable-5-1');
-  assert.equal(!!fable.hot, false, 'Fable 保留但不声称热度排行');
+  assert.equal(fable.hot, true, 'claude-fable-5-1 也是热门模型（2026.10.21 起补上 hot 标签）');
   const astra = cfg.FALLBACK_MODELS.find((m) => m.id === 'gpt-6-astra');
   assert.equal(astra.hot, true, 'GPT-6 Astra 应标热门');
   const gpt55 = cfg.FALLBACK_MODELS.find((m) => m.id === 'gpt-5.5');
@@ -6330,7 +6331,7 @@ test('2026.9.30.6 八项体验与渲染升级（空状态隐藏最新输出、re
 
 group('2026.9.30.7 40模型全支持与热度版本排序 / 长期记忆自动生效 / 天枢2.5自演进增强 / 黑粒回滚与图表微交互');
 
-test('2026.10.19：支持固定对话目录（DeepSeek 两个免费档继续下架，TeamoRouter 新增模型已加入 → 45 个），且按热度与版本优先级排序', async () => {
+test('2026.10.19：支持固定对话目录（DeepSeek 两个免费档继续下架，TeamoRouter 新增模型已加入 → 47 个），且按热度与版本优先级排序', async () => {
   const expected41 = [
     'claude-opus-5-5', 'claude-fable-5-1', 'claude-opus-5', 'claude-fable-5', 'claude-sonnet-5',
     'claude-opus-4-8', 'claude-opus-4-7', 'claude-opus-4-6', 'claude-sonnet-4-6', 'claude-haiku-4-5',
@@ -6341,6 +6342,7 @@ test('2026.10.19：支持固定对话目录（DeepSeek 两个免费档继续下�
     'glm-5.3-flash', 'glm-5.3', 'glm-5.2',
     'grok-4.6', 'grok-4.7',
     'doubao-seed-2.0-lite', 'doubao-seed-2.1-pro',
+    'mimo-v2.6-flash', 'mimo-v2.6-pro',
     'claude-haiku-4-5-20251001', 'claude-sonnet-5-5', 'deepseek-v4-pro-260425', 'gpt-6-luna', 'gpt-6-sol', 'gpt-6.1-sol',
   ];
   const fallbackIds = new Set(cfg.FALLBACK_MODELS.map((m) => m.id));
@@ -6348,7 +6350,7 @@ test('2026.10.19：支持固定对话目录（DeepSeek 两个免费档继续下�
     assert.ok(fallbackIds.has(id), `FALLBACK_MODELS 缺少模型：${id}`);
   }
   const chatModels = cfg.FALLBACK_MODELS.filter((m) => m.id !== cfg.SMART_ROUTER_ID && !cfg.isImageModel(m.id));
-  assert.equal(chatModels.length, 45, '排除智能路由、识图/生图专用模型后应恰好包含 45 个固定对话模型（不含 DeepSeek 免费档）');
+  assert.equal(chatModels.length, 47, '排除智能路由、识图/生图专用模型后应恰好包含 47 个固定对话模型（不含 DeepSeek 免费档）');
   assert.ok(!fallbackIds.has('deepseek-v4-flash-free') && !fallbackIds.has('deepseek-flash-free'), 'DeepSeek 两个免费模型必须下架');
 
   // Claude 与 GPT 新模型热度与组内版本优先级排序验证

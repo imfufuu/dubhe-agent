@@ -32,6 +32,7 @@ Subresource Integrity 校验。项目通过固定到精确版本（`v0.26.4`）�
 
 - `qwen.svg`：按用户指定的 [Wikimedia Commons: Qwen logo.svg](https://commons.wikimedia.org/wiki/File:Qwen_logo.svg) 下载（原文件：[upload.wikimedia.org](https://upload.wikimedia.org/wikipedia/commons/6/69/Qwen_logo.svg)）。Commons 页面列出上传者 Mr. Ibrahem 的 CC0 1.0 声明，但同时标有「版权状态信息可能不正确」警告；此文件按用户指定保留，来源不声称为 Qwen/Alibaba 官方上传，许可状态仍应以 Commons 后续核查为准。
 - `kimi.svg`、`doubao.svg`、`minimax.svg`：由用户上传、文件名标注为 Zonalogo.com 的 SVG 文本按用户指示原样改扩展名；不是 Wikimedia 下载文件。附件不含许可声明，项目不为其另行推断许可或官方品牌来源。
+- `xiaomi.svg`：由用户上传的「XiaomiMiMo」单色 SVG 文本按用户指示原样改扩展名；不是 Wikimedia 下载文件。附件不含许可声明，项目不为其另行推断许可或官方品牌来源。
 - 其余已有图标：按 README 中各自来源说明使用。所有图标仅用于识别对应服务，不构成背书。
 
 ## 按需本地文档组件（V1.8）

@@ -155,6 +155,8 @@ test('conversation read fold never renders file content', () => {
 });
 test('demo clears input before send, streams, folds, offers one final copy, and replays without duplicates', async () => {
   const { mountHomeDemo } = await import('../js/home-demo.js');
+  const { setLanguagePreference } = await import('../js/locale.js');
+  setLanguagePreference('zh'); // jsdom 的 navigator 是 en-US；显式钉住中文，断言的中文文案才有意义
   const html = fs.readFileSync(new URL('../demo/chat-card.html', import.meta.url), 'utf8');
   const root = document.createElement('div'); root.innerHTML = new JSDOM(html).window.document.querySelector('.card-root').innerHTML;
   document.body.append(root);
@@ -181,4 +183,58 @@ test('demo clears input before send, streams, folds, offers one final copy, and 
   assert.equal(root.querySelectorAll('.msg-user').length, 1);
   assert.equal(root.querySelectorAll('[data-act="copy"]').length, 1);
   demo.destroy(); root.remove();
+});
+
+// 演示跟随界面语言：英文界面下整段演示（提示词、旁白、状态栏、外壳文字）都用英文播放。
+test('demo plays in English when the UI language is English', async () => {
+  const { mountHomeDemo } = await import('../js/home-demo.js');
+  const { setLanguagePreference } = await import('../js/locale.js');
+  setLanguagePreference('en');
+  const html = fs.readFileSync(new URL('../demo/chat-card.html', import.meta.url), 'utf8');
+  const root = document.createElement('div'); root.innerHTML = new JSDOM(html).window.document.querySelector('.card-root').innerHTML;
+  document.body.append(root);
+  let demo;
+  try {
+    demo = mountHomeDemo(root, { autoStart: false, delay: async () => {} });
+    // 挂载即同步外壳文字，不必等播放开始
+    assert.equal(root.querySelector('#demo-replay').textContent, '↻ Replay');
+    assert.equal(root.querySelector('#composer-input').placeholder, 'You bring the idea, Dubhe builds it');
+    assert.equal(root.querySelector('.composer-hint').textContent, 'Simulated run; no model calls and no real tool execution');
+    assert.equal(root.querySelector('#messages').getAttribute('aria-label'), 'Agent demo conversation');
+    await demo.play();
+    assert.equal(root.dataset.phase, 'complete');
+    assert.equal(root.querySelector('.msg-user').textContent, 'Update the timezone conversion in date_utils.py to support Asia/Shanghai, handle DST and naive inputs, add unit tests, then run lint');
+    assert.ok(root.querySelector('.msg-foot').textContent.includes('Command time 3.8s · simulated'));
+    assert.equal(root.querySelector('#demo-status').textContent, 'Agent demo · complete');
+    assert.equal(document.documentElement.lang, 'en');
+  } finally { demo?.destroy(); root.remove(); setLanguagePreference('zh'); }
+});
+
+// 切换语言后：已播放的演示自动清空，按切换后的语言重播（用户要求的行为）。
+test('demo clears and replays in the newly selected language on language switch', async () => {
+  const { mountHomeDemo } = await import('../js/home-demo.js');
+  const { setLanguagePreference } = await import('../js/locale.js');
+  setLanguagePreference('zh');
+  const html = fs.readFileSync(new URL('../demo/chat-card.html', import.meta.url), 'utf8');
+  const root = document.createElement('div'); root.innerHTML = new JSDOM(html).window.document.querySelector('.card-root').innerHTML;
+  document.body.append(root);
+  let demo;
+  try {
+    demo = mountHomeDemo(root, { autoStart: false, delay: async () => {} });
+    await demo.play();
+    assert.ok(root.querySelector('.msg-user').textContent.includes('date_utils.py'));
+    assert.ok(root.querySelector('.msg-user').textContent.includes('时区转换'));
+    const settle = async () => { while (root.dataset.phase !== 'complete') await new Promise((r) => setTimeout(r, 5)); };
+    setLanguagePreference('en'); // 同文档场景走 onLanguageChange；真实 iframe 场景走 storage 事件，回调一致
+    await settle();
+    assert.equal(root.querySelectorAll('.msg-user').length, 1, '重播前必须清空，不能中英两轮并存');
+    assert.ok(root.querySelector('.msg-user').textContent.includes('timezone conversion'));
+    assert.ok(root.querySelector('.msg-foot').textContent.includes('Command time 3.8s · simulated'));
+    assert.equal(root.querySelector('#demo-replay').textContent, '↻ Replay');
+    assert.equal(document.documentElement.lang, 'en');
+    setLanguagePreference('zh');
+    await settle();
+    assert.equal(root.querySelectorAll('.msg-user').length, 1);
+    assert.ok(root.querySelector('.msg-user').textContent.includes('时区转换'));
+  } finally { demo?.destroy(); root.remove(); setLanguagePreference('zh'); }
 });

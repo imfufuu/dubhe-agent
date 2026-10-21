@@ -6,6 +6,8 @@
 // Opus/Sonnet/Haiku 5.5, GPT-6.1 Sol + GPT-6 Astra + GPT-6 Luna, Gemini 3.8 Flash + Gemini 4 Argon,
 // DeepSeek V4.1 Flash + V4 Pro, GLM-5.3 + 5.3-Flash, Grok 4.7 (supersedes 4.6 as xAI flagship) and
 // Kimi K3. Preview models carry no extra badge; popularity is expressed via 'hot' only.
+// Xiaomi MiMo V2.6 Pro/Flash are pre-listed from Xiaomi's official API price sheet (mimo.mi.com,
+// released 2026-09-22) ahead of the gateway listing; re-verify list_cost once TeamoRouter carries them.
 // Cheap: list input <= $1 AND output <= $5 per million tokens. newlyListed is internal metadata, not a UI badge.
 // The current Kimi K3 is active again; only the unlisted historical [1M] alias remains retired.
 export const RETIRED_MODEL_IDS = new Set(['kimi-k3[1M]']);
@@ -13,7 +15,7 @@ export const isRetiredModel = (id, gatewayId = 'teamorouter') => gatewayId === '
 export const MODEL_CATALOG_DATE = '2026-10-21';
 export const MODEL_CATALOG = [
   {"id":"claude-fable-5","provider":"Anthropic","displayName":"Claude Fable 5","channel":"chat","listPrice":{"currency":"USD","input":10.0,"output":50.0,"cached_input":1.0},"contextWindow":1000000},
-  {"id":"claude-fable-5-1","provider":"Anthropic","displayName":"Claude Fable 5.1","channel":"chat","listPrice":{"currency":"USD","input":10.0,"output":50.0,"cached_input":0.25},"contextWindow":1000000},
+  {"id":"claude-fable-5-1","provider":"Anthropic","displayName":"Claude Fable 5.1","channel":"chat","hot":true,"listPrice":{"currency":"USD","input":10.0,"output":50.0,"cached_input":0.25},"contextWindow":1000000},
   {"id":"claude-haiku-4-5","provider":"Anthropic","displayName":"Claude Haiku 4.5","channel":"chat","listPrice":{"currency":"USD","input":1.0,"output":5.0,"cached_input":0.1},"cheap":true,"contextWindow":200000},
   {"id":"claude-haiku-4-5-20251001","provider":"Anthropic","displayName":"Claude Haiku 4.5 (20251001)","channel":"chat","listPrice":{"currency":"USD","input":1.0,"output":5.0,"cached_input":0.1},"cheap":true},
   {"id":"claude-haiku-5-5","provider":"Anthropic","displayName":"Claude haiku 5.5","channel":"chat","hot":true,"newlyListed":true,"listPrice":{"currency":"USD","input":0.1,"output":0.5,"cached_input":0.01},"cheap":true,"contextWindow":1000000},
@@ -64,6 +66,8 @@ export const MODEL_CATALOG = [
   {"id":"grok-4.6","provider":"Grok","displayName":"Grok 4.6","channel":"chat","listPrice":{"currency":"USD","input":2.0,"output":6.0,"cached_input":0.5},"contextWindow":500000},
   {"id":"grok-4.7","provider":"Grok","displayName":"Grok 4.7","channel":"chat","hot":true,"newlyListed":true,"listPrice":{"currency":"USD","input":2.0,"output":6.0,"cached_input":0.5},"contextWindow":500000},
   {"id":"kimi-k3","provider":"Kimi","displayName":"Kimi K3","channel":"chat","hot":true,"listPrice":{"currency":"USD","input":3.0,"output":15.0,"cached_input":0.3}},
+  {"id":"mimo-v2.6-flash","provider":"Xiaomi","displayName":"Xiaomi MiMo V2.6 Flash","channel":"chat","newlyListed":true,"listPrice":{"currency":"USD","input":0.14,"output":0.28,"cached_input":0.0028},"cheap":true,"contextWindow":1000000},
+  {"id":"mimo-v2.6-pro","provider":"Xiaomi","displayName":"Xiaomi MiMo V2.6 Pro","channel":"chat","newlyListed":true,"listPrice":{"currency":"USD","input":0.435,"output":0.87,"cached_input":0.0036},"cheap":true,"contextWindow":1000000},
   {"id":"MiniMax-M3","provider":"MiniMax","displayName":"MiniMax M3","channel":"chat","listPrice":{"currency":"USD","input":0.3,"output":1.2,"cached_input":0.06},"cheap":true,"contextWindow":1000000},
   {"id":"qwen3.8-max","provider":"Qwen","displayName":"Qwen3.8-Max","channel":"chat","listPrice":{"currency":"USD","input":1.7143,"output":5.1429,"cached_input":0.2143},"contextWindow":1000000},
 ];

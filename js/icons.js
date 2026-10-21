@@ -12,6 +12,7 @@ export const PROVIDER_ICON = {
   Doubao:    { file: 'doubao.svg',    mono: false, word: false }, // 用户上传的 Zonalogo.com SVG
   Qwen:      { file: 'qwen.svg',      mono: false, word: false }, // 用户指定的 Wikimedia Commons 方形图标
   MiniMax:   { file: 'minimax.svg',   mono: false, word: false }, // 用户上传的 Zonalogo.com SVG
+  Xiaomi:    { file: 'xiaomi.svg',    mono: true,  word: false }, // 用户上传的 XiaomiMiMo 单色 SVG（currentColor → img 内呈黑色，暗色主题 CSS 反色）
   Grok:      { file: 'grok.svg',      mono: false, word: false, white: true }, // 白色图标 → 亮色主题反色
 };
 
