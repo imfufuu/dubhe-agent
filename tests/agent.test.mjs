@@ -1684,7 +1684,7 @@ test('TeamoRouter 新增 Doubao / Kimi / Qwen / MiniMax，品牌图标均为本�
     assert.ok(cfg.FALLBACK_MODELS.some((model) => model.id === id), `${id} offline fallback`);
     assert.ok(cfg.PROVIDER_ORDER.includes(provider), `${provider} has a group`);
   }
-  assert.equal(MODEL_CATALOG_DATE, '2026-10-19');
+  assert.equal(MODEL_CATALOG_DATE, '2026-10-21');
   const { PROVIDER_ICON, providerIcon } = await import('../js/icons.js');
   const fs = await import('node:fs');
   for (const [provider, file] of [['Doubao', 'doubao.svg'], ['Kimi', 'kimi.svg'], ['Qwen', 'qwen.svg'], ['MiniMax', 'minimax.svg']]) {
@@ -3495,7 +3495,8 @@ test('密封 / 解封往返：错口令拒绝、篡改密文或有效期被 HMAC
   const pw = 'admin-Zz9Yy8Xx';
   const key = 'sk-' + 'teamo-' + 'f'.repeat(48);
   const params = { N: 1024, r: 8, p: 1, dkLen: 64 };   // 小参数让测试快；算法路径与正式一致
-  const iat = Date.UTC(2026, 9, 6);
+  // 相对时间夹具：effectiveApiKey 用真实 Date.now() 判有效期，写死绝对日期会在 14 天后让本测试过期失败
+  const iat = Date.now() - 86400000;
   const b = await ak.sealAdmin(pw, { key, iat, days: 14, params });
   assert.equal(b.exp - iat, 14 * 86400000, '默认有效期 14 天');
   assert.equal(b.sealed.includes('sk-'), false);
@@ -6309,7 +6310,10 @@ test('2026.9.30.6 八项体验与渲染升级（空状态隐藏最新输出、re
   assert.match(docsHtml, /\.doc-tabs \{ position: sticky/, '标签条应吸顶');
   assert.match(docsHtml, /<a class="nav-link nav-home" href="\.\/index\.html\?view=nav">首页<\/a>/);
   assert.match(docsHtml, /<button id="theme-toggle" class="nav-link" type="button">外观<\/button>\s*<a class="cta" href="\.\/app\.html">打开对话<\/a>/);
-  assert.equal((docsHtml.match(/class="nav-link doc-tab"/g) || []).length, 4, '四个分区标签');
+  assert.equal((docsHtml.match(/class="nav-link doc-tab"/g) || []).length, 5, '五个分区标签（更新日志 / 用户协议 / 使用规范 / 服务条款 / 隐私政策）');
+  assert.match(docsHtml, /<a class="nav-link doc-tab" href="#usage" data-page="usage">/, '使用规范为独立分区标签');
+  assert.match(docsHtml, /<section class="page" id="page-usage">/, '使用规范是独立页面，不与用户协议混排');
+  assert.match(docsHtml, /var PAGES = \['changelog', 'agreement', 'usage', 'terms', 'privacy'\];/, 'hash 路由包含使用规范分区');
   assert.doesNotMatch(homeJs, /function openGate\(\)|openGate\(\);/, '废除门页后，品牌图标不得再进入空门页');
   assert.match(homeJs, /openSite\(true\);\s*pinTop\(\);/, '品牌图标保持导航可见并回到顶部');
   assert.match(homeJs, /finishOpen\(true\)/, '默认和 ?view=nav 均直达导航');
@@ -6326,7 +6330,7 @@ test('2026.9.30.6 八项体验与渲染升级（空状态隐藏最新输出、re
 
 group('2026.9.30.7 40模型全支持与热度版本排序 / 长期记忆自动生效 / 天枢2.5自演进增强 / 黑粒回滚与图表微交互');
 
-test('2026.10.19：支持固定对话目录（DeepSeek 两个免费档继续下架，TeamoRouter 新增模型已加入 → 43 个），且按热度与版本优先级排序', async () => {
+test('2026.10.19：支持固定对话目录（DeepSeek 两个免费档继续下架，TeamoRouter 新增模型已加入 → 45 个），且按热度与版本优先级排序', async () => {
   const expected41 = [
     'claude-opus-5-5', 'claude-fable-5-1', 'claude-opus-5', 'claude-fable-5', 'claude-sonnet-5',
     'claude-opus-4-8', 'claude-opus-4-7', 'claude-opus-4-6', 'claude-sonnet-4-6', 'claude-haiku-4-5',
@@ -6335,7 +6339,8 @@ test('2026.10.19：支持固定对话目录（DeepSeek 两个免费档继续下�
     'deepseek-flash', 'deepseek-flash-1017', 'deepseek-v4-pro', 'deepseek-v4-flash',
     'claude-haiku-5-5', 'gemini-4-argon',
     'glm-5.3-flash', 'glm-5.3', 'glm-5.2',
-    'grok-4.6',
+    'grok-4.6', 'grok-4.7',
+    'doubao-seed-2.0-lite', 'doubao-seed-2.1-pro',
     'claude-haiku-4-5-20251001', 'claude-sonnet-5-5', 'deepseek-v4-pro-260425', 'gpt-6-luna', 'gpt-6-sol', 'gpt-6.1-sol',
   ];
   const fallbackIds = new Set(cfg.FALLBACK_MODELS.map((m) => m.id));
@@ -6343,7 +6348,7 @@ test('2026.10.19：支持固定对话目录（DeepSeek 两个免费档继续下�
     assert.ok(fallbackIds.has(id), `FALLBACK_MODELS 缺少模型：${id}`);
   }
   const chatModels = cfg.FALLBACK_MODELS.filter((m) => m.id !== cfg.SMART_ROUTER_ID && !cfg.isImageModel(m.id));
-  assert.equal(chatModels.length, 43, '排除智能路由、识图/生图专用模型后应恰好包含 43 个固定对话模型（不含 DeepSeek 免费档）');
+  assert.equal(chatModels.length, 45, '排除智能路由、识图/生图专用模型后应恰好包含 45 个固定对话模型（不含 DeepSeek 免费档）');
   assert.ok(!fallbackIds.has('deepseek-v4-flash-free') && !fallbackIds.has('deepseek-flash-free'), 'DeepSeek 两个免费模型必须下架');
 
   // Claude 与 GPT 新模型热度与组内版本优先级排序验证

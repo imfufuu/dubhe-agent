@@ -6,6 +6,8 @@
 //   · 闪烁与换色：同一组关键帧驱动（见 styles.css 的 .rb-caret / rb-blink / rb-color），
 //     颜色边界正好落在光标熄灭的 50% 时刻，所以颜色总是在看不见的时候切换。
 // 输入法合成期间、选中一段文字时隐藏自绘光标（保留原生选区高亮）。
+// 2026-10-21：桌面宽度 3px → 2px（见 styles.css .rb-caret，原生光标也只有 1–2px，3px 显得过粗且右偏 1px）；
+// 「减少动效」只停彩虹换色、保留闪烁（rb-blink），与原生光标行为一致。
 export const CARET_COLORS = Object.freeze(['#ef4444', '#eab308', '#3b82f6', '#22c55e', '#06b6d4', '#2563eb', '#a855f7']);
 export const CARET_HOLD_MS = 1100;
 export const CARET_EM = 1.2;
@@ -54,7 +56,7 @@ export function installCaretEffect(input, { doc = document } = {}) {
     const lh = parseFloat(cs.lineHeight) || fs * 1.4 || 20;
     // V1.8.1：旧版高度取整行行高，比文字长出一截（上冒 2px、下拖 6px 多）。
     // 改为约 1.2em（接近原生光标的字面高度），整体下沉 2px 对齐文字主体；
-    // 3px 宽的光标原本整条落在插入点右侧，左移 1px 让它骑在插入点上。
+    // 2px 宽的光标经 CARET_NUDGE.x = -1 左移后，正好以插入点为中心（左右各 1px）。
     caret.style.height = `${Math.round(Math.min(lh, fs * CARET_EM))}px`;
     const x = ir.left - hr.left + marker.offsetLeft - input.scrollLeft + CARET_NUDGE.x;
     const y = ir.top - hr.top + marker.offsetTop - input.scrollTop + CARET_NUDGE.y;

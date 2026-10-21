@@ -2741,16 +2741,21 @@ html[lang="en"] .pill { letter-spacing: -0.005em; }
 html[data-motion="off"] .chunk { transition: none; }
 html[data-motion="off"] .chunk-tail { animation: none; }
 
-/* 自绘光标（js/ui-caret.js）：原生光标隐藏；闪烁周期 1.1s，颜色边界与光标熄灭（50%）对齐，只在看不见的时候换色 */
+/* 自绘光标（js/ui-caret.js）：原生光标隐藏；闪烁周期 1.1s，颜色边界与光标熄灭（50%）对齐，只在看不见的时候换色。
+   2026-10-21 修正三处桌面端反馈：
+   ① 宽度 3px → 2px（贴近原生 1–2px；左移 1px 后正好骑在插入点上，不再向右偏 1px）；
+   ② 减少动效（系统设置或应用内「动效」关闭）时只停彩虹换色，不再连闪烁一起停——
+      文本光标属于输入指示而非装饰动效，原生光标在「减少动效」下也照常闪烁，此前整条 animation:none
+      导致光标常亮「有时不闪」的观感差异。 */
 @media (pointer:fine){#composer-input{caret-color:transparent}}
 .rb-mirror{position:absolute;top:0;left:0;visibility:hidden;pointer-events:none;overflow:hidden;box-sizing:border-box;white-space:pre-wrap;word-wrap:break-word}
-.rb-caret{position:absolute;left:0;top:0;width:2.5px;border-radius:1.5px;pointer-events:none;background-color:#ef4444;will-change:transform,opacity;animation:rb-blink 1.1s steps(1,end) infinite,rb-color 7.7s steps(1,end) infinite -.55s}
-@media (pointer:fine){.rb-caret{width:3px}}
+.rb-caret{position:absolute;left:0;top:0;width:2px;border-radius:1px;pointer-events:none;background-color:#ef4444;will-change:transform,opacity;animation:rb-blink 1.1s steps(1,end) infinite,rb-color 7.7s steps(1,end) infinite -.55s}
+@media (pointer:fine){.rb-caret{width:2px}}
 .rb-caret[hidden]{display:none}
 @keyframes rb-blink{0%{opacity:1}50%{opacity:0}}
 @keyframes rb-color{0%{background-color:#ef4444}14.2857%{background-color:#eab308}28.5714%{background-color:#3b82f6}42.8571%{background-color:#22c55e}57.1429%{background-color:#06b6d4}71.4286%{background-color:#2563eb}85.7143%{background-color:#a855f7}100%{background-color:#a855f7}}
-html[data-motion="off"] .rb-caret{animation:none}
-@media (prefers-reduced-motion: reduce){html:not([data-motion="on"]) .rb-caret{animation:none}}
+html[data-motion="off"] .rb-caret{animation:rb-blink 1.1s steps(1,end) infinite}
+@media (prefers-reduced-motion: reduce){html:not([data-motion="on"]) .rb-caret{animation:rb-blink 1.1s steps(1,end) infinite}}
 .share-status[hidden], .share-status:empty { display: none !important; }
 /* 分享页：带 display 的类会覆盖 [hidden]，这里显式恢复隐藏 */
 .share-latest[hidden] { display: none !important; }

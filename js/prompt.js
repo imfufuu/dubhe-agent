@@ -28,14 +28,14 @@ export function assembleSystemLayers({
 
 export function formatRuntime({ now, model, imageModel, filesNote, webNote, relayNote, toolTableNote, language = getLanguage() } = {}) {
   if (language === 'en') {
-    const lines = ['# Dubhe Agent runtime', 'Framework: Dubhe Helix 3.0 · DC (Dubhe Cambrian)', now ? `Current time: ${now instanceof Date ? now.toISOString() : String(now)}` : '', model ? `Session model: ${model}` : '', imageModel ? `Configured image model: ${imageModel}; generate_image uses this ID, never pass a model argument.` : '', 'Exact rendering/runtime details: knowledge_search (retrieve only the relevant topic).'];
+    const lines = ['# Dubhe Agent runtime', 'Framework: Dubhe Helix 3.0 · DC (Dubhe Cambrian)', now ? `Current time: ${now instanceof Date ? now.toISOString() : String(now)}` : '', model ? `Session model: ${model}` : '', imageModel ? `Configured image model: ${imageModel}; generate_image uses this ID, never pass a model argument.` : '', 'Exact rendering/runtime details: knowledge_search (retrieve only the relevant topic). Retrieve the exact grammar before emitting any :::chart/map/flow/mind/font block; never guess fence syntax from memory.'];
     return join([...lines, filesNote, webNote, relayNote, toolTableNote]);
   }
   const lines = ['# Dubhe Agent runtime', '底层框架：Dubhe Helix 3.0 · DC（Dubhe Cambrian，天枢·寒武；前身 Helix 2.5 / 天枢2.5）'];
   if (now) lines.push(`当前时间：${now instanceof Date ? now.toISOString() : String(now)}`);
   if (model) lines.push(`Session model: ${model}`);
   if (imageModel) lines.push(`生图模型：${imageModel}（generate_image 必须用这个 ID，不要传 model 参数；仅用于照片/插画/海报等栅格画面，统计图/流程图/思维导图/架构图禁止用生图）`);
-  lines.push('渲染/运行时精确细节按需调用knowledge_search，不整库预装。');
+  lines.push('渲染/运行时精确细节按需调用knowledge_search，不整库预装；输出:::chart/map/flow/mind/font围栏块前先检索对应精确语法，禁止凭记忆猜写。');
   const extra = join([filesNote, webNote, relayNote, toolTableNote]);
   return extra ? `${lines.join('\n')}\n\n${extra}` : lines.join('\n');
 }

@@ -1,5 +1,5 @@
 // ─── 模型官方价格表与费用预估（USD）──────────────────────────────────────
-// 2026-10-19 复核；展示网关 list_cost 标价，不写入账户折扣或声称供应商实测。
+// 2026-10-21 复核；展示网关 list_cost 标价，不写入账户折扣或声称供应商实测。
 // 数据来源：TeamoRouter 官方定价接口（GET /v1/models/pricing 的 list_cost 字段与 per_call_tiers）
 // 独立模块：不修改 config.js / api.js 的既有导出列表，避免 Pages 混版缓存下 ESM link 失败。
 
@@ -57,6 +57,7 @@ export const MODEL_PRICING = {
   'glm-5.2':                  { input: 1.4,   output: 4.4,   cachedInput: 0.26 },
 
   // Doubao / 火山引擎
+  'doubao-seed-2.0-lite':     { input: 0.0857, output: 0.5143, cachedInput: 0.0171 },
   'doubao-seed-2.1-pro':      { input: 0.8571, output: 4.2857, cachedInput: 0.1714 },
 
   // Moonshot Kimi
@@ -71,6 +72,7 @@ export const MODEL_PRICING = {
 
   // xAI Grok
   'grok-4.6':                 { input: 2.0,   output: 6.0,   cachedInput: 0.5 },
+  'grok-4.7':                 { input: 2.0,   output: 6.0,   cachedInput: 0.5 },
 
   // TypeSafe Jev（System One）
   'jev':                      { input: 0.042, output: 0.0 },

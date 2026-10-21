@@ -83,9 +83,9 @@ test('reduced-motion popover is immediate and does not create animations', () =>
 test('live catalog snapshot includes TeamoRouter V4.1 Flash 1017 and evidence-based low-cost labels', async () => {
   const { MODEL_CATALOG, MODEL_CATALOG_BY_ID } = await import('../js/model-catalog.js');
   const { FALLBACK_MODELS, resolveModelAlias } = await import('../js/config.js');
-  assert.equal(MODEL_CATALOG.length,52);assert.equal(new Set(MODEL_CATALOG.map(m=>m.id)).size,52);
-  assert.deepEqual(MODEL_CATALOG.filter(m=>m.newlyListed).map(m=>m.id).sort(),['claude-haiku-5-5','gemini-4-argon']);
-  assert.equal(FALLBACK_MODELS.length,45);assert.equal(FALLBACK_MODELS.some(m=>m.id.startsWith('kimi')),true);
+  assert.equal(MODEL_CATALOG.length,54);assert.equal(new Set(MODEL_CATALOG.map(m=>m.id)).size,54);
+  assert.deepEqual(MODEL_CATALOG.filter(m=>m.newlyListed).map(m=>m.id).sort(),['claude-haiku-5-5','doubao-seed-2.0-lite','gemini-4-argon','grok-4.7']);
+  assert.equal(FALLBACK_MODELS.length,47);assert.equal(FALLBACK_MODELS.some(m=>m.id.startsWith('kimi')),true);
   for(const [id,provider] of [['doubao-seed-2.1-pro','Doubao'],['kimi-k3','Kimi'],['MiniMax-M3','MiniMax'],['qwen3.8-max','Qwen']]) {
     const model=MODEL_CATALOG_BY_ID.get(id);assert.equal(model?.provider,provider,id);assert.ok(FALLBACK_MODELS.some(m=>m.id===id),id+' offline fallback');
   }
@@ -146,4 +146,61 @@ test('thumb down has its own downward path, with no second CSS or SVG rotation',
   assert.doesNotMatch(css,/\.feedback-btn\[data-vote="down"\] svg\s*\{[^}]*rotate/);
   assert.doesNotMatch(css,/\.feedback-btn\[data-vote="(?:up|down)"\]\[aria-pressed="true"\]\s*\{[^}]*background:/, '赞/踩激活态不再绘制绿/红背景');
   assert.doesNotMatch(css,/\[data-theme="dark"\] \.feedback-btn\[data-vote="(?:up|down)"\]\[aria-pressed="true"\]\s*\{[^}]*background:/);
+});
+
+// ── 2026-10-21：目录热度复核（grok-4.7 / doubao-seed-2.0-lite / kimi-k3）、预览档不再挂徽标、使用规范分区、渲染语法防瞎猜 ──
+test('2026-10-21 目录复核：热门按 10 月调研重排，新增 grok-4.7 与 doubao-seed-2.0-lite', async () => {
+  const { MODEL_CATALOG_BY_ID } = await import('../js/model-catalog.js');
+  const hotIds = ['claude-haiku-5-5','claude-opus-5-5','claude-sonnet-5-5','deepseek-flash','deepseek-v4-pro','gemini-3.8-flash','gemini-4-argon','glm-5.3','glm-5.3-flash','gpt-6-astra','gpt-6-luna','gpt-6.1-sol','grok-4.7','kimi-k3'];
+  const { MODEL_CATALOG } = await import('../js/model-catalog.js');
+  assert.deepEqual(MODEL_CATALOG.filter(m => m.hot).map(m => m.id).sort(), [...hotIds].sort(), '热门集合应与调研结论一致');
+  assert.equal(MODEL_CATALOG_BY_ID.get('grok-4.6').hot, undefined, 'grok-4.6 已被 4.7 取代，不再标热门');
+  const grok47 = MODEL_CATALOG_BY_ID.get('grok-4.7');
+  assert.deepEqual(grok47.listPrice, { currency: 'USD', input: 2.0, output: 6.0, cached_input: 0.5 });
+  assert.equal(grok47.contextWindow, 500000);
+  const lite = MODEL_CATALOG_BY_ID.get('doubao-seed-2.0-lite');
+  assert.deepEqual(lite.listPrice, { currency: 'USD', input: 0.0857, output: 0.5143, cached_input: 0.0171 });
+  assert.equal(lite.contextWindow, 256000);
+  assert.equal(lite.cheap, true, '0.0857/0.5143 满足低价阈值');
+  const picker = fs.readFileSync(new URL('../js/ui-model-picker.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(picker, /badge ghost/, '模型菜单不再渲染 ghost 徽标');
+  assert.doesNotMatch(picker, /localeText\('预览/, '预览档不再输出「预览 / 实验」徽标文案');
+  assert.doesNotMatch(picker, /const preview = /, '不再按 ID 正则推断预览档');
+});
+
+test('文档页新增独立「使用规范」分区：四大条款齐备，成人文本不做跨模型屏蔽、CSAM/深伪绝对禁止', () => {
+  const docs = fs.readFileSync(new URL('../docs.html', import.meta.url), 'utf8');
+  const dom = new JSDOM(docs);
+  const page = dom.window.document.getElementById('page-usage');
+  assert.ok(page, '存在独立的 page-usage 分区');
+  const heads = [...page.querySelectorAll('.legal-card h3')].map(h => h.textContent.replace(/^\d+/, ''));
+  assert.deepEqual(heads, ['禁止性行为清单', '用户义务与操作要求', '鼓励性内容', '执行和后果条款'], '四个规定小节齐备且顺序正确');
+  const text = page.textContent;
+  assert.match(text, /独立于《用户协议》/, '明确与用户协议不是同一份文件');
+  assert.match(text, /不做跨模型完全屏蔽/, '成人色情类文本创作不做跨模型完全屏蔽');
+  assert.match(text, /深度伪造色情/, '深伪色情列为绝对禁止');
+  assert.match(text, /即使声称为虚构创作/, '未成年人性描写即便虚构也绝对禁止');
+  assert.match(text, /零容忍/, '执行条款含零容忍');
+  const lang = fs.readFileSync(new URL('../js/docs-language.js', import.meta.url), 'utf8');
+  assert.match(lang, /const usage = card\(\[/, '英文版使用规范存在');
+  assert.match(lang, /usage: `<h2>Usage policy<\/h2>/, '英文页面已注册');
+  assert.match(lang, /NOT blocked across all models/, '英文版同样写明不做跨模型屏蔽');
+  assert.match(lang, /Deepfake pornography/, '英文版深伪色情绝对禁止');
+});
+
+test('提示词三层齐声禁止瞎猜应用内围栏语法：先 knowledge_search 再输出，检索失败退回纯 Markdown', async () => {
+  const { coreSystemPrompt } = await import('../js/prompt-core.js');
+  const zh = coreSystemPrompt(new Date(), { language: 'zh' });
+  const en = coreSystemPrompt(new Date(), { language: 'en' });
+  assert.match(zh, /禁止凭记忆或训练印象猜写应用内:::围栏语法/);
+  assert.match(zh, /topic=rendering/);
+  assert.match(zh, /退回纯Markdown表格\/列表/);
+  assert.match(en, /Never guess app-internal ::: fence grammar/);
+  assert.match(en, /fall back to plain Markdown tables\/lists/);
+  const { formatRuntime } = await import('../js/prompt.js');
+  assert.match(formatRuntime({ now: new Date(), language: 'zh' }), /输出:::chart\/map\/flow\/mind\/font围栏块前先检索对应精确语法，禁止凭记忆猜写/);
+  assert.match(formatRuntime({ now: new Date(), language: 'en' }), /never guess fence syntax from memory/i);
+  const { compactOutputSpec } = await import('../js/config.js');
+  assert.match(compactOutputSpec('zh'), /禁止凭记忆猜写/);
+  assert.match(compactOutputSpec('en'), /never guess fence syntax from memory/i);
 });

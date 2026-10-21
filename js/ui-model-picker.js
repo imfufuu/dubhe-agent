@@ -75,7 +75,8 @@ export function installModelPicker({ store, agent, toast, getBusy, openKeyModal,
         const free = isFreeModel(m.id);
         const hot = !!hit.hot;
         const cheap = !!hit.cheap || free;
-        const preview = /preview|(?:^|-)exp$/.test(m.id);
+        // 2026-10-21：预览档不再单独挂「预览 / 实验」徽标——热门/低价两类标签已足够表达定位，
+        // 名称里的 Preview 本身可读；避免同一模型叠三个徽标挤爆窄菜单。
         item.title = hit.listPrice ? localeText(`网关标价（${MODEL_CATALOG_DATE}）：输入 $${hit.listPrice.input} / 输出 $${hit.listPrice.output}，每百万 token；实际账单以网关为准`, `Gateway list price (${MODEL_CATALOG_DATE}): $${hit.listPrice.input} input / $${hit.listPrice.output} output per million tokens; final billing is determined by the gateway`) : m.id;
         const isRouter = isSmartRouter(m.id);
         item.innerHTML = isRouter
@@ -86,7 +87,6 @@ export function installModelPicker({ store, agent, toast, getBusy, openKeyModal,
           : `<span class="dd-item-id mono">${esc(m.id)}</span>
             <span class="dd-item-badges">
               ${hot ? `<span class="badge hot" title="${localeText('应用预设热门精选，非实时使用热度或质量实测排行', 'App-curated popular pick, not live usage popularity or benchmark rank')}">${localeText('热门', 'Popular')}</span>` : ''}
-              ${preview ? `<span class="badge ghost">${localeText('预览 / 实验', 'Preview / experimental')}</span>` : ''}
               ${free ? '<span class="badge">FREE</span>' : (cheap ? `<span class="badge cheap" title="${localeText('网关标价：输入不高于 $1/M 且输出不高于 $5/M', 'Gateway list price: input ≤ $1/M and output ≤ $5/M')}">${localeText('低价', 'Cheap')}</span>` : '')}
               ${supportsVision(m.id) ? '<span class="badge vision" title="支持图片输入（多模态）"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg></span>' : ''}
             </span>`;

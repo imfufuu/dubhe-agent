@@ -543,9 +543,19 @@ test('查看器：只剩代码/预览两档；md/csv 双视图；提示插画没
   assert.match(css, /@keyframes fvSwitcherOut/);
 });
 
-test('光标：1.2em 高、下沉 2px、左移 1px', () => {
+test('光标：1.2em 高、下沉 2px、左移 1px；桌面 2px 宽；减少动效只停换色不停闪烁', () => {
   assert.equal(CARET_EM, 1.2);
   assert.deepEqual(CARET_NUDGE, { x: -1, y: 2 });
+  const css = read('../css/styles.css');
+  // 3px 在桌面端显得过粗且整条偏右 1px；2px + 左移 1px 正好以插入点为中心
+  assert.match(css, /\.rb-caret\{[^}]*width:2px;border-radius:1px;[^}]*\}/);
+  assert.match(css, /@media \(pointer:fine\)\{\.rb-caret\{width:2px\}\}/);
+  assert.doesNotMatch(css, /\.rb-caret\{[^}]*width:3px/);
+  // 减少动效（系统设置或应用内开关）只保留 rb-blink 单动画：文本光标与原生一致照常闪烁，
+  // 彩虹换色（rb-color）才是被停掉的装饰动效；不允许再出现整条 animation:none
+  assert.match(css, /html\[data-motion="off"\] \.rb-caret\{animation:rb-blink 1\.1s steps\(1,end\) infinite\}/);
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\)\{html:not\(\[data-motion="on"\]\) \.rb-caret\{animation:rb-blink 1\.1s steps\(1,end\) infinite\}\}/);
+  assert.doesNotMatch(css, /\.rb-caret\{animation:none\}/);
 });
 
 test('convert_file：三条通路计划、ffmpeg 参数、注册表/契约/挂载规则同步', async () => {
