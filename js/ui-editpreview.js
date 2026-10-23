@@ -142,7 +142,8 @@ export function paintEditFoldContent(node, options) {
     row.item.title = dropped ? localeText('设置中开启了自动清理：因最终回答未引用，本文件已在回合结束时移除。', 'Auto-clean is enabled; this file was removed at turn end because the final answer did not reference it.') : '';
     text(row.tag, dropped ? localeText('自动清理 · 未引用', 'Auto-cleaned · Unreferenced') : ''); row.tag.hidden = !dropped;
     if ((live && !row.wasLive) || (!live && row.wasLive)) row.userToggle = null;
-    setExpanded(row, row.userToggle == null ? live : row.userToggle);
+    // The parent Edited Files fold and each filename are independent: never open file diffs implicitly.
+    setExpanded(row, row.userToggle == null ? false : row.userToggle);
     row.wasLive = !!live;
     paintPreviewCard(row.card, file, live);
   });
@@ -156,10 +157,6 @@ export function toggleEditingFold(node) {
   const expanded = !node.classList.contains('expanded');
   node.classList.toggle('expanded', expanded);
   node._userToggle = expanded;
-  // The completed-write summary is itself the entry point: reopening it should surface
-  // the first file's diff immediately, without requiring the user to discover a second fold.
-  if (expanded && node.classList.contains('edited-files')
-      && !node.querySelector('.edit-path-row.expanded')) node.querySelector('.edit-path')?.click();
   return expanded;
 }
 

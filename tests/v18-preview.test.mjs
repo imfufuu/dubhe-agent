@@ -125,6 +125,18 @@ test('a live model response is authoritative, including an empty result; offline
   assert.ok(kimiFallback.includes('kimi-k3'),'当前公开目录中的 Kimi K3 可用');
   assert.ok(!kimiFallback.includes('kimi-k3[1M]'),'历史 1M 变体不由旧目录复活');
 });
+test('MiMo disappearance is explained by authoritative live catalog filtering, not lost static entries', async () => {
+  const { mergeAvailableModels, MODEL_CATALOG_BY_ID } = await import('../js/model-catalog.js');
+  const { FALLBACK_MODELS } = await import('../js/config.js');
+  const currentPublicIds = ['qwen3.7-flash', 'MiniMax-M3']; // TeamoRouter GET /v1/models/pricing, 2026-10-23; no MiMo IDs returned
+  for (const id of ['mimo-v2.6-flash', 'mimo-v2.6-pro']) assert.ok(MODEL_CATALOG_BY_ID.has(id), `${id} remains in the static fallback catalog`);
+  const live = mergeAvailableModels(currentPublicIds, FALLBACK_MODELS).map(m => m.id);
+  assert.deepEqual(live, ['__smart_router__', ...currentPublicIds]);
+  assert.ok(!live.includes('mimo-v2.6-flash') && !live.includes('mimo-v2.6-pro'), 'a successful live catalog hides static IDs it does not advertise');
+  const offline = mergeAvailableModels([], FALLBACK_MODELS).map(m => m.id);
+  assert.ok(offline.includes('mimo-v2.6-flash') && offline.includes('mimo-v2.6-pro'), 'the static fallback still retains both entries');
+});
+
 test('updated gateway list prices cover all visible catalog models, including MiniMax context tiers',async()=>{
   const { FALLBACK_MODELS }=await import('../js/config.js');
   const { getModelPricing }=await import('../js/pricing.js');

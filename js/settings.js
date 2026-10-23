@@ -66,7 +66,7 @@ function renderOfflineModelUI(status = null) {
   const repoLink = $('#set-offline-model-repo');
   if (heading) heading.textContent = localeText('离线本地模型', 'Offline local model');
   if (title) title.textContent = OFFLINE_MODEL_DISPLAY_NAME;
-  if (description) description.textContent = localeText(`可选下载；约 ${formatDownloadBytes(OFFLINE_MODEL_SIZE_BYTES)}。点击后才下载，推理在本机浏览器内运行。`, `Optional download; about ${formatDownloadBytes(OFFLINE_MODEL_SIZE_BYTES)}. Download starts only after clicking; inference runs in this browser.`);
+  if (description) description.textContent = localeText(`可选 · 约 ${formatDownloadBytes(OFFLINE_MODEL_SIZE_BYTES)} · 本机推理`, `Optional · about ${formatDownloadBytes(OFFLINE_MODEL_SIZE_BYTES)} · runs locally`);
   if (provenance) provenance.textContent = localeText('仓库的 heretic / uncensored 标签是社区自述，非独立测评。', 'The repository’s “heretic / uncensored” labels are self-descriptions, not independent evaluations.');
   if (license) license.textContent = localeText('模型仓库元数据声明 Apache-2.0；请查看仓库与上游说明。', 'The model repository metadata declares Apache-2.0; review the repository and upstream notices.');
   if (fileInfo) fileInfo.textContent = `${OFFLINE_MODEL_FILE} · ${formatDownloadBytes(OFFLINE_MODEL_SIZE_BYTES)} · rev ${OFFLINE_MODEL_REVISION.slice(0, 12)}`;
@@ -78,6 +78,7 @@ function renderOfflineModelUI(status = null) {
   const offline = isNetworkOffline();
   const available = status?.available ?? offlineModelStore.state.offlineModelAvailable === true;
   const supported = status?.supported ?? offlineModelStore.state.offlineModelStorageSupported === true;
+  const partialBytes = Math.max(0, Number(status?.partialBytes ?? offlineModelStore.state.offlineModelPartialBytes) || 0);
   if (offlineDownloadProgress && offlineModelDownloadBusy) {
     const p = formatOfflineDownloadProgress(offlineDownloadProgress);
     const verifying = offlineDownloadProgress.phase === 'verify';
@@ -91,6 +92,11 @@ function renderOfflineModelUI(status = null) {
     if (progressWrap) progressWrap.hidden = true;
     if (available) statusEl.textContent = localeText(`已安装 · ${formatDownloadBytes(status?.size || OFFLINE_MODEL_SIZE_BYTES)} · 本地推理不请求网关`, `Installed · ${formatDownloadBytes(status?.size || OFFLINE_MODEL_SIZE_BYTES)} · local inference does not call a gateway`);
     else if (!offlineModelStore.state.offlineModelChecked) statusEl.textContent = localeText('正在检查本机模型存储…', 'Checking local model storage…');
+    else if (partialBytes >= OFFLINE_MODEL_SIZE_BYTES) statusEl.textContent = localeText('文件已下载 · SHA-256 校验待完成 · 点击继续校验', 'File downloaded · SHA-256 verification is pending · click to verify');
+    else if (partialBytes > 0) {
+      const p = formatOfflineDownloadProgress({ loaded: partialBytes, total: OFFLINE_MODEL_SIZE_BYTES });
+      statusEl.textContent = localeText(`已下载 ${p.loadedText} / ${p.totalText} · 再次点击将从此处续传`, `Downloaded ${p.loadedText} / ${p.totalText} · click again to resume`);
+    }
     else if (offline) statusEl.textContent = localeText('当前离线：模型未安装时不会下载或尝试联网。', 'Offline: an uninstalled model will not be downloaded or fetched.');
     else if (!supported) statusEl.textContent = localeText('此浏览器或页面环境不支持本地 OPFS 模型存储；请用 HTTPS / localhost 的现代浏览器。', 'This browser/page does not support local OPFS model storage; use a modern browser over HTTPS or localhost.');
     else if (offlineModelStore.state.offlineModelStatusError) statusEl.textContent = offlineModelStore.state.offlineModelStatusError;
@@ -99,10 +105,16 @@ function renderOfflineModelUI(status = null) {
   if (downloadBtn) {
     downloadBtn.hidden = available;
     downloadBtn.disabled = offline || !supported || offlineModelDownloadBusy;
-    downloadBtn.textContent = offlineModelDownloadBusy ? localeText('下载中…', 'Downloading…') : localeText(`下载模型（约 ${formatDownloadBytes(OFFLINE_MODEL_SIZE_BYTES)}）`, `Download model (about ${formatDownloadBytes(OFFLINE_MODEL_SIZE_BYTES)})`);
+    downloadBtn.textContent = offlineModelDownloadBusy
+      ? localeText(offlineDownloadProgress?.phase === 'verify' ? '正在校验…' : '下载中…', offlineDownloadProgress?.phase === 'verify' ? 'Verifying…' : 'Downloading…')
+      : partialBytes >= OFFLINE_MODEL_SIZE_BYTES
+        ? localeText('继续校验模型', 'Continue model verification')
+        : partialBytes > 0
+          ? localeText('继续下载模型', 'Resume model download')
+          : localeText(`下载模型（约 ${formatDownloadBytes(OFFLINE_MODEL_SIZE_BYTES)}）`, `Download model (about ${formatDownloadBytes(OFFLINE_MODEL_SIZE_BYTES)})`);
   }
   if (cancelBtn) { cancelBtn.hidden = !offlineModelDownloadBusy; cancelBtn.disabled = !offlineModelDownloadBusy; }
-  if (removeBtn) { removeBtn.hidden = !available; removeBtn.disabled = offlineModelDownloadBusy; }
+  if (removeBtn) { removeBtn.hidden = !available && !partialBytes; removeBtn.disabled = offlineModelDownloadBusy; }
 }
 
 async function refreshOfflineModelUI(store = offlineModelStore) {
@@ -665,7 +677,7 @@ export function mountSettings(store, { onRelayChanged, onKeySaved, onSettingChan
     if (offlineModelDownloadBusy) return;
     offlineDownloadController = new AbortController();
     offlineModelDownloadBusy = true;
-    offlineDownloadProgress = { loaded: 0, total: OFFLINE_MODEL_SIZE_BYTES };
+    offlineDownloadProgress = { loaded: Math.max(0, Number(offlineModelStore?.state.offlineModelPartialBytes) || 0), total: OFFLINE_MODEL_SIZE_BYTES, phase: 'download' };
     renderOfflineModelUI();
     try {
       await downloadOfflineModel({
@@ -677,7 +689,7 @@ export function mountSettings(store, { onRelayChanged, onKeySaved, onSettingChan
       if (status.available) toast(localeText('本地模型下载完成，可以断网后使用。', 'Model downloaded. You can now use it offline.'), 'ok', 4200);
       else toast(localeText('下载完成，但本地缓存校验未通过。', 'Download finished, but local cache verification failed.'), 'err', 5000);
     } catch (error) {
-      if (error?.name === 'AbortError') toast(localeText('模型下载已取消；未完成的临时数据不会作为可用模型。', 'Model download cancelled; partial data will not be treated as an installed model.'), 'warn');
+      if (error?.name === 'AbortError') toast(localeText('模型下载已暂停；已下载部分已保留，可稍后继续。', 'Model download paused; downloaded data is saved and can be resumed later.'), 'warn');
       else toast(error?.message || String(error), 'err', 6500);
       await refreshOfflineModelUI(offlineModelStore);
     } finally {
@@ -691,8 +703,8 @@ export function mountSettings(store, { onRelayChanged, onKeySaved, onSettingChan
   if (offlineCancelButton) offlineCancelButton.addEventListener('click', () => offlineDownloadController?.abort());
   const offlineRemoveButton = $('#set-offline-model-remove');
   if (offlineRemoveButton) offlineRemoveButton.addEventListener('click', async () => {
-    if (!offlineModelStore?.state.offlineModelAvailable) return;
-    if (!window.confirm(localeText('从此浏览器的本地存储中删除离线模型？此操作不会联网。', 'Remove the offline model from this browser’s local storage? This will not access the network.'))) return;
+    if (!offlineModelStore?.state.offlineModelAvailable && !(offlineModelStore?.state.offlineModelPartialBytes > 0)) return;
+    if (!window.confirm(localeText('从此浏览器的本地存储中删除离线模型或未完成的下载？此操作不会联网。', 'Remove the offline model or incomplete download from this browser’s local storage? This will not access the network.'))) return;
     offlineRemoveButton.disabled = true;
     try {
       await removeOfflineModel();

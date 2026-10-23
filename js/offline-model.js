@@ -58,23 +58,51 @@ export async function getOfflineModelEngine() {
   return enginePromise;
 }
 
+const WLLAMA_METADATA_PREFIX = '__metadata__';
+function modelHasIncompleteDownload(model) {
+  return (model?.files || []).some((file) => ['partial', 'verifying'].includes(file?.metadata?.downloadState));
+}
+
+async function offlineCacheInfo(engine) {
+  const cache = engine?.modelManager?.cacheManager;
+  if (typeof cache?.getNameFromURL !== 'function' || typeof cache?.getSize !== 'function') return null;
+  const fileName = await cache.getNameFromURL(OFFLINE_MODEL_URL);
+  const size = Math.max(0, Number(await cache.getSize(fileName)) || 0);
+  const metadata = typeof cache.readMetadata === 'function' ? await cache.readMetadata(fileName) : null;
+  return { cache, fileName, size, metadata: metadata || {} };
+}
+
 export async function findCachedOfflineModel(engine) {
   if (!engine?.modelManager || typeof engine.modelManager.getModels !== 'function') return null;
   // getModels() inspects OPFS only. It does not query Hugging Face or download anything.
   const models = await engine.modelManager.getModels();
-  return models.find((model) => model && model.url === OFFLINE_MODEL_URL && model.validate?.() === 'valid') || null;
+  return models.find((model) => model && model.url === OFFLINE_MODEL_URL
+    && model.validate?.() === 'valid' && !modelHasIncompleteDownload(model)) || null;
+}
+
+async function findOfflineModelRecord(engine) {
+  if (!engine?.modelManager || typeof engine.modelManager.getModels !== 'function') return null;
+  const models = await engine.modelManager.getModels({ includeInvalid: true });
+  return models.find((model) => model && model.url === OFFLINE_MODEL_URL) || null;
 }
 
 export async function getOfflineModelStatus({ engineProvider = getOfflineModelEngine, storage = globalThis.navigator?.storage } = {}) {
   if (!supportsOfflineModelStorage({ navigatorImpl: { storage }, secureContext: globalThis.isSecureContext })) {
-    return { supported: false, available: false, size: 0, reason: 'storage-unavailable' };
+    return { supported: false, available: false, size: 0, partialBytes: 0, reason: 'storage-unavailable' };
   }
   try {
     const engine = await engineProvider();
     const model = await findCachedOfflineModel(engine);
-    return { supported: true, available: !!model, size: model ? Math.max(0, Number(model.size) || 0) : 0, model: model || null };
+    const cacheInfo = await offlineCacheInfo(engine);
+    const available = !!model;
+    return {
+      supported: true, available,
+      size: available ? Math.max(0, Number(model.size) || 0) : 0,
+      partialBytes: available ? 0 : Math.min(OFFLINE_MODEL_SIZE_BYTES, cacheInfo?.size || 0),
+      model: model || null,
+    };
   } catch (error) {
-    return { supported: true, available: false, size: 0, error };
+    return { supported: true, available: false, size: 0, partialBytes: 0, error };
   }
 }
 
@@ -84,6 +112,7 @@ export async function syncOfflineModelAvailability(store, { notify = true } = {}
     store.state.offlineModelChecked = true;
     store.state.offlineModelAvailable = status.available;
     store.state.offlineModelStorageSupported = status.supported;
+    store.state.offlineModelPartialBytes = status.partialBytes || 0;
     store.state.offlineModelStatusError = status.error ? String(status.error.message || status.error).slice(0, 180) : '';
     if (notify && typeof store.notify === 'function') store.notify();
   }
@@ -95,15 +124,19 @@ async function discardUnverifiedOfflineModel(engine) {
   try { await engine?.modelManager?.cacheManager?.delete?.(OFFLINE_MODEL_URL); } catch { /* best-effort removal of partial or invalid cache */ }
 }
 
-async function checkStorageSpace(storage) {
+async function checkStorageSpace(storage, remainingBytes = OFFLINE_MODEL_SIZE_BYTES) {
+  const needed = Math.max(0, Number(remainingBytes) || 0);
+  if (!needed) return;
   try { await storage.persist?.(); } catch { /* browser may deny persistent storage without a prompt */ }
   try {
     const estimate = await storage.estimate?.();
     const quota = Number(estimate?.quota) || 0;
     const usage = Number(estimate?.usage) || 0;
     const free = quota - usage;
-    if (quota > 0 && free < OFFLINE_MODEL_SIZE_BYTES * 1.08) {
-      throw new Error(`可用浏览器存储不足：模型约需 ${formatDownloadBytes(OFFLINE_MODEL_SIZE_BYTES)}，当前估算剩余 ${formatDownloadBytes(Math.max(0, free))}。`);
+    // Resumes append to the existing OPFS file; reserve only a small margin for the remaining bytes.
+    const margin = Math.min(16 * 1024 ** 2, needed * (needed >= OFFLINE_MODEL_SIZE_BYTES ? 0.08 : 0.02));
+    if (quota > 0 && free < needed + margin) {
+      throw new Error(`可用浏览器存储不足：还需约 ${formatDownloadBytes(needed)}，当前估算剩余 ${formatDownloadBytes(Math.max(0, free))}。`);
     }
   } catch (error) {
     if (error instanceof Error && /存储不足/.test(error.message)) throw error;
@@ -227,7 +260,38 @@ export async function verifyOfflineModelIntegrity(model, { signal, onProgress = 
   return { ok: actual === OFFLINE_MODEL_SHA256, actual, expected: OFFLINE_MODEL_SHA256, size };
 }
 
-export async function downloadOfflineModel({ signal, onProgress = () => {}, engineProvider = getOfflineModelEngine, verifyIntegrity = verifyOfflineModelIntegrity } = {}) {
+export function downloadOfflineModelResumable({ fileName, metadata, signal, onProgress = () => {}, WorkerImpl = globalThis.Worker } = {}) {
+  if (typeof WorkerImpl !== 'function') return Promise.reject(new Error('此浏览器不支持后台 OPFS 下载。'));
+  const worker = new WorkerImpl(new URL('./offline-model-download-worker.js', import.meta.url), { type: 'module' });
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const cleanup = () => {
+      signal?.removeEventListener?.('abort', abort);
+      worker.terminate?.();
+    };
+    const finish = (fn, value) => { if (settled) return; settled = true; cleanup(); fn(value); };
+    const abort = () => { try { worker.postMessage({ type: 'abort' }); } catch { /* worker may already exit */ } };
+    worker.onmessage = ({ data = {} }) => {
+      if (data.type === 'progress') { try { onProgress(data); } catch { /* UI callbacks cannot stop a download */ } return; }
+      if (data.type === 'done') { finish(resolve, data); return; }
+      if (data.type === 'aborted') { finish(reject, abortError()); return; }
+      if (data.type === 'error') { const error = new Error(data.message || '模型下载失败。'); error.name = data.name || 'Error'; finish(reject, error); }
+    };
+    worker.onerror = (event) => finish(reject, new Error(event?.message || '模型下载 Worker 出错。'));
+    signal?.addEventListener?.('abort', abort, { once: true });
+    worker.postMessage({
+      type: 'download', url: OFFLINE_MODEL_URL, fileName,
+      metadataFileName: `${WLLAMA_METADATA_PREFIX}${fileName}`,
+      totalBytes: OFFLINE_MODEL_SIZE_BYTES, etag: metadata?.etag || '', metadata,
+    });
+    if (signal?.aborted) abort();
+  });
+}
+
+export async function downloadOfflineModel({
+  signal, onProgress = () => {}, engineProvider = getOfflineModelEngine,
+  verifyIntegrity = verifyOfflineModelIntegrity, resumeDownload = downloadOfflineModelResumable,
+} = {}) {
   if (isNetworkOffline()) throw new Error('当前处于离线状态；模型不会自动下载。恢复网络后再手动点击“下载模型”。');
   throwIfAborted(signal);
   if (!supportsOfflineModelStorage()) throw new Error('当前浏览器不支持本地模型存储（OPFS），请使用 HTTPS / localhost 下的现代浏览器。');
@@ -237,62 +301,71 @@ export async function downloadOfflineModel({ signal, onProgress = () => {}, engi
     onProgress({ loaded: cached.size, total: cached.size, phase: 'ready' });
     return cached;
   }
-  await discardUnverifiedOfflineModel(engine);
   if (isNetworkOffline()) throw new Error('当前处于离线状态；模型不会自动下载。恢复网络后再手动点击“下载模型”。');
-  await checkStorageSpace(globalThis.navigator.storage);
+  const cacheInfo = await offlineCacheInfo(engine);
+  if (!cacheInfo || typeof cacheInfo.cache.writeMetadata !== 'function') throw new Error('本地模型缓存不支持断点续传；请刷新后重试。');
+  const partialBytes = Math.min(OFFLINE_MODEL_SIZE_BYTES, cacheInfo.size);
+  const metadata = {
+    ...cacheInfo.metadata,
+    originalURL: OFFLINE_MODEL_URL,
+    originalSize: OFFLINE_MODEL_SIZE_BYTES,
+    revision: OFFLINE_MODEL_REVISION,
+    sha256: OFFLINE_MODEL_SHA256,
+    downloadState: 'partial',
+  };
+  await checkStorageSpace(globalThis.navigator.storage, OFFLINE_MODEL_SIZE_BYTES - partialBytes);
   throwIfAborted(signal);
-  onProgress({ loaded: 0, total: OFFLINE_MODEL_SIZE_BYTES, phase: 'download' });
-  // This is the only download entry point. It is called only from the explicit settings button.
-  // A pinned resolve URL is used; no mutable main branch or Hub model-discovery API is queried.
-  let model;
-  try {
-    model = await engine.modelManager.downloadModel(OFFLINE_MODEL_URL, {
-      signal,
-      progressCallback: (progress = {}) => onProgress({
-        loaded: Math.max(0, Number(progress.loaded) || 0),
-        total: Math.max(0, Number(progress.total) || OFFLINE_MODEL_SIZE_BYTES),
-        phase: 'download',
-      }),
-      metadataAdditional: { revision: OFFLINE_MODEL_REVISION, sha256: OFFLINE_MODEL_SHA256 },
-    });
-  } catch (error) {
-    await discardUnverifiedOfflineModel(engine);
-    throw error;
+  await cacheInfo.cache.writeMetadata(cacheInfo.fileName, metadata);
+  onProgress({ loaded: partialBytes, total: OFFLINE_MODEL_SIZE_BYTES, phase: 'download' });
+
+  // The file key is Wllama's pinned-URL cache key. A dedicated worker uses OPFS sync writes,
+  // flushing checkpoints so a refresh/reopen can continue with an HTTP Range request.
+  const download = await resumeDownload({
+    fileName: cacheInfo.fileName, metadata, signal,
+    onProgress: (progress = {}) => onProgress({
+      loaded: Math.max(0, Number(progress.loaded) || 0),
+      total: OFFLINE_MODEL_SIZE_BYTES, phase: 'download',
+    }),
+  });
+  if (Number(download?.loaded) !== OFFLINE_MODEL_SIZE_BYTES) {
+    throw new Error('模型下载尚未完成；已保留已下载数据，再次点击即可继续。');
   }
-  const cachedModel = await findCachedOfflineModel(engine);
-  if (!cachedModel || cachedModel.size !== OFFLINE_MODEL_SIZE_BYTES) {
-    await discardUnverifiedOfflineModel(engine);
-    throw new Error('模型下载未通过本地缓存完整性检查；请重试或清理未完成下载。');
+
+  const verifyingMetadata = { ...metadata, etag: download.etag || metadata.etag || '', downloadState: 'verifying' };
+  await cacheInfo.cache.writeMetadata(cacheInfo.fileName, verifyingMetadata);
+  const candidate = await findOfflineModelRecord(engine);
+  if (!candidate || candidate.validate?.() !== 'valid' || candidate.size !== OFFLINE_MODEL_SIZE_BYTES) {
+    throw new Error('本地模型文件尚未通过完整性检查；已保留下载数据，可再次尝试校验。');
   }
   let integrity;
-  try {
-    integrity = await verifyIntegrity(cachedModel, { signal, onProgress });
-  } catch (error) {
-    if (error?.name === 'AbortError') {
-      try { await cachedModel.remove(); } catch { /* remove a partial/unverified install best-effort */ }
-    }
-    throw error;
-  }
+  try { integrity = await verifyIntegrity(candidate, { signal, onProgress }); }
+  catch (error) { throw error; } // Keep the completed bytes so an interrupted hash check does not restart the download.
   if (!integrity.ok) {
-    try { await cachedModel.remove(); } catch { /* avoid reusing a bad model when possible */ }
+    await discardUnverifiedOfflineModel(engine);
     throw new Error(integrity.reason === 'size-mismatch'
-      ? '模型下载后文件大小不匹配，未安装；请重新下载。'
-      : `模型 SHA-256 校验失败，未安装。期望 ${OFFLINE_MODEL_SHA256.slice(0, 12)}…，实际 ${(integrity.actual || '不可用').slice(0, 12)}…`);
+      ? '模型下载后文件大小不匹配，已清除损坏缓存；请重新下载。'
+      : `模型 SHA-256 校验失败，已清除损坏缓存。期望 ${OFFLINE_MODEL_SHA256.slice(0, 12)}…，实际 ${(integrity.actual || '不可用').slice(0, 12)}…`);
   }
-  onProgress({ loaded: cachedModel.size, total: cachedModel.size, phase: 'ready' });
-  return model || cachedModel;
+  await cacheInfo.cache.writeMetadata(cacheInfo.fileName, { ...verifyingMetadata, downloadState: 'complete' });
+  const verified = await findCachedOfflineModel(engine);
+  if (!verified) throw new Error('模型校验通过但未能登记为可用缓存；请再次检查本地存储。');
+  onProgress({ loaded: verified.size, total: verified.size, phase: 'ready' });
+  return verified;
 }
 
 export async function removeOfflineModel({ engineProvider = getOfflineModelEngine } = {}) {
   if (activeOfflineRuns > 0) throw new Error('本地模型正在推理；请等待当前回合结束后再移除。');
   const engine = await engineProvider();
   if (typeof engine.isModelLoaded === 'function' && engine.isModelLoaded()) await engine.exit?.();
+  const cacheInfo = await offlineCacheInfo(engine);
   const models = await engine.modelManager.getModels({ includeInvalid: true });
   const model = models.find((entry) => entry && entry.url === OFFLINE_MODEL_URL);
-  if (model) await model.remove();
+  // Delete by the pinned URL through Wllama's cache manager so even metadata-only/partial files go away.
+  if (typeof cacheInfo?.cache?.delete === 'function') await cacheInfo.cache.delete(OFFLINE_MODEL_URL);
+  else if (model) await model.remove();
   engineInstance = null;
   enginePromise = null;
-  return { removed: !!model };
+  return { removed: !!model || !!cacheInfo?.size };
 }
 
 export async function streamOfflineModel({

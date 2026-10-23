@@ -20,6 +20,7 @@ import { DEFAULT_GATEWAY_ID, getGateway } from './gateway-registry.js?v=2026.10.
 import { syncGatewayKeyModal, validateGatewayKey } from './ui-gateway-key.js?v=2026.10.11.1';
 import { isSmartRouter, ROUTER_ICON_SVG, SMART_ROUTER_LABEL, modelDisplayName } from './smartrouter.js?v=2026.10.11.1';
 import { REASONING_LEVELS, normalizeReasoningLevel, reasoningLevelLabel, reasoningLevelHint } from './reasoning.js?v=2026.10.11.1';
+import { reasoningSummaryItems } from './reasoning-summary.js';
 import { fileBytesFromValue, withExtension, mimeFromPath } from './zip.js';
 import { getTransport } from './api.js?v=2026.10.11.1';
 import { isOfflineModelId } from './offline-model-config.js';
@@ -1291,10 +1292,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     for (const box of $$('.choice-box', body)) {
       if (!m.done || followedByUser || m.cancelled || m.error || (m.toolCalls && m.toolCalls.length) || getBusy()) box.remove();
     }
-    // 思考过程与工具芯片同构：整行 click + .expanded + .chip-detail，不用 <details>
-    // 有可见思考正文时边流边展开；思考结束（正文/工具出现或 round done）自动折叠。
-    // 流式时只改 fold-inner，禁止整段 innerHTML（会把 0fr→1fr 动画打回 0 高，看起来像没流式）。
-    // 思考块按消息 id 归属（同一 wrap 里可能有多轮思考），展开状态存在元素上，互不覆盖；思考是否进行中看消息真实状态
+    // 思考区只展示本地截取的短摘要，不渲染原始思维链；流式增量仍会实时刷新摘要。
     const owner = String(m.id);
     const thinkRunning = !(m.thinkDone ?? m.done) && getBusy();
     let reason = [...wrap.querySelectorAll('.reasoning')].find((n) => n.dataset.owner === owner) || null;
@@ -1308,6 +1306,9 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
           reason._user = expanded;
           reason.classList.toggle('expanded', expanded);
           reason.setAttribute('aria-expanded', String(expanded));
+          reason.title = expanded
+            ? localeText('点击收起思考进度', 'Click to collapse reasoning progress')
+            : localeText('点击展开思考进度', 'Click to expand reasoning progress');
         };
         reason.addEventListener('click', (e) => {
           if (e.target.closest('.reason-detail, a, button, .chip-copy')) return;
@@ -1317,67 +1318,47 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
           if (e.key !== 'Enter' && e.key !== ' ') return;
           e.preventDefault(); toggleReason();
         });
-        reason.innerHTML = `<span class="think-ico">${ICON.thinking || ''}</span><span class="mono chip-name"></span><span class="chip-state"></span><div class="chip-detail reason-detail"><div class="fold-inner"></div></div>`;
+        reason.innerHTML = `<span class="think-ico">${ICON.thinking || ''}</span><span class="mono chip-name"></span><span class="chip-state"></span><div class="chip-detail reason-detail"><div class="fold-inner" id="reason-detail-${owner.replace(/[^a-zA-Z0-9_-]/g, '-')}"></div></div>`;
+        reason.setAttribute('aria-controls', `reason-detail-${owner.replace(/[^a-zA-Z0-9_-]/g, '-')}`);
         wrap.insertBefore(reason, body);
       }
       const bits = [];
-      // 注意：不再把「思考中」塞进 bits——title 已经是「思考中」，重复会出现「思考中 · 思考中」（.17）
       if (m.reasoningLevel && m.reasoningLevel !== 'off') bits.push(reasoningLevelLabel(m.reasoningLevel));
       if (hiddenThink && m.usage && m.usage.reasoning) bits.push(`${m.usage.reasoning} tok`);
       if (m.reasoningMs) bits.push(fmtSpan(m.reasoningMs));
-      // 思考进行中（本轮还没有正文/工具）只显示「思考中」，完成后才定名为「思考过程」
-      const thinkStreaming = thinkRunning && !m.text && !(m.toolCalls && m.toolCalls.length);
-      const title = (showThink || thinkPending) ? (thinkStreaming ? '思考中' : '思考过程') : '已思考';
+      const summaryItems = showThink ? reasoningSummaryItems(m.reasoning) : [];
+      const title = thinkPending && !summaryItems.length
+        ? localeText('思考中', 'Thinking')
+        : (showThink || thinkPending)
+          ? localeText('思考进度', 'Reasoning progress')
+          : localeText('已思考', 'Reasoned');
       const nameEl = $('.chip-name', reason);
       const stateEl = $('.chip-state', reason);
       if (nameEl) nameEl.textContent = title;
       if (stateEl) stateEl.textContent = bits.join(' · ');
       const inner = $('.fold-inner', reason);
+      const summaryMarkup = summaryItems.length
+        ? `<div class="think-summary-list" aria-live="polite">${summaryItems.map((item) => `<div class="think-summary-item">${esc(item)}</div>`).join('')}</div>`
+        : `<div class="think-hidden">${esc(localeText('正在整理思考进度…', 'Preparing a brief reasoning update…'))}</div>`;
       const detail = showThink
-        ? (thinkRunning ? '<pre class="think-stream"></pre>' : renderMarkdown(m.reasoning))
+        ? summaryMarkup
         : (hiddenThink
-          ? '<div class="think-hidden">该模型在网关侧做了推理，但不返回可见思考文本。DeepSeek、GLM、Claude Haiku 会显示正文。</div>'
-          : '');
-      const sig = `${thinkRunning ? 'live' : 'done'}:${(m.reasoning || '').length}:${hiddenThink ? 1 : 0}`;
+          ? `<div class="think-hidden">${esc(localeText('模型未返回可展示的思考内容；仅显示推理用量。', 'No reasoning text is available to summarize; only reasoning usage is shown.'))}</div>`
+          : `<div class="think-hidden">${esc(localeText('正在等待思考进度…', 'Waiting for reasoning progress…'))}</div>`);
+      const sig = `${thinkRunning ? 'live' : 'done'}:${hiddenThink ? 'hidden' : 'summary'}:${summaryItems.join('\u241f')}`;
       if (inner && inner.dataset.sig !== sig) {
         inner.dataset.sig = sig;
-        // 流式思考：只更新既有窗口的逐行节点；窗口滚动显示最新 10 行，避免长思考撑满对话。
-        const syncThinkLines = (pre) => {
-          const lines = String(m.reasoning || '').replace(/\r\n?/g, '\n').split('\n');
-          while (pre.children.length > lines.length) pre.lastElementChild.remove();
-          for (let i = 0; i < lines.length; i++) {
-            let line = pre.children[i];
-            if (!line) {
-              line = document.createElement('span');
-              line.className = 'think-line entered';
-              pre.appendChild(line);
-            }
-            line.textContent = lines[i];
-          }
-          pre.dataset.lineCount = String(lines.length);
-          if (thinkRunning) pre.scrollTop = pre.scrollHeight;
-        };
-        const pre = thinkRunning && showThink ? inner.querySelector('pre.think-stream') : null;
-        if (pre) syncThinkLines(pre);
-        else {
-          inner.innerHTML = detail;
-          const createdPre = thinkRunning && showThink ? inner.querySelector('pre.think-stream') : null;
-          if (createdPre) syncThinkLines(createdPre);
-        }
-        if (!thinkRunning) {
-          hydrateSandboxMedia($('.reason-detail', reason) || reason, agent.fs);
-          bindFoldRows($('.reason-detail', reason) || reason);
-        }
+        inner.innerHTML = detail;
       }
       const thinkLive = thinkRunning && (thinkPending || !!m.reasoning) && !m.text && !(m.toolCalls && m.toolCalls.length);
-      const autoOpen = thinkLive;
-      reason.classList.toggle('live', thinkLive);
-      const expanded = reason._user == null ? autoOpen : !!reason._user;
+      const expanded = reason._user == null ? thinkLive : !!reason._user;
+      // Live summaries are visible by default; a deliberate user collapse wins until this turn ends.
+      reason.classList.toggle('live', thinkLive && expanded);
       reason.classList.toggle('expanded', expanded);
       reason.setAttribute('aria-expanded', String(expanded));
       reason.title = expanded
-        ? localeText('点击收起思考过程', 'Click to collapse reasoning')
-        : localeText('点击展开完整思考过程', 'Click to expand full reasoning');
+        ? localeText('点击收起思考进度', 'Click to collapse reasoning progress')
+        : localeText('点击展开思考进度', 'Click to expand reasoning progress');
     } else if (reason) {
       reason.remove();
     }

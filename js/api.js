@@ -159,8 +159,46 @@ function reasoningTokensOf(u) {
 }
 
 export function createOpenAIStream(onEv) {
+  let contentBuffer = '';
+  let insideInlineThink = false;
+  const emitContent = (value, final = false) => {
+    contentBuffer += String(value || '');
+    while (contentBuffer) {
+      const marker = insideInlineThink ? '</think>' : '<think>';
+      const markerLower = marker.toLowerCase();
+      const lower = contentBuffer.toLowerCase();
+      const at = lower.indexOf(markerLower);
+      const type = insideInlineThink ? 'reasoning' : 'text';
+      if (at >= 0) {
+        const before = contentBuffer.slice(0, at);
+        if (before) onEv({ type, text: before });
+        contentBuffer = contentBuffer.slice(at + marker.length);
+        insideInlineThink = !insideInlineThink;
+        continue;
+      }
+      if (final) {
+        onEv({ type, text: contentBuffer });
+        contentBuffer = '';
+        break;
+      }
+      // Keep a possible split `<think>` / `</think>` suffix between SSE chunks.
+      let hold = 0;
+      for (let length = Math.min(marker.length - 1, contentBuffer.length); length > 0; length--) {
+        if (contentBuffer.slice(-length).toLowerCase() === markerLower.slice(0, length)) { hold = length; break; }
+      }
+      const safeLength = contentBuffer.length - hold;
+      if (safeLength > 0) onEv({ type, text: contentBuffer.slice(0, safeLength) });
+      contentBuffer = hold ? contentBuffer.slice(-hold) : '';
+      break;
+    }
+  };
   return function handle(json) {
-    if (json.error) { onEv({ type: 'error', message: json.error.message || JSON.stringify(json.error) }); return; }
+    if (!json) return;
+    if (json.error) {
+      emitContent('', true);
+      onEv({ type: 'error', message: json.error.message || JSON.stringify(json.error) });
+      return;
+    }
     if (json.usage) {
       const usage = { input: json.usage.prompt_tokens, output: json.usage.completion_tokens };
       const r = reasoningTokensOf(json.usage);
@@ -170,7 +208,10 @@ export function createOpenAIStream(onEv) {
     const ch = (json.choices && json.choices[0]) || null;
     if (!ch) return;
     const d = ch.delta || {};
-    if (d.content) onEv({ type: 'text', text: d.content });
+    if (typeof d.content === 'string' && d.content) emitContent(d.content);
+    else if (Array.isArray(d.content)) {
+      for (const part of d.content) if (part && typeof part.text === 'string') emitContent(part.text);
+    }
     if (d.reasoning_content) onEv({ type: 'reasoning', text: d.reasoning_content });
     else if (typeof d.reasoning === 'string' && d.reasoning) onEv({ type: 'reasoning', text: d.reasoning });
     else if (d.reasoning && typeof d.reasoning.content === 'string' && d.reasoning.content) onEv({ type: 'reasoning', text: d.reasoning.content });
@@ -185,7 +226,10 @@ export function createOpenAIStream(onEv) {
         });
       }
     }
-    if (ch.finish_reason) onEv({ type: 'finish', reason: ch.finish_reason });
+    if (ch.finish_reason) {
+      emitContent('', true);
+      onEv({ type: 'finish', reason: ch.finish_reason });
+    }
   };
 }
 
@@ -599,7 +643,20 @@ export async function streamChat({ model, apiKey, messages, tools, fastMode = fa
     } else if (gateway.id === 'qwen' && /^qwen3\.7(?:-|$)/i.test(model)) {
       body.enable_thinking = !!withThinking;
     }
-    if (gateway.id === 'doubao' && /^doubao-seed-2-1/i.test(model)) body.thinking = { type: withThinking ? 'enabled' : 'disabled' };
+    if (gateway.id === DEFAULT_GATEWAY_ID && protocol !== 'anthropic' && /^minimax-m3(?:$|-)/i.test(model)) {
+      // MiniMax M3 sends inline <think>…</think> in content unless split is requested.
+      // Keep reasoning separate even when UI thinking is disabled; M3 supports disabling it explicitly.
+      body.reasoning_split = true;
+      body.thinking = { type: withThinking ? 'adaptive' : 'disabled' };
+      delete body.reasoning_effort; // M3 ignores effort; only the M3.1-Flash family tunes depth.
+    } else if (gateway.id === DEFAULT_GATEWAY_ID && protocol !== 'anthropic' && /^minimax-m3\.1-flash(?:$|-)/i.test(model)) {
+      // M3.1-Flash cannot disable reasoning; omit a disabled flag, but always ask for split output.
+      body.reasoning_split = true;
+      if (withThinking) {
+        body.thinking = { type: 'adaptive' };
+        if (!effortUnsupported.has(modelKey)) body.reasoning_effort = ({ mini: 'low', low: 'low', medium: 'medium', high: 'high', max: 'max', ultra: 'max' })[level] || 'max';
+      } else { delete body.thinking; delete body.reasoning_effort; }
+    }
     if (tools && tools.length) {
       body.tools = protocol === 'anthropic' ? toAnthropicTools(tools) : toOpenAITools(tools);
     }

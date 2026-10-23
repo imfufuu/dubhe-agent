@@ -88,9 +88,9 @@ test('stable per-file diff DOM: all edited files stay visible, code is escaped, 
   const firstPath = n.querySelector('.edit-path');
   const firstRow = firstPath.closest('.edit-path-row');
   assert.ok(firstRow.querySelector('.edit-path-fold .edit-preview'), '文件编辑窗口嵌在各自文件名下的二级折叠里');
-  assert.equal(firstPath.getAttribute('aria-expanded'), 'true', '流式写入时默认展开文件预览');
+  assert.equal(firstPath.getAttribute('aria-expanded'), 'false', '流式写入与主菜单展开均不自动打开文件详情');
   firstPath.click();
-  assert.equal(firstPath.getAttribute('aria-expanded'), 'false', '点击文件名收起对应预览');
+  assert.equal(firstPath.getAttribute('aria-expanded'), 'true', '点击文件名展开对应预览');
   assert.deepEqual([...n.querySelectorAll('.ep-path')].map((x) => x.textContent), ['example/abc.txt', 'example/def.txt']);
   assert.equal(n.querySelector('script'), null);
   assert.equal(n.querySelector('.edit-preview[data-path="example/abc.txt"] .ep-body').textContent.includes('old-1'), false, '仅展示修改行，不混入磁盘上的旧内容');
@@ -101,7 +101,7 @@ test('stable per-file diff DOM: all edited files stay visible, code is escaped, 
   assert.equal(n.querySelectorAll('.edit-preview').length, 2);
   n.remove();
 });
-test('nested per-file editor folds open while streaming, auto-collapse at completion, then the menu reopens the first diff in one click', () => {
+test('main Edited Files fold never opens per-file details; each filename is an explicit toggle', () => {
   const node = document.createElement('div'); node.className = 'edited-files'; document.body.append(node);
   const newline = String.fromCharCode(10);
   const c = call({ path: 'a.py', content: `new${newline}` });
@@ -109,19 +109,22 @@ test('nested per-file editor folds open while streaming, auto-collapse at comple
   const options = { label: 'Writing file', paths: ['a.py'], discarded: new Set(), preview, live: true };
   paintEditFoldContent(node, options);
   const button = node.querySelector('.edit-path'), row = button.closest('.edit-path-row');
-  assert.equal(button.getAttribute('aria-expanded'), 'true');
+  assert.equal(button.getAttribute('aria-expanded'), 'false', '流式写入也不自动展开二级详情');
   assert.equal(row.querySelector('.edit-preview')?.dataset.path, 'a.py');
   paintEditFoldContent(node, { ...options, label: 'Edited File', live: false });
-  assert.equal(button.getAttribute('aria-expanded'), 'false', '流式结束时二级折叠自动关闭');
-  assert.equal(toggleEditingFold(node), true, '点击已收起的编辑菜单重新展开');
-  assert.equal(button.getAttribute('aria-expanded'), 'true', '同一次展开直接显示首个文件差异');
+  assert.equal(button.getAttribute('aria-expanded'), 'false', '流式结束后详情仍收起');
+  assert.equal(toggleEditingFold(node), true, '点击已收起的主菜单重新展开');
+  assert.equal(button.getAttribute('aria-expanded'), 'false', '展开主菜单不展开首个文件详情');
   button.click();
-  assert.equal(button.getAttribute('aria-expanded'), 'false', '文件名仍可单独收起预览');
-  assert.equal(toggleEditingFold(node), false, '菜单可以再次收起');
-  assert.equal(toggleEditingFold(node), true, '菜单可以再次打开');
-  assert.equal(button.getAttribute('aria-expanded'), 'true', '重开菜单后再次直达首个差异');
+  assert.equal(button.getAttribute('aria-expanded'), 'true', '点击文件名单独展开预览');
+  button.click();
+  assert.equal(button.getAttribute('aria-expanded'), 'false', '再次点击文件名收起预览');
+  assert.equal(toggleEditingFold(node), false, '主菜单可以收起');
+  assert.equal(toggleEditingFold(node), true, '主菜单可以再次打开');
+  assert.equal(button.getAttribute('aria-expanded'), 'false', '重开主菜单仍不会自动展开文件详情');
+  button.click();
   paintEditFoldContent(node, { ...options, label: 'Edited File', live: false });
-  assert.equal(button.getAttribute('aria-expanded'), 'true', '非流式重绘保留手动状态');
+  assert.equal(button.getAttribute('aria-expanded'), 'true', '非流式重绘保留用户展开状态');
   node.remove();
 });
 
@@ -144,10 +147,13 @@ test('file activity survives a chosen state; completed edit folds automatically 
   syncEditingFold(node, { ...context, busy: false, resultIds: new Set(['w']) });
   assert.equal(node.classList.contains('expanded'), true, '完成后用户仍可手动展开');
 });
-test('completed edit-fold header is wired to the one-click first-diff helper', () => {
+test('completed edit-fold header toggles only the parent menu; file details have separate controls', () => {
   const ui = fs.readFileSync(new URL('../js/ui.js', import.meta.url), 'utf8');
+  const preview = fs.readFileSync(new URL('../js/ui-editpreview.js', import.meta.url), 'utf8');
   assert.match(ui, /import \{ paintEditFoldContent, syncEditingFold, toggleEditingFold \}/);
   assert.match(ui, /node\._userToggle = toggleEditingFold\(node\)/);
+  assert.match(preview, /row\.userToggle == null \? false : row\.userToggle/);
+  assert.doesNotMatch(preview, /node\.querySelector\('\.edit-path'\)\?\.click\(\)/);
 });
 test('non-edit file folds retain their prior active/manual toggle behavior', () => {
   const node = document.createElement('div'); node.dataset.ownerId = 'a'; node._userToggle = false;

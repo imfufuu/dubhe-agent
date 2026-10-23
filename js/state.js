@@ -178,6 +178,7 @@ export function createStore(onChange) {
     offlineModelChecked: false,
     offlineModelAvailable: false,
     offlineModelStorageSupported: false,
+    offlineModelPartialBytes: 0,
     offlineModelStatusError: '',
     model: DEFAULT_CHAT_MODEL,
     imageModel: DEFAULT_IMAGE_MODEL, // 生图模型（由 generate_image 工具使用，与会话绑定）
@@ -506,6 +507,7 @@ export function createStore(onChange) {
   state.offlineModelChecked = false;
   state.offlineModelAvailable = false;
   state.offlineModelStorageSupported = false;
+  state.offlineModelPartialBytes = 0;
   state.offlineModelStatusError = '';
   state.apiKey = String(state.gatewayKeys[state.gatewayId] || (state.gatewayId === 'teamorouter' ? state.apiKey : '') || '');
   state.models = state.modelsByGateway[state.gatewayId] || [];

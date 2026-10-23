@@ -57,6 +57,9 @@ jobs:
       - name: tests/offline-model.test.mjs · 离线模型、工具白名单与网络围栏
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/offline-model.test.mjs
+      - name: tests/offline-model-download.test.mjs · OPFS 分块下载续传
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/offline-model-download.test.mjs
       - name: tests/page-fx.test.mjs · 页面动效安全与减少动效
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/page-fx.test.mjs

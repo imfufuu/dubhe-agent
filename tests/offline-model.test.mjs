@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { createHash } from 'node:crypto';
 import { OFFLINE_MODEL_ID, OFFLINE_MODEL_REPO, OFFLINE_MODEL_REVISION, OFFLINE_MODEL_FILE, OFFLINE_MODEL_URL, OFFLINE_MODEL_SIZE_BYTES, OFFLINE_MODEL_SHA256 } from '../js/offline-model-config.js';
-import { downloadOfflineModel, formatOfflineDownloadProgress, sha256Blob, streamOfflineModel, supportsOfflineModelStorage, verifyOfflineModelIntegrity } from '../js/offline-model.js';
+import { downloadOfflineModel, formatOfflineDownloadProgress, getOfflineModelStatus, removeOfflineModel, sha256Blob, streamOfflineModel, supportsOfflineModelStorage, verifyOfflineModelIntegrity } from '../js/offline-model.js';
 import { OFFLINE_ALLOWED_TOOL_NAMES, isOfflineToolAllowed } from '../js/offline-policy.js';
 import { TOOL_DEFS, executeTool } from '../js/tools.js';
 import { createAgent } from '../js/agent.js';
@@ -19,13 +19,36 @@ const setGlobal = (name, value) => {
 function offlineGate(value = true) {
   return setGlobal('__dubheOfflineNetworkGate', { offline: value, blockedRequests: [], record(input, kind) { this.blockedRequests.push({ input, kind }); } });
 }
-function fakeModel({ size = OFFLINE_MODEL_SIZE_BYTES, validate = 'valid' } = {}) {
+function fakeModel({ size = OFFLINE_MODEL_SIZE_BYTES, validate = 'valid', metadata = {} } = {}) {
   return {
     url: OFFLINE_MODEL_URL,
     size,
+    files: [{ metadata }],
     removed: 0,
     validate() { return validate; },
     async remove() { this.removed++; },
+    async open() { return [new Blob(['short fake blob'])]; },
+  };
+}
+function fakeCacheManager() {
+  const state = { size: 0, metadata: null, deleted: 0 };
+  const cache = {
+    state,
+    async getNameFromURL(url) { assert.equal(url, OFFLINE_MODEL_URL); return 'pinned-model.gguf'; },
+    async getSize(name) { assert.equal(name, 'pinned-model.gguf'); return state.size || -1; },
+    async readMetadata(name) { assert.equal(name, 'pinned-model.gguf'); return state.metadata; },
+    async writeMetadata(name, metadata) { assert.equal(name, 'pinned-model.gguf'); state.metadata = { ...metadata }; },
+    async delete(url) { assert.equal(url, OFFLINE_MODEL_URL); state.size = 0; state.metadata = null; state.deleted++; },
+  };
+  return cache;
+}
+function modelFromCache(cache) {
+  return {
+    url: OFFLINE_MODEL_URL,
+    size: OFFLINE_MODEL_SIZE_BYTES,
+    get files() { return [{ metadata: cache.state.metadata || {} }]; },
+    validate() { return cache.state.size === OFFLINE_MODEL_SIZE_BYTES ? 'valid' : 'invalid'; },
+    async remove() { await cache.delete(OFFLINE_MODEL_URL); },
     async open() { return [new Blob(['short fake blob'])]; },
   };
 }
@@ -79,32 +102,46 @@ test('integrity verifier rejects an unexpected cached blob byte length', async (
   assert.deepEqual({ ok: result.ok, reason: result.reason, size: result.size }, { ok: false, reason: 'size-mismatch', size: 15 });
 });
 
-test('manual model download calls only the pinned URL and reports download, verification and ready phases', async () => {
+test('manual model download resumes through the pinned OPFS file and reports download, verification and ready phases', async () => {
   const restoreNavigator = setGlobal('navigator', fakeNavigator());
   const restoreGate = offlineGate(false);
-  let downloadedUrl = '', downloadOptions = null, available = false, removedStale = 0;
-  const model = fakeModel();
+  const cache = fakeCacheManager();
+  const model = modelFromCache(cache);
   const engine = { modelManager: {
-    cacheManager: { async delete(url) { assert.equal(url, OFFLINE_MODEL_URL); removedStale++; } },
-    async getModels() { return available ? [model] : []; },
-    async downloadModel(url, options) { downloadedUrl = url; downloadOptions = options; available = true; options.progressCallback({ loaded: 1234, total: OFFLINE_MODEL_SIZE_BYTES }); return model; },
+    cacheManager: cache,
+    async getModels(options = {}) {
+      const record = modelFromCache(cache);
+      if (options.includeInvalid) return cache.state.metadata?.originalURL === OFFLINE_MODEL_URL ? [record] : [];
+      return record.validate() === 'valid' && !['partial', 'verifying'].includes(record.files[0].metadata.downloadState) ? [record] : [];
+    },
   } };
   const progress = [];
+  let resumeOptions = null;
   try {
     const result = await downloadOfflineModel({
       engineProvider: async () => engine,
       onProgress: (p) => progress.push(p),
+      resumeDownload: async (options) => {
+        resumeOptions = options;
+        assert.equal(options.fileName, 'pinned-model.gguf');
+        assert.equal(options.metadata.originalURL, OFFLINE_MODEL_URL);
+        assert.equal(options.metadata.revision, OFFLINE_MODEL_REVISION);
+        assert.equal(options.metadata.sha256, OFFLINE_MODEL_SHA256);
+        options.onProgress({ loaded: 1234, total: OFFLINE_MODEL_SIZE_BYTES });
+        cache.state.size = OFFLINE_MODEL_SIZE_BYTES;
+        return { loaded: OFFLINE_MODEL_SIZE_BYTES, etag: '"test-etag"' };
+      },
       verifyIntegrity: async (_candidate, { onProgress: report }) => {
         report({ loaded: OFFLINE_MODEL_SIZE_BYTES, total: OFFLINE_MODEL_SIZE_BYTES, phase: 'verify' });
         return { ok: true, actual: OFFLINE_MODEL_SHA256 };
       },
     });
-    assert.equal(result, model);
-    assert.equal(downloadedUrl, OFFLINE_MODEL_URL);
-    assert.equal(downloadOptions.metadataAdditional.revision, OFFLINE_MODEL_REVISION);
-    assert.equal(downloadOptions.metadataAdditional.sha256, OFFLINE_MODEL_SHA256);
+    assert.ok(result);
+    assert.ok(resumeOptions);
+    assert.equal(cache.state.metadata.downloadState, 'complete');
+    assert.equal(cache.state.metadata.etag, '"test-etag"');
     assert.deepEqual(progress.map((p) => p.phase), ['download', 'download', 'verify', 'ready']);
-    assert.ok(removedStale >= 1, 'stale incomplete cache is cleaned before a new fetch');
+    assert.equal(cache.state.deleted, 0, 'valid partial bytes are never discarded before resume');
   } finally { restoreGate(); restoreNavigator(); }
 });
 
@@ -119,19 +156,58 @@ test('offline state refuses the explicit downloader before creating an engine or
   } finally { globalThis.fetch = originalFetch; restoreGate(); }
 });
 
-test('cancelled download best-effort deletes the unverified partial cache', async () => {
+test('an interrupted download preserves partial bytes and a later explicit click resumes from them', async () => {
   const restoreNavigator = setGlobal('navigator', fakeNavigator());
   const restoreGate = offlineGate(false);
-  let deletes = 0;
+  const cache = fakeCacheManager();
   const engine = { modelManager: {
-    cacheManager: { async delete(url) { assert.equal(url, OFFLINE_MODEL_URL); deletes++; } },
-    async getModels() { return []; },
-    async downloadModel() { const error = new Error('aborted'); error.name = 'AbortError'; throw error; },
+    cacheManager: cache,
+    async getModels(options = {}) {
+      const record = modelFromCache(cache);
+      if (options.includeInvalid) return cache.state.metadata?.originalURL === OFFLINE_MODEL_URL ? [record] : [];
+      return record.validate() === 'valid' && !['partial', 'verifying'].includes(record.files[0].metadata.downloadState) ? [record] : [];
+    },
   } };
   try {
-    await assert.rejects(downloadOfflineModel({ engineProvider: async () => engine }), (error) => error.name === 'AbortError');
-    assert.equal(deletes, 2, 'stale entry and newly partial entry are both cleaned best-effort');
+    await assert.rejects(downloadOfflineModel({
+      engineProvider: async () => engine,
+      resumeDownload: async ({ onProgress }) => {
+        cache.state.size = 123_456;
+        onProgress({ loaded: cache.state.size, total: OFFLINE_MODEL_SIZE_BYTES });
+        const error = new Error('aborted'); error.name = 'AbortError'; throw error;
+      },
+    }), (error) => error.name === 'AbortError');
+    assert.equal(cache.state.size, 123_456);
+    assert.equal(cache.state.metadata.downloadState, 'partial');
+    assert.equal(cache.state.deleted, 0, 'cancellation does not delete the resumable OPFS file');
+    const status = await getOfflineModelStatus({ engineProvider: async () => engine, storage: fakeNavigator().storage });
+    assert.equal(status.available, false);
+    assert.equal(status.partialBytes, 123_456);
+
+    await downloadOfflineModel({
+      engineProvider: async () => engine,
+      resumeDownload: async ({ onProgress }) => {
+        assert.equal(cache.state.size, 123_456, 'the existing partial byte count is kept');
+        onProgress({ loaded: OFFLINE_MODEL_SIZE_BYTES, total: OFFLINE_MODEL_SIZE_BYTES });
+        cache.state.size = OFFLINE_MODEL_SIZE_BYTES;
+        return { loaded: OFFLINE_MODEL_SIZE_BYTES, etag: '"resumed"' };
+      },
+      verifyIntegrity: async () => ({ ok: true, actual: OFFLINE_MODEL_SHA256 }),
+    });
+    assert.equal(cache.state.metadata.downloadState, 'complete');
+    const ready = await getOfflineModelStatus({ engineProvider: async () => engine, storage: fakeNavigator().storage });
+    assert.equal(ready.available, true);
+    assert.equal(ready.partialBytes, 0);
   } finally { restoreGate(); restoreNavigator(); }
+});
+
+test('remove local model clears an incomplete OPFS download by its pinned URL', async () => {
+  const cache = fakeCacheManager(); cache.state.size = 321; cache.state.metadata = { originalURL: OFFLINE_MODEL_URL, downloadState: 'partial' };
+  const engine = { modelManager: { cacheManager: cache, async getModels() { return []; } } };
+  const result = await removeOfflineModel({ engineProvider: async () => engine });
+  assert.deepEqual(result, { removed: true });
+  assert.equal(cache.state.size, 0);
+  assert.equal(cache.state.deleted, 1);
 });
 
 test('local inference passes a cached model object to Wllama and never fetches a model URL', async () => {

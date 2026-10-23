@@ -796,8 +796,11 @@ test('2026.10.22：快捷图表静态显示、赞踩无灰底、对话米白与�
   assert.match(css, /\.feedback-btn\[aria-pressed="true"\]\{background:transparent;border-color:transparent;box-shadow:none\}/);
   assert.match(css, /\.feedback-btn:hover\{translate:0 -1px;background:transparent;border-color:transparent\}/);
   assert.doesNotMatch(css, /\.feedback-btn\[aria-pressed="true"\]\{[^}]*background:var\(--bg-hover\)/);
-  assert.match(css, /--conversation-bg: #fcfaf6/);
-  assert.match(css, /\[data-theme="dark"\] \{[^}]*--conversation-bg: var\(--bg\)/s);
+  assert.match(css, /--conversation-bg: #f7f5ef/);
+  assert.match(css, /--conversation-card: #fffefa/);
+  assert.match(css, /\.msg-assistant:not\(\.msg-collapsed\) \{[^}]*background: var\(--conversation-card\)/);
+  assert.match(css, /\.sess-item \{[^}]*background: var\(--conversation-card\)/);
+  assert.match(css, /\[data-theme="dark"\] \{[^}]*--conversation-bg: var\(--bg\)[^}]*--conversation-card: #101010/s);
   assert.match(css, /\.main \{[^}]*background: var\(--conversation-bg, var\(--bg\)\)/);
   assert.match(css, /\.sidebar \{[^}]*background: var\(--conversation-bg, var\(--bg\)\)/);
   assert.match(css, /\.panel \{[^}]*background: var\(--conversation-bg, var\(--bg\)\)/);
@@ -826,12 +829,22 @@ test('导航、对话与文档页统一品牌图标规格；首页不加版本�
   }
 });
 
-test('文档页部署清单链接为清晰的主题化圆角按钮，具备 hover 与键盘焦点反馈', () => {
-  const docs = read('../docs.html');
-  assert.match(docs, /<a class="build-manifest-link" href="\.\/build\.json">部署清单 ↗<\/a>/);
+test('文档页部署清单使用主题化圆角链接与 SVG 外链图标（静态和动态英文页）', () => {
+  const docs = read('../docs.html'), release = read('../js/release-notes.js');
+  assert.match(docs, /<a class="build-manifest-link" href="\.\/build\.json">部署清单<svg[^>]*aria-hidden="true"><path d="M6 3h7v7M13 3 7 9M12 13H3V4"\/><\/svg><\/a>/);
+  assert.match(release, /<a class="build-manifest-link" href="\.\/build\.json">\$\{en \? 'Deployment manifest' : '部署清单'\}<svg/);
+  assert.doesNotMatch(`${docs}\n${release}`, /部署清单 ↗|Deployment manifest ↗/);
   assert.match(docs, /\.build-manifest-link\{[^}]*border-radius:999px[^}]*text-decoration:none/);
   assert.match(docs, /\.build-manifest-link:hover\{/);
   assert.match(docs, /\.build-manifest-link:focus-visible\{/);
+});
+
+test('文档页首页长描述与独立声明按实际文案精确翻译', () => {
+  const docs = read('../docs.html');
+  const description = '查看 V1.8 Stable 的重点更新、历史版本概览，以及使用本应用前应了解的协议、使用规范与隐私约定。';
+  assert.ok(docs.includes(description));
+  assert.equal(translateUI(description, 'en'), 'Review the V1.8 Stable highlights, release history, and the agreement, usage policy, and privacy terms to know before using the app.');
+  assert.equal(translateUI('互不隶属', 'en'), 'are unaffiliated');
 });
 
 test('思考强度菜单左侧带浅灰细线，不影响各档位按钮布局', () => {

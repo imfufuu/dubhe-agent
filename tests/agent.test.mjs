@@ -200,6 +200,16 @@ test('文本增量 + usage + finish', () => {
   h2({ usage: { prompt_tokens: 19, completion_tokens: 23, completion_tokens_details: { reasoning_tokens: 16 } }, choices: [] });
   assert.equal(evs2[0].usage.reasoning, 16);
 });
+test('MiniMax inline <think> blocks split across SSE chunks stay out of answer text', () => {
+  const evs = [];
+  const h = createOpenAIStream((event) => evs.push(event));
+  h({ choices: [{ delta: { content: '**答复** <th' } }] });
+  h({ choices: [{ delta: { content: 'ink>内部推理</think>最终答复' } }] });
+  h({ choices: [{ delta: {}, finish_reason: 'stop' }] });
+  assert.deepEqual(evs.filter((event) => event.type === 'reasoning').map((event) => event.text), ['内部推理']);
+  assert.deepEqual(evs.filter((event) => event.type === 'text').map((event) => event.text), ['**答复** ', '最终答复']);
+  assert.equal(evs.find((event) => event.type === 'text').text.includes('内部推理'), false);
+});
 test('tool_calls 分片累积（index 对齐 + 参数拼接）', () => {
   const evs = [];
   const h = createOpenAIStream((e) => evs.push(e));
@@ -4560,7 +4570,8 @@ test('工具调用与深度思考无边框；思考有线性 SVG', async () => {
   assert.match(ui, /onReasoning/, '可见思考要流式上屏，不能等正文结束');
   assert.match(ui, /onToolDelta/, '工具参数要边流边画，不能等本轮结束');
   assert.match(ui, /thinkLive/, '思考完自动折叠');
-  assert.match(ui, /think-stream/, '思考流式用纯文本，避免每帧重跑 markdown 把折叠高度打回 0');
+  assert.match(ui, /reasoningSummaryItems\(m\.reasoning\)/, '流式思考只更新本地进度摘要');
+  assert.doesNotMatch(ui, /renderMarkdown\(m\.reasoning\)|think-stream/, '思考区不得渲染完整原始思维链');
   assert.match(ui, /dataset.sig/, '思考块骨架只建一次');
   assert.equal(/el\('details', 'edited-files'\)/.test(ui), false, 'Edited File 与思考过程同构，不用 details');
 });
@@ -4680,7 +4691,7 @@ test('气泡脚注耗时与相对时间；Off 不画思考过程', async () => {
   assert.match(css, /\.reasoning \.chip-name \{[^}]*color:\s*var\(--fg-3\)/, '「思考过程」四字用灰色');
   assert.match(css, /\.md-body a \{[^}]*color:\s*var\(--link\)/);
   assert.match(css, /\.md-body a \{[^}]*text-decoration:\s*underline/);
-  assert.match(css, /\.msg-user \.bubble\.md-body a \{[^}]*color:\s*var\(--bg\)/, '用户气泡链接保持反色，不要变蓝');
+  assert.match(css, /\.msg-user \.bubble\.md-body a \{[^}]*color:\s*var\(--chat-user-text\)/, '用户气泡链接保持反色，不要变蓝');
   assert.match(css, /\.msg \{[^}]*margin:\s*0 auto 16px/);
   assert.match(css, /\.msg-toolbar \{[\s\S]{0,80}min-height:\s*0/);
   const readme = fsp.readFileSync(new URL('../README.md', import.meta.url), 'utf8');
@@ -5163,7 +5174,8 @@ test('会话卡片保持质感但不再过大', async () => {
   assert.match(item, /min-height:\s*50px/);
   assert.match(item, /padding:\s*9px 10px/);
   assert.match(item, /box-shadow/);
-  assert.match(item, /border:\s*1px solid var\(--line\)/);
+  assert.match(item, /border:\s*1px solid var\(--conversation-line\)/);
+  assert.match(item, /background:\s*var\(--conversation-card\)/);
 });
 test('主题色过渡全屏同一 --theme-speed', async () => {
   const fsp = await import('node:fs');
@@ -10601,7 +10613,8 @@ test('界面动效偏好：auto / on / off 三态，on 覆盖系统 reduce，off
   assert.match(main, /applyMotion\(\);/);
   assert.match(main, /browserFeatureReport\(\)[\s\S]*?dubhe-oldbrowser-noted/);
   const css = fsp.readFileSync(new URL('../css/styles.css', import.meta.url), 'utf8');
-  assert.equal((css.match(/@media \(prefers-reduced-motion: reduce\) \{/g) || []).length, 11, '含嵌套编辑预览、语音球体与状态抛光的减少动效块（跨页过渡那条已移到 css/page-fx.css）');
+  assert.equal((css.match(/@media \(prefers-reduced-motion: reduce\) \{/g) || []).length, 10, '含嵌套编辑预览、语音球体与状态抛光的减少动效块（原思维链逐行动画已移除；跨页过渡在 css/page-fx.css）');
+  assert.doesNotMatch(css, /thinkLineEnter|think-stream/, '进度摘要不再逐行呈现原始思维链');
   const reduceBlocks = css.split('@media (prefers-reduced-motion: reduce) {').slice(1);
   for (const b of reduceBlocks) {
     let depth = 1, end = 0;
@@ -10929,7 +10942,7 @@ test('.36 弹层交互：Esc 收起（模态优先）、窗口尺寸 / 滚动变
   assert.ok(pop.includes(`window.addEventListener('resize', follow, { passive: true });`));
 });
 
-test('截图回归：扫描入口、顶栏错位、面板宽度、简化思考提示、10 行思考窗、API Key 状态与 emoji 规则', async () => {
+test('截图回归：扫描入口、顶栏错位、面板宽度、简短思考进度摘要、API Key 状态与 emoji 规则', async () => {
   const read = (rel) => _fs.readFileSync(new URL(rel, import.meta.url), 'utf8');
   const app = read('../app.html');
   const css = read('../css/styles.css');
@@ -10949,10 +10962,9 @@ test('截图回归：扫描入口、顶栏错位、面板宽度、简化思考�
   assert.match(css, /grid-template-columns:\s*var\(--sbw, 268px\) minmax\(0, 1fr\) var\(--pnw, 310px\)/, '常态文件面板较旧版增加 20px');
   assert.match(css, /--pnw:\s*clamp\(400px, 38vw, 640px\)/, '文件预览展开时仍单独加宽');
   for (const hint of ['极速', '轻量', '均衡', '深入', '可委派', '多专家复核']) assert.ok(reasoning.includes(`'${hint}'`), `思考菜单保留简短提示：${hint}`);
-  assert.match(css, /max-height:\s*calc\(1\.65em \* 10\)/);
-  assert.match(ui, /split\('\\n'\)/);
-  assert.match(ui, /renderMarkdown\(m\.reasoning\)/);
-  assert.match(ui, /点击展开完整思考过程/);
+  assert.match(css, /\.reasoning\.live \.think-summary-list\s*\{[^}]*max-height:\s*calc\(1\.65em \* 6\)/);
+  assert.match(ui, /reasoningSummaryItems\(m\.reasoning\)/);
+  assert.doesNotMatch(ui, /renderMarkdown\(m\.reasoning\)|点击展开完整思考过程/);
   assert.match(ui, /configured \? localeText\('已配置', 'Configured'\)/);
   assert.match(css, /\.mini-btn:is\(\.admin-mode, \.configured-mode\) \{ background: var\(--fg\); color: var\(--bg\); border-color: var\(--fg\); \}/);
   assert.match(prompts, /少用 emoji/);
