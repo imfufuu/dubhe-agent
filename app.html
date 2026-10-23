@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <!-- iOS / Android 顶部系统状态栏取色：由 ui.js syncThemeColor() 随主题与遮罩（面板 / 弹窗 / 灯箱）实时改写 -->
-<meta name="theme-color" id="theme-color" content="#ffffff" />
+<meta name="theme-color" id="theme-color" content="#faf9f5" />
 <!-- CSP（P1-4）：
      · 渲染层无内联脚本（全部外部文件），script 仅放行 self 与 Pyodide CDN
      · style 'unsafe-inline' 为 KaTeX 输出与少量 style 属性所需
@@ -20,7 +20,7 @@
 <meta name="app-release" content="V1.8" />
 <!-- 首帧主题 / 动效偏好：先于样式同步，并由 css/page-fx.css 提供 CSP-safe 跨页扫场；
      下面的启动脚本仍会再确认一次主题与动效偏好（幂等，两处读同一份偏好） -->
-<script src="js/theme-boot.js?v=2026.10.11.1" data-theme-color-dark="#0b0b0b" data-theme-color-light="#ffffff"></script>
+<script src="js/theme-boot.js?v=2026.10.11.1" data-theme-color-dark="#0b0b0b" data-theme-color-light="#faf9f5"></script>
 <title>Dubhe Agent V1.8 — 网页端智能体</title>
 <!-- 聊天平台链接预览（微信 / QQ / Discord / Telegram / Slack 等抓取）：图标 + 标题 + 简介 -->
 <meta name="format-detection" content="telephone=no" />
@@ -475,7 +475,6 @@
   </div>
 </div>
 
-<div id="tok-sheet-scrim" class="tok-sheet-scrim" hidden></div>
 <div id="tok-pop" class="tok-pop" hidden role="dialog" aria-label="Token 构成">
   <div class="tok-pop-h">Token 构成</div>
   <div id="tok-pop-body" class="tok-pop-body"></div>
@@ -574,6 +573,15 @@
         </div>
       </section>
 
+      <section class="set-sec" id="set-capability-sec">
+        <h4>工具能力</h4>
+        <div class="set-sub">按当前模型、思考档位与功能开关，预览本轮可用工具及未启用原因。</div>
+        <details id="set-capability-details" class="set-capability-details">
+          <summary>查看当前工具能力表</summary>
+          <div class="capability-detail-panel"><div class="capability-detail-inner"><div id="set-capability-table-body" class="capability-table capability-table-body" role="region" aria-live="polite" aria-label="当前工具能力表"></div></div></div>
+        </details>
+      </section>
+
       <section class="set-sec" id="set-budget-sec">
         <h4>执行预算</h4>
         <div class="set-row"><div class="set-lbl"><div class="set-title">外部副作用上限 / 轮</div><div class="set-sub">抓取 / 检索 / 生图 / 识图 / 委派等 · 下一轮生效</div></div><div class="set-ctl"><input id="set-budget-ext" class="set-input set-num mono" type="number" min="1" max="60" step="1" inputmode="numeric" aria-label="外部副作用上限"/></div></div>
@@ -611,7 +619,7 @@
         </div>
         <div class="set-row offline-model-status-row"><div class="set-lbl"><div class="set-title" id="set-offline-model-status" role="status" aria-live="polite">检查本地存储…</div></div></div>
         <div id="set-offline-model-progress-wrap" class="offline-model-progress" hidden><progress id="set-offline-model-progress" max="100" value="0" aria-label="离线模型下载进度"></progress><span id="set-offline-model-progress-label">0%</span></div>
-        <details class="offline-model-details"><summary>模型来源、文件与许可</summary><div class="set-sub" id="set-offline-model-provenance">仓库标签是社区自述，非独立测评。</div><div class="set-sub"><span id="set-offline-model-file">模型文件</span> · <span id="set-offline-model-hash">SHA-256</span></div><div class="set-sub" id="set-offline-model-license">模型仓库元数据声明 Apache-2.0；请查看模型仓库及上游说明。</div><a id="set-offline-model-repo" class="offline-model-repo" href="https://huggingface.co/saidutta69/Qwen2.5-1.5B-Instruct-heretic/tree/aef80af71c5b26237c31454f1f570e30eb05f9eb" target="_blank" rel="noopener noreferrer">查看固定版本仓库</a></details>
+        <details class="offline-model-details"><summary>模型来源、文件与许可</summary><div class="offline-model-detail-panel"><div class="offline-model-detail-inner"><div class="set-sub" id="set-offline-model-provenance">仓库标签是社区自述，非独立测评。</div><div class="set-sub"><span id="set-offline-model-file">模型文件</span> · <span id="set-offline-model-hash">SHA-256</span></div><div class="set-sub" id="set-offline-model-license">模型仓库元数据声明 Apache-2.0；请查看模型仓库及上游说明。</div><a id="set-offline-model-repo" class="offline-model-repo" href="https://huggingface.co/saidutta69/Qwen2.5-1.5B-Instruct-heretic/tree/aef80af71c5b26237c31454f1f570e30eb05f9eb" target="_blank" rel="noopener noreferrer">查看固定版本仓库</a></div></div></details>
       </section>
 
       <section class="set-sec">

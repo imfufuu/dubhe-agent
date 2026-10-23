@@ -7,22 +7,28 @@ import { thinkingParamsFor } from '../js/config.js';
 import { streamChat, __resetThinkingFallbackForTests, thinkingDisabledFor, effortDisabledFor, buildOpenAIMessages } from '../js/api.js';
 import { syncMessageRhythm } from '../js/ui-message-rhythm.js';
 import { demoCharacterDelay } from '../js/home-demo.js';
-import { reasoningSummaryItems } from '../js/reasoning-summary.js';
+import { isGptModel, reasoningSummaryItems } from '../js/reasoning-summary.js';
 
 const levels = REASONING_LEVELS;
 
-test('reasoning UI emits progress-only labels, never raw chained bold reasoning', () => {
-  const raw = '**示例：规划任务一****示例：规划任务二**';
-  const short = reasoningSummaryItems(raw);
-  assert.ok(short.length <= 3);
-  assert.ok(short.every((item) => !item.includes('规划任务')));
-  const longer = reasoningSummaryItems(`${raw}${'分析'.repeat(250)}`);
-  assert.ok(longer.length >= short.length);
-  assert.match(longer.at(-1), /组织清晰|organizing/i);
+test('reasoning UI parses GPT summary markers only and shows complete non-GPT reasoning', () => {
+  const raw = '**Plan****Check constraints**';
+  assert.equal(isGptModel('gpt-5.6-sol'), true);
+  assert.equal(isGptModel('openai/gpt-5.6'), true);
+  assert.equal(isGptModel('claude-sonnet-5'), false);
+  assert.equal(isGptModel('gemini-3.8-flash'), false);
+  assert.deepEqual(reasoningSummaryItems(raw, 'gpt-5.6'), ['Plan', 'Check constraints']);
+  assert.deepEqual(reasoningSummaryItems('Full reasoning text without markers', 'gpt-5.6'), []);
+  assert.deepEqual(reasoningSummaryItems(raw, 'claude-sonnet-5'), [], 'non-GPT reasoning must not be parsed as GPT summaries');
+  assert.deepEqual(reasoningSummaryItems(raw, 'gemini-3.8-flash'), []);
+  assert.deepEqual(reasoningSummaryItems('**same****same****last**', 'gpt-5.6'), ['same', 'same', 'last'], '每个 marker pair 都独立显示，保留重复项与原顺序');
   const ui = fs.readFileSync(new URL('../js/ui.js', import.meta.url), 'utf8');
   const css = fs.readFileSync(new URL('../css/styles.css', import.meta.url), 'utf8');
-  assert.match(ui, /reasoningSummaryItems\(m\.reasoning\)/);
-  assert.doesNotMatch(ui, /renderMarkdown\(m\.reasoning\)|think-stream/);
+  assert.match(ui, /reasoningSummaryItems\(m\.reasoning, reasoningModel\)/);
+  assert.match(ui, /isGptModel\(reasoningModel\)/);
+  assert.match(ui, /think-full-text/);
+  assert.match(ui, /full\.textContent !== fullText/);
+  assert.match(css, /\.reasoning \.think-full-text/);
   assert.match(css, /\.reasoning\.expanded > \.chip-detail/);
   assert.match(css, /\.reasoning\.live\s*>\s*\.chip-detail/);
   assert.match(ui, /reason\.classList\.toggle\('live', thinkLive && expanded\)/, 'live 展示状态由用户展开态决定，手动收起优先');

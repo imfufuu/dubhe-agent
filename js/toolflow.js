@@ -95,7 +95,8 @@ export function commandRunFor(messages, id, partIndex = 0, { reasoningVisible = 
   for (let i = lo; i <= hi; i++) {
     const msg = list[i];
     if (msg.role !== 'assistant') continue;
-    if (msg.publicPlan?.direction || reasoningVisible(msg)) cur = null;
+    const hasVisibleBarrier = !!(msg.publicPlan?.direction || reasoningVisible(msg));
+    if (hasVisibleBarrier) cur = null;
     const parts = partsOf(msg);
     parts.forEach((part, index) => {
       if (part.kind === 'commands' && part.toolCalls.length) {
@@ -105,7 +106,10 @@ export function commandRunFor(messages, id, partIndex = 0, { reasoningVisible = 
       } else if (part.kind !== 'text' || String(part.text || '').trim()) cur = null;
     });
     const emptyReply = msg.done && !parts.length && !msg.cancelled;
-    if (msg.error || msg.cancelled || msg.webSearch || emptyReply) cur = null;
+    // A thought/plan attached to this message is also a boundary after its command block.
+    // Keep persisted reasoning surfaces from allowing earlier tool chips to migrate into
+    // the next message's command fold during a full-session repaint.
+    if (hasVisibleBarrier || msg.error || msg.cancelled || msg.webSearch || emptyReply) cur = null;
   }
   const run = runs.find((r) => r.segments.some((s) => s.id === id && s.part === partIndex));
   if (!run) return null;

@@ -318,7 +318,7 @@ export const OUTPUT_SPEC = [
   '- 沙箱持久规则：默认保留本轮写入的全部文件；只有用户在设置中显式开启「自动清理未引用文件」时，最终回答未提及路径/文件名（也未作为 HTML 依赖）的新文件才会在回合结束后删除。internal/ 与 uploads/ 下的抓取全文、识图结果、下载件、用户上传始终保留。',
   '- 选择框：只用于需要用户拍板的重要决策，可在最终总结任意位置（开头、中间或结尾）输出完整 :::choice；前后可有正文/代码，关闭符 ::: 优先独占一行。工具循环或规划中途不放交互选择。用户选项或发出下一消息后旧控件关闭。格式：\n:::choice 问题\n- 选项一\n- 选项二\n:::',
   '- 折叠栏（次要内容或答案，默认收起，少用）：\\n:::fold 标题\\n内容\\n:::',
-  '- 文学创作或需要精细排版时，可用 :::font 楷体|宋体|仿宋|黑体|行楷|serif|jp 包裹段落切换字体。日常聊天、写代码、分析文件不要换字体。格式：\\n:::font 楷体\\n正文\\n:::',
+  '- 文学创作或需要精细排版时，可用 :::font KaiTi|SimSun|FangSong|SimHei|Ma Shan Zheng|serif|Noto Serif JP 包裹短段落；优先使用正式字体族名。楷体的当前字体族名是 KaiTi；旧别名 KaiTi_GB2312（GB2312，不是 GB2313）仍兼容。日常聊天、写代码、分析文件不要换字体。格式：\\n:::font KaiTi\\n正文\\n:::',
   '- 居中 / 右对齐排版：可用 :::center … :::、:::right … :::，或 :::align center|right … ::: 包裹 Markdown 段落；只在诗歌、题签、署名等需要版式时使用。',
   '- 快捷 SVG 图表：统计图一律用 :::chart <类型> 标题 包裹数据行，客户端渲染为可交互内联 SVG，不要再硬塞 Mermaid xychart-beta 或生图。类型：bar 柱状图 / barh 条形图 / line 折线图 / area 面积图 / pie 饼图 / donut 环形图 / stacked 堆叠柱状图 / stacked-area 堆叠面积图 / histogram 直方图 / boxplot 箱线图 / scatter 散点图 / bubble 气泡图 / funnel 漏斗图 / sankey 桑基图 / map 地图（中英文别名均可，如 :::chart 桑基图）。数据格式：单系列每行「标签, 数值」；多系列（bar/barh/line/area/stacked/stacked-area）首行写表头「维度, 系列A, 系列B」再逐行「标签, v1, v2」；scatter 每行「x, y」或「标签, x, y」；bubble「标签, x, y, 大小」；boxplot 每行「组名, v1, v2, …」；histogram 直接列原始数值（标题里可加 bins=8）；sankey 每行「来源 -> 去向, 流量」；map 每行「地区, 数值」（省份自动用中国地图，国家用世界地图，可在标题加 china / world 指定）。',
   '- 快捷图示：流程图可用 :::flow 标题 包裹「开始 -> 处理 -> 结束」；思维导图可用 :::mind 标题 包裹 Markdown 层级列表。图表/流程图/思维导图/架构图必须走 SVG/Mermaid/DOT/客户端图表，不要调用 generate_image。',
@@ -419,4 +419,8 @@ export function referenceSystemPrompt(now = new Date(), opts = {}) {
 
 export function outputSpec(language = getLanguage()) { return language === 'en' ? OUTPUT_SPEC_EN : OUTPUT_SPEC; }
 
-export function compactOutputSpec(language = getLanguage()) { return language === 'en' ? 'Use Markdown, fenced runnable code and valid KaTeX. Deliver sandbox:// files and dependencies; no raw HTML/data URLs. Summary :::choice blocks may occur anywhere. Use knowledge_search for exact chart/map/flow/mind/font grammar before emitting those blocks; never guess fence syntax from memory — fall back to plain Markdown tables/lists when unsure.' : '使用Markdown、完整围栏代码与合法KaTeX；用sandbox://交付文件及依赖，不输出raw HTML/data URL。最终总结:::choice可在任意位置。chart/map/flow/mind/font精确语法先knowledge_search检索再输出，禁止凭记忆猜写；不确定就退回纯Markdown表格/列表。'; }
+export function compactOutputSpec(language = getLanguage()) {
+  return language === 'en'
+    ? 'Use Markdown, fenced runnable code and valid KaTeX. Deliver sandbox:// files and dependencies; avoid raw HTML except sanitized table markup strictly required for merged cells, using <th colspan="2"> or <td rowspan="2"> with an integer span from 1 to 1000; never emit raw data URLs. Summary :::choice blocks may occur anywhere. Use knowledge_search for exact chart/map/flow/mind/font grammar before emitting those blocks; never guess fence syntax from memory — fall back to plain Markdown tables/lists when unsure.'
+    : '使用 Markdown、完整围栏代码与合法 KaTeX；用 sandbox:// 交付文件及依赖。避免原始 HTML；仅在确需合并单元格时使用经安全清理的表格 HTML，例如 <th colspan="2"> 或 <td rowspan="2">，跨度为 1–1000 的整数；不要输出原始 data URL。最终总结 :::choice 可在任意位置。chart/map/flow/mind/font 精确语法先用 knowledge_search 检索，禁止凭记忆猜写；不确定就退回纯 Markdown 表格/列表。';
+}

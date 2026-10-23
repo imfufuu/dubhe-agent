@@ -40,6 +40,10 @@ export function normalizeSandboxTimeoutMs(value, fallbackMs = SANDBOX_JS_TIMEOUT
 // 按（路径 → 内容引用）缓存：同一引用直接命中，避免每次刷新文件面板都对大文件重新编码。
 const sizeCache = new Map();
 const utf8 = typeof TextEncoder !== 'undefined' ? new TextEncoder() : null;
+const utf8ByteSize = (value) => {
+  const text = String(value == null ? '' : value);
+  return utf8 ? utf8.encode(text).length : text.length;
+};
 export function contentByteSize(content) {
   const str = String(content == null ? '' : content);
   if (str.startsWith('data:')) {
@@ -86,7 +90,7 @@ export function sanitizeWorkerFiles(before, after, { cap = SANDBOX_STORAGE_CAP, 
   const isProtected = (k) => WS_INTERNAL_PREFIXES.some((pref) => k.startsWith(pref));
   // 受保护文件原样保留
   for (const k of Object.keys(prev)) if (isProtected(k)) out[k] = prev[k];
-  let total = Object.values(out).reduce((n, v) => n + String(v).length, 0);
+  let total = Object.values(out).reduce((n, v) => n + contentByteSize(v), 0);
   let count = Object.keys(out).length;
   for (const k of Object.keys(next)) {
     if (isProtected(k)) { if (!(k in prev) || prev[k] !== next[k]) rejected.push({ path: k, reason: 'protected' }); continue; }
@@ -94,7 +98,7 @@ export function sanitizeWorkerFiles(before, after, { cap = SANDBOX_STORAGE_CAP, 
     const v = next[k];
     if (typeof v !== 'string') { rejected.push({ path: k, reason: 'non-string' }); continue; }
     out[k] = v;
-    total += v.length;
+    total += contentByteSize(v);
     count += 1;
   }
   if (total > cap || count > maxFiles) {
@@ -531,7 +535,7 @@ export function createSandboxNetRpc(net, limits = SANDBOX_NET_LIMITS) {
       const r = await net.fetchPage({ url: String(url || ''), mode: mode === 'text' ? 'text' : 'raw', maxBytes: limits.maxBytesPerCall, full: true, fs: null });
       if (!r || !r.ok) return { ok: false, status: (r && r.status) || 0, error: (r && r.error) || '抓取失败' };
       const text = String(r.text || '');
-      bytes += text.length;
+      bytes += utf8ByteSize(text);
       if (bytes > limits.maxBytesTotal) return { error: `沙箱内 fetch 累计字节超过上限（${Math.round(limits.maxBytesTotal / 1048576)} MB/次执行）` };
       return { ok: true, status: r.status || 200, url: r.url || url, contentType: r.contentType || '', text };
     },
@@ -571,8 +575,10 @@ export function applyDelta(base, delta) {
   return out;
 }
 let pyBlobTried = false;
+// Pyodide Worker 与文件镜像是模块级共享状态：子智能体可并发，但同一个运行时只能逐项执行。
+let pyRunQueue = Promise.resolve();
 
-export async function runPython(code, fsObj, onProgress, extraPkgs = [], opts = {}) {
+async function runPythonNow(code, fsObj, onProgress, extraPkgs = [], opts = {}) {
   if (pyodideBroken) {
     return { ok: false, logs: [], error: { message: 'Pyodide 运行时不可用（CDN 加载失败），请改用 execute_javascript' }, durationMs: 0 };
   }
@@ -598,8 +604,15 @@ export async function runPython(code, fsObj, onProgress, extraPkgs = [], opts = 
   const attempt = (useBlob) => new Promise((resolve) => {
     let settled = false;
     let worker = null;
+    let workerBlobUrl = null;
     let timer = null;
     let phase = 'startup';
+    const releaseBlobUrl = () => {
+      const url = workerBlobUrl;
+      if (!url) return;
+      workerBlobUrl = null;
+      try { URL.revokeObjectURL(url); } catch { /* 已释放或浏览器不支持 */ }
+    };
     const finish = (v) => {
       if (settled) return;
       settled = true;
@@ -609,6 +622,7 @@ export async function runPython(code, fsObj, onProgress, extraPkgs = [], opts = 
     };
     const discardWorker = () => {
       try { worker?.terminate(); } catch { /* noop */ }
+      releaseBlobUrl();
       if (pyWorker === worker) pyWorker = null;
       if (pySyncedWorker === worker) { pySyncedWorker = null; pySynced = null; }
     };
@@ -649,6 +663,7 @@ export async function runPython(code, fsObj, onProgress, extraPkgs = [], opts = 
           const source = await res.text();
           if (settled) return;
           const url = URL.createObjectURL(new Blob([source], { type: 'text/javascript' }));
+          workerBlobUrl = url;
           worker = new Worker(url); // 常驻复用：后续 attempt(false) 直接拿到这个 blob Worker
           pyWorker = worker;
         } else {
@@ -658,6 +673,8 @@ export async function runPython(code, fsObj, onProgress, extraPkgs = [], opts = 
         if (settled) { discardWorker(); return; }
         worker.onmessage = (e) => {
           if (settled) return;
+          // 收到首帧即证明 Worker 已载入脚本；URL 可撤销，常驻 Worker 仍可继续执行。
+          releaseBlobUrl();
           if (e.data?.__userCodeStart) { armTimeout('run', codeTimeoutMs); return; }
           if (e.data?.__log) { opts.onOutput?.(e.data.__log); return; }
           if (e.data && e.data.__progress) { onProgress && onProgress(String(e.data.__progress)); return; }
@@ -672,6 +689,7 @@ export async function runPython(code, fsObj, onProgress, extraPkgs = [], opts = 
       } catch (err) {
         if (!settled) {
           if (worker) discardWorker();
+          else releaseBlobUrl();
           finish({ __workerError: err.message || String(err) });
         }
       }
@@ -723,6 +741,12 @@ export async function runPython(code, fsObj, onProgress, extraPkgs = [], opts = 
   if (sentFull && !out.ok) { pySyncedWorker = null; pySynced = null; }
 
   return { ...out, durationMs: Math.round(performance.now() - t0) };
+}
+
+export function runPython(code, fsObj, onProgress, extraPkgs = [], opts = {}) {
+  const task = pyRunQueue.catch(() => {}).then(() => runPythonNow(code, fsObj, onProgress, extraPkgs, opts));
+  pyRunQueue = task.catch(() => {});
+  return task;
 }
 
 // ── C++：Compiler Explorer 公共 API 远程编译执行 ───────────────────────

@@ -605,6 +605,17 @@ console.log('\n⑯ 移动端布局：根因修复 + 密度重排（源码级护�
   // 顶栏 pill 的反色选中态必须与 :hover 写在同一条规则里：分开写时 .pill:hover:not(:disabled)
   // 特异度更高，会压住 .pill.on → 点开后指针没移开时文字与背景同色（用户报的「点了没反应」）
   ok('pill 选中态压得住 hover（写进同一条规则）', /\.pill\.on,\s*\n?\.pill\.on:hover:not\(:disabled\)/.test(cssText));
+  const activePillStart = cssText.indexOf('.pill.on,');
+  const activePillRule = cssText.slice(activePillStart, cssText.indexOf('}', activePillStart));
+  ok('pill 启用态使用用户气泡前景/背景色', activePillRule.includes('background: var(--chat-user-bubble)')
+    && activePillRule.includes('color: var(--chat-user-text)'), activePillRule);
+  ok('桌面回复图片最大宽度为卡片的 70%', cssText.includes('.md-body img { max-width: 70% !important; height: auto;'));
+  const svgStart = cssText.indexOf('.sb-img[src*="image/svg"], .md-body img[src*="image/svg"]');
+  const svgEnd = cssText.indexOf('\n}', svgStart);
+  const svgRule = cssText.slice(svgStart, svgEnd < 0 ? undefined : svgEnd);
+  ok('SVG 图片覆写也受 70% 上限约束且没有增宽的最小宽度', svgRule.includes('max-width: min(70%, 640px) !important') && svgRule.includes('min-width: 0'));
+  ok('移动端图片恢复卡片 100% 宽度', cssText.includes('.md-body img { max-width: 100% !important; height: auto;')
+    && cssText.includes('@media (max-width: 720px) {\n  .sb-img[src*="image/svg"], .md-body img[src*="image/svg"] { max-width: min(100%, 640px) !important;'));
   ok('icon-btn 用 flex 居中图标', /\.icon-btn\s*\{[^}]*display: inline-flex/.test(cssText) && /\.icon-btn\s*\{[^}]*justify-content: center/.test(cssText));
   // 发布版本来自 config.js；app 与导航页共用 V 号，构建戳独立递增。
   const cfgSrc = fs.readFileSync(path.join(ROOT, 'js/config.js'), 'utf8');
@@ -624,7 +635,7 @@ console.log('\n⑯ 移动端布局：根因修复 + 密度重排（源码级护�
   // 刷新后「对话 + 附件 + 沙箱」都要在：重数据外置到 IndexedDB
   const stateSrc = fs.readFileSync(path.join(ROOT, 'js/state.js'), 'utf8');
   ok('重数据外置到 IndexedDB（附件图/沙箱图/生成图）', /extractBlobs/.test(stateSrc) && /applyBlobs/.test(stateSrc) && /hydrateBlobs/.test(stateSrc)
-    && /blobPrune\(keep\)/.test(stateSrc), 'state.js 缺少外置逻辑');
+    && /createBlobPersistenceQueue/.test(stateSrc) && /blobPersistenceQueue\(entries, keep\)/.test(stateSrc), 'state.js 缺少外置逻辑或有序快照清理');
   ok('启动时水合并重绘界面', /hydrateBlobs\(\)\.then/.test(mainSrc || fs.readFileSync(path.join(ROOT, 'js/main.js'), 'utf8'))
     && /afterHydrate/.test(uiSrc));
   // 侧栏面板按钮曾被 textContent='◧' 整体替换，丢掉 pill 的「图标 + 文字」统一外观并被压到 30 多像素宽
@@ -777,94 +788,68 @@ console.log('\n⑱ 设置页字号 / 深度思考 / 本地会话数回归');
   }
 }
 
-// ─── P3 修正：能力门控不透明 ───
-console.log('\n⑲ 顶栏能力条 → 工具表 diff 弹层（P3 修正：能力门控不透明）');
+// ─── 能力表仅在设置页提供；状态栏只呈现运行状态 ───
+console.log('\n⑲ 设置页工具能力表（状态栏不提供弹层入口）');
 {
-  const { renderCapabilityPopHtml } = await import(path.join(ROOT, 'js/ui-capability.js'));
+  const { renderCapabilityTableHtml } = await import(path.join(ROOT, 'js/ui-capability.js'));
   const { DROP_REASON_LABEL } = await import(path.join(ROOT, 'js/executionContext.js'));
   const capLine = $('#cap-line');
   const pop = $('#tok-pop');
-  // 思考 Off（设置页刚才关掉了），中继离线，沙箱默认开
+  const details = $('#set-capability-details');
+  const tableBody = $('#set-capability-table-body');
   store.state.settings.thinking = false;
   store.state.relayOk = false;
   store.state.settings.webEnabled = true;
   store.state.settings.sandboxEnabled = true;
   store.state.model = 'gpt-5.6-sol';
   ui.syncWeb();
-  const pills = $$('#cap-line .cap-pill');
-  ok('能力条由可点的胶囊组成（模型 / 直连 … ）', pills.length >= 2 && pills.every((p) => p.tagName === 'BUTTON'), String(pills.length));
-  ok('思考 Off 时能力条没有「思考」胶囊、末尾有「已禁用 N」胶囊', !pills.some((p) => /^思考/.test(p.textContent)) && /^已禁用 \d+$/.test(pills.at(-1).textContent), pills.map((p) => p.textContent).join('|'));
-  ok('能力条 data-dropped 与预演结果一致', capLine.dataset.dropped === String(agent.previewToolTable().dropped.length));
-  click(pills[0]);
-  ok('点击胶囊后弹层打开且标题为「能力 · 工具表」', !pop.hidden && pop.dataset.kind === 'cap' && $('.tok-pop-h').textContent === '能力 · 工具表');
-  const row = $('#tok-pop .cap-drop[data-tool="dispatch_subagent"]');
-  ok('弹层列出 dispatch_subagent', !!row);
-  ok('原因文案 = 思考档位需 Max/Ultra（与 DROP_REASON_LABEL 同源）', !!row && row.querySelector('.cap-why').textContent === '思考档位需 Max/Ultra' && DROP_REASON_LABEL['capability-dispatch-off'] === '思考档位需 Max/Ultra', row && row.textContent);
-  ok('中继离线：fetch_url / crawl_site 也在清单里并说明「网页中继未通过健康检查」', ['fetch_url', 'crawl_site'].every((t) => { const r = $(`#tok-pop .cap-drop[data-tool="${t}"]`); return r && /网页中继未通过健康检查/.test(r.textContent); }));
-  ok('弹层里的工具清单 = previewToolTable().dropped（UI 列表就是实际裁剪）', $$('#tok-pop .cap-drop').map((n) => n.dataset.tool).join(',') === agent.previewToolTable().dropped.map((d) => d.name).join(','));
+  const labels = $$('#cap-line .cap-pill');
+  ok('状态栏由静态标签组成，不可点击打开能力表', labels.length >= 2 && labels.every((node) => node.tagName === 'SPAN') && !capLine.querySelector('button'));
+  ok('状态栏不显示「已禁用」计数', !/已禁用|未启用/.test(capLine.textContent), capLine.textContent);
+  ok('能力表入口位于设置页 details 中', !!details && !!tableBody && /查看当前工具能力表/.test(details.textContent));
+  const drops = agent.previewToolTable().dropped;
+  ok('设置页列出的裁剪项与 previewToolTable().dropped 一致', $$('#set-capability-table-body .cap-drop').map((node) => node.dataset.tool).join(',') === drops.map((item) => item.name).join(','));
+  const row = $('#set-capability-table-body .cap-drop[data-tool="dispatch_subagent"]');
+  ok('设置页列出 dispatch_subagent 与同源原因文案', !!row && row.querySelector('.cap-why').textContent === DROP_REASON_LABEL['capability-dispatch-off']);
+  ok('中继离线时 fetch_url / crawl_site 的原因也在设置页中可查', ['fetch_url', 'crawl_site'].every((tool) => {
+    const item = $(`#set-capability-table-body .cap-drop[data-tool="${tool}"]`);
+    return item && /网页中继未通过健康检查/.test(item.textContent);
+  }));
   const fixBtn = row && row.querySelector('.cap-fix[data-fix="reasoning-max"]');
-  ok('dispatch_subagent 条目带直达开关「切到 Max」', !!fixBtn && fixBtn.textContent === '切到 Max');
+  ok('可从设置页能力表直接切到 Max', !!fixBtn && fixBtn.textContent === '切到 Max');
   click(fixBtn);
-  await new Promise((r) => setTimeout(r, 0));
-  ok('点「切到 Max」后思考打开且档位为 max', store.state.settings.thinking === true && store.state.settings.reasoningLevel === 'max');
-  ok('切到 Max 后 dispatch_subagent 条目消失（弹层原地重算）', !pop.hidden && !$('#tok-pop .cap-drop[data-tool="dispatch_subagent"]'));
-  ok('能力条同步显示「思考 Max」', $$('#cap-line .cap-pill').some((p) => p.textContent === '思考 Max'), $$('#cap-line .cap-pill').map((p) => p.textContent).join('|'));
-  // 中继在线 + 全部开关打开 → 没有裁剪
-  store.state.relayOk = true;
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  ok('切到 Max 后 dispatch_subagent 从设置页表格中移除', store.state.settings.thinking === true
+    && store.state.settings.reasoningLevel === 'max'
+    && !$('#set-capability-table-body .cap-drop[data-tool="dispatch_subagent"]'));
+  ok('更新状态仍然不在对话状态栏暴露裁剪计数', !/已禁用|未启用/.test(capLine.textContent));
+  details.open = true;
+  ok('设置页能力表可在 details 内展开', details.open && tableBody.textContent.length > 0);
+  const allOkay = renderCapabilityTableHtml({ allowed: ['a', 'b'], dropped: [], total: 2, tier: { displayTier: 'Max', canDispatch: true } });
+  ok('纯函数渲染全可用状态和工具总数', /全部工具均可用/.test(allOkay) && /2 \/ 2/.test(allOkay) && /Max（可委派）/.test(allOkay));
+  ok('旧能力弹层入口已不再从状态栏打开', pop.hidden === true && pop.dataset.kind !== 'cap');
+  const refreshedLabel = $('#cap-line .cap-pill');
   ui.syncWeb();
-  const html = renderCapabilityPopHtml({ allowed: ['a', 'b'], dropped: [], total: 2, tier: { displayTier: 'Max', canDispatch: true } });
-  ok('纯函数 renderCapabilityPopHtml：无裁剪时给「全部工具可用」且显示 2 / 2', /全部工具可用/.test(html) && /2 \/ 2/.test(html) && /Max（可委派）/.test(html));
-  click($('#cap-line .cap-pill')); // 能力条已重绘，重新取节点；再点一次 = 关闭
-  ok('再点胶囊关闭弹层', pop.hidden === true);
+  ok('能力状态未变化时复用相同标签节点', $('#cap-line .cap-pill') === refreshedLabel);
 }
 
-console.log('\n⑳ .36 回归：能力表里把禁用工具全部启用后，弹层不得跑到屏幕左上角（锚必须随重绘重新解析）');
+console.log('\n⑳ 设置页能力表随开关变化刷新，能力状态栏不再承载弹层锚点');
 {
+  const details = $('#set-capability-details');
+  const body = $('#set-capability-table-body');
   const capLine = $('#cap-line');
-  const pop = $('#tok-pop');
-  // 造出两类裁剪：思考 Off（可点「切到 Max」）+ 中继离线（可点「重新探测中继」）
   store.state.settings.thinking = false;
   store.state.relayOk = false;
   store.state.settings.webEnabled = true;
   store.state.settings.sandboxEnabled = true;
   store.state.model = 'gpt-5.6-sol';
   ui.syncWeb();
-  const drops = agent.previewToolTable().dropped;
-  ok('前置：确实存在被门控裁剪的工具', drops.length > 0, JSON.stringify(drops.map((d) => d.name)));
-  const dropPill = $('#cap-line .cap-pill[data-cap="drop"]');
-  ok('前置：能力条末尾有可点的「已禁用 N」胶囊', !!dropPill);
-  click(dropPill);
-  ok('弹层锚在「已禁用 N」胶囊上', pop.hidden === false && pop.dataset.kind === 'cap' && pop._anchor === dropPill);
-  // 点一条「切到 Max」：能力条会重绘（多出「思考 Max」胶囊），旧锚节点随即脱离文档
-  click($('#tok-pop .cap-drop[data-tool="dispatch_subagent"] .cap-fix[data-fix="reasoning-max"]'));
-  await new Promise((r) => setTimeout(r, 0));
-  ok('重绘后锚已重新解析到新的「已禁用 N」胶囊', pop._anchor !== dropPill && pop._anchor.dataset.cap === 'drop');
-  ok('锚仍在文档里（否则 getBoundingClientRect 全 0 → 弹层被摆到 (8,8)）', pop._anchor.isConnected === true);
-  ok('弹层保持打开、内容同步（dispatch_subagent 已消失）', pop.hidden === false && !$('#tok-pop .cap-drop[data-tool="dispatch_subagent"]'));
-  ok('重绘后仍写过定位（left/top 有值，而不是回落到 auto）', /px$/.test(pop.style.left) && /px$/.test(pop.style.top), `${pop.style.left} / ${pop.style.top}`);
-  // 全部启用：中继在线且声明全套能力 → 裁剪清空，「已禁用 N」胶囊本身消失 → 锚退回整条能力行
-  const net = await import(path.join(ROOT, 'js/net.js'));
-  const oldFetch = globalThis.fetch;
-  globalThis.fetch = async (u) => String(u).includes('/api/sandbox-web/health')
-    ? new Response(JSON.stringify({ ok: true, local: true, engine: 'chromium', kind: 'sandbox-project-browser' }), { status: 200, headers: { 'content-type': 'application/json' } })
-    : String(u).includes('/api/health')
-      ? new Response(JSON.stringify({ ok: true, capabilities: ['fetch', 'search', 'crawl', 'file'] }), { status: 200, headers: { 'content-type': 'application/json' } })
-      : new Response('nf', { status: 404 });
-  try {
-    net.resetRelayProbe();
-    const lb = await import('../js/localbrowser.js?v=2026.10.11.1'); await lb.probeLocalBrowser({ force: true });
-    store.state.relayOk = await net.relayAvailable();
-    store.state.settings.webEnabled = true;
-    ui.syncWeb();
-  } finally { globalThis.fetch = oldFetch; }
-  ok('前置：全部启用后没有裁剪', agent.previewToolTable().dropped.length === 0);
-  ok('「已禁用 N」胶囊已从能力条消失', !$('#cap-line .cap-pill[data-cap="drop"]'));
-  ok('弹层仍然打开且锚退回整条能力行（不是脱离文档的旧胶囊）', pop.hidden === false && pop._anchor === capLine && capLine.isConnected === true);
-  ok('弹层内容切换为「全部工具可用」', /全部工具可用/.test($('#tok-pop-body').textContent));
-  ui.syncWeb();
-  ok('能力条内容不变时不重建 DOM（焦点 / hover / 锚都留住）', $('#cap-line .cap-pill[data-cap="model"]') === capLine.querySelector('.cap-pill[data-cap="model"]'));
-  click($('#cap-line .cap-pill[data-cap="model"]')); // 关闭，别把状态留给下一段
-  ok('收尾：弹层关闭', pop.hidden === true);
+  ok('有门控项时设置页显示原因与直达开关', $$('#set-capability-table-body .cap-drop').length > 0
+    && !!$('#set-capability-table-body .cap-fix'));
+  ok('对话状态栏无按钮、无禁用/未启用文案', !capLine.querySelector('button') && !/已禁用|未启用/.test(capLine.textContent));
+  ok('表格属于设置页 details，不属于 token 弹层', body.closest('#set-capability-details') === details && $('#tok-pop').dataset.kind !== 'cap');
+  details.open = false;
+  ok('能力表默认可收起', details.open === false);
 }
 
 console.log('\n㉑ P8 单点依赖：失败态点「联网」胶囊 = 重置探测缓存并立刻重探；网关 5xx 错误框带「切换节点并重试」按钮');
@@ -1001,6 +986,23 @@ const miss = $('#messages .msg[data-id="fc-2"] .sb-file-card');
 ok('沙箱里没有的文件标 missing 并提示', miss.classList.contains('missing') && /沙箱中没有这个文件/.test(miss.textContent));
 store.state.messages = store.state.messages.filter((m) => !m.id.startsWith('fc-'));
 ui.rebuildMessages();
+
+// 模型感知思维区：GPT 只渲染链式粗体摘要，非 GPT 在展开区保留完整原始文本。
+store.state.messages.splice(0, store.state.messages.length);
+store.state.messages.push(
+  { id: 'reason-u', role: 'user', text: '展示本轮思考过程', ts: Date.now() },
+  { id: 'reason-claude', role: 'assistant', model: 'claude-sonnet-5', reasoningLevel: 'high', reasoning: '<step>完整过程</step>\n逐字保留', text: 'Claude answer', done: true, thinkDone: true, ts: Date.now() },
+  { id: 'reason-gpt', role: 'assistant', model: 'gpt-5.6-sol', reasoningLevel: 'high', reasoning: '**Plan****Check constraints**', text: 'GPT answer', done: true, thinkDone: true, ts: Date.now() },
+);
+ui.rebuildMessages();
+const claudeReason = $('#messages [data-id="reason-claude"] .reasoning');
+const gptReason = $('#messages [data-id="reason-gpt"] .reasoning');
+ok('非 GPT 的完整思考按纯文本写入详情区（标签不作为 HTML 执行）', !!claudeReason
+  && claudeReason.querySelector('.think-full-text')?.textContent === '<step>完整过程</step>\n逐字保留'
+  && !claudeReason.querySelector('.think-summary-item') && !claudeReason.querySelector('.think-full-text b'));
+ok('GPT 只显示**…**摘要项，不回显原始推理全文', !!gptReason && gptReason.querySelectorAll('.think-summary-item').length === 2
+  && [...gptReason.querySelectorAll('.think-summary-item')].map((n) => n.textContent).join('|') === 'Plan|Check constraints'
+  && !gptReason.querySelector('.think-full-text'));
 
 console.log(failures ? `\n${failures} 项失败 ❌` : '\nDOM 冒烟测试全部通过 ✅');
 process.exit(failures ? 1 : 0);

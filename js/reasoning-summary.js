@@ -1,15 +1,25 @@
 const REASONING_MARKERS = /<\/?(?:think|analysis|reasoning)(?:\s[^>]*)?>/gi;
+const BOLD_SUMMARY = /\*\*([\s\S]+?)\*\*/g;
 
-// Progress-only labels derived from stream length. The UI never displays model reasoning text.
-export function reasoningSummaryItems(raw, { maxItems = 3 } = {}) {
-  const source = String(raw || '').replace(REASONING_MARKERS, '').replace(/\s/gu, '');
-  const length = Array.from(source).length;
-  if (!length) return [];
-  const stages = [
-    [1, '正在分析问题与关键约束…'],
-    [48, '正在梳理要点与可行路径…'],
-    [160, '正在检查逻辑与边界情况…'],
-    [420, '正在组织清晰、简洁的答复…'],
-  ];
-  return stages.filter(([threshold]) => length >= threshold).slice(-Math.max(1, maxItems)).map(([, label]) => label);
+export function isGptModel(modelId) {
+  const model = String(modelId || '').trim().toLowerCase();
+  if (!model) return false;
+  if (/(?:^|[^a-z0-9])(?:gpt|chatgpt)[-_.:/\s]*(?:image|audio|tts|transcribe|realtime)(?:$|[^a-z0-9])/.test(model)) return false;
+  return /(?:^|[^a-z0-9])gpt(?:$|[-_.:/\s])/.test(model)
+    || /(?:^|[^a-z0-9])chatgpt(?:$|[-_.:/\s])/.test(model);
+}
+
+// Only GPT-family models use the chained-bold summary convention, e.g.
+// **Understand the request****Check constraints**. Preserve every marker pair,
+// including repeated labels, as a separate item and in its original order.
+// Other models return no summaries; their reasoning is rendered separately.
+export function reasoningSummaryItems(raw, modelId) {
+  if (!isGptModel(modelId)) return [];
+  const source = String(raw || '').replace(REASONING_MARKERS, '');
+  const items = [];
+  for (const match of source.matchAll(BOLD_SUMMARY)) {
+    const item = String(match[1] || '').replace(/\s+/gu, ' ').trim();
+    if (item) items.push(item);
+  }
+  return items;
 }

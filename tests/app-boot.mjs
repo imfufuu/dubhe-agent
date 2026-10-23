@@ -334,6 +334,10 @@ console.log('\n停止生成：停下就是停下，不留「正在连接…」�
   ok('停止后连接提示消失', !/正在连接/.test(after.innerHTML) && !after.querySelector('.connect-dot'),
     after.innerHTML.replace(/\s+/g, ' ').slice(0, 80));
   ok('停止后标出「已停止」', !!after.querySelector('.cancelled-tag'));
+  ok('停止后的消息壳保留取消尾标，不会被折叠隐藏', !!after.querySelector('.message-tail') && !after.classList.contains('msg-collapsed'));
+  ok('停止后底部操作栏存在且不处于待显示态', !!after.querySelector('.msg-actions') && !after.classList.contains('actions-pending'));
+  ok('停止后复制、回滚、重新生成按钮仍可见', !!after.querySelector('[data-act="copy"]') && !!after.querySelector('[data-act="rollback"]')
+    && !!after.querySelector('.act-regen') && after.querySelector('.act-regen').style.display !== 'none');
   ok('停止后状态是「已停止」而不是继续转圈', /已停止/.test($('#status-text').textContent), $('#status-text').textContent);
   ok('停止后发送按钮回到发送态', !$('#send-btn').classList.contains('stop-mode'));
 }

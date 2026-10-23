@@ -742,19 +742,22 @@ export function renderMarkdown(src) {
     diagrams.push({ ...spec, body });
     return `\n\n\uE000DIAGRAM${diagrams.length - 1}\uE000\n\n`;
   });
+  // Canonical CSS/font-family names are preferred in generated syntax; Chinese and legacy aliases stay supported.
   const FONT_ALIAS = {
-    楷体: 'kai', 楷: 'kai', kai: 'kai', kaiti: 'kai',
-    宋体: 'song', 宋: 'song', song: 'song', songti: 'song',
-    仿宋: 'fangsong', fangsong: 'fangsong',
-    黑体: 'heiti', 黑: 'heiti', heiti: 'heiti', sans: 'heiti',
-    行楷: 'xingkai', xingkai: 'xingkai',
-    serif: 'serif', latin: 'serif', 衬线: 'serif',
-    jp: 'jp', 日文: 'jp', japanese: 'jp',
+    kai: 'kai', kaiti: 'kai', kaitigb2312: 'kai', simkai: 'kai', stkaiti: 'kai', kaitisc: 'kai',
+    lxgwwenkaitc: 'kai', kleeone: 'kai', 楷: 'kai', 楷体: 'kai', 楷体gb2312: 'kai',
+    song: 'song', songti: 'song', simsun: 'song', nsimsun: 'song', notoserifsc: 'song', 宋: 'song', 宋体: 'song',
+    fangsong: 'fangsong', fangsonggb2312: 'fangsong', stfangsong: 'fangsong', 仿宋: 'fangsong', 仿宋gb2312: 'fangsong',
+    heiti: 'heiti', simhei: 'heiti', stheiti: 'heiti', sans: 'heiti', 黑: 'heiti', 黑体: 'heiti',
+    xingkai: 'xingkai', mashanzheng: 'xingkai', stxingkai: 'xingkai', 行楷: 'xingkai',
+    serif: 'serif', latin: 'serif', sourceserif4: 'serif', sourceserifpro: 'serif', georgia: 'serif', charter: 'serif', 衬线: 'serif',
+    jp: 'jp', japanese: 'jp', notoserifjp: 'jp', 日文: 'jp',
   };
   const fonts = [];
   t = t.replace(/^:::font[ \t]+(.+)\n([\s\S]*?)^:::[ \t]*$/gm, (_, name, body) => {
     const raw = String(name || '').trim();
-    const cls = FONT_ALIAS[raw] || FONT_ALIAS[raw.toLowerCase()] || 'serif';
+    const key = raw.toLowerCase().replace(/[\s_-]+/g, '');
+    const cls = FONT_ALIAS[raw] || FONT_ALIAS[key] || 'serif';
     fonts.push({ cls, body });
     return `\n\n\uE000FONT${fonts.length - 1}\uE000\n\n`;
   });

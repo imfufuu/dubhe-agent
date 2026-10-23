@@ -18,14 +18,22 @@ export function persistTurnTiming(store, ms, msgNodes, paintFoot, syncShell, ren
   if (!(ms > 0)) return;
   const st = store.state.stats || (store.state.stats = { lastMs: 0, totalMs: 0 });
   st.lastMs = ms; st.totalMs += ms;
-  const assistants = [...(store.state.messages || [])].reverse().filter((m) => m?.role === 'assistant');
-  const last = assistants.find((m) => !m.toolCalls?.length) || assistants[0];
-  if (last) {
-    last.durationMs = ms; last.ts = Date.now();
-    const wrap = msgNodes.get(last.id);
-    if (wrap) { paintFoot(wrap, last); syncShell(wrap); }
+  const messages = store.state.messages || [];
+  let lastUserIndex = -1;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i]?.role === 'user') { lastUserIndex = i; break; }
   }
-  store.notify(); store.save?.(true); renderStats();
+  // Never attach this task's completion time to an older answer if the current turn has no final text message.
+  const turnAssistants = messages.slice(lastUserIndex + 1).filter((m) => m?.role === 'assistant');
+  const last = [...turnAssistants].reverse().find((m) => !m.toolCalls?.length) || turnAssistants.at(-1);
+  if (last) { last.durationMs = ms; last.ts = Date.now(); }
+  // Persist independently of DOM paint: a detached/failed footer update must not lose the timestamp on refresh.
+  try { store.notify(); } finally { store.save?.(true); }
+  if (last) {
+    const wrap = msgNodes.get(last.id);
+    if (wrap) { try { paintFoot(wrap, last); syncShell(wrap); } catch { /* persistence is already complete */ } }
+  }
+  renderStats();
 }
 export function paintOrderedAssistant(wrap, m, { paintPart, paintMeta, paintFoot, syncShell, syncFolds, refreshActions }) {
   const parts = displayParts(m);

@@ -16,6 +16,7 @@ import { thinkingParamsFor } from '../js/config.js';
 import { SUBAGENTS, findSubagent, subagentGuide } from '../js/subagents.js';
 import { TOOL_DEFS, executeTool, toolsFor } from '../js/tools.js';
 import { createAgent, copyAttachmentsToFS } from '../js/agent.js';
+import { knowledgeTokens, searchKnowledge } from '../js/knowledge.js';
 
 // 联网开关默认开启，但模型原生网页搜索字段保持关闭；下面这些既有用例只校验
 // /v1/chat/completions 与 /v1/messages 两条端点的解析与循环 —— 统一关掉联网，避免无关路由变化。
@@ -865,16 +866,15 @@ test('第 3 条：设置页 / 文件面板触屏密度 + 左下角按钮一行 +
   assert.match(css, /\[data-theme="dark"\] \{[\s\S]*?--fg-3: #8a8a8a;/, '暗色 --fg-3 = #8a8a8a（原 #666666 = 3.43:1）');
 });
 
-test('第 3 条：窄屏（≤720px）能力表 = 底部抽屉；桌面仍是锚定气泡；遮罩存在', async () => {
+test('能力表迁入设置页 details；不再复用 Token / 路由弹层或窄屏抽屉', async () => {
   const fsp = await import('node:fs');
   const css = fsp.readFileSync(new URL('../css/styles.css', import.meta.url), 'utf8');
   const pop = fsp.readFileSync(new URL('../js/ui-popovers.js', import.meta.url), 'utf8');
   const html = fsp.readFileSync(new URL('../app.html', import.meta.url), 'utf8');
-  assert.match(pop, /const TOK_SHEET_MQ = '\(max-width: 720px\)';/);
-  assert.match(pop, /if \(syncTokSheet\(pop\)\) \{ pop\.style\.left = ''; pop\.style\.top = '';/, '抽屉模式不再跟锚点定位');
-  assert.match(css, /\.tok-pop\[data-sheet\] \{[\s\S]*?bottom: 0;[\s\S]*?border-radius: 18px 18px 0 0;/);
-  assert.match(css, /\.tok-sheet-scrim \{ position: fixed; inset: 0; z-index: 89;/);
-  assert.match(html, /<div id="tok-sheet-scrim" class="tok-sheet-scrim" hidden><\/div>/);
+  assert.match(html, /<details id="set-capability-details"[\s\S]*?id="set-capability-table-body"/);
+  assert.doesNotMatch(pop, /TOK_SHEET_MQ|syncTokSheet|dataset\.kind === 'cap'|kind === 'cap'/);
+  assert.doesNotMatch(css, /tok-sheet-scrim|tok-pop\[data-sheet\]/);
+  assert.match(css, /\.capability-table-body \{ max-height: 280px; overflow: auto;/);
 });
 
 test('第 2 条：快捷地图 —— 视图夹取 / 以指针为中心缩放 / 前五名排行（纯函数）+ 区域包进可缩放视口组', async () => {
@@ -1067,6 +1067,10 @@ test('renderMarkdown：完整 Markdown（markdown-it）+ KaTeX 公式', async ()
   const lit = renderMarkdown('上文\n\n:::font 楷体\n春风又绿江南岸\n:::\n');
   assert.match(lit, /class="md-font md-font-kai"/);
   assert.match(lit, /春风又绿江南岸/);
+  const canonicalKai = renderMarkdown(':::font KaiTi\n规范字体名\n:::');
+  const legacyKai = renderMarkdown(':::font KaiTi_GB2312\n兼容旧名\n:::');
+  assert.match(canonicalKai, /class="md-font md-font-kai"/, '正式字体家族名 KaiTi 可用');
+  assert.match(legacyKai, /class="md-font md-font-kai"/, '旧别名 KaiTi_GB2312 保持兼容');
   const serif = renderMarkdown(':::font serif\nOnce upon a time\n:::');
   assert.match(serif, /md-font-serif/);
   const choice = renderMarkdown('请拍板\n\n:::choice 部署方式\n- GitHub Pages\n- 自建\n:::');
@@ -1205,7 +1209,7 @@ test('renderMarkdown：markdown-it 缺失时回退精简渲染器', async () => 
   globalThis.markdownit = savedMd;
 });
 test('systemPrompt / 子智能体：注入输出规范', async () => {
-  const { systemPrompt, OUTPUT_SPEC } = await import('../js/config.js');
+  const { systemPrompt, OUTPUT_SPEC, compactOutputSpec } = await import('../js/config.js');
   assert.ok(OUTPUT_SPEC.includes('Markdown') && OUTPUT_SPEC.includes('KaTeX'), '规范含 Markdown/KaTeX');
   assert.ok(OUTPUT_SPEC.includes('==高亮=='), '提示词说明客户端支持的高亮语法');
   assert.match(OUTPUT_SPEC, /sandbox:\/\//);
@@ -1221,6 +1225,8 @@ test('systemPrompt / 子智能体：注入输出规范', async () => {
   assert.match(OUTPUT_SPEC, /colspan="2"[\s\S]*rowspan="2"/, '中文输出规范说明合并单元格写法');
   const { OUTPUT_SPEC_EN } = await import('../js/prompt-en.js');
   assert.match(OUTPUT_SPEC_EN, /colspan="2"[\s\S]*rowspan="2"/, '英文输出规范同步说明合并单元格写法');
+  assert.match(compactOutputSpec('zh'), /仅在确需合并单元格时使用经安全清理的表格 HTML[\s\S]*colspan/);
+  assert.match(compactOutputSpec('en'), /except sanitized table markup strictly required for merged cells[\s\S]*colspan/);
   assert.ok(OUTPUT_SPEC.includes(String.raw`少用）：\n:::fold 标题\n内容\n:::`), '折叠栏示例只保留单层反斜杠');
   assert.ok(OUTPUT_SPEC.includes('Emoji：默认不使用装饰性 Emoji'), '提示词降低装饰性 Emoji 频率');
   assert.match(OUTPUT_SPEC, /完整可运行/, '代码不得写太短太简略');
@@ -1233,6 +1239,28 @@ test('systemPrompt / 子智能体：注入输出规范', async () => {
   assert.match(text, /上海初中业余编程爱好者/);
   assert.match(text, /lks\.tan\.cn@gmail\.com/);
   assert.equal(/望舒|团团|茶沫/.test(systemPrompt()), false);
+});
+test('渲染知识：双语索引由完整语法资料重建，模糊检索返回相关段落', () => {
+  const index = JSON.parse(_fs.readFileSync(new URL('../assets/knowledge/index.json', import.meta.url), 'utf8'));
+  const zhSource = _fs.readFileSync(new URL('../assets/knowledge/rendering.zh.md', import.meta.url), 'utf8');
+  const enSource = _fs.readFileSync(new URL('../assets/knowledge/rendering.en.md', import.meta.url), 'utf8');
+  const zh = index.records.find((record) => record.id === 'rendering-zh');
+  const en = index.records.find((record) => record.id === 'rendering-en');
+  assert.ok(zh && en, '中英文渲染语法记录均存在');
+  assert.equal(zh.content, zhSource.trimEnd() + '\n', '中文索引与源资料同步');
+  assert.equal(en.content, enSource.trimEnd() + '\n', '英文索引与源资料同步');
+  assert.match(zh.content, /colspan[\s\S]*rowspan/);
+  assert.match(en.content, /colspan[\s\S]*rowspan/);
+  assert.match(zh.content, /当前字体族名为 `KaiTi`[\s\S]*旧别名 `KaiTi_GB2312`/);
+  assert.match(en.content, /`KaiTi` is the current family name[\s\S]*`KaiTi_GB2312`/);
+  assert.ok(knowledgeTokens('合并单元格').includes('合并单元格'), '中文分词保留完整短语用于匹配');
+  const zhHit = searchKnowledge(index, { query: '合并单元格', topic: 'rendering', language: 'zh' });
+  assert.match(zhHit, /colspan="N"[\s\S]*rowspan="N"/);
+  const fuzzyHit = searchKnowledge(index, { query: 'colpan', topic: 'rendering', language: 'en' });
+  assert.match(fuzzyHit, /colspan/);
+  assert.doesNotMatch(fuzzyHit, /Scope and how to search this guide/, '检索优先返回命中章节，而不是文章开头');
+  const chartHit = searchKnowledge(index, { query: 'histogram', topic: 'rendering', language: 'en' });
+  assert.match(chartHit, /bins=8/);
 });
 
 group('持久化（P0-3 回归：关闭页面不得丢最后一轮）');
@@ -1251,17 +1279,22 @@ test('save(true) 同步落盘，不依赖 300ms 防抖定时器', async () => {
     // 全新模块实例，确保读到上面这个 localStorage 桩
     const { createStore } = await import('../js/state.js?imm=' + Date.now());
     const store = storeNoWeb(createStore());
+    store.pushMessage({ role: 'user', text: '上一轮问题' });
+    store.pushMessage({ role: 'assistant', text: '上一轮答案', done: true, ts: 1780000000000 });
     store.pushMessage({ role: 'user', text: '最后一轮对话' });
-    const answer = store.pushMessage({ role: 'assistant', text: '已完成', done: true });
-    store.updateMessage(answer.id, { ts: 1780000000000, durationMs: 6400 });
+    store.pushMessage({ role: 'assistant', text: '已完成', done: true, ts: 1780000001000 });
     const key = 'dubhe-agent-state-v1-v2';
 
     // 防抖版：定时器未触发前不应写入
     store.save();
     assert.equal(mem.get(key), undefined, '防抖版 save() 不应立即写入');
 
-    // 同步版（beforeunload / visibilitychange 走这条）：必须立刻写入
-    store.save(true);
+    // 使用真实回合完成回调写入时间戳 / 耗时，并同步落盘；界面绘制失败也不能影响持久化。
+    const { persistTurnTiming } = await import('../js/ui-toolflow.js?v=2026.10.11.1');
+    const realNow = Date.now;
+    Date.now = () => 1780000006400;
+    try { persistTurnTiming(store, 6400, new Map(), () => {}, () => {}, () => {}); }
+    finally { Date.now = realNow; }
     const raw = mem.get(key);
     assert.ok(raw, 'save(true) 必须立即落盘');
     const saved = JSON.parse(raw);
@@ -1270,10 +1303,12 @@ test('save(true) 同步落盘，不依赖 300ms 防抖定时器', async () => {
       '最后一轮对话必须已持久化',
     );
     const savedAnswer = saved.sessions[0].messages.find((m) => m.text === '已完成');
-    assert.equal(savedAnswer.ts, 1780000000000, '刷新后仍有回答时间戳');
+    assert.equal(savedAnswer.ts, 1780000006400, '回合完成时间戳刷新后仍保留');
     assert.equal(savedAnswer.durationMs, 6400, '总耗时仍保留');
+    const savedPrevious = saved.sessions[0].messages.find((m) => m.text === '上一轮答案');
+    assert.equal(savedPrevious.ts, 1780000000000, '完成时间不得覆盖上一轮消息');
     const reopened = createStore().state.messages.find((m) => m.text === '已完成');
-    assert.deepEqual([reopened.ts, reopened.durationMs], [1780000000000, 6400], '新 store 能从持久化快照恢复脚注元数据');
+    assert.deepEqual([reopened.ts, reopened.durationMs], [1780000006400, 6400], '新 store 能从持久化快照恢复脚注元数据');
   } finally {
     if (realLS === undefined) delete globalThis.localStorage;
     else globalThis.localStorage = realLS;
@@ -1326,6 +1361,37 @@ test('超大状态（含 5MB 图片）：走瘦身路径，剥离 dataUrl 且不
     const att = saved.sessions[0].messages.find((m) => m.role === 'user').attachments[0];
     assert.equal(att.dataUrl, undefined, '超限必须剥离 dataUrl');
     assert.equal(att.stripped, true, '标记已省略（后续请求发送省略说明）');
+  } finally {
+    if (realLS === undefined) delete globalThis.localStorage;
+    else globalThis.localStorage = realLS;
+  }
+});
+test('createStore：从持久化快照恢复时也要清洗 P2 根状态形状与容量', async () => {
+  await drainSaves();
+  const mem = new Map();
+  const realLS = globalThis.localStorage;
+  globalThis.localStorage = {
+    getItem: (k) => (mem.has(k) ? mem.get(k) : null),
+    setItem: (k, v) => mem.set(k, String(v)),
+    removeItem: (k) => mem.delete(k),
+  };
+  const faultHistory = Array.from({ length: 30 }, (_, i) => ({ sequence: i }));
+  mem.set('dubhe-agent-state-v1-v2', JSON.stringify({
+    sessions: [{ id: 'loaded-session', gatewayId: 'teamorouter', model: 'gpt-5.6-sol', messages: [], checkpoints: [], files: {}, stats: { lastMs: 0, totalMs: 0 } }],
+    activeSessionId: 'loaded-session', experimentSamples: 'corrupt', faultHistory,
+    experimentAssignments: ['not', 'a', 'map'], policySnapshot: 'corrupt', policyDrift: 9,
+    faultInjection: 'corrupt', lastFaultReport: 'corrupt', metricsSnapshot: 9,
+    metricsBaseline: 'corrupt', metricsGate: 9, auditReconcile: 'corrupt', lastExecutionContext: 'corrupt',
+  }));
+  try {
+    const { createStore } = await import('../js/state.js?p2shape=' + Date.now());
+    const state = createStore().state;
+    assert.deepEqual(state.experimentSamples, [], '非数组实验样本回落为空');
+    assert.deepEqual(state.faultHistory, faultHistory.slice(-24), '超长故障历史按既定上限截断');
+    assert.deepEqual(state.experimentAssignments, {}, '数组不能伪装成实验映射');
+    for (const key of ['policySnapshot', 'policyDrift', 'faultInjection', 'lastFaultReport', 'metricsSnapshot', 'metricsBaseline', 'metricsGate', 'auditReconcile', 'lastExecutionContext']) {
+      assert.equal(state[key], null, `${key} 的损坏快照值必须被清理`);
+    }
   } finally {
     if (realLS === undefined) delete globalThis.localStorage;
     else globalThis.localStorage = realLS;
@@ -3006,6 +3072,53 @@ test('streamChat：首响应真的超时应抛出 FirstTokenTimeout，不能静�
     );
   } finally { globalThis.fetch = origFetch; }
 });
+test('streamChat：自然结束后移除共享 AbortSignal 监听器', async () => {
+  const origFetch = globalThis.fetch;
+  const listeners = new Set();
+  const signal = {
+    aborted: false,
+    addEventListener(type, fn) { if (type === 'abort') listeners.add(fn); },
+    removeEventListener(type, fn) { if (type === 'abort') listeners.delete(fn); },
+  };
+  globalThis.fetch = async () => openaiTextTurn('完成');
+  try {
+    await api.streamChat({ model: 'gpt-5.6-sol', apiKey: 'k', messages: [{ role: 'user', text: 'hi' }], signal, onEvent() {} });
+    assert.equal(listeners.size, 0, '每个工具/子智能体共享回合 signal，正常完成后不能留下监听器');
+  } finally { globalThis.fetch = origFetch; }
+});
+test('streamChat：总流超时和外部取消必须拒绝，不能当成正常 EOF', async () => {
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(new ReadableStream({ start() {} }), {
+    status: 200, headers: { 'content-type': 'text/event-stream' },
+  });
+  try {
+    await assert.rejects(
+      api.streamChat({ model: 'gpt-5.6-sol', apiKey: 'k', messages: [{ role: 'user', text: 'hi' }], firstTokenTimeoutMs: 5000, streamTimeoutMs: 10, onEvent() {} }),
+      (err) => err && err.name === 'StreamTimeoutError',
+    );
+    const listeners = new Set();
+    const signal = {
+      aborted: false, reason: undefined,
+      addEventListener(type, fn) { if (type === 'abort') listeners.add(fn); },
+      removeEventListener(type, fn) { if (type === 'abort') listeners.delete(fn); },
+      abort(reason) { this.aborted = true; this.reason = reason; for (const fn of [...listeners]) fn(); },
+    };
+    const pending = api.streamChat({ model: 'gpt-5.6-sol', apiKey: 'k', messages: [{ role: 'user', text: 'hi' }], signal, firstTokenTimeoutMs: 5000, streamTimeoutMs: 5000, onEvent() {} });
+    setTimeout(() => signal.abort(Object.assign(new Error('cancelled'), { name: 'AbortError' })), 5);
+    await assert.rejects(pending, (err) => err && err.name === 'AbortError');
+    assert.equal(listeners.size, 0, '取消路径也必须清理 signal listener');
+  } finally { globalThis.fetch = origFetch; }
+});
+test('streamChat：缺少 finish / [DONE] 的截断流作为错误报告', async () => {
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = async () => sseResponse(sseEv({ choices: [{ delta: { content: '部分正文' } }] }));
+  try {
+    await assert.rejects(
+      api.streamChat({ model: 'gpt-5.6-sol', apiKey: 'k', messages: [{ role: 'user', text: 'hi' }], onEvent() {} }),
+      (err) => err && err.name === 'IncompleteStreamError',
+    );
+  } finally { globalThis.fetch = origFetch; }
+});
 test('沙箱输出被截断只在预算不足时发生（回归：历史轮次工具结果分级收紧）', () => {
   const long = 'x'.repeat(20000);
   const msgs = [{ role: 'user', text: 'q' }, { role: 'assistant', text: 'a' }, { role: 'user', text: 'q2' }, { role: 'tool', toolCallId: 'c', name: 'execute_javascript', content: long }];
@@ -3820,6 +3933,8 @@ test('Responses 流事件归一到与另两种协议相同的事件词汇', asyn
   const err = [];
   web.createResponsesStream((e) => err.push(e))({ type: 'response.failed', error: { message: '上游炸了' } });
   assert.equal(err[0].message, '上游炸了', '失败要冒泡成 error 事件，不能静默结束');
+  web.createResponsesStream((e) => err.push(e))({ type: 'response.incomplete', response: { incomplete_details: { reason: 'max_output_tokens' } } });
+  assert.equal(err[1].message, 'max_output_tokens', '不完整响应不能伪装成正常 finish');
   // 并行两个 function_call 且协议不给 output_index：不能塌成同一个 index（参数会糊成一坨）
   const acc = api.createToolCallAccumulator();
   const h2 = web.createResponsesStream((e) => { if (e.type === 'tool_delta') acc.push(e); });
@@ -4070,6 +4185,33 @@ test('extractBlobs：未水合的 stripped 附件必须保留 IDB 索引（否�
   assert.equal(collectBlobKeys(gone.light).length, 0);
 });
 
+test('IndexedDB 持久化队列：旧写入不能在新快照后 prune 新 key', async () => {
+  const { createBlobPersistenceQueue } = await import('../js/state.js');
+  const events = [];
+  let releaseFirst;
+  let onFirstStart;
+  const firstStarted = new Promise((resolve) => { onFirstStart = resolve; });
+  const firstGate = new Promise((resolve) => { releaseFirst = resolve; });
+  const queue = createBlobPersistenceQueue({
+    put: async (entries) => {
+      const key = entries[0][0];
+      events.push(`put:start:${key}`);
+      if (key === 'old-key') { onFirstStart(); await firstGate; }
+      events.push(`put:done:${key}`);
+    },
+    prune: async (keep) => { events.push(`prune:${keep.join(',')}`); },
+  });
+  const older = queue([['old-key', 'old']], ['old-key']);
+  await firstStarted;
+  const newer = queue([['new-key', 'new']], ['new-key']);
+  releaseFirst();
+  const [oldResult] = await Promise.all([older, newer]);
+  assert.equal(oldResult.skipped, true, '过期快照应跳过 prune');
+  assert.deepEqual(events, [
+    'put:start:old-key', 'put:done:old-key',
+    'put:start:new-key', 'put:done:new-key', 'prune:new-key',
+  ]);
+});
 test('runSubagent 源码不得引用未定义的 store（子智能体跑 fetch_url 会 ReferenceError）', async () => {
   const fsp = await import('node:fs');
   const src = fsp.readFileSync(new URL('../js/agent.js', import.meta.url), 'utf8');
@@ -4570,8 +4712,9 @@ test('工具调用与深度思考无边框；思考有线性 SVG', async () => {
   assert.match(ui, /onReasoning/, '可见思考要流式上屏，不能等正文结束');
   assert.match(ui, /onToolDelta/, '工具参数要边流边画，不能等本轮结束');
   assert.match(ui, /thinkLive/, '思考完自动折叠');
-  assert.match(ui, /reasoningSummaryItems\(m\.reasoning\)/, '流式思考只更新本地进度摘要');
-  assert.doesNotMatch(ui, /renderMarkdown\(m\.reasoning\)|think-stream/, '思考区不得渲染完整原始思维链');
+  assert.match(ui, /reasoningSummaryItems\(m\.reasoning, reasoningModel\)/, '只有 GPT 才解析模型提供的摘要标记');
+  assert.match(ui, /think-full-text/, '非 GPT 模型要完整展示原始思考过程');
+  assert.doesNotMatch(ui, /renderMarkdown\(m\.reasoning\)|think-stream/, '非 GPT 思考作为安全纯文本展示，不混入 Markdown 渲染');
   assert.match(ui, /dataset.sig/, '思考块骨架只建一次');
   assert.equal(/el\('details', 'edited-files'\)/.test(ui), false, 'Edited File 与思考过程同构，不用 details');
 });
@@ -5232,6 +5375,8 @@ test('楷体仿宋不得回退成宋体 Noto Serif SC', async () => {
   const kai = css.slice(css.indexOf('.md-font-kai {'), css.indexOf('.md-font-song {'));
   const fang = css.slice(css.indexOf('.md-font-fangsong {'), css.indexOf('.md-font-heiti {'));
   assert.match(kai, /LXGW WenKai TC/);
+  assert.match(kai, /\"KaiTi\"/);
+  assert.match(kai, /\"KaiTi_GB2312\"/, '旧系统字族别名仍在栈中兜底');
   assert.equal(/Noto Serif SC/.test(kai), false, '楷体栈里不能有宋体');
   assert.match(fang, /Zhuque Fangsong/);
   assert.equal(/Noto Serif SC/.test(fang), false, '仿宋栈里不能有宋体');
@@ -6083,9 +6228,9 @@ test('Bug 修复：importSession 保留图片附件 dataUrl，且 SVG 预览消�
 test('对话区图表修复：CSS 定义 --accent/--sans/--warn 且思维导图节点不重叠不裁切', async () => {
   const fsp = await import('node:fs');
   const stylesCss = fsp.readFileSync(new URL('../css/styles.css', import.meta.url), 'utf8');
-  assert.match(stylesCss, /--accent:\s*#4f46e5/, ':root 应定义 --accent 避免 SVG fill 回退为纯黑');
+  assert.match(stylesCss, /--accent:\s*#d97757/, ':root 使用暖色强调色，避免 SVG fill 回退为纯黑');
   assert.match(stylesCss, /--sans:\s*var\(--font\)/, ':root 应定义 --sans');
-  assert.match(stylesCss, /--warn:\s*#d97706/, ':root 应定义 --warn');
+  assert.match(stylesCss, /--warn:\s*#b65d31/, ':root 使用暖色警示色');
   assert.match(stylesCss, /\.md-mind-node\.branch-0 rect/, 'branch-0 应有显式填充样式');
 
   const { renderMarkdown } = await import('../js/ui.js');
@@ -8355,6 +8500,12 @@ test('sanitizeWorkerFiles：拒绝非法路径 / 非字符串 / 受保护前缀�
   assert.equal(over.ok, false);
   assert.deepEqual(over.files, { 'keep.txt': 'k' }, '超容量时保留执行前的文件');
   assert.match(over.reason, /超过容量上限/);
+  const utf8Over = sanitizeWorkerFiles({}, { '中文.txt': '汉字汉字' }, { cap: 11 });
+  assert.equal(utf8Over.ok, false, 'CJK 文本须按 UTF-8 字节计数，不能按 UTF-16 字符数低估');
+  assert.equal(utf8Over.total, 12);
+  const base64 = sanitizeWorkerFiles({}, { 'small.png': `data:image/png;base64,${'A'.repeat(16)}` }, { cap: 12 });
+  assert.equal(base64.ok, true, 'base64 文件按解码后的真实文件字节数计量');
+  assert.equal(base64.total, 12);
   const many = sanitizeWorkerFiles({}, Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`f${i}`, 'x'])), { maxFiles: 10 });
   assert.equal(many.ok, false);
   // createFS：原型键不再泄漏为「存在的文件」，import 也走路径校验
@@ -8384,6 +8535,84 @@ test('Worker 源码：JS 沙箱拆除联网/派生/存储原语并私有化 post
   for (const n of ['XMLHttpRequest', 'WebSocket', 'indexedDB', 'caches']) assert.ok(py.includes(`'${n}'`), `Python 沙箱应移除 ${n}`);
   assert.doesNotMatch(py, /self\.postMessage\(/, 'Python 沙箱不应再直接使用全局 postMessage');
   assert.match(py, /realImportScripts\(PY_BASE/);
+});
+test('runPython：共享 Pyodide Worker 的并发调用串行化，文件镜像不会互相覆盖', async () => {
+  const sandbox = await import('../js/sandbox.js?pyqueue=' + Date.now());
+  const realWorker = globalThis.Worker;
+  let workerCount = 0, active = 0, maxActive = 0;
+  class FakeWorker {
+    constructor() { workerCount++; this.files = {}; }
+    postMessage(payload) {
+      active++;
+      maxActive = Math.max(maxActive, active);
+      if (payload.files) this.files = { ...payload.files };
+      else {
+        Object.assign(this.files, payload.delta?.set || {});
+        for (const path of payload.delta?.del || []) delete this.files[path];
+      }
+      setTimeout(() => this.onmessage?.({ data: { __userCodeStart: true } }), 0);
+      setTimeout(() => {
+        this.onmessage?.({ data: { ok: true, files: { ...this.files }, logs: [], result: payload.code } });
+        active--;
+      }, 12);
+    }
+    terminate() {}
+  }
+  globalThis.Worker = FakeWorker;
+  try {
+    const fsA = sandbox.createFS({ 'a.txt': 'A' });
+    const fsB = sandbox.createFS({ 'b.txt': 'B' });
+    const [a, b] = await Promise.all([
+      sandbox.runPython('first', fsA, null, [], { timeoutMs: 1000 }),
+      sandbox.runPython('second', fsB, null, [], { timeoutMs: 1000 }),
+    ]);
+    assert.equal(a.ok, true);
+    assert.equal(b.ok, true);
+    assert.equal(maxActive, 1, '常驻 Worker 同时只能执行一份用户代码');
+    assert.equal(workerCount, 1, '仍复用同一个已加载的 Pyodide Worker');
+    assert.deepEqual(fsA.export(), { 'a.txt': 'A' });
+    assert.deepEqual(fsB.export(), { 'b.txt': 'B' });
+  } finally {
+    if (realWorker === undefined) delete globalThis.Worker;
+    else globalThis.Worker = realWorker;
+  }
+});
+test('runPython：Blob Worker 首次握手后释放 object URL', async () => {
+  const sandbox = await import('../js/sandbox.js?pyblob=' + Date.now());
+  const realWorker = globalThis.Worker;
+  const realFetch = globalThis.fetch;
+  const realCreate = URL.createObjectURL;
+  const realRevoke = URL.revokeObjectURL;
+  const revoked = [];
+  let created = '';
+  class FakeWorker {
+    constructor(url) {
+      this.url = String(url);
+      if (!this.url.startsWith('blob:')) throw new Error('CSP blocked file Worker');
+    }
+    postMessage(payload) {
+      setTimeout(() => {
+        this.onmessage?.({ data: { __userCodeStart: true } });
+        this.onmessage?.({ data: { ok: true, files: payload.files || {}, logs: [], result: 'ok' } });
+      }, 0);
+    }
+    terminate() {}
+  }
+  globalThis.Worker = FakeWorker;
+  globalThis.fetch = async () => ({ ok: true, text: async () => '/* fake worker source */' });
+  URL.createObjectURL = () => (created = 'blob:pyodide-test');
+  URL.revokeObjectURL = (url) => revoked.push(url);
+  try {
+    const result = await sandbox.runPython('pass', sandbox.createFS(), null, [], { timeoutMs: 1000 });
+    assert.equal(result.ok, true);
+    assert.deepEqual(revoked, [created], '收到 Worker 首帧后脚本 URL 已不再需要，应立即回收');
+  } finally {
+    if (realWorker === undefined) delete globalThis.Worker;
+    else globalThis.Worker = realWorker;
+    globalThis.fetch = realFetch;
+    URL.createObjectURL = realCreate;
+    URL.revokeObjectURL = realRevoke;
+  }
 });
 
 group('依赖图调度：planToolWaves');
@@ -8531,7 +8760,7 @@ test('runWithCategoryLimits：网络类 ≤ 4、本地 ≤ 8 并发，结果按�
 test('ui.js 拆分：文件面板 / 全屏预览 / 附件 / 图表各自成模块，mountUI 只保留装配调用', async () => {
   const fsp = await import('node:fs');
   const ui = fsp.readFileSync(new URL('../js/ui.js', import.meta.url), 'utf8');
-  for (const [mod, fn] of [['ui-files-panel', 'installFilesPanel'], ['ui-message-scroll', 'createMessageScrollManager'], ['ui-lightbox', 'installLightbox'], ['ui-attachments', 'installAttachments'], ['ui-capability', 'installCapabilityPop'], ['quickviz', 'renderQuickChart'],
+  for (const [mod, fn] of [['ui-files-panel', 'installFilesPanel'], ['ui-message-scroll', 'createMessageScrollManager'], ['ui-lightbox', 'installLightbox'], ['ui-attachments', 'installAttachments'], ['ui-capability', 'installCapabilityPanel'], ['quickviz', 'renderQuickChart'],
     // P4：Markdown 渲染 / 模型选择器 / Token·路由弹层 / 命令面板
     ['ui-markdown', 'renderMarkdown'], ['ui-model-picker', 'installModelPicker'], ['ui-popovers', 'installPopovers'], ['ui-command-palette', 'installCommandPalette'], ['ui-system-commands', 'installSystemCommands']]) {
     const src = fsp.readFileSync(new URL(`../js/${mod}.js`, import.meta.url), 'utf8');
@@ -9663,33 +9892,42 @@ test('端到端：中继在线但只声明 fetch/search 时，【联网】段列
   } finally { globalThis.fetch = realFetch; net.resetRelayProbe(); await drainSaves(); }
 });
 
-test('UI 接线：ui-capability.js 提供能力条 + 弹层；ui.js 经 installCapabilityPop 注入直达开关；prompt.js 接 toolTableNote；agent 把 dropped 挂到 turn / nexusState；样式到位', async () => {
+test('UI 接线：状态栏仅显示状态，工具能力表与直达修复操作位于设置页；prompt / agent 共用裁剪结果', async () => {
   const fsp = await import('node:fs');
   const cap = fsp.readFileSync(new URL('../js/ui-capability.js', import.meta.url), 'utf8');
   const ui = fsp.readFileSync(new URL('../js/ui.js', import.meta.url), 'utf8');
+  const app = fsp.readFileSync(new URL('../app.html', import.meta.url), 'utf8');
   const agentSrc = fsp.readFileSync(new URL('../js/agent.js', import.meta.url), 'utf8');
   const prompt = fsp.readFileSync(new URL('../js/prompt.js', import.meta.url), 'utf8');
   const css = fsp.readFileSync(new URL('../css/styles.css', import.meta.url), 'utf8');
   assert.match(cap, /import \{ DROP_REASON_FIX \} from '\.\/executionContext\.js\?v=/, '修复动作表从 executionContext 取，不在 UI 里再抄一份');
-  assert.match(cap, /export function renderCapabilityPopHtml\(preview\)/);
-  assert.match(cap, /<div class="cap-drop" data-tool="\$\{esc\(d\.name\)\}" data-reason="\$\{esc\(d\.reason\)\}">/);
-  assert.match(cap, /<button type="button" class="tok-btn cap-fix" data-fix="\$\{esc\(fix\.kind\)\}" data-tool="\$\{esc\(d\.name\)\}">\$\{esc\(fix\.label\)\}<\/button>/);
-  assert.match(cap, /if \(dropN\) bits\.push\(\['drop', `已禁用 \$\{dropN\}`\]\);/, '有裁剪时能力条末尾多一个「已禁用 N」胶囊');
-  assert.match(cap, /e\.stopPropagation\(\); \/\/ 不让 document 级「点外面关闭」把刚打开的弹层又关掉/);
-  assert.ok(cap.includes("if (pop && !pop.hidden && pop.dataset.kind === 'cap') {") && cap.includes('pop._anchor = liveCapAnchor(pop._anchor);'), '开关变化时弹层原地重算，并把锚重新解析到重绘后的胶囊（.36）');
-  assert.match(ui, /import \{ installCapabilityPop \} from '\.\/ui-capability\.js\?v=/);
-  assert.match(ui, /const \{ syncCapLine \} = installCapabilityPop\(\{/);
+  assert.match(cap, /export function renderCapabilityTableHtml\(preview\)/);
+  assert.match(cap, /<div class=\"cap-drop\" data-tool=\"\$\{esc\(d\.name\)\}\" data-reason=\"\$\{esc\(d\.reason\)\}\">/);
+  assert.match(cap, /<button type=\"button\" class=\"tok-btn cap-fix\" data-fix=\"\$\{esc\(fix\.kind\)\}\" data-tool=\"\$\{esc\(d\.name\)\}\">/);
+  assert.match(cap, /line\.innerHTML = bits\.map\(\(\[key, label\]\) => `?<span class=\"cap-pill\"/);
+  assert.doesNotMatch(cap, /已禁用|showCapPop|renderCapabilityPopHtml/);
+  assert.match(cap, /const table = \$\('#set-capability-table-body'\);/);
+  assert.match(cap, /table\.addEventListener\('click'/, '设置页表格中的修复按钮仍可操作');
+  assert.match(app, /<details id=\"set-capability-details\"/);
+  assert.match(app, /id=\"set-capability-table-body\"/);
+  assert.match(ui, /import \{ installCapabilityPanel \} from '\.\/ui-capability\.js\?v=/);
+  assert.match(ui, /const \{ syncCapLine \} = installCapabilityPanel\(\{/);
   assert.match(ui, /setReasoning: \(lv\) => \{ store\.state\.settings\.thinking = true; store\.state\.settings\.reasoningLevel = normalizeReasoningLevel\(lv\); store\.notify\(\); syncThinking\(\); \},/);
-  assert.doesNotMatch(ui, /function syncCapLine\(\)/, '旧实现不应残留在 ui.js');
+  assert.doesNotMatch(ui, /installCapabilityPop|showCapPop/);
   assert.match(agentSrc, /nexusState\.turnDropped = whitelist\.dropped;/);
   assert.match(agentSrc, /turn\.dropped = whitelist\.dropped;/);
-  assert.match(agentSrc, /toolTableNote: formatToolTableNote\(nexusState && nexusState\.turnDropped, nexusState && nexusState\.turnDeferred\),/); // P6 起多带 deferred
-  assert.match(agentSrc, /tools: turnTools, dropped: nexusState && nexusState\.turnDropped, deferred: nexusState && nexusState\.turnDeferred \}\)/, '【联网】段也吃同一份 dropped（P6 起再加 deferred）');
+  assert.match(agentSrc, /toolTableNote: formatToolTableNote\(nexusState && nexusState\.turnDropped, nexusState && nexusState\.turnDeferred\),/);
+  assert.match(agentSrc, /tools: turnTools, dropped: nexusState && nexusState\.turnDropped, deferred: nexusState && nexusState\.turnDeferred \}\)/);
   assert.match(prompt, /export function formatRuntime\(\{ now, model, imageModel, filesNote, webNote, relayNote, toolTableNote, language = getLanguage\(\) \} = \{\}\)/);
   assert.match(prompt, /const extra = join\(\[filesNote, webNote, relayNote, toolTableNote\]\);/);
-  assert.match(css, /\.cap-line \.cap-pill \{ font: inherit; color: inherit;[^}]*cursor: pointer;/);
-  assert.match(css, /\.cap-line \.cap-pill-drop \{ color: #b45309; \}/);
-  assert.match(css, /\.tok-pop \.cap-drop \{ display: grid;/);
+  assert.match(css, /\.cap-line \.cap-pill \{[^}]*cursor: default/);
+  assert.doesNotMatch(css, /\.cap-line \.cap-pill[^}]*cursor: pointer/);
+  assert.match(css, /\.capability-table \.cap-drop \{ display: grid;/);
+  assert.match(css, /\.capability-table \.cap-drop \.cap-fix/);
+  assert.match(app, /id=\"set-offline-model-cancel\" class=\"mini-btn\" hidden/);
+  assert.match(app, /id=\"set-offline-model-remove\" class=\"mini-btn\" hidden/);
+  assert.match(css, /\.offline-model-actions \[hidden\] \{ display: none !important; \}/, '隐藏的离线模型操作按钮不受 mini-btn 的 display 覆盖');
+  assert.match(css, /\.offline-model-settings > \.set-row:first-of-type \{ align-items: flex-start; flex-direction: column;/, '离线模型标题与操作按钮分行，避免窄列逐词折行');
 });
 
 group('P4 修正：巨型单文件 → agent.js 抽出 toolrunner.js / turnfinalizer.js；ui.js 再拆 5 个 install*(deps) 模块；nexus.js 立界不拆');
@@ -10053,19 +10291,19 @@ test('#4 顶部系统状态栏取色：app.html 带 theme-color，ui.js 按主�
   const fsp = await import('node:fs');
   const app = fsp.readFileSync(new URL('../app.html', import.meta.url), 'utf8');
   const ui = readUiSource();
-  assert.match(app, /<meta name="theme-color" id="theme-color" content="#ffffff" \/>/);
+  assert.match(app, /<meta name="theme-color" id="theme-color" content="#faf9f5" \/>/);
   assert.match(app, /viewport-fit=cover/);
   assert.match(ui, /function syncThemeColor\(\) \{/);
-  assert.match(ui, /const base = dark \? \[11, 11, 11\] : \[255, 255, 255\];/, '与 styles.css --bg 对齐（#ffffff / #0b0b0b）');
+  assert.match(ui, /const base = dark \? \[11, 11, 11\] : \[250, 249, 245\];/, '与默认暖纸色背景 #faf9f5 / #0b0b0b 对齐');
   assert.match(ui, /if \(lb && !lb\.hidden\) overlay = \[8, 8, 8, 0\.88\];/);
   assert.match(ui, /else if \(\$\$\('\.modal\.open'\)\.length\) overlay = \[10, 10, 10, 0\.4\];/);
   assert.match(ui, /overlay = \[10, 10, 10, 0\.35\]/);
   assert.match(ui, /syncThemeToggle\(\);\n\s+syncThemeColor\(\);\n\s+\};/, 'applyTheme 末尾同步');
   assert.match(ui, /backdrop\.classList\.toggle\('show', show\);\n\s+syncThemeColor\(\);/, 'updateBackdrop 末尾同步');
   assert.match(ui, /mo\.observe\(n, \{ attributes: true, attributeFilter: \['class', 'hidden'\] \}\)/, '弹窗 / 灯箱开合用属性观察兜底');
-  // 混色算式自检：浅色 + 面板遮罩 = #a6a6a6，深色 + 面板遮罩 = #0b0b0b 附近
+  // 混色算式自检：暖纸色 + 面板遮罩约为 #a6a5a3，深色 + 面板遮罩仍约为 #0b0b0b
   const mix = (base, ov) => base.map((c, i) => Math.round(c * (1 - ov[3]) + ov[i] * ov[3]));
-  assert.deepEqual(mix([255, 255, 255], [10, 10, 10, 0.35]), [169, 169, 169]);
+  assert.deepEqual(mix([250, 249, 245], [10, 10, 10, 0.35]), [166, 165, 163]);
   assert.deepEqual(mix([11, 11, 11], [10, 10, 10, 0.35]), [11, 11, 11]);
 });
 
@@ -10613,7 +10851,7 @@ test('界面动效偏好：auto / on / off 三态，on 覆盖系统 reduce，off
   assert.match(main, /applyMotion\(\);/);
   assert.match(main, /browserFeatureReport\(\)[\s\S]*?dubhe-oldbrowser-noted/);
   const css = fsp.readFileSync(new URL('../css/styles.css', import.meta.url), 'utf8');
-  assert.equal((css.match(/@media \(prefers-reduced-motion: reduce\) \{/g) || []).length, 10, '含嵌套编辑预览、语音球体与状态抛光的减少动效块（原思维链逐行动画已移除；跨页过渡在 css/page-fx.css）');
+  assert.equal((css.match(/@media \(prefers-reduced-motion: reduce\) \{/g) || []).length, 11, '含嵌套编辑预览、语音球体、设置详情与状态抛光的减少动效块（原思维链逐行动画已移除；跨页过渡在 css/page-fx.css）');
   assert.doesNotMatch(css, /thinkLineEnter|think-stream/, '进度摘要不再逐行呈现原始思维链');
   const reduceBlocks = css.split('@media (prefers-reduced-motion: reduce) {').slice(1);
   for (const b of reduceBlocks) {
@@ -10675,7 +10913,7 @@ test('Edited Files 标题大小写；其余折叠头文案保持既有用词', a
   for (const bad of ['Edited File', 'Editing File', 'Explored File', 'Ran Command']) assert.ok(!new RegExp(`'${bad}s?'`).test(ui), `${bad} 不应再出现在界面文案里`);
 });
 
-group('2026.10.5.35：显式 turn pipeline / Nano Banana 2.1 实测 ID / 模型菜单矮一点 / 能力表弹层锚在「已禁用 N」正下方');
+group('2026.10.5.35：显式 turn pipeline / Nano Banana 2.1 实测 ID / 模型菜单限高 / 能力表迁入设置页');
 
 test('runLoop = premise → plan → select → loop → finalize：五个具名阶段按序执行；阶段计时进审计与 lastExecutionRecord.pipeline', async () => {
   const fsp = await import('node:fs');
@@ -10715,15 +10953,17 @@ test('runLoop = premise → plan → select → loop → finalize：五个具名
   } finally { globalThis.fetch = realFetch; await drainSaves(); }
 });
 
-test('能力表弹层锚在被点的胶囊（「已禁用 N」）正下方；模型菜单最大高度 360px / 52vh', async () => {
+test('能力表仅从设置页展开；状态栏不提供禁用计数或弹层入口，模型菜单保持限高', async () => {
   const fsp = await import('node:fs');
   const cap = fsp.readFileSync(new URL('../js/ui-capability.js', import.meta.url), 'utf8');
-  const pop = fsp.readFileSync(new URL('../js/ui-popovers.js', import.meta.url), 'utf8');
+  const html = fsp.readFileSync(new URL('../app.html', import.meta.url), 'utf8');
   const css = fsp.readFileSync(new URL('../css/styles.css', import.meta.url), 'utf8');
-  assert.match(cap, /showCapPop\(pill\); \/\/ \.34/);
-  assert.doesNotMatch(cap, /showCapPop\(line\)/, '不再锚到整条能力行');
-  assert.match(pop, /const preferBelow = !!\(anchor && anchor\.classList && anchor\.classList\.contains\('cap-pill'\)\);/);
-  assert.match(pop, /let top = preferBelow \? r\.bottom \+ 8 : r\.top - ph - 10;/);
+  assert.match(html, /<details id="set-capability-details"/);
+  assert.match(html, /id="set-capability-table-body"/);
+  assert.match(cap, /renderCapabilityTableHtml/);
+  assert.match(cap, /table\.addEventListener\('click'/);
+  assert.doesNotMatch(cap, /showCapPop|已禁用|cap-line.*addEventListener/);
+  assert.match(cap, /line\.innerHTML = bits\.map/);
   assert.match(css, /\.dd-menu \{[\s\S]*?max-height: min\(360px, 52vh\);/);
   assert.match(css, /\.dd-menu \{ max-height: min\(52vh, 360px\); overflow-y: auto; \}/);
 });
@@ -10797,6 +11037,11 @@ test('沙箱垫片：require(fs→files / path / buffer / crypto / util / events
   for (let i = 0; i < 8; i++) await rp.fetch({ url: 'https://a.b/' });
   const over = await rp.fetch({ url: 'https://a.b/' });
   assert.match(over.error, /次数超过上限/);
+  const cjkRpc = sb.createSandboxNetRpc({ enabled: true, fetchPage: async () => ({ ok: true, text: '汉字' }) }, {
+    maxCalls: 2, maxBytesPerCall: 20, maxBytesTotal: 5,
+  });
+  const cjkOver = await cjkRpc.fetch({ url: 'https://a.b/cjk' });
+  assert.match(cjkOver.error, /累计字节超过上限/, '累计网络预算按 UTF-8 字节计算，中文不能按字符数低估');
   // 接线：tools.js 把联网开关透传给 runJavaScript，worker 侧装配垫片并在 lockdown 前 importScripts
   const tools = fsp.readFileSync(new URL('../js/tools.js', import.meta.url), 'utf8');
   assert.match(tools, /runJavaScript\(args\.code \|\| '', fs, \{ signal: ctx\.signal, timeoutMs: codeTimeoutMs\(args\.timeout_sec\), onOutput: \(log\) => emit\([\s\S]*?net: \{ enabled: !!ctx\.webEnabled, fetchPage: \(p\) => fetchPage\(\{ \.\.\.p, signal: ctx\.signal \}\) \} \}\)/);
@@ -10862,31 +11107,24 @@ test('设置页文案瘦身：说明只留「什么时候会用到这条设置�
   assert.match(st, /if \(note\) note\.textContent = `已清除 \$\{r\.cacheStores\} 个缓存（\$\{r\.cacheEntries\} 条）· 请在任务结束后刷新，重新建立资源缓存`;/);
 });
 
-group('2026.10.5.36：能力弹层锚失效修复（全部启用后不再跳到左上角）/ 「更早的消息」重做为中轴接缝 / 焦点环与弹层工艺');
+group('2026.10.5.36：状态能力稳定复用 / 「更早的消息」重做为中轴接缝 / 焦点环与弹层工艺');
 
-test('.36 修复：能力条只在胶囊序列变化时重建 DOM；重建后把弹层锚重新解析到同 key 的胶囊（没了就退回整条能力行）', async () => {
+test('.36：状态行仅在状态变化时重建；设置页能力表按裁剪结果更新且保留修复按钮', async () => {
   const fsp = await import('node:fs');
   const cap = fsp.readFileSync(new URL('../js/ui-capability.js', import.meta.url), 'utf8');
-  const pop = fsp.readFileSync(new URL('../js/ui-popovers.js', import.meta.url), 'utf8');
-  const has = (src, s, msg) => assert.ok(src.includes(s), msg || `应包含：${s}`);
-  // 复用一层缓存：序列不变就绝不 innerHTML=，否则键盘焦点 / hover / 弹层锚点每次 notify 都被抹掉
+  const html = fsp.readFileSync(new URL('../app.html', import.meta.url), 'utf8');
+  const has = (src, token, msg) => assert.ok(src.includes(token), msg || `应包含：${token}`);
   has(cap, 'let lastCapSig = null;');
-  has(cap, 'const sig = JSON.stringify(bits);');
-  has(cap, 'if (sig !== lastCapSig || !eln.firstChild) {');
-  has(cap, 'lastCapSig = sig;');
-  // 锚重新解析：先找同 data-cap 的胶囊，再退「已禁用 N」，最后退整条能力行
-  has(cap, 'const liveCapAnchor = (prev) => {');
-  has(cap, 'const same = $(`.cap-line .cap-pill[data-cap="${key}"]`);');
-  has(cap, `return $('.cap-line .cap-pill[data-cap="drop"]') || line;`);
-  has(cap, 'pop._anchor = liveCapAnchor(anchor) || anchor;', '打开时也要校验拿到的节点还在不在');
-  has(cap, 'pop._anchor = liveCapAnchor(pop._anchor); // 重绘后重新解析锚：否则弹层会按 (0,0) 跑到屏幕左上角（.36 修）');
-  // 定位侧兜底：锚脱离文档 / 没盒子（getBoundingClientRect 全 0）时按语义退回
-  has(pop, 'function isPlacedNode(n) {');
-  has(pop, 'if (n.isConnected === false) return false;');
-  has(pop, `const fb = kind === 'cap' ? $('#cap-line') : ($('#conv-stats') || $('#cap-line'));`);
-  has(pop, 'const target = resolveAnchor(anchor, pop.dataset.kind);');
-  has(pop, `const below = preferBelow || pop.dataset.kind === 'cap';`, '能力弹层一律朝下，锚退回能力行时也不许翻到屏幕上方');
-  has(pop, `pop.style.setProperty('--pop-arrow-x',`, '小箭头跟着锚点中心走');
+  has(cap, 'let lastTableSig = null;');
+  has(cap, 'if (signature !== lastCapSig || !line.firstChild) {');
+  has(cap, 'lastCapSig = signature;');
+  has(cap, 'line.innerHTML = bits.map(([key, label]) => `<span class="cap-pill"');
+  has(cap, "const table = $('#set-capability-table-body');");
+  has(cap, 'if (tableSig !== lastTableSig || !table.firstChild) {');
+  has(cap, 'table.innerHTML = renderCapabilityTableHtml(pv);');
+  has(cap, "table.addEventListener('click', (event) => {");
+  assert.doesNotMatch(cap, /liveCapAnchor|showCapPop|cap-line.*addEventListener/);
+  assert.match(html, /<details id="set-capability-details"[\s\S]*?id="set-capability-table-body"/);
 });
 
 test('.36 UI：「更早的消息」= 中轴接缝（两侧发丝线 + 居中胶囊）；全局焦点环不再把圆角按钮切成方角；弹层有箭头、内容过长自己滚', async () => {
@@ -10916,16 +11154,16 @@ test('.36 UI：「更早的消息」= 中轴接缝（两侧发丝线 + 居中胶
   // 焦点环：不再强制 border-radius（会把胶囊在聚焦瞬间切成方角）
   has(css, ':focus-visible { outline: 2px solid var(--ring, var(--fg)); outline-offset: 2px; }');
   assert.ok(!css.includes(':focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; border-radius: 6px; }'), '旧的强制圆角已删除');
-  between(css, ':root {', '--ring: rgba(10, 10, 10, .62);', '环色进设计令牌');
+  between(css, ':root {', '--ring: rgba(41, 40, 35, .72);', '暖色主题环色进设计令牌');
   between(css, '[data-theme="dark"] {', '--ring: rgba(244, 244, 244, .72);');
-  has(css, '.cap-line .cap-pill { padding: 0 5px; border-radius: 5px; transition: color .16s var(--ease), background-color .16s var(--ease); }');
-  has(css, '.cap-line .cap-pill:focus-visible { color: var(--fg); background: var(--bg-hover); outline: 2px solid var(--ring, var(--fg)); outline-offset: 1px; }');
+  has(css, '.cap-line .cap-pill { display: inline; font: inherit; color: inherit; letter-spacing: inherit; cursor: default;');
+  assert.ok(!css.includes('.cap-line .cap-pill:focus-visible'), '静态状态行不再有能力胶囊焦点样式');
   // 弹层：小箭头 + 内容区自滚（工具表可能很长）
   between(css, '.tok-pop::before {', 'border-left: 1px solid var(--line); border-top: 1px solid var(--line); transform: rotate(45deg);', '弹层带指向锚点的小箭头');
   has(css, '.tok-pop[data-place="above"]::before { top: auto; bottom: -4.5px; transform: rotate(225deg); }', '朝上放置时箭头翻到下方');
   has(css, '.tok-pop-body { max-height: min(56vh, 420px); overflow-y: auto; overscroll-behavior: contain;');
-  between(css, '.tok-pop .cap-drop .cap-fix {', 'text-decoration: none;', '直达开关做成实体小按钮，不再是下划线文字');
-  has(css, '.tok-pop .cap-all-ok { color: var(--fg-2); }');
+  between(css, '.capability-table .cap-drop .cap-fix {', 'text-decoration: none;', '设置页直达开关做成实体小按钮，不再是下划线文字');
+  has(css, '.capability-table .cap-all-ok { color: var(--fg-2); }');
   // 滚动条与 Firefox 标准属性
   has(css, 'html { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }');
   has(css, '::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 99px; border: 2.5px solid transparent; background-clip: padding-box; }');
@@ -10963,8 +11201,9 @@ test('截图回归：扫描入口、顶栏错位、面板宽度、简短思考�
   assert.match(css, /--pnw:\s*clamp\(400px, 38vw, 640px\)/, '文件预览展开时仍单独加宽');
   for (const hint of ['极速', '轻量', '均衡', '深入', '可委派', '多专家复核']) assert.ok(reasoning.includes(`'${hint}'`), `思考菜单保留简短提示：${hint}`);
   assert.match(css, /\.reasoning\.live \.think-summary-list\s*\{[^}]*max-height:\s*calc\(1\.65em \* 6\)/);
-  assert.match(ui, /reasoningSummaryItems\(m\.reasoning\)/);
-  assert.doesNotMatch(ui, /renderMarkdown\(m\.reasoning\)|点击展开完整思考过程/);
+  assert.match(ui, /reasoningSummaryItems\(m\.reasoning, reasoningModel\)/);
+  assert.match(ui, /think-full-text/);
+  assert.doesNotMatch(ui, /renderMarkdown\(m\.reasoning\)/);
   assert.match(ui, /configured \? localeText\('已配置', 'Configured'\)/);
   assert.match(css, /\.mini-btn:is\(\.admin-mode, \.configured-mode\) \{ background: var\(--fg\); color: var\(--bg\); border-color: var\(--fg\); \}/);
   assert.match(prompts, /少用 emoji/);

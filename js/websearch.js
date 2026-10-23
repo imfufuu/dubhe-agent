@@ -187,9 +187,11 @@ export function createResponsesStream(onEv) {
         break;
       }
       case 'response.failed':
-      case 'response.incomplete':
-        onEv({ type: 'finish', reason: 'error' });
+      case 'response.incomplete': {
+        const detail = json.error || (json.response && (json.response.error || json.response.incomplete_details)) || {};
+        onEv({ type: 'error', message: detail.message || detail.reason || 'Responses API returned an incomplete response' });
         break;
+      }
       default:
         break; // response.created / in_progress / content_part.added 等直接忽略
     }

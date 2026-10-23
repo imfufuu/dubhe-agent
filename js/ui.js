@@ -20,7 +20,7 @@ import { DEFAULT_GATEWAY_ID, getGateway } from './gateway-registry.js?v=2026.10.
 import { syncGatewayKeyModal, validateGatewayKey } from './ui-gateway-key.js?v=2026.10.11.1';
 import { isSmartRouter, ROUTER_ICON_SVG, SMART_ROUTER_LABEL, modelDisplayName } from './smartrouter.js?v=2026.10.11.1';
 import { REASONING_LEVELS, normalizeReasoningLevel, reasoningLevelLabel, reasoningLevelHint } from './reasoning.js?v=2026.10.11.1';
-import { reasoningSummaryItems } from './reasoning-summary.js';
+import { isGptModel, reasoningSummaryItems } from './reasoning-summary.js';
 import { fileBytesFromValue, withExtension, mimeFromPath } from './zip.js';
 import { getTransport } from './api.js?v=2026.10.11.1';
 import { isOfflineModelId } from './offline-model-config.js';
@@ -42,7 +42,7 @@ import { installLightbox } from './ui-lightbox.js?v=2026.10.11.1';
 import { installFilesPanel } from './ui-files-panel.js?v=2026.10.11.1';
 import { createMessageScrollManager } from './ui-message-scroll.js?v=2026.10.11.1';
 import { installAttachments } from './ui-attachments.js?v=2026.10.11.1';
-import { installCapabilityPop } from './ui-capability.js?v=2026.10.11.1';
+import { installCapabilityPanel } from './ui-capability.js?v=2026.10.11.1';
 import { installModelPicker } from './ui-model-picker.js?v=2026.10.11.1';
 import { installPopovers } from './ui-popovers.js?v=2026.10.11.1';
 import { installCommandPalette } from './ui-command-palette.js?v=2026.10.11.1';
@@ -149,13 +149,12 @@ export function mountUI(store, agent) {
     for (const n of confirmNodes.values()) { try { n.remove(); } catch { /* 忽略 */ } }
     confirmNodes.clear();
   };
-  // ── 顶栏能力条 + 工具表 diff 弹层：见 ui-capability.js（P3 修正：能力门控不透明）。直达开关都是惰性闭包：syncThinking / syncWeb 在下文才定义，点击时才用到。
-  const { syncCapLine } = installCapabilityPop({
-    store, agent, toast, hideTokPop: () => hideTokPop(), placeTokPop: (anchor) => placeTokPop(anchor),
+  // ── 固定状态能力行 + 设置页工具表：见 ui-capability.js。直达开关是惰性闭包，点击时才使用。
+  const { syncCapLine } = installCapabilityPanel({
+    store, agent, toast,
     setReasoning: (lv) => { store.state.settings.thinking = true; store.state.settings.reasoningLevel = normalizeReasoningLevel(lv); store.notify(); syncThinking(); },
     toggleWeb: () => { const b = $('#web-toggle'); if (b && store.state.settings.webEnabled === false) b.click(); },
     toggleSandbox: () => { const b = $('#sandbox-toggle'); if (b && !store.state.settings.sandboxEnabled) b.click(); },
-    openSettings: () => { const b = $('#settings-btn'); if (b) b.click(); },
     reprobeRelay: async () => {
       store.state.relayOk = null; syncWeb(); resetRelayProbe();
       let ok = false; try { ok = await relayAvailable(); } catch { ok = false; }
@@ -209,7 +208,7 @@ export function mountUI(store, agent) {
   function syncThemeColor() {
     if (!themeColorMeta) return;
     const dark = document.documentElement.dataset.theme === 'dark';
-    const base = dark ? [11, 11, 11] : [255, 255, 255];
+    const base = dark ? [11, 11, 11] : [250, 249, 245];
     // 与 styles.css 对齐：.overlay-backdrop rgba(10,10,10,.35)、.modal rgba(10,10,10,.4)、.img-lightbox rgba(8,8,8,.88)
     let overlay = null;
     const lb = $('#img-lightbox');
@@ -1251,7 +1250,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       paintPart: paintAssistant, paintMeta: paintTurnMeta, paintFoot, syncShell: syncAssistantShell,
       syncFolds: syncCompletedToolFolds,
       refreshActions: refreshActionVisibility,
-    })) { syncCancelledTail(wrap, m); refreshActionVisibility(); settleTurnToolbars(); return; }
+    })) { syncCancelledTail(wrap, m); syncAssistantShell(wrap); refreshActionVisibility(); settleTurnToolbars(); return; }
     wrap.classList.toggle('cancelled', !!m.cancelled);
     const body = $('.md-body', wrap);
     let html = publicPlanHtml(m.publicPlan);
@@ -1292,8 +1291,10 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     for (const box of $$('.choice-box', body)) {
       if (!m.done || followedByUser || m.cancelled || m.error || (m.toolCalls && m.toolCalls.length) || getBusy()) box.remove();
     }
-    // 思考区只展示本地截取的短摘要，不渲染原始思维链；流式增量仍会实时刷新摘要。
+    // GPT only: parse its chained-bold summary markers. Other models show their complete reasoning as escaped plain text.
     const owner = String(m.id);
+    const reasoningModel = m.model || store.state.model;
+    const gptSummaryOnly = isGptModel(reasoningModel);
     const thinkRunning = !(m.thinkDone ?? m.done) && getBusy();
     let reason = [...wrap.querySelectorAll('.reasoning')].find((n) => n.dataset.owner === owner) || null;
     const thinkPending = thinkRunning && thinkOn && !m.cancelled && !showThink && !hiddenThink;
@@ -1326,11 +1327,13 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       if (m.reasoningLevel && m.reasoningLevel !== 'off') bits.push(reasoningLevelLabel(m.reasoningLevel));
       if (hiddenThink && m.usage && m.usage.reasoning) bits.push(`${m.usage.reasoning} tok`);
       if (m.reasoningMs) bits.push(fmtSpan(m.reasoningMs));
-      const summaryItems = showThink ? reasoningSummaryItems(m.reasoning) : [];
+      const summaryItems = showThink && gptSummaryOnly ? reasoningSummaryItems(m.reasoning, reasoningModel) : [];
       const title = thinkPending && !summaryItems.length
         ? localeText('思考中', 'Thinking')
         : (showThink || thinkPending)
-          ? localeText('思考进度', 'Reasoning progress')
+          ? (gptSummaryOnly
+            ? localeText(summaryItems.length ? '思考摘要' : '思考中', summaryItems.length ? 'Reasoning summary' : 'Thinking')
+            : localeText('思考过程', 'Reasoning process'))
           : localeText('已思考', 'Reasoned');
       const nameEl = $('.chip-name', reason);
       const stateEl = $('.chip-state', reason);
@@ -1339,20 +1342,25 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       const inner = $('.fold-inner', reason);
       const summaryMarkup = summaryItems.length
         ? `<div class="think-summary-list" aria-live="polite">${summaryItems.map((item) => `<div class="think-summary-item">${esc(item)}</div>`).join('')}</div>`
-        : `<div class="think-hidden">${esc(localeText('正在整理思考进度…', 'Preparing a brief reasoning update…'))}</div>`;
+        : `<div class="think-hidden">${esc(localeText('等待 GPT 返回摘要标记…', 'Waiting for GPT summary markers…'))}</div>`;
       const detail = showThink
-        ? summaryMarkup
+        ? (gptSummaryOnly ? summaryMarkup : '<pre class="think-full-text"></pre>')
         : (hiddenThink
-          ? `<div class="think-hidden">${esc(localeText('模型未返回可展示的思考内容；仅显示推理用量。', 'No reasoning text is available to summarize; only reasoning usage is shown.'))}</div>`
-          : `<div class="think-hidden">${esc(localeText('正在等待思考进度…', 'Waiting for reasoning progress…'))}</div>`);
-      const sig = `${thinkRunning ? 'live' : 'done'}:${hiddenThink ? 'hidden' : 'summary'}:${summaryItems.join('\u241f')}`;
+          ? `<div class="think-hidden">${esc(localeText('模型未返回可展示的思考内容；仅显示推理用量。', 'No reasoning text is available to display; only reasoning usage is shown.'))}</div>`
+          : `<div class="think-hidden">${esc(localeText('正在等待思考过程…', 'Waiting for reasoning…'))}</div>`);
+      const sig = `${thinkRunning ? 'live' : 'done'}:${hiddenThink ? 'hidden' : (showThink ? 'visible' : 'pending')}:${gptSummaryOnly ? summaryItems.join('\u241f') : ''}`;
       if (inner && inner.dataset.sig !== sig) {
         inner.dataset.sig = sig;
         inner.innerHTML = detail;
       }
+      if (inner && showThink && !gptSummaryOnly) {
+        const full = $('.think-full-text', inner);
+        const fullText = String(m.reasoning || '');
+        if (full && full.textContent !== fullText) full.textContent = fullText;
+      }
       const thinkLive = thinkRunning && (thinkPending || !!m.reasoning) && !m.text && !(m.toolCalls && m.toolCalls.length);
       const expanded = reason._user == null ? thinkLive : !!reason._user;
-      // Live summaries are visible by default; a deliberate user collapse wins until this turn ends.
+      // Live reasoning is visible by default; a deliberate user collapse wins until this turn ends.
       reason.classList.toggle('live', thinkLive && expanded);
       reason.classList.toggle('expanded', expanded);
       reason.setAttribute('aria-expanded', String(expanded));
@@ -1705,7 +1713,8 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     const hasSearched = !!$('.searched-library', w);
     const footEl = $('.msg-foot', w);
     const hasFoot = !!(footEl && !footEl.hidden && String(footEl.textContent || '').trim());
-    const emptyShell = !hasHead && !hasBody && !hasReason && !hasChips && !hasExplored && !hasEdited && !hasSearched && !hasFoot;
+    const hasTail = !!$('.message-tail', w);
+    const emptyShell = !hasHead && !hasBody && !hasReason && !hasChips && !hasExplored && !hasEdited && !hasSearched && !hasFoot && !hasTail;
     w.classList.toggle('msg-collapsed', emptyShell);
   }
 
@@ -2252,7 +2261,16 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
   // ── 输入区 ────────────────────────────────────────────────────────────
   function autoGrow() {
     composer.style.height = 'auto';
-    composer.style.height = Math.min(composer.scrollHeight, 200) + 'px';
+    const style = getComputedStyle(composer);
+    const lineHeight = Number.parseFloat(style.lineHeight) || 24;
+    const contentHeight = Math.max(lineHeight, composer.scrollHeight || lineHeight);
+    const multiline = contentHeight > lineHeight + 1;
+    composer.closest('.composer')?.classList.toggle('is-multiline', multiline);
+    let maxHeight = Number.parseFloat(style.maxHeight);
+    if (String(style.maxHeight).endsWith('vh')) maxHeight = window.innerHeight * maxHeight / 100;
+    if (!Number.isFinite(maxHeight) || maxHeight <= 0) maxHeight = 200;
+    composer.style.height = Math.min(contentHeight, maxHeight) + 'px';
+    composer.style.overflowY = contentHeight > maxHeight + 1 ? 'auto' : 'hidden';
   }
   composer.addEventListener('input', autoGrow);
   composer.addEventListener('keydown', (e) => {

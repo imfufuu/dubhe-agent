@@ -1,7 +1,7 @@
 // ─── UI · Token / 路由弹层（P4 拆分：从 mountUI 抽出）───────────────────────────
 // 拥有：#tok-pop 的隐藏/定位（placeTokPop 自动上下翻转，data-place）、智能路由决策弹层（showRouterPop）、
-//       token 构成与本轮费用弹层（showTokBreak）。
-// 不拥有：会话统计文字（updateStats 留在 ui.js）、能力条弹层（ui-capability.js 复用这里的 hide/place）。
+//       token 构成与本轮费用弹层（showTokBreak）。能力表只在设置页展开，不复用此弹层。
+// 不拥有：会话统计文字（updateStats 留在 ui.js）。
 // 只读 store，不改状态；本文件绝不 import ui.js。
 import { $, esc } from './ui-markdown.js?v=2026.10.11.1';
 import { providerOf, systemPrompt } from './config.js?v=2026.10.11.1';
@@ -16,52 +16,35 @@ export function installPopovers({ store }) {
     const pop = $('#tok-pop');
     if (!pop) return;
     if (pop._exitAnim) return; // 收起动画进行中：别叠加
-    if (pop.hidden) { delete pop.dataset.sheet; syncTokScrim(false); return; }
+    if (pop.hidden) return;
     const doc = pop.ownerDocument;
     const reduce = doc.documentElement.dataset.motion === 'off'
       || (doc.documentElement.dataset.motion !== 'on' && doc.defaultView?.matchMedia?.('(prefers-reduced-motion: reduce)').matches);
-    syncTokScrim(false);
-    if (reduce || !pop.animate) { pop.hidden = true; delete pop.dataset.sheet; return; }
-    // V1.8.1：收起也有动画——气泡沿 bubbleIn 原路缩回，手机抽屉向下滑出，与思考菜单同一种手感
+    if (reduce || !pop.animate) { pop.hidden = true; return; }
+    // V1.8.1：收起也有动画——气泡沿 bubbleIn 原路缩回，与思考菜单同一种手感
     const cs = doc.defaultView.getComputedStyle(pop);
     const dy = (cs.getPropertyValue('--pop-dy') || '').trim() || '12px';
     const scale = (cs.getPropertyValue('--pop-scale') || '').trim() || '.78';
-    const sheet = !!pop.dataset.sheet;
-    const to = sheet ? { opacity: 0, transform: 'translate3d(0, 100%, 0)' } : { opacity: 0, transform: `translate3d(0, ${dy}, 0) scale(${scale})` };
+    const to = { opacity: 0, transform: `translate3d(0, ${dy}, 0) scale(${scale})` };
     const a = pop.animate([{ opacity: 1, transform: 'none' }, to], {
-      duration: sheet ? 220 : 150, easing: sheet ? 'cubic-bezier(.4, 0, 1, 1)' : 'cubic-bezier(.4, 0, .9, .6)',
+      duration: 150, easing: 'cubic-bezier(.4, 0, .9, .6)',
     });
     pop._exitAnim = a;
     a.finished.then(() => {
       if (pop._exitAnim !== a) return;
-      pop._exitAnim = null; pop.hidden = true; delete pop.dataset.sheet;
+      pop._exitAnim = null; pop.hidden = true;
     }).catch(() => { if (pop._exitAnim === a) pop._exitAnim = null; });
   }
-  // 2026.10.9.1（第 3 条）：窄屏（≤720px）的能力表 = 底部抽屉（data-sheet + 遮罩）；其它弹层保持锚定气泡。
-  // 抽屉不跟锚点定位：placeTokPop 直接返回；窗口从宽变窄时，下一次 follow() 会自动切进抽屉。
-  const TOK_SHEET_MQ = '(max-width: 720px)';
-  function syncTokScrim(on) {
-    const scrim = $('#tok-sheet-scrim');
-    if (scrim) scrim.hidden = !on;
-  }
-  function syncTokSheet(pop) {
-    const sheet = !!pop && !pop.hidden && pop.dataset.kind === 'cap' && typeof matchMedia === 'function' && matchMedia(TOK_SHEET_MQ).matches;
-    if (sheet) pop.dataset.sheet = '1'; else delete pop.dataset.sheet;
-    syncTokScrim(sheet);
-    return sheet;
-  }
-  // .36：锚点解析。能力条 / 会话统计栏重绘会换掉 DOM 节点，锚一旦脱离文档或没有盒，
-  // getBoundingClientRect() 全是 0 → 弹层被摆到屏幕左上角 (8,8)。此时按语义退回：
-  // 能力弹层退到整条能力行，其它退到会话统计栏；两者都不可用就保持原锚（不改变位置）。
+  // Token / 路由弹层只锚定到自己的可视入口；能力详情已迁入设置页。
   function isPlacedNode(n) {
     if (!n || typeof n.getBoundingClientRect !== 'function') return false;
     if (n.isConnected === false) return false;
     const r = n.getBoundingClientRect();
     return !(r.width === 0 && r.height === 0 && r.left === 0 && r.top === 0);
   }
-  function resolveAnchor(anchor, kind) {
+  function resolveAnchor(anchor) {
     if (isPlacedNode(anchor)) return anchor;
-    const fb = kind === 'cap' ? $('#cap-line') : ($('#conv-stats') || $('#cap-line'));
+    const fb = $('#conv-stats');
     if (isPlacedNode(fb)) return fb;
     return (anchor && typeof anchor.getBoundingClientRect === 'function') ? anchor : fb;
   }
@@ -69,28 +52,15 @@ export function installPopovers({ store }) {
     const pop = $('#tok-pop');
     if (!pop || pop.hidden) return;
     if (pop._exitAnim) { pop._exitAnim.cancel(); pop._exitAnim = null; } // 收起未播完就重开：取消收起
-    if (syncTokSheet(pop)) { pop.style.left = ''; pop.style.top = ''; pop.style.removeProperty('--pop-arrow-x'); return; }
-    const target = resolveAnchor(anchor, pop.dataset.kind);
-    const fellBack = target !== anchor; // 锚已失效 → 退到整条能力行 / 统计栏
-    if (fellBack) pop._anchor = target;
+    const target = resolveAnchor(anchor);
+    if (target !== anchor) pop._anchor = target;
     const r = (target && target.getBoundingClientRect) ? target.getBoundingClientRect() : ($('#conv-stats') || {}).getBoundingClientRect?.();
     if (!r) return;
     const pw = pop.offsetWidth || 240;
     const ph = pop.offsetHeight || 160;
-    // 锚是整条能力行（含「已禁用 N」胶囊消失后退回的情况）时，按该行的左内边距对齐：
-    // #cap-line 左右各有 24px 内边距，贴着行边框摆会明显偏左
-    let inset = 0;
-    if (target && target.id === 'cap-line') {
-      try { inset = parseFloat(getComputedStyle(target).paddingLeft) || 0; } catch { inset = 0; }
-    }
-    let left = Math.min(Math.max(8, r.left + inset), window.innerWidth - pw - 8);
-    // 能力行的胶囊在页面顶部：弹层固定放在胶囊正下方（.34）；其它锚点仍优先放上方，放不下再翻到下方
-    const preferBelow = !!(anchor && anchor.classList && anchor.classList.contains('cap-pill'));
-    const below = preferBelow || pop.dataset.kind === 'cap'; // 能力弹层永远朝下（锚退回能力行时也一样）
-    let top = preferBelow ? r.bottom + 8 : r.top - ph - 10;
-    if (below && !preferBelow) top = r.bottom + 8;
-    if (!below && top < 8) top = Math.min(window.innerHeight - ph - 8, r.bottom + 8);
-    if (below && top + ph > window.innerHeight - 8) top = Math.max(8, r.top - ph - 10);
+    const left = Math.min(Math.max(8, r.left), window.innerWidth - pw - 8);
+    let top = r.top - ph - 10;
+    if (top < 8) top = Math.min(window.innerHeight - ph - 8, r.bottom + 8);
     pop.dataset.place = top >= r.bottom ? 'below' : 'above'; // 气泡弹入的 transform-origin 跟着锚点方向走
     pop.style.left = `${left}px`;
     pop.style.top = `${top}px`;

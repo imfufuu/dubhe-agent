@@ -1,11 +1,5 @@
-// Dubhe Agent · 顶栏能力条 + 工具表 diff 弹层（P3 修正：能力门控不透明；从 ui.js 的 mountUI 拆出）
-// 以前那行「智能 · 思考 Medium · 沙箱 · 联网 · 直连」只是 displayTier 字符串，dispatch_subagent /
-// crawl_site / execute_cpp 为什么没在工具表里，UI 一个字都不说。现在：
-//   ① 每个胶囊可点，弹出 agent.previewToolTable() 的结果——「已禁用 N 个：工具（原因）」，原因文案与
-//      系统提示共用 executionContext.js 的 DROP_REASON_LABEL；
-//   ② 每条带直达开关（切到 Max / 打开联网 / 打开沙箱 / 重新探测中继 / 打开设置），点完原地重算，条目消失；
-//   ③ 有裁剪时能力条末尾多一个「已禁用 N」胶囊，不点开也看得见。
-// 弹层复用 #tok-pop（与 token / 智能路由弹层同一时间只开一个）。
+// Dubhe Agent · 固定状态能力行与设置页工具表预览。
+// 状态行只汇报模型 / 开关 / 线路；能力裁剪明细仅从设置页展开，避免在对话区制造告警胶囊。
 import { text as localeText } from './locale.js';
 import { isSmartRouter, SMART_ROUTER_LABEL } from './smartrouter.js?v=2026.10.11.1';
 import { reasoningLevelLabel } from './reasoning.js?v=2026.10.11.1';
@@ -15,102 +9,66 @@ import { DROP_REASON_FIX } from './executionContext.js?v=2026.10.11.1';
 const $ = (sel, root = document) => root.querySelector(sel);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-/** 纯函数：把预演结果渲染成弹层 HTML（dom-smoke 与单测都直接断言这段输出）。 */
-export function renderCapabilityPopHtml(preview) {
+/** 纯函数：设置页的工具能力预览与 agent.previewToolTable() 共用同一份裁剪结果。 */
+export function renderCapabilityTableHtml(preview) {
   const p = preview || { allowed: [], dropped: [], total: 0, tier: null };
+  const allowed = Array.isArray(p.allowed) ? p.allowed : [];
   const dropped = Array.isArray(p.dropped) ? p.dropped : [];
   const tier = p.tier || {};
   const rows = [
-    `<div class="tok-row"><span>可用工具</span><span class="mono">${p.allowed.length} / ${p.total || p.allowed.length + dropped.length}</span></div>`,
+    `<div class="tok-row"><span>可用工具</span><span class="mono">${allowed.length} / ${p.total || allowed.length + dropped.length}</span></div>`,
     `<div class="tok-row"><span>思考档位</span><span>${esc(tier.displayTier || '—')}${tier.canDispatch ? '（可委派）' : '（不可委派）'}</span></div>`,
   ];
   let list = '';
   if (dropped.length) {
-    list = `<div class="cap-drop-h">已禁用 ${dropped.length} 个</div>` + dropped.map((d) => {
+    list = `<div class="cap-drop-h">未启用 ${dropped.length} 个</div>` + dropped.map((d) => {
       const fix = DROP_REASON_FIX[d.reason];
-      const btn = fix ? `<button type="button" class="tok-btn cap-fix" data-fix="${esc(fix.kind)}" data-tool="${esc(d.name)}">${esc(fix.label)}</button>` : '';
+      const btn = fix && fix.kind !== 'settings'
+        ? `<button type="button" class="tok-btn cap-fix" data-fix="${esc(fix.kind)}" data-tool="${esc(d.name)}">${esc(fix.label)}</button>` : '';
       return `<div class="cap-drop" data-tool="${esc(d.name)}" data-reason="${esc(d.reason)}"><span class="mono cap-tool">${esc(d.name)}</span><span class="cap-why">${esc(d.label || d.reason)}</span>${btn}</div>`;
     }).join('');
   } else {
-    list = '<div class="tok-hint cap-all-ok">✓ 全部工具可用，没有被门控裁剪的项。</div>';
+    list = '<div class="tok-hint cap-all-ok">✓ 当前开关下，全部工具均可用。</div>';
   }
-  return `${rows.join('')}${list}<div class="tok-hint">按当前开关态预演；发请求时的工具表与此逐项一致。</div>`;
+  return `${rows.join('')}${list}<div class="tok-hint">按当前开关态预览；实际请求使用同一份工具门控结果。</div>`;
 }
 
-export function installCapabilityPop({
-  store, agent,
-  hideTokPop, placeTokPop, toast,
-  setReasoning, toggleWeb, toggleSandbox, reprobeRelay, openSettings,
+export function installCapabilityPanel({
+  store, agent, toast,
+  setReasoning, toggleWeb, toggleSandbox, reprobeRelay,
 } = {}) {
   const preview = () => {
     try { return agent && typeof agent.previewToolTable === 'function' ? agent.previewToolTable() : null; } catch { return null; }
   };
 
-  // .36：能力条每次重绘都会换掉胶囊节点，而弹层是锚在胶囊上的——锚一旦脱离文档，
-  // getBoundingClientRect() 全 0，placeTokPop 就会把弹层摆到屏幕左上角 (8, 8)。
-  // 这正是「能力表里把禁用工具全部启用后，菜单跑到左上角」的根因。做法：
-  //   ① syncCapLine 只有在胶囊序列真的变了才重建 DOM（序列不变就原地不动，焦点、hover、锚全都留住）；
-  //   ② 真要重建时，按 data-cap 把锚重新解析到新节点；「已禁用 N」胶囊消失后退回整条能力行。
-  const liveCapAnchor = (prev) => {
-    const line = $('#cap-line');
-    if (!line) return null;
-    const key = prev && prev.dataset ? prev.dataset.cap : null;
-    if (key) {
-      const same = $(`.cap-line .cap-pill[data-cap="${key}"]`);
-      if (same) return same;
-    }
-    return $('.cap-line .cap-pill[data-cap="drop"]') || line;
-  };
-
   let lastCapSig = null;
+  let lastTableSig = null;
   function syncCapLine() {
-    const eln = $('#cap-line');
-    if (!eln) return;
-    const st = store.state.settings;
-    const bits = [['model', store.state.model === '__system__' ? 'system-commands' : (isSmartRouter(store.state.model) ? SMART_ROUTER_LABEL : store.state.model)]]; // 通道态与模型钮同一叫法（.18）
-    if (st.thinking !== false) bits.push(['think', `思考 ${reasoningLevelLabel(st.reasoningLevel)}`]);
-    if (st.sandboxEnabled) bits.push(['sandbox', '沙箱']);
-    if (store.state.relayOk === true && st.webEnabled !== false) bits.push(['web', '联网']);
+    const line = $('#cap-line');
+    if (!line) return;
+    const settings = store.state.settings;
+    const bits = [['model', store.state.model === '__system__' ? 'system-commands' : (isSmartRouter(store.state.model) ? SMART_ROUTER_LABEL : store.state.model)]];
+    if (settings.thinking !== false) bits.push(['think', `思考 ${reasoningLevelLabel(settings.reasoningLevel)}`]);
+    if (settings.sandboxEnabled) bits.push(['sandbox', '沙箱']);
+    if (store.state.relayOk === true && settings.webEnabled !== false) bits.push(['web', '联网']);
     bits.push(['transport', getTransport() === 'proxy' ? '中继' : '直连']);
-    const panelOpen = $('#sandbox-panel') && !$('#sandbox-panel').classList.contains('collapsed');
-    if (panelOpen) bits.push(['panel', '面板']);
-    const pv = store.state.model === '__system__' ? null : preview();
-    const dropN = pv ? pv.dropped.length : 0;
-    if (dropN) bits.push(['drop', `已禁用 ${dropN}`]);
-    // 胶囊序列没变就绝不重建：能力条在每次 notify 时都会同步，原来每次都 innerHTML= 重画一遍，
-    // 键盘焦点、:hover、弹层锚点全被抹掉（.36）
-    const sig = JSON.stringify(bits);
-    if (sig !== lastCapSig || !eln.firstChild) {
-      eln.innerHTML = bits.map(([k, t]) => `<button type="button" class="cap-pill${k === 'drop' ? ' cap-pill-drop' : ''}" data-cap="${k}" title="点击查看本轮工具表：哪些可用、哪些被门控禁用及原因">${esc(t)}</button>`).join('<span class="cap-sep">  ·  </span>');
-      lastCapSig = sig;
+    const panel = $('#sandbox-panel');
+    if (panel && !panel.classList.contains('collapsed')) bits.push(['panel', '面板']);
+    const signature = JSON.stringify(bits);
+    if (signature !== lastCapSig || !line.firstChild) {
+      line.innerHTML = bits.map(([key, label]) => `<span class="cap-pill" data-cap="${key}">${esc(label)}</span>`).join('<span class="cap-sep">  ·  </span>');
+      lastCapSig = signature;
     }
-    eln.classList.toggle('has-drop', dropN > 0);
-    eln.dataset.dropped = String(dropN);
-    // 弹层开着时跟着刷新（切档位 / 开关联网后条目要原地消失）
-    const pop = $('#tok-pop');
-    if (pop && !pop.hidden && pop.dataset.kind === 'cap') {
-      pop._anchor = liveCapAnchor(pop._anchor); // 锚已随重绘失效 → 重新指到同一颗胶囊（.36）
-      paintPop(pop);
-      placeTokPop(pop._anchor);
+
+    const table = $('#set-capability-table-body');
+    if (table) {
+      const pv = preview();
+      const tableSig = JSON.stringify(pv);
+      if (tableSig !== lastTableSig || !table.firstChild) {
+        table.innerHTML = renderCapabilityTableHtml(pv);
+        lastTableSig = tableSig;
+      }
     }
-  }
-
-  function paintPop(pop) {
-    const body = $('#tok-pop-body');
-    const head = $('.tok-pop-h', pop);
-    if (head) head.textContent = '能力 · 工具表';
-    if (body) body.innerHTML = renderCapabilityPopHtml(preview());
-  }
-
-  function showCapPop(anchor) {
-    const pop = $('#tok-pop');
-    if (!pop) return;
-    if (!pop.hidden && pop.dataset.kind === 'cap') { hideTokPop(); return; }
-    pop.dataset.kind = 'cap';
-    pop._anchor = liveCapAnchor(anchor) || anchor; // 拿到的节点可能已被上一次重绘换掉（.36）
-    paintPop(pop);
-    pop.hidden = false;
-    placeTokPop(pop._anchor);
   }
 
   const runFix = async (kind, tool) => {
@@ -119,43 +77,22 @@ export function installCapabilityPop({
       else if (kind === 'web-on') toggleWeb && (await toggleWeb());
       else if (kind === 'sandbox-on') toggleSandbox && toggleSandbox();
       else if (kind === 'relay-reprobe') reprobeRelay && (await reprobeRelay());
-      else if (kind === 'settings') { hideTokPop(); openSettings && openSettings(); return; }
-    } catch (err) {
-      toast && toast(localeText(`操作失败：${String((err && err.message) || err).slice(0, 120)}`, `Action failed: ${String((err && err.message) || err).slice(0, 120)}`), 'warn');
+    } catch (error) {
+      toast && toast(localeText(`操作失败：${String((error && error.message) || error).slice(0, 120)}`, `Action failed: ${String((error && error.message) || error).slice(0, 120)}`), 'warn');
     }
     syncCapLine();
-    const pop = $('#tok-pop');
-    if (pop && !pop.hidden && pop.dataset.kind === 'cap') {
-      pop._anchor = liveCapAnchor(pop._anchor); // 重绘后重新解析锚：否则弹层会按 (0,0) 跑到屏幕左上角（.36 修）
-      paintPop(pop);
-      placeTokPop(pop._anchor);
-      const still = preview();
-      if (still && !still.dropped.some((d) => d.name === tool)) toast && toast(`${tool} 已加入工具表`, 'ok');
-    }
+    const current = preview();
+    if (current && !current.dropped.some((entry) => entry.name === tool)) toast && toast(`${tool} 已加入工具表`, 'ok');
   };
 
-  const line = $('#cap-line');
-  if (line) {
-    line.addEventListener('click', (e) => {
-      const pill = e.target.closest('.cap-pill');
-      if (!pill) return;
-      e.stopPropagation(); // 不让 document 级「点外面关闭」把刚打开的弹层又关掉
-      showCapPop(pill); // .34：锚到被点的胶囊（通常是「已禁用 N」），弹层正好出现在它正下方，而不是整条能力行的最左侧
-    });
-    line.addEventListener('keydown', (e) => {
-      const pill = e.target.closest('.cap-pill');
-      if ((e.key === 'Enter' || e.key === ' ') && pill) { e.preventDefault(); showCapPop(pill); }
-    });
-  }
-  const popEl = $('#tok-pop');
-  if (popEl) {
-    popEl.addEventListener('click', (e) => {
-      const btn = e.target.closest('.cap-fix');
-      if (!btn || popEl.dataset.kind !== 'cap') return;
-      e.preventDefault(); e.stopPropagation();
-      runFix(btn.dataset.fix, btn.dataset.tool);
-    });
-  }
+  const table = $('#set-capability-table-body');
+  if (table) table.addEventListener('click', (event) => {
+    const button = event.target.closest('.cap-fix');
+    if (!button) return;
+    event.preventDefault();
+    event.stopPropagation();
+    runFix(button.dataset.fix, button.dataset.tool);
+  });
 
-  return { syncCapLine, showCapPop, previewToolTable: preview };
+  return { syncCapLine, previewToolTable: preview };
 }

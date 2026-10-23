@@ -554,7 +554,7 @@ export function buildAnthropicPayload(messages, { maxTokens = MAX_TOKENS, includ
 export const FIRST_TOKEN_TIMEOUT_MS = 15000;
 export const FIRST_TOKEN_MAX_RETRIES = 3;
 
-export async function streamChat({ model, apiKey, messages, tools, fastMode = false, thinking = false, reasoningLevel = 'medium', temperature, plan = null, iteration = 1, phase = '', subagentId = '', signal, onEvent, onThinkingFallback, webEnabled = false, onWebFallback, gatewayId = DEFAULT_GATEWAY_ID, gatewayBaseUrl = '', firstTokenTimeoutMs = FIRST_TOKEN_TIMEOUT_MS }) {
+export async function streamChat({ model, apiKey, messages, tools, fastMode = false, thinking = false, reasoningLevel = 'medium', temperature, plan = null, iteration = 1, phase = '', subagentId = '', signal, onEvent, onThinkingFallback, webEnabled = false, onWebFallback, gatewayId = DEFAULT_GATEWAY_ID, gatewayBaseUrl = '', firstTokenTimeoutMs = FIRST_TOKEN_TIMEOUT_MS, streamTimeoutMs = REQUEST_TIMEOUT_MS }) {
   // 废弃/改名模型别名解析（agent 层已做，但子智能体直传时再保底一次）
   model = resolveModelAlias(model);
   if (isNetworkOffline() && !isOfflineModelId(model)) {
@@ -747,10 +747,20 @@ export async function streamChat({ model, apiKey, messages, tools, fastMode = fa
     return r;
   }, 2);
 
-  const normalize = endpoint === 'responses' ? createResponsesStream(onEvent)
-    : (protocol === 'anthropic' ? createAnthropicStream(onEvent) : createOpenAIStream(onEvent));
+  let sawTerminalEvent = false;
+  let sawDone = false;
+  let protocolError = null;
+  const emitEvent = (ev) => {
+    if (ev && (ev.type === 'finish' || ev.type === 'stop')) sawTerminalEvent = true;
+    if (ev && ev.type === 'error' && !protocolError) protocolError = new Error(ev.message || 'The model stream reported an error');
+    if (typeof onEvent === 'function') onEvent(ev);
+  };
+  const normalize = endpoint === 'responses' ? createResponsesStream(emitEvent)
+    : (protocol === 'anthropic' ? createAnthropicStream(emitEvent) : createOpenAIStream(emitEvent));
   let gotFirstEvent = false;
   let firstTokenTimer = null;
+  let firstTokenError = null;
+  let streamTimeoutError = null;
   const onFirst = () => {
     if (gotFirstEvent) return;
     gotFirstEvent = true;
@@ -759,7 +769,9 @@ export async function streamChat({ model, apiKey, messages, tools, fastMode = fa
   // 以解析到的有效 SSE JSON 事件作为首响应；原先对原始 chunk 做正则会漏掉
   // 常见的 `data: {"choices":...}`，导致慢流即使已在输出也会被 15 秒 watchdog 取消。
   const feed = createSSEParser((json) => {
-    if (json !== null) { onFirst(); normalize(json); }
+    if (json === null) { sawDone = true; return; }
+    onFirst();
+    normalize(json);
   });
 
   // 某些代理/服务端会以 200 + 空 body 回（如中间层截断）：直接 getReader() 会抛
@@ -769,56 +781,75 @@ export async function streamChat({ model, apiKey, messages, tools, fastMode = fa
   const decoder = new TextDecoder();
   // cancel() 在流已出错时返回 rejected promise，必须显式吞掉，否则产生未处理拒绝
   const cancelQuiet = () => { try { Promise.resolve(reader.cancel()).catch(() => {}); } catch { /* noop */ } };
-  const timeout = setTimeout(cancelQuiet, REQUEST_TIMEOUT_MS);
-  // 首响应超时：用 AbortController 派生一个可被超时取消的 signal
-  const ftAC = new AbortController();
-  // AbortSignal.any 老浏览器没有，这里自己监听外部 signal 来联动 abort ftAC
-  if (signal) {
-    if (signal.aborted) ftAC.abort(signal.reason);
-    else signal.addEventListener('abort', () => ftAC.abort(signal.reason), { once: true });
-  }
-  // 把我们派生的 signal 传给后续取消路径（原 fetch 已用 signal，这里 reader 阶段只需要 cancel reader）
-  firstTokenTimer = setTimeout(() => {
-    if (!gotFirstEvent) {
-      const err = new Error(`连接建立后 ${Math.round(firstTokenTimeoutMs / 1000)} 秒未收到模型输出`);
-      err.name = 'FirstTokenTimeout';
-      err.retryable = true;
-      err.status = 0;
-      ftAC.abort(err);
-      cancelQuiet();
-    }
-  }, firstTokenTimeoutMs);
-  // 外部 signal 中止：cancel reader 并清定时器（cancelQuiet 会让 reader.read 抛错）
-  const onAbort = () => { if (firstTokenTimer) { clearTimeout(firstTokenTimer); firstTokenTimer = null; } cancelQuiet(); };
+  const abortError = () => {
+    const reason = signal && signal.reason;
+    if (reason && typeof reason === 'object' && typeof reason.name === 'string') return reason;
+    const err = new Error('模型请求已中止');
+    err.name = 'AbortError';
+    return err;
+  };
+  const onAbort = () => {
+    if (firstTokenTimer) { clearTimeout(firstTokenTimer); firstTokenTimer = null; }
+    cancelQuiet();
+  };
   if (signal) {
     if (signal.aborted) onAbort();
     else signal.addEventListener('abort', onAbort, { once: true });
+  }
+  const configuredTimeout = streamTimeoutMs == null ? REQUEST_TIMEOUT_MS : Number(streamTimeoutMs);
+  const timeoutMs = Number.isFinite(configuredTimeout) ? Math.max(1, configuredTimeout) : REQUEST_TIMEOUT_MS;
+  const streamTimer = setTimeout(() => {
+    streamTimeoutError = new Error(`模型响应流超过 ${Math.round(timeoutMs / 1000)} 秒仍未结束`);
+    streamTimeoutError.name = 'StreamTimeoutError';
+    cancelQuiet();
+  }, timeoutMs);
+  if (!signal?.aborted) {
+    firstTokenTimer = setTimeout(() => {
+      if (!gotFirstEvent) {
+        firstTokenError = new Error(`连接建立后 ${Math.round(firstTokenTimeoutMs / 1000)} 秒未收到模型输出`);
+        firstTokenError.name = 'FirstTokenTimeout';
+        firstTokenError.retryable = true;
+        firstTokenError.status = 0;
+        cancelQuiet();
+      }
+    }, Math.max(1, Number(firstTokenTimeoutMs) || FIRST_TOKEN_TIMEOUT_MS));
   }
   try {
     while (true) {
       let readRes;
       try { readRes = await reader.read(); }
       catch (readErr) {
-        if (ftAC.signal.aborted && ftAC.signal.reason && ftAC.signal.reason.name === 'FirstTokenTimeout') {
-          throw ftAC.signal.reason;
-        }
+        if (streamTimeoutError) throw streamTimeoutError;
+        if (firstTokenError) throw firstTokenError;
+        if (signal?.aborted) throw abortError();
         throw readErr;
       }
+      if (streamTimeoutError) throw streamTimeoutError;
+      if (firstTokenError) throw firstTokenError;
+      if (signal?.aborted) throw abortError();
       const { done, value } = readRes;
-      if (ftAC.signal.aborted && ftAC.signal.reason && ftAC.signal.reason.name === 'FirstTokenTimeout') {
-        throw ftAC.signal.reason;
-      }
       if (done) break;
       feed(decoder.decode(value, { stream: true }));
     }
     feed(decoder.decode());
+    if (streamTimeoutError) throw streamTimeoutError;
+    if (signal?.aborted) throw abortError();
+    if (protocolError) throw protocolError;
+    if (!sawTerminalEvent && !sawDone) {
+      const err = new Error('模型响应流在结束前中断，未收到完成标记');
+      err.name = 'IncompleteStreamError';
+      throw err;
+    }
   } catch (err) {
     cancelQuiet();
-    if (err && err.name === 'FirstTokenTimeout') throw err;
+    if (streamTimeoutError) throw streamTimeoutError;
+    if (firstTokenError) throw firstTokenError;
+    if (signal?.aborted && (!err || err.name !== 'AbortError')) throw abortError();
     throw err;
   } finally {
-    clearTimeout(timeout);
+    clearTimeout(streamTimer);
     if (firstTokenTimer) { clearTimeout(firstTokenTimer); firstTokenTimer = null; }
+    if (signal) signal.removeEventListener('abort', onAbort);
   }
 }
 

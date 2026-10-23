@@ -10,6 +10,20 @@ function contentRange(value) {
   const match = String(value || '').match(/^bytes\s+(\d+)-(\d+)\/(\d+)$/i);
   return match ? { start: Number(match[1]), end: Number(match[2]), total: Number(match[3]) } : null;
 }
+// Older Wllama CacheManager versions persisted ETags after removing quotes and punctuation.
+// Accept that legacy representation while still rejecting two distinct raw entity tags.
+function sameEtag(a, b) {
+  const left = String(a || '').trim();
+  const right = String(b || '').trim();
+  if (!left || !right || left === right) return true;
+  const unquote = (value) => value.replace(/^W\//i, '').replace(/^"(.*)"$/, '$1');
+  if (unquote(left) === unquote(right)) return true;
+  const legacyNormalized = /^[A-Za-z0-9]+$/;
+  const stripPunctuation = (value) => value.replace(/[^A-Za-z0-9]/g, '');
+  return ((legacyNormalized.test(left) && /[^A-Za-z0-9]/.test(right))
+      || (legacyNormalized.test(right) && /[^A-Za-z0-9]/.test(left)))
+    && stripPunctuation(left) === stripPunctuation(right);
+}
 async function cancelBody(response) { try { await response?.body?.cancel(); } catch { /* best effort */ } }
 
 async function savePartialMetadata(cacheDir, metadataFileName, metadata) {
@@ -66,7 +80,7 @@ export async function downloadOpfsFile({
     }
 
     let offset = resumeOffset;
-    if (offset > 0 && etag && remoteEtag && etag !== remoteEtag) {
+    if (offset > 0 && etag && remoteEtag && !sameEtag(etag, remoteEtag)) {
       access.truncate(0); offset = 0;
     }
     const requestFile = (start) => fetchImpl(url, {
@@ -110,7 +124,7 @@ export async function downloadOpfsFile({
     }
 
     let responseEtag = response.headers.get('etag') || remoteEtag || etag || '';
-    if (offset > 0 && etag && responseEtag && etag !== responseEtag) {
+    if (offset > 0 && etag && responseEtag && !sameEtag(etag, responseEtag)) {
       await cancelBody(response);
       access.truncate(0); offset = 0; response = await requestFile(0);
       if (!response.ok || !response.body || response.status !== 200) throw new Error('Model version changed; a clean download could not be started.');

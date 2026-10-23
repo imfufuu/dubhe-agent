@@ -164,6 +164,16 @@ test('Ran command：可见思考、文件折叠、计划、报错都是分隔，
   assert.equal(commandRunFor(base({}), 'a1', 0).isHost, false);
   const withThink = base({ reasoning: '想一下' });
   assert.equal(commandRunFor(withThink, 'a1', 0, { reasoningVisible: (m) => !!m.reasoning }).isHost, true, '思考折叠行在中间 → 不合并');
+  const refreshSequence = [
+    { id: 'u', role: 'user', text: 'go' },
+    { id: 'think-1-command', role: 'assistant', reasoning: '第一段思考', toolCalls: [call('c1')], done: true },
+    { id: 'think-2-command', role: 'assistant', reasoning: '第二段思考', toolCalls: [call('c2')], done: true },
+    { id: 'command-3', role: 'assistant', toolCalls: [call('c3')], done: true },
+  ];
+  const reasoningVisible = (m) => !!m.reasoning;
+  assert.deepEqual(commandRunFor(refreshSequence, 'think-1-command', 0, { reasoningVisible }).calls.map((c) => c.id), ['c1'], '第一条命令与其思考保持独立');
+  assert.deepEqual(commandRunFor(refreshSequence, 'think-2-command', 0, { reasoningVisible }).calls.map((c) => c.id), ['c2'], '刷新重建后第二条命令不会吸收第一条或第三条');
+  assert.deepEqual(commandRunFor(refreshSequence, 'command-3', 0, { reasoningVisible }).calls.map((c) => c.id), ['c3'], '思考后的命令也不会与后续命令跨界堆叠');
   assert.equal(commandRunFor(base({ publicPlan: { direction: '下一步' } }), 'a1', 0).isHost, true);
   const withRead = [
     { id: 'u', role: 'user', text: 'go' },
@@ -499,7 +509,7 @@ test('连接模型：气泡里是 12px 深色呼吸点，圆环退场；状态�
   assert.match(css, /\.sdots i \{[^}]*bounce/);
 });
 
-test('Token 构成 / 能力表与附件菜单：收起有同套气泡动画，重开会取消收起', () => {
+test('Token / 路由弹层与附件菜单：收起有同套气泡动画，重开会取消收起', () => {
   const pop = read('../js/ui-popovers.js');
   assert.match(pop, /pop\._exitAnim = a;/);
   assert.match(pop, /translate3d\(0, \$\{dy\}, 0\) scale\(\$\{scale\}\)/);
@@ -785,7 +795,7 @@ test('2026.10.21：knowledge_search 独立消息块（toolflow 家族 / UI 接�
   assert.match(read('../js/icons.js'), /search: ico\(/);
 });
 
-test('2026.10.22：快捷图表静态显示、赞踩无灰底、对话米白与输入框白色及编辑器优化', () => {
+test('暖纸色编辑对话、助手无回复卡片、用户气泡保留及编辑器优化', () => {
   const css = read('../css/styles.css');
   const lightbox = read('../js/ui-lightbox.js');
   assert.match(lightbox, /staticChart: !!expandChart\.closest\('\.md-chart'\)/);
@@ -796,16 +806,24 @@ test('2026.10.22：快捷图表静态显示、赞踩无灰底、对话米白与�
   assert.match(css, /\.feedback-btn\[aria-pressed="true"\]\{background:transparent;border-color:transparent;box-shadow:none\}/);
   assert.match(css, /\.feedback-btn:hover\{translate:0 -1px;background:transparent;border-color:transparent\}/);
   assert.doesNotMatch(css, /\.feedback-btn\[aria-pressed="true"\]\{[^}]*background:var\(--bg-hover\)/);
-  assert.match(css, /--conversation-bg: #f7f5ef/);
-  assert.match(css, /--conversation-card: #fffefa/);
-  assert.match(css, /\.msg-assistant:not\(\.msg-collapsed\) \{[^}]*background: var\(--conversation-card\)/);
+  assert.match(css, /--conversation-bg: #faf9f5/);
+  assert.match(css, /--sidebar-bg: #f7f8f3/);
+  assert.match(css, /--conversation-card: #faf9f5/);
+  assert.match(css, /\.msg-assistant:not\(\.msg-collapsed\) \{[^}]*border: 0[^}]*background: transparent[^}]*box-shadow: none/);
+  assert.match(css, /\.msg-user \.bubble \{[^}]*background: var\(--chat-user-bubble\)/, '用户气泡仍保留');
   assert.match(css, /\.sess-item \{[^}]*background: var\(--conversation-card\)/);
   assert.match(css, /\[data-theme="dark"\] \{[^}]*--conversation-bg: var\(--bg\)[^}]*--conversation-card: #101010/s);
   assert.match(css, /\.main \{[^}]*background: var\(--conversation-bg, var\(--bg\)\)/);
-  assert.match(css, /\.sidebar \{[^}]*background: var\(--conversation-bg, var\(--bg\)\)/);
+  assert.match(css, /\.sidebar \{[^}]*background: var\(--sidebar-bg, var\(--bg\)\)/);
   assert.match(css, /\.panel \{[^}]*background: var\(--conversation-bg, var\(--bg\)\)/);
-  assert.match(css, /:root\s*\{[^}]*--bg:\s*#ffffff/s, '浅色主题的 --bg 是白色');
-  assert.match(css, /\.composer \{[^}]*background: var\(--bg\)/, '输入容器使用白色主题底色');
+  assert.match(css, /:root\s*\{[^}]*--bg:\s*#f0eee6/s, '浅色主题底色采用暖色');
+  assert.match(css, /\.composer \{[^}]*background: var\(--conversation-bg, var\(--bg\)\)/, '输入容器使用对话暖纸色');
+  assert.match(css, /\.composer \{[^}]*border-radius: 28px/);
+  assert.match(css, /\.composer\.is-multiline \{[^}]*border-radius: 18px/);
+  assert.match(css, /#composer-input \{[^}]*transition: height \.18s/);
+  assert.match(read('../js/ui.js'), /function autoGrow\(\) \{[\s\S]*?composer\.closest\('\.composer'\)\?\.classList\.toggle\('is-multiline', multiline\);[\s\S]*?composer\.style\.overflowY = contentHeight > maxHeight \+ 1 \? 'auto' : 'hidden';/s, '多行时向上平滑扩展，超过上限可滚动');
+  assert.match(css, /\.composer\.is-multiline \.attach-menu-wrap \{ align-self: flex-end; \}/, '多行增长时附件按钮贴住输入框底边');
+  assert.match(css, /\.composer \{[^}]*transition:[^}]*border-radius/);
   assert.match(css, /#composer-input \{[^}]*background: none/);
   assert.match(css, /\.photo-editor \{[^}]*height:\s*min\(96dvh, 900px\)/, '照片编辑器给工作区分配更充足的视口高度');
   assert.match(css, /\.scan-bar \{[^}]*grid-template-areas:\s*"filters actions session"/s, '扫描底栏把拍摄操作置于中央主位');

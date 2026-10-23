@@ -165,6 +165,53 @@ export function applyBlobs(state, map) {
   return filled;
 }
 
+/**
+ * 顺序执行 IndexedDB 重对象写入与孤儿清理。较早快照的 prune 不能晚于新快照执行，
+ * 否则它可能把新快照刚引用的 key 删除。序列号同时让尚未开始的旧快照直接失效。
+ */
+export function createBlobPersistenceQueue({ put = blobPut, prune = blobPrune } = {}) {
+  let tail = Promise.resolve();
+  let revision = 0;
+  const tagError = (error, stage) => {
+    const tagged = new Error(error && error.message ? error.message : String(error));
+    tagged.cause = error;
+    tagged.persistenceStage = stage;
+    return tagged;
+  };
+  const enqueue = (entries = [], keep = []) => {
+    const ticket = ++revision;
+    const task = tail.catch(() => {}).then(async () => {
+      const current = () => ticket === revision;
+      if (!current()) return { skipped: true };
+      if (entries && entries.length) {
+        try { await put(entries); }
+        catch (error) {
+          if (!current()) return { skipped: true };
+          throw tagError(error, 'put');
+        }
+      }
+      if (!current()) return { skipped: true };
+      try { await prune(keep); }
+      catch (error) {
+        if (!current()) return { skipped: true };
+        throw tagError(error, 'prune');
+      }
+      return { skipped: false };
+    });
+    tail = task.catch(() => {});
+    return task;
+  };
+  enqueue.invalidate = () => {
+    ++revision;
+    const task = tail.catch(() => {}).then(() => ({ skipped: true }));
+    tail = task.catch(() => {});
+    return task;
+  };
+  return enqueue;
+}
+
+const blobPersistenceQueue = createBlobPersistenceQueue();
+
 export function createStore(onChange) {
   const state = {
     apiKey: '', // 当前活动网关的密钥；旧版入口保留，具体 Key 同步保存在 gatewayKeys[id]
@@ -369,8 +416,10 @@ export function createStore(onChange) {
     try { commit(); } catch { /* 提交失败也不能影响主流程 */ }
     const KEY = STORAGE_KEY + '-v2';
     if (blobsSupported()) {
-      // 有 IndexedDB：重数据外置，localStorage 只存轻量状态（不再有 4MB 天花板）
-      let entries = [], keep = [];
+      // 有 IndexedDB：重数据外置，localStorage 只存轻量状态（不再有 4MB 天花板）。
+      // 轻量快照保持同步写入，满足 beforeunload / 回合完成时的即时持久化契约；
+      // 大对象 put 与 prune 则由同一队列排序，旧快照不能在新快照之后清理其 key。
+      let entries = [], keep = [], indexReady = false;
       try {
         const ex = extractBlobs(state, { ready: !!state._blobsReady });
         entries = ex.blobs;
@@ -379,22 +428,22 @@ export function createStore(onChange) {
         // 会把 IDB 里已有的图全部删掉 —— 刷新后再刷新，附件和沙箱图就没了。
         keep = ex.keys;
         localStorage.setItem(KEY, JSON.stringify(ex.light));
+        indexReady = true;
       } catch {
         try { localStorage.setItem(KEY, JSON.stringify(slimState())); } catch { /* 放弃本次持久化 */ }
       }
-      const afterPut = () => blobPrune(keep);
-      if (entries.length) {
-        blobPut(entries)
+      // 无法从坏状态提取完整索引时，不允许用空白白名单清空 IDB；同时作废已排队的旧清理。
+      // 旧大对象留待后续成功快照清理。
+      if (!indexReady) { blobPersistenceQueue.invalidate(); return; }
+      blobPersistenceQueue(entries, keep).catch((e) => {
+        if (e && e.persistenceStage === 'put') {
           // 落库失败（隐私模式 / 配额）：退回把完整状态塞进 localStorage，至少别丢
-          .catch((e) => {
-            console.warn('[persist] IndexedDB 写入失败，退回 localStorage：', e && e.message);
-            try { localStorage.setItem(KEY, JSON.stringify(state)); } catch { /* 放不下就算了 */ }
-          })
-          .then(afterPut)
-          .catch((e) => console.warn('[persist] 清理孤儿数据失败：', e && e.message));
-      } else {
-        blobPrune(keep).catch(() => {}); // 会话/消息删掉后不留孤儿；有引用的 key 会被保留
-      }
+          console.warn('[persist] IndexedDB 写入失败，退回 localStorage：', e.message);
+          try { localStorage.setItem(KEY, JSON.stringify(state)); } catch { /* 放不下就算了 */ }
+        } else if (e && e.persistenceStage === 'prune') {
+          console.warn('[persist] 清理孤儿数据失败：', e.message);
+        }
+      });
       return;
     }
     // 没有 IndexedDB（老环境）：沿用旧路径
@@ -447,6 +496,7 @@ export function createStore(onChange) {
       state.memory = pruneMemoryFacts(Array.isArray(state.memory) ? state.memory : []);
       state.learnedSkills = pruneLearnedSkills(Array.isArray(state.learnedSkills) ? state.learnedSkills : []);
       normalizeP1State(); // 旧快照没有这些键 → 补默认；坏形状 → 丢弃而不是带着跑
+      normalizeP2State(); // P2 字段在 Object.assign 后也必须重新校验；否则快照会绕过启动时的默认值兜底
       if (!state.sessions || !state.sessions.length) state.sessions = [newSession()];
       if (!state.sessions.some((s) => s.id === state.activeSessionId)) state.activeSessionId = state.sessions[0].id;
       // /system 是运行时通道不持久化：旧快照异常退出时若卡在 __system__，回退到会话自己的模型

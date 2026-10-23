@@ -86,6 +86,27 @@ test('an interrupted OPFS write preserves bytes and the next request resumes wit
   assert.deepEqual(calls.map((call) => call.method), ['HEAD', 'GET', 'HEAD', 'GET']);
 });
 
+test('a legacy Wllama-normalized ETag resumes the existing OPFS offset instead of restarting', async () => {
+  const full = new Uint8Array([3, 5, 8, 13, 21, 34, 55]);
+  const { files, storage } = memoryOpfs({ 'model.gguf': full.slice(0, 4) });
+  const ranges = [];
+  const progress = [];
+  const result = await downloadOpfsFile({
+    url: 'https://example.test/model.gguf', fileName: 'model.gguf', totalBytes: full.length,
+    // Wllama stored the same ETag as modelv1 after removing quotes and punctuation.
+    etag: 'modelv1', storage, onProgress: (event) => progress.push(event.loaded),
+    fetchImpl: async (_url, options = {}) => {
+      if (options.method === 'HEAD') return head(full.length, '"model-v1"');
+      ranges.push(options.headers?.Range || '');
+      return rangeResponse(full, 4, '"model-v1"');
+    },
+  });
+  assert.deepEqual(ranges, ['bytes=4-'], 'legacy ETag normalization must not turn a valid resume into a full GET');
+  assert.deepEqual(bytes(files.get('model.gguf')), bytes(full));
+  assert.equal(result.loaded, full.length);
+  assert.ok(progress.includes(4), 'the existing byte offset remains visible while resuming');
+});
+
 test('a server that ignores Range triggers a safe truncate-and-restart instead of corrupt append', async () => {
   const full = new Uint8Array([1, 2, 3, 4, 5]);
   const { files, storage } = memoryOpfs({ 'model.gguf': new Uint8Array([1, 2, 99]) });
