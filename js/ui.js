@@ -8,7 +8,7 @@ import { text as localeText, onLanguageChange } from './locale.js';
 import { installFeedback } from './ui-feedback.js';
 import { installSpeechInput } from './ui-speech.js';
 import { createToolPresentation, presentationCallSettled, turnToolResults } from './toolpresentation.js?v=2026.10.11.1';
-import { paintEditFoldContent, syncEditingFold } from './ui-editpreview.js?v=2026.10.11.1';
+import { paintEditFoldContent, syncEditingFold, toggleEditingFold } from './ui-editpreview.js?v=2026.10.11.1';
 import { paintOrderedAssistant, renderToolChipDetail, paintCommandRows, paintKnowledgeFold, syncToolMenuCursor, ownerOfTool, paintVisibleTurn, activeToolOwner, persistTurnTiming } from './ui-toolflow.js?v=2026.10.11.1';
 import { classifyToolResult, toolResultFailed } from './toolwindows.js?v=2026.10.11.1';
 import { adjacentToolMessages, appendToolStream, toolFamily, commandRunFor } from './toolflow.js?v=2026.10.11.1';
@@ -22,6 +22,7 @@ import { isSmartRouter, ROUTER_ICON_SVG, SMART_ROUTER_LABEL, modelDisplayName } 
 import { REASONING_LEVELS, normalizeReasoningLevel, reasoningLevelLabel, reasoningLevelHint } from './reasoning.js?v=2026.10.11.1';
 import { fileBytesFromValue, withExtension, mimeFromPath } from './zip.js';
 import { getTransport } from './api.js?v=2026.10.11.1';
+import { isOfflineModelId } from './offline-model-config.js';
 import { gatewayBase, gatewayChosenBy, setGatewayBase, otherGatewayBase } from './endpoint.js';
 import { estimateTokens } from './context.js';
 import { providerIcon, APP_LOGO, ICON } from './icons.js';
@@ -1640,7 +1641,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
           node._toggleKey = fileToggleKey('edited-files'); node._userToggle = fileToggle.get(node._toggleKey) ?? null;
           node.addEventListener('click', (e) => {
             if (e.target.closest('a, button, .chip-copy, .edit-preview, .edit-path-fold')) return;
-            node.classList.toggle('expanded'); node._userToggle = node.classList.contains('expanded');
+            node._userToggle = toggleEditingFold(node);
             fileToggle.set(node._toggleKey, node._userToggle);
           });
           afterEl.after(node);
@@ -2289,7 +2290,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       handleSystemCommand(text);
       return;
     }
-    if (!store.state.apiKey) { openKeyModal(); toast('请先配置 TeamoRouter API Key', 'warn'); return; }
+    if (!store.state.apiKey && !isOfflineModelId(store.state.model)) { openKeyModal(); toast('请先配置 TeamoRouter API Key', 'warn'); return; }
     if (getBusy()) return;
     pendingSendOrigin = composer.getBoundingClientRect();
     composer.value = ''; autoGrow();
@@ -2604,7 +2605,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     if (drifted) setTimeout(() => toast(`资源缓存不一致（入口 ${entryVer}，模块 ${APP_VERSION}）：请硬刷新或用无痕窗口打开`, 'warn', 9000), 700);
   }
 
-  if (!store.state.apiKey) setTimeout(openKeyModal, 600);
+  if (!store.state.apiKey && !isOfflineModelId(store.state.model)) setTimeout(openKeyModal, 600);
 
   // ── 暴露给 agent hooks ───────────────────────────────────────────────
   // 设置页改了开关后把会话区所有「镜像」同步一遍：四颗 pill、能力行、主题按钮（settings.js 不 import ui.js，经 main.js 回调进来）

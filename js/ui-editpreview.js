@@ -151,6 +151,18 @@ export function paintEditFoldContent(node, options) {
   node.classList.toggle('has-discarded', discardedPaths.size > 0);
 }
 
+export function toggleEditingFold(node) {
+  if (!node) return false;
+  const expanded = !node.classList.contains('expanded');
+  node.classList.toggle('expanded', expanded);
+  node._userToggle = expanded;
+  // The completed-write summary is itself the entry point: reopening it should surface
+  // the first file's diff immediately, without requiring the user to discover a second fold.
+  if (expanded && node.classList.contains('edited-files')
+      && !node.querySelector('.edit-path-row.expanded')) node.querySelector('.edit-path')?.click();
+  return expanded;
+}
+
 import { presentationCallSettled } from './toolpresentation.js?v=2026.10.11.1';
 export function syncEditingFold(node, { messages, resultIds, busy }) {
   if (!node) return false;

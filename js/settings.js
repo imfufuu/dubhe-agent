@@ -1,5 +1,10 @@
 import { installModerationSetting } from './ui-moderation-setting.js';
 import { updateScriptCache } from './cache-update.js';
+import { syncOfflineModelAvailability, downloadOfflineModel, removeOfflineModel, formatOfflineDownloadProgress } from './offline-model.js';
+import { OFFLINE_MODEL_DISPLAY_NAME, OFFLINE_MODEL_ID, OFFLINE_MODEL_FILE, OFFLINE_MODEL_SIZE_BYTES, OFFLINE_MODEL_SHA256, OFFLINE_MODEL_REPO, OFFLINE_MODEL_REVISION, formatDownloadBytes } from './offline-model-config.js';
+import { isNetworkOffline } from './offline-network.js';
+import { providerIcon } from './icons.js';
+import { sanitizeSvgMarkup, svgDataUrl } from './svg-safety.js';
 import { text as localeText } from './locale.js';
 import { getLanguage, onLanguageChange } from './locale.js';
 // 设置弹窗：API Key / 中继地址 / 主题 / 字号 / 沙箱 / 联网 / 快速 / 思考 / 识图·音视频解析模型 / 清空数据 / 关于
@@ -15,6 +20,12 @@ const MOTION_KEY = 'dubhe-motion'; // 'auto' | 'on' | 'off'：auto = 跟随系�
 import { writeThemePreference } from './theme.js';
 
 const $ = (sel) => document.querySelector(sel);
+let manualModelEditingId = '';
+let manualModelIconDraft = '';
+let offlineModelStore = null;
+let offlineDownloadController = null;
+let offlineModelDownloadBusy = false;
+let offlineDownloadProgress = null;
 
 const ADMIN_PREFIX = 'admin-';
 const isAdmin = (s) => String(s || '').startsWith(ADMIN_PREFIX);
@@ -37,6 +48,71 @@ function toast(msg, type = 'info', ms = 2600) {
   } catch {}
 }
 
+function renderOfflineModelUI(status = null) {
+  const statusEl = $('#set-offline-model-status');
+  const downloadBtn = $('#set-offline-model-download');
+  const cancelBtn = $('#set-offline-model-cancel');
+  const removeBtn = $('#set-offline-model-remove');
+  const progressWrap = $('#set-offline-model-progress-wrap');
+  const progress = $('#set-offline-model-progress');
+  const progressLabel = $('#set-offline-model-progress-label');
+  const heading = $('#set-offline-model-heading');
+  const title = $('#set-offline-model-title');
+  const description = $('#set-offline-model-description');
+  const provenance = $('#set-offline-model-provenance');
+  const license = $('#set-offline-model-license');
+  const fileInfo = $('#set-offline-model-file');
+  const hashInfo = $('#set-offline-model-hash');
+  const repoLink = $('#set-offline-model-repo');
+  if (heading) heading.textContent = localeText('离线本地模型', 'Offline local model');
+  if (title) title.textContent = OFFLINE_MODEL_DISPLAY_NAME;
+  if (description) description.textContent = localeText(`可选下载；约 ${formatDownloadBytes(OFFLINE_MODEL_SIZE_BYTES)}。点击后才下载，推理在本机浏览器内运行。`, `Optional download; about ${formatDownloadBytes(OFFLINE_MODEL_SIZE_BYTES)}. Download starts only after clicking; inference runs in this browser.`);
+  if (provenance) provenance.textContent = localeText('仓库的 heretic / uncensored 标签是社区自述，非独立测评。', 'The repository’s “heretic / uncensored” labels are self-descriptions, not independent evaluations.');
+  if (license) license.textContent = localeText('模型仓库元数据声明 Apache-2.0；请查看仓库与上游说明。', 'The model repository metadata declares Apache-2.0; review the repository and upstream notices.');
+  if (fileInfo) fileInfo.textContent = `${OFFLINE_MODEL_FILE} · ${formatDownloadBytes(OFFLINE_MODEL_SIZE_BYTES)} · rev ${OFFLINE_MODEL_REVISION.slice(0, 12)}`;
+  if (hashInfo) { hashInfo.textContent = `SHA-256 ${OFFLINE_MODEL_SHA256.slice(0, 12)}…`; hashInfo.title = OFFLINE_MODEL_SHA256; }
+  if (repoLink) { repoLink.textContent = localeText('查看固定版本仓库', 'View pinned repository revision'); repoLink.href = `https://huggingface.co/${OFFLINE_MODEL_REPO}/tree/${OFFLINE_MODEL_REVISION}`; }
+  if (cancelBtn) cancelBtn.textContent = localeText('取消', 'Cancel');
+  if (removeBtn) removeBtn.textContent = localeText('删除本地模型', 'Remove local model');
+  if (!statusEl || !offlineModelStore) return;
+  const offline = isNetworkOffline();
+  const available = status?.available ?? offlineModelStore.state.offlineModelAvailable === true;
+  const supported = status?.supported ?? offlineModelStore.state.offlineModelStorageSupported === true;
+  if (offlineDownloadProgress && offlineModelDownloadBusy) {
+    const p = formatOfflineDownloadProgress(offlineDownloadProgress);
+    const verifying = offlineDownloadProgress.phase === 'verify';
+    if (progressWrap) progressWrap.hidden = false;
+    if (progress) progress.value = p.percent;
+    if (progressLabel) progressLabel.textContent = `${verifying ? localeText('校验', 'Verify') : localeText('下载', 'Download')} ${p.percent}% · ${p.loadedText} / ${p.totalText}`;
+    statusEl.textContent = verifying
+      ? localeText('下载完成，正在逐块校验模型 SHA-256…', 'Download complete; streaming the model file to verify its SHA-256…')
+      : localeText('正在下载 GGUF 到本机浏览器存储…', 'Downloading the GGUF into this browser’s local storage…');
+  } else {
+    if (progressWrap) progressWrap.hidden = true;
+    if (available) statusEl.textContent = localeText(`已安装 · ${formatDownloadBytes(status?.size || OFFLINE_MODEL_SIZE_BYTES)} · 本地推理不请求网关`, `Installed · ${formatDownloadBytes(status?.size || OFFLINE_MODEL_SIZE_BYTES)} · local inference does not call a gateway`);
+    else if (!offlineModelStore.state.offlineModelChecked) statusEl.textContent = localeText('正在检查本机模型存储…', 'Checking local model storage…');
+    else if (offline) statusEl.textContent = localeText('当前离线：模型未安装时不会下载或尝试联网。', 'Offline: an uninstalled model will not be downloaded or fetched.');
+    else if (!supported) statusEl.textContent = localeText('此浏览器或页面环境不支持本地 OPFS 模型存储；请用 HTTPS / localhost 的现代浏览器。', 'This browser/page does not support local OPFS model storage; use a modern browser over HTTPS or localhost.');
+    else if (offlineModelStore.state.offlineModelStatusError) statusEl.textContent = offlineModelStore.state.offlineModelStatusError;
+    else statusEl.textContent = localeText(`未安装 · 需约 ${formatDownloadBytes(OFFLINE_MODEL_SIZE_BYTES)} 空间 · 点击后才开始下载`, `Not installed · about ${formatDownloadBytes(OFFLINE_MODEL_SIZE_BYTES)} storage · download starts only after clicking`);
+  }
+  if (downloadBtn) {
+    downloadBtn.hidden = available;
+    downloadBtn.disabled = offline || !supported || offlineModelDownloadBusy;
+    downloadBtn.textContent = offlineModelDownloadBusy ? localeText('下载中…', 'Downloading…') : localeText(`下载模型（约 ${formatDownloadBytes(OFFLINE_MODEL_SIZE_BYTES)}）`, `Download model (about ${formatDownloadBytes(OFFLINE_MODEL_SIZE_BYTES)})`);
+  }
+  if (cancelBtn) { cancelBtn.hidden = !offlineModelDownloadBusy; cancelBtn.disabled = !offlineModelDownloadBusy; }
+  if (removeBtn) { removeBtn.hidden = !available; removeBtn.disabled = offlineModelDownloadBusy; }
+}
+
+async function refreshOfflineModelUI(store = offlineModelStore) {
+  if (!store) return null;
+  offlineModelStore = store;
+  const status = await syncOfflineModelAvailability(store, { notify: false });
+  renderOfflineModelUI(status);
+  return status;
+}
+
 function syncSeg(sel, v) {
   const host = document.querySelector(sel);
   if (!host) return;
@@ -44,6 +120,7 @@ function syncSeg(sel, v) {
 }
 
 async function relayCheck() {
+  if (isNetworkOffline()) return localeText('离线状态：不探测中继。', 'Offline: relay probing is disabled.');
   try {
     const override = readLocal(RELAY_OVERRIDE_KEY) || '';
     resetRelayProbe();
@@ -123,6 +200,7 @@ function renderManualModelList(store) {
   if (!row || !host) return;
   host.replaceChildren();
   const saved = (store.state.manualModelsByGateway || {}).custom;
+  const meta = (store.state.manualModelMetaByGateway || {}).custom || {};
   const ids = gatewayId === 'custom' && Array.isArray(saved)
     ? saved.filter((id) => typeof id === 'string' && id.trim())
     : [];
@@ -130,8 +208,24 @@ function renderManualModelList(store) {
   for (const id of ids) {
     const chip = document.createElement('span');
     chip.className = 'manual-model-chip';
+    const mark = document.createElement('span');
+    mark.className = 'manual-model-provider-mark';
+    const providerName = String(meta[id]?.providerName || '').trim() || localeText('自定义供应商', 'Custom provider');
+    mark.innerHTML = providerIcon(providerName, { custom: true, iconDataUrl: meta[id]?.iconDataUrl || '' });
+    const detail = document.createElement('span');
+    detail.className = 'manual-model-provider-detail';
+    const name = document.createElement('span');
+    name.className = 'manual-model-provider-name';
+    name.textContent = providerName;
     const code = document.createElement('code');
     code.textContent = id;
+    detail.append(name, code);
+    const edit = document.createElement('button');
+    edit.type = 'button';
+    edit.className = 'manual-model-edit';
+    edit.dataset.editManualModel = id;
+    edit.textContent = localeText('编辑供应商', 'Edit provider');
+    edit.title = localeText(`编辑 ${id} 的供应商名称与图标`, `Edit provider name and icon for ${id}`);
     const remove = document.createElement('button');
     remove.type = 'button';
     remove.className = 'manual-model-remove';
@@ -139,9 +233,74 @@ function renderManualModelList(store) {
     remove.textContent = '×';
     remove.title = localeText(`删除模型 ${id}`, `Remove model ${id}`);
     remove.setAttribute('aria-label', localeText(`删除模型 ${id}`, `Remove model ${id}`));
-    chip.append(code, remove);
+    chip.append(mark, detail, edit, remove);
     host.appendChild(chip);
   }
+}
+
+function normalizeManualProviderName(value) {
+  return String(value || '').replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 80);
+}
+function paintManualProviderPreview(name, iconDataUrl = '') {
+  const preview = $('#set-manual-provider-icon-preview');
+  if (preview) preview.innerHTML = providerIcon(normalizeManualProviderName(name) || localeText('自定义供应商', 'Custom provider'), { custom: true, iconDataUrl });
+}
+function resetManualModelEditor() {
+  manualModelEditingId = '';
+  manualModelIconDraft = '';
+  const model = $('#set-manual-model');
+  if (model) { model.value = ''; model.disabled = false; }
+  const provider = $('#set-manual-provider-name');
+  if (provider) provider.value = '';
+  const file = $('#set-manual-provider-icon');
+  if (file) file.value = '';
+  paintManualProviderPreview('', '');
+  const add = $('#set-add-model');
+  if (add) add.textContent = localeText('添加模型', 'Add model');
+  const cancel = $('#set-cancel-manual-model-edit');
+  if (cancel) cancel.hidden = true;
+  const clearIcon = $('#set-clear-provider-icon');
+  if (clearIcon) clearIcon.hidden = true;
+}
+function beginManualModelEdit(store, id) {
+  const meta = ((store.state.manualModelMetaByGateway || {}).custom || {})[id] || {};
+  manualModelEditingId = id;
+  manualModelIconDraft = String(meta.iconDataUrl || '');
+  const model = $('#set-manual-model');
+  if (model) { model.value = id; model.disabled = true; }
+  const provider = $('#set-manual-provider-name');
+  if (provider) provider.value = String(meta.providerName || '');
+  const file = $('#set-manual-provider-icon');
+  if (file) file.value = '';
+  paintManualProviderPreview(meta.providerName, manualModelIconDraft);
+  const add = $('#set-add-model');
+  if (add) add.textContent = localeText('保存供应商', 'Save provider');
+  const cancel = $('#set-cancel-manual-model-edit');
+  if (cancel) cancel.hidden = false;
+  const clearIcon = $('#set-clear-provider-icon');
+  if (clearIcon) clearIcon.hidden = false;
+}
+async function manualProviderIconFromFile(file) {
+  if (!file) return '';
+  if (file.size > 128 * 1024) throw new Error(localeText('图标文件不能超过 128 KB。', 'Provider icons must be 128 KB or smaller.'));
+  const name = String(file.name || '').toLowerCase();
+  const mime = String(file.type || '').toLowerCase();
+  if (mime === 'image/svg+xml' || name.endsWith('.svg') || mime === 'text/plain' || name.endsWith('.txt')) {
+    const source = await file.text();
+    if (!/^\s*(?:<\?xml[\s\S]*?\?>\s*)?<svg\b/i.test(source)) throw new Error(localeText('文本图标必须是 SVG 源码。', 'A text icon must contain SVG source.'));
+    const dataUrl = svgDataUrl(sanitizeSvgMarkup(source, { maxChars: 180000 }));
+    if (dataUrl.length > 280000) throw new Error(localeText('清理后的 SVG 过大；请使用更精简的图标。', 'The sanitized SVG is too large; use a more compact icon.'));
+    return dataUrl;
+  }
+  if (!['image/png', 'image/jpeg', 'image/webp'].includes(mime)) throw new Error(localeText('图标仅支持 PNG、JPEG、WebP 或 SVG。', 'Icons must be PNG, JPEG, WebP, or SVG.'));
+  const dataUrl = await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(new Error(localeText('图标文件读取失败。', 'Could not read the icon file.')));
+    reader.readAsDataURL(file);
+  });
+  if (!/^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/i.test(dataUrl)) throw new Error(localeText('图标数据无效。', 'Invalid icon data.'));
+  return dataUrl;
 }
 
 function syncGatewayFields(store) {
@@ -165,6 +324,8 @@ function syncGatewayFields(store) {
   if (note) note.textContent = gatewayModelListLabel(id);
   const manualRow = $('#set-manual-model-row');
   if (manualRow) manualRow.hidden = id !== 'custom';
+  const providerRow = $('#set-manual-provider-row');
+  if (providerRow) providerRow.hidden = id !== 'custom';
   const manual = $('#set-manual-model');
   if (manual) { manual.value = ''; manual.disabled = id !== 'custom'; }
   const addModelButton = $('#set-add-model');
@@ -174,8 +335,13 @@ function syncGatewayFields(store) {
 
 export function openSettingsModal({ store } = {}) {
   const m = $('#settings-modal');
-  if (!m) return;
+  if (!m || !store) return;
+  offlineModelStore = store;
   syncGatewayFields(store);
+  refreshOfflineModelUI(store).catch((error) => {
+    store.state.offlineModelStatusError = error?.message || String(error);
+    renderOfflineModelUI();
+  });
   $('#set-relay').value = readLocal(RELAY_OVERRIDE_KEY) || '';
   syncSeg('#set-theme', store.state.settings.theme || 'light');
   syncSeg('#set-fontsize', document.documentElement.dataset.fontsize || 'medium');
@@ -214,8 +380,15 @@ export function openSettingsModal({ store } = {}) {
   } catch { $('#set-about-store').textContent = '—'; }
   m.classList.add('open');
   setTimeout(() => $('#set-key').focus(), 100);
-  relayCheck().then((msg) => { const el = $('#set-relay-msg'); if (el) el.textContent = msg; });
-  loadBuildInfo().then((info) => paintBuildInfo($('#set-about-commit'), info, APP_VERSION));
+  if (isNetworkOffline()) {
+    const relay = $('#set-relay-msg');
+    if (relay) relay.textContent = localeText('离线状态：不探测中继。', 'Offline: relay probing is disabled.');
+    const build = $('#set-about-commit');
+    if (build) build.textContent = localeText('离线状态：不检查更新或构建清单。', 'Offline: update and build-manifest checks are disabled.');
+  } else {
+    relayCheck().then((msg) => { const el = $('#set-relay-msg'); if (el) el.textContent = msg; });
+    loadBuildInfo().then((info) => paintBuildInfo($('#set-about-commit'), info, APP_VERSION));
+  }
 }
 
 // ── 部署提交（P7 供应链可验证性）：读同源 build.json（Pages 部署时由 tools/build-manifest.mjs 生成）──
@@ -223,6 +396,7 @@ export function openSettingsModal({ store } = {}) {
 // 与线上部署不是同一份（或有人改了文件却没走 Pages 流程），要明说。本地 file:// / 开发服务器没有 build.json 时显示「非 Pages 部署」。
 let buildInfoCache = null;
 export async function loadBuildInfo({ fetchImpl = (typeof fetch === 'function' ? fetch : null), url = 'build.json' } = {}) {
+  if (isNetworkOffline()) return { ok: false, reason: 'offline' };
   if (buildInfoCache) return buildInfoCache;
   if (!fetchImpl) return { ok: false, reason: 'no-fetch' };
   try {
@@ -235,7 +409,10 @@ export async function loadBuildInfo({ fetchImpl = (typeof fetch === 'function' ?
   } catch { return { ok: false, reason: 'network' }; }
 }
 export function formatBuildInfo(info, appVersion) {
-  if (!info || !info.ok) return { text: info && info.reason === 'http-404' ? '非 Pages 部署（无 build.json）' : '未知（拉不到 build.json）', mismatch: false, href: '' };
+  if (!info || !info.ok) {
+    if (info?.reason === 'offline') return { text: '离线状态：未检查部署清单', mismatch: false, href: '' };
+    return { text: info && info.reason === 'http-404' ? '非 Pages 部署（无 build.json）' : '未知（拉不到 build.json）', mismatch: false, href: '' };
+  }
   const short = info.commit.slice(0, 12);
   const mismatch = !!(info.version && appVersion && info.version !== appVersion);
   // 一行放得下：短 sha · 文件数 · 清单前 8 位（整段可悬停 / 点击看全量）；不匹配时另起说明
@@ -272,6 +449,27 @@ function bindSeg(sel, onChange) {
 }
 
 export function mountSettings(store, { onRelayChanged, onKeySaved, onSettingChanged, onGatewayChanged } = {}) {
+  offlineModelStore = store;
+  renderOfflineModelUI();
+  const syncNetworkControls = () => {
+    const offline = isNetworkOffline();
+    const update = $('#set-update-cache');
+    const clear = $('#set-clear-cache');
+    if (update) update.disabled = offline;
+    if (clear) clear.disabled = offline;
+    for (const selector of ['#set-web', '#set-cpp', '#set-image-review', '#set-relay']) {
+      const control = $(selector);
+      if (control) control.disabled = offline;
+    }
+    if (offline && $('#set-cache-update-status')) $('#set-cache-update-status').textContent = localeText('离线状态：不检查更新，也不清除离线应用资源。', 'Offline: update checks are disabled and cached app resources are preserved.');
+  };
+  syncNetworkControls();
+  window.addEventListener('dubhe:network-state', (event) => {
+    if (event.detail?.offline) offlineDownloadController?.abort();
+    renderOfflineModelUI();
+    syncNetworkControls();
+  });
+  window.addEventListener('dubhe:offline-model-status', (event) => renderOfflineModelUI(event.detail));
   // 设置页改了开关 / 档位 / 主题后通知外部（main.js → ui.syncToolbar）：顶栏 pill、能力行、主题按钮要跟着变，
   // 不然「设置里开了快速模式，会话区那颗 ⚡ 还是灰的」（.27 修）
   const changed = (key, value) => { try { onSettingChanged && onSettingChanged(key, value); } catch { /* 不影响设置本身 */ } };
@@ -362,17 +560,40 @@ export function mountSettings(store, { onRelayChanged, onKeySaved, onSettingChan
     const gatewayId = store.state.gatewayId || DEFAULT_GATEWAY_ID;
     if (gatewayId !== 'custom') { toast('手动添加模型 ID 仅适用于自定义网关', 'warn'); return; }
     const input = $('#set-manual-model');
-    const id = String(input && input.value || '').trim();
+    const id = manualModelEditingId || String(input && input.value || '').trim();
+    const providerInput = $('#set-manual-provider-name');
+    const providerName = normalizeManualProviderName(providerInput?.value);
     if (!id) return;
+    if (!providerName) {
+      toast(localeText('请填写供应商名称；未上传图标时会自动显示名称首字母。', 'Enter a provider name; without an uploaded icon its initial will be used.'), 'warn');
+      providerInput?.focus();
+      return;
+    }
     if (!/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$/.test(id)) {
       toast('模型 ID 只能包含字母、数字、点、下划线、冒号、斜杠或连字符', 'err'); return;
     }
     store.state.manualModelsByGateway = store.state.manualModelsByGateway || {};
     const list = Array.isArray(store.state.manualModelsByGateway.custom) ? store.state.manualModelsByGateway.custom : [];
+    if (manualModelEditingId) {
+      if (!list.includes(id)) { resetManualModelEditor(); return toast('该模型已不存在，请重新添加。', 'warn'); }
+      store.state.manualModelMetaByGateway = store.state.manualModelMetaByGateway || {};
+      store.state.manualModelMetaByGateway.custom = store.state.manualModelMetaByGateway.custom || {};
+      store.state.manualModelMetaByGateway.custom[id] = { providerName, iconDataUrl: manualModelIconDraft };
+      renderManualModelList(store);
+      store.notify();
+      onGatewayChanged && onGatewayChanged(gatewayId, { manualModel: id, hasKey: !!store.state.apiKey, metadataChanged: true });
+      changed('manualModelMetadata', id);
+      resetManualModelEditor();
+      toast(localeText('已保存供应商信息。', 'Provider details saved.'), 'ok');
+      return;
+    }
     if (list.includes(id)) { toast(`模型 ID 已存在：${id}`, 'warn'); return; }
     list.push(id);
     store.state.manualModelsByGateway.custom = list;
-    if (input) input.value = '';
+    store.state.manualModelMetaByGateway = store.state.manualModelMetaByGateway || {};
+    store.state.manualModelMetaByGateway.custom = store.state.manualModelMetaByGateway.custom || {};
+    store.state.manualModelMetaByGateway.custom[id] = { providerName, iconDataUrl: manualModelIconDraft };
+    resetManualModelEditor();
     renderManualModelList(store);
     store.notify();
     onGatewayChanged && onGatewayChanged(gatewayId, { manualModel: id, hasKey: !!store.state.apiKey });
@@ -383,8 +604,36 @@ export function mountSettings(store, { onRelayChanged, onKeySaved, onSettingChan
   if (addModelButton) addModelButton.addEventListener('click', addModel);
   const manualInput = $('#set-manual-model');
   if (manualInput) manualInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addModel(); } });
+  const providerNameInput = $('#set-manual-provider-name');
+  if (providerNameInput) providerNameInput.addEventListener('input', () => paintManualProviderPreview(providerNameInput.value, manualModelIconDraft));
+  const providerIconInput = $('#set-manual-provider-icon');
+  if (providerIconInput) providerIconInput.addEventListener('change', async () => {
+    const file = providerIconInput.files?.[0];
+    if (!file) return;
+    try {
+      manualModelIconDraft = await manualProviderIconFromFile(file);
+      paintManualProviderPreview(providerNameInput?.value, manualModelIconDraft);
+    } catch (error) {
+      providerIconInput.value = '';
+      toast(error?.message || localeText('无法读取供应商图标。', 'Could not read the provider icon.'), 'err');
+    }
+  });
+  const cancelManualEdit = $('#set-cancel-manual-model-edit');
+  if (cancelManualEdit) cancelManualEdit.addEventListener('click', resetManualModelEditor);
+  const clearProviderIcon = $('#set-clear-provider-icon');
+  if (clearProviderIcon) clearProviderIcon.addEventListener('click', () => {
+    manualModelIconDraft = '';
+    const file = $('#set-manual-provider-icon');
+    if (file) file.value = '';
+    paintManualProviderPreview($('#set-manual-provider-name')?.value, '');
+  });
   const manualList = $('#set-manual-model-list');
   if (manualList) manualList.addEventListener('click', (e) => {
+    const editButton = e.target.closest('[data-edit-manual-model]');
+    if (editButton && (store.state.gatewayId || DEFAULT_GATEWAY_ID) === 'custom') {
+      beginManualModelEdit(store, editButton.dataset.editManualModel);
+      return;
+    }
     const button = e.target.closest('[data-remove-manual-model]');
     if (!button || (store.state.gatewayId || DEFAULT_GATEWAY_ID) !== 'custom') return;
     const id = button.dataset.removeManualModel;
@@ -393,6 +642,8 @@ export function mountSettings(store, { onRelayChanged, onKeySaved, onSettingChan
     const next = list.filter((item) => item !== id);
     if (next.length) store.state.manualModelsByGateway.custom = next;
     else delete store.state.manualModelsByGateway.custom;
+    if (store.state.manualModelMetaByGateway?.custom) delete store.state.manualModelMetaByGateway.custom[id];
+    if (manualModelEditingId === id) resetManualModelEditor();
     if (store.state.model === id) {
       store.state.model = defaultModelForGateway('custom');
       const active = (store.state.sessions || []).find((s) => s.id === store.state.activeSessionId);
@@ -405,7 +656,64 @@ export function mountSettings(store, { onRelayChanged, onKeySaved, onSettingChan
     toast(`已移除模型 ID：${id}`, 'ok');
   });
 
+  const offlineDownloadButton = $('#set-offline-model-download');
+  if (offlineDownloadButton) offlineDownloadButton.addEventListener('click', async () => {
+    if (isNetworkOffline()) {
+      toast(localeText('当前离线，下载已停止。联网后再手动开始。', 'Offline: the download was not started. Reconnect and start it manually.'), 'warn');
+      return;
+    }
+    if (offlineModelDownloadBusy) return;
+    offlineDownloadController = new AbortController();
+    offlineModelDownloadBusy = true;
+    offlineDownloadProgress = { loaded: 0, total: OFFLINE_MODEL_SIZE_BYTES };
+    renderOfflineModelUI();
+    try {
+      await downloadOfflineModel({
+        signal: offlineDownloadController.signal,
+        onProgress: (progress) => { offlineDownloadProgress = progress; renderOfflineModelUI(); },
+      });
+      const status = await syncOfflineModelAvailability(offlineModelStore, { notify: true });
+      renderOfflineModelUI(status);
+      if (status.available) toast(localeText('本地模型下载完成，可以断网后使用。', 'Model downloaded. You can now use it offline.'), 'ok', 4200);
+      else toast(localeText('下载完成，但本地缓存校验未通过。', 'Download finished, but local cache verification failed.'), 'err', 5000);
+    } catch (error) {
+      if (error?.name === 'AbortError') toast(localeText('模型下载已取消；未完成的临时数据不会作为可用模型。', 'Model download cancelled; partial data will not be treated as an installed model.'), 'warn');
+      else toast(error?.message || String(error), 'err', 6500);
+      await refreshOfflineModelUI(offlineModelStore);
+    } finally {
+      offlineDownloadController = null;
+      offlineModelDownloadBusy = false;
+      offlineDownloadProgress = null;
+      renderOfflineModelUI();
+    }
+  });
+  const offlineCancelButton = $('#set-offline-model-cancel');
+  if (offlineCancelButton) offlineCancelButton.addEventListener('click', () => offlineDownloadController?.abort());
+  const offlineRemoveButton = $('#set-offline-model-remove');
+  if (offlineRemoveButton) offlineRemoveButton.addEventListener('click', async () => {
+    if (!offlineModelStore?.state.offlineModelAvailable) return;
+    if (!window.confirm(localeText('从此浏览器的本地存储中删除离线模型？此操作不会联网。', 'Remove the offline model from this browser’s local storage? This will not access the network.'))) return;
+    offlineRemoveButton.disabled = true;
+    try {
+      await removeOfflineModel();
+      if (!isNetworkOffline() && offlineModelStore.state.model === OFFLINE_MODEL_ID) {
+        offlineModelStore.state.model = defaultModelForGateway(offlineModelStore.state.gatewayId || DEFAULT_GATEWAY_ID);
+        const active = (offlineModelStore.state.sessions || []).find((session) => session.id === offlineModelStore.state.activeSessionId);
+        if (active && active.model === OFFLINE_MODEL_ID) active.model = offlineModelStore.state.model;
+      }
+      await refreshOfflineModelUI(offlineModelStore);
+      offlineModelStore.notify();
+      toast(localeText('本地模型已删除。', 'Local model removed.'), 'ok');
+    } catch (error) { toast(error?.message || String(error), 'err', 5000); }
+    finally { renderOfflineModelUI(); }
+  });
+
   $('#set-relay').addEventListener('change', async () => {
+    if (isNetworkOffline()) {
+      const status = $('#set-relay-msg');
+      if (status) status.textContent = localeText('离线状态：未保存 / 未探测中继地址。', 'Offline: relay address was not saved or probed.');
+      return;
+    }
     const v = $('#set-relay').value.trim();
     if (v) writeLocal(RELAY_OVERRIDE_KEY, v); else removeLocal(RELAY_OVERRIDE_KEY);
     const msg = await relayCheck();
@@ -509,6 +817,8 @@ export function mountSettings(store, { onRelayChanged, onKeySaved, onSettingChan
   onLanguageChange(() => {
     for (const sel of ['#set-image-model', '#set-vision-model', '#set-av-model']) { const el = $(sel); if (el) el._lang = ''; }
     syncMultimodalSelects(store);
+    renderOfflineModelUI();
+    renderManualModelList(store);
   });
 
   // 清除临时缓存：只动「丢了也能重建」的东西——Cache Storage（SW 离线资源：模型 / 审核资产 / 静态文件）、sessionStorage、
@@ -542,6 +852,7 @@ export function mountSettings(store, { onRelayChanged, onKeySaved, onSettingChan
   };
   const updateFailureText = (error) => {
     switch (error?.code) {
+      case 'offline': return localeText('离线状态下不会检查或安装更新。', 'Updates are not checked or installed while offline.');
       case 'manifest-network': return localeText('检查失败：无法连接到线上版本清单。', 'Could not reach the online build manifest.');
       case 'manifest-http': return localeText('线上版本清单暂不可用，请稍后再试。', 'The online build manifest is unavailable. Try again later.');
       case 'manifest-invalid': return localeText('线上版本清单无效，请稍后重试。', 'The online build manifest is invalid. Try again later.');
@@ -554,6 +865,10 @@ export function mountSettings(store, { onRelayChanged, onKeySaved, onSettingChan
     }
   };
   if (updateCacheBtn) updateCacheBtn.addEventListener('click', async () => {
+    if (isNetworkOffline()) {
+      setUpdateStatus(localeText('离线状态：不检查更新，也不清除离线应用资源。', 'Offline: update checks are disabled and cached app resources are preserved.'));
+      return;
+    }
     updateCacheBtn.disabled = true;
     if (cacheBtn) cacheBtn.disabled = true;
     updateCacheBtn.textContent = localeText('检查中…', 'Checking…');
@@ -580,12 +895,16 @@ export function mountSettings(store, { onRelayChanged, onKeySaved, onSettingChan
     } catch (error) {
       setUpdateStatus(updateFailureText(error));
     } finally {
-      updateCacheBtn.disabled = false;
+      updateCacheBtn.disabled = isNetworkOffline();
       updateCacheBtn.textContent = localeText('检查并更新', 'Check & update');
-      if (cacheBtn) cacheBtn.disabled = false;
+      if (cacheBtn) cacheBtn.disabled = isNetworkOffline();
     }
   });
   if (cacheBtn) cacheBtn.addEventListener('click', async () => {
+    if (isNetworkOffline()) {
+      setUpdateStatus(localeText('离线状态：保留离线应用资源；联网后再清理。', 'Offline: cached app resources are preserved; clear them when online.'));
+      return;
+    }
     cacheBtn.disabled = true;
     if (updateCacheBtn) updateCacheBtn.disabled = true;
     const label = cacheBtn.textContent;
@@ -598,13 +917,18 @@ export function mountSettings(store, { onRelayChanged, onKeySaved, onSettingChan
       onRelayChanged && onRelayChanged();
     } catch (err) {
       toast(localeText(`清除失败：${err && err.message ? err.message : String(err)}`, `Clear failed: ${err && err.message ? err.message : String(err)}`), 'err', 5000);
-    } finally { cacheBtn.disabled = false; cacheBtn.textContent = label; if (updateCacheBtn) updateCacheBtn.disabled = false; }
+    } finally { cacheBtn.disabled = isNetworkOffline(); cacheBtn.textContent = label; if (updateCacheBtn) updateCacheBtn.disabled = isNetworkOffline(); }
   });
 
 }
 
 // 临时缓存清理（纯函数化，便于单测）：返回清掉了什么。任何一项不可用（非 https / 旧浏览器）都跳过而不是报错。
 export async function clearTransientCaches() {
+  if (isNetworkOffline()) {
+    const error = new Error('Offline mode preserves cached application resources.');
+    error.code = 'offline';
+    throw error;
+  }
   const out = { cacheStores: 0, cacheEntries: 0, sessionKeys: 0, relayProbeReset: false };
   // Forget the in-memory manifest as well, and let the next visit rebuild the cache.
   try {
@@ -637,6 +961,11 @@ export async function clearThenUpdateScriptCache({
   update = updateScriptCache,
   options = {},
 } = {}) {
+  if (isNetworkOffline()) {
+    const error = new Error('Offline mode disables update and cache-refresh operations.');
+    error.code = 'offline';
+    throw error;
+  }
   let cleared;
   try { cleared = await clear(); }
   catch (cause) {

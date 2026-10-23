@@ -1,6 +1,8 @@
 // ─── 上下文窗口管理（纯函数，可单测）──────────────────────────────────
 // 职责：token 估算、按轮次压缩历史（绝不产生孤儿 tool 消息）、工具结果截断
 
+import { OFFLINE_MODEL_CONTEXT_BUDGET, isOfflineModelId } from './offline-model-config.js';
+
 const CJK_RE = /[\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]/g;
 
 function textTokens(s) {
@@ -52,6 +54,7 @@ const BUDGETS = [
   [/^grok/, 90000],
 ];
 export function contextBudgetFor(modelId) {
+  if (isOfflineModelId(modelId)) return OFFLINE_MODEL_CONTEXT_BUDGET;
   const m = String(modelId || '').toLowerCase();
   for (const [re, budget] of BUDGETS) if (re.test(m)) return budget;
   return 90000;

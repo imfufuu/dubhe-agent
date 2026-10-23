@@ -628,6 +628,54 @@ test('文档扫描：算法核（合成纸面检出四角）、PDF 结构、入�
     assert.ok(Math.abs(det[i].x - quad[i].x) <= 2 && Math.abs(det[i].y - quad[i].y) <= 2, `角点 ${i} 偏差过大`);
   }
   assert.equal(m.detectDocCorners({ width: w, height: h, data: new Uint8ClampedArray(w * h * 4).fill(200) }), null, '低对比（纯色）不乱猜');
+
+  // 强阴影、纹理背景与文字遮挡下仍取纸面凸包四角；黑纸白底也支持反极性检测。
+  const scene = (sw, sh, corners, valueAt) => {
+    const pixels = new Uint8ClampedArray(sw * sh * 4);
+    const inPoly = (x, y) => {
+      let c = false;
+      for (let i = 0, j = corners.length - 1; i < corners.length; j = i++) {
+        const a = corners[i], b = corners[j];
+        if (((a.y > y) !== (b.y > y)) && x < ((b.x - a.x) * (y - a.y)) / (b.y - a.y) + a.x) c = !c;
+      }
+      return c;
+    };
+    for (let y = 0; y < sh; y++) for (let x = 0; x < sw; x++) {
+      const p = (y * sw + x) * 4, value = valueAt(x, y, inPoly(x, y));
+      pixels[p] = pixels[p + 1] = pixels[p + 2] = value; pixels[p + 3] = 255;
+    }
+    return { width: sw, height: sh, data: pixels };
+  };
+  const skew = [{ x: 45, y: 28 }, { x: 275, y: 45 }, { x: 260, y: 212 }, { x: 27, y: 193 }];
+  const shadowedPage = scene(320, 240, skew, (x, y, paper) => {
+    if (!paper) return 35 + ((x * 17 + y * 11) % 24);
+    if (x > 78 && x < 245 && y > 70 && y < 185 && y % 19 < 4) return 25;
+    return 238 - x * 0.22 - y * 0.05 + ((x * 3 + y * 5) % 5);
+  });
+  const robust = m.detectDocCorners(shadowedPage);
+  assert.ok(robust, '阴影与文字覆盖时仍检测到纸面');
+  for (let i = 0; i < 4; i++) assert.ok(Math.abs(robust[i].x - skew[i].x) <= 3 && Math.abs(robust[i].y - skew[i].y) <= 3, `阴影角点 ${i} 偏差过大：${JSON.stringify(robust[i])}`);
+  const darkPage = scene(320, 240, skew, (x, y, paper) => paper ? 35 + ((x + y) % 12) : 225 - ((x * 2 + y * 3) % 14));
+  const darkDetected = m.detectDocCorners(darkPage);
+  assert.ok(darkDetected, '深色纸面 / 浅色背景反极性检测');
+  for (let i = 0; i < 4; i++) assert.ok(Math.abs(darkDetected[i].x - skew[i].x) <= 3 && Math.abs(darkDetected[i].y - skew[i].y) <= 3, `深色页角点 ${i} 偏差过大`);
+  const gradientOnly = scene(320, 240, [], (x) => 25 + Math.round(210 * x / 319));
+  assert.equal(m.detectDocCorners(gradientOnly), null, '纯渐变背景不当作文档');
+
+  // 二值阈值按局部光照适配，浅色抗锯齿文字在强阴影两端都保持为黑。
+  const monoW = 240, monoH = 64, monoData = new Uint8ClampedArray(monoW * monoH * 4);
+  for (let y = 0; y < monoH; y++) for (let x = 0; x < monoW; x++) {
+    const background = 238 - Math.round(0.42 * x);
+    const ink = y >= 26 && y <= 29 && x >= 18 && x <= 222;
+    const value = ink ? background - 28 : background;
+    const p = (y * monoW + x) * 4;
+    monoData[p] = monoData[p + 1] = monoData[p + 2] = value; monoData[p + 3] = 255;
+  }
+  const mono = m.applyScanFilter({ width: monoW, height: monoH, data: monoData }, 'mono');
+  for (const x of [40, 100, 160, 215]) {
+    assert.equal(mono.data[(27 * monoW + x) * 4], 0, `阴影位置 x=${x} 的浅色字迹应清晰变黑`);
+    assert.equal(mono.data[(12 * monoW + x) * 4], 255, `纸面背景 x=${x} 应保持白色`);
+  }
   const H = m.computeHomography(det, 200, 200);
   assert.ok(H && H.length === 9);
   const warp = m.warpImageData({ width: w, height: h, data }, H, 120, 120);
@@ -659,6 +707,9 @@ test('文档扫描：算法核（合成纸面检出四角）、PDF 结构、入�
   assert.match(ui, /主画布显示完整原图/, '四角控件必须与完整源图保持同一坐标系');
   assert.match(ui, /校正预览/, '扫描页保留透视矫正后的结果预览');
   const geometry = await import('../js/ui-scanner.js');
+  assert.equal(geometry.SCANNER_HANDLE_HIT_RADIUS, 46);
+  assert.equal(geometry.nearestScannerHandle({ x: 45, y: 0 }, [{ x: 0, y: 0 }]), 0, '扩大的触控热区覆盖 45 CSS px');
+  assert.equal(geometry.nearestScannerHandle({ x: 47, y: 0 }, [{ x: 0, y: 0 }]), -1, '热区有明确边界');
   const metrics = geometry.scannerDisplayMetrics(
     { left: 130, top: 90, width: 800, height: 450 },
     { left: 110, top: 70, width: 840, height: 490 },
@@ -734,7 +785,7 @@ test('2026.10.21：knowledge_search 独立消息块（toolflow 家族 / UI 接�
   assert.match(read('../js/icons.js'), /search: ico\(/);
 });
 
-test('2026.10.22：快捷图表静态显示、赞踩无灰底、对话主区/侧栏/面板同为米白且输入框不变', () => {
+test('2026.10.22：快捷图表静态显示、赞踩无灰底、对话米白与输入框白色及编辑器优化', () => {
   const css = read('../css/styles.css');
   const lightbox = read('../js/ui-lightbox.js');
   assert.match(lightbox, /staticChart: !!expandChart\.closest\('\.md-chart'\)/);
@@ -750,8 +801,14 @@ test('2026.10.22：快捷图表静态显示、赞踩无灰底、对话主区/侧
   assert.match(css, /\.main \{[^}]*background: var\(--conversation-bg, var\(--bg\)\)/);
   assert.match(css, /\.sidebar \{[^}]*background: var\(--conversation-bg, var\(--bg\)\)/);
   assert.match(css, /\.panel \{[^}]*background: var\(--conversation-bg, var\(--bg\)\)/);
-  assert.match(css, /\.composer \{[^}]*background: var\(--bg-soft\)/);
+  assert.match(css, /:root\s*\{[^}]*--bg:\s*#ffffff/s, '浅色主题的 --bg 是白色');
+  assert.match(css, /\.composer \{[^}]*background: var\(--bg\)/, '输入容器使用白色主题底色');
   assert.match(css, /#composer-input \{[^}]*background: none/);
+  assert.match(css, /\.photo-editor \{[^}]*height:\s*min\(96dvh, 900px\)/, '照片编辑器给工作区分配更充足的视口高度');
+  assert.match(css, /\.scan-bar \{[^}]*grid-template-areas:\s*"filters actions session"/s, '扫描底栏把拍摄操作置于中央主位');
+  assert.match(css, /\.reasoning\.expanded > \.chip-detail::before[\s\S]*?background: var\(--line-2\)/, '展开思考过程时显示纵向层级线');
+  const scannerUi = read('../js/ui-scanner.js');
+  assert.match(scannerUi, /data-r="reshoot"[\s\S]*?data-r="shoot"[\s\S]*?data-r="toggle-preview"/, '拍摄主按钮位于辅助操作之前');
 });
 
 test('导航、对话与文档页统一品牌图标规格；首页不加版本徽章，字标保持细字重', () => {
@@ -786,7 +843,8 @@ test('思考强度菜单左侧带浅灰细线，不影响各档位按钮布局',
 test('管理员 API Key 弹窗仅对 TeamoRouter 管理员别名显示暗号输入；暗号不以明文写入源码', () => {
   const app = read('../app.html'), ui = read('../js/ui.js'), admin = read('../js/adminkey.js');
   assert.match(app, /id="key-admin-phrase-wrap" class="key-admin-phrase-wrap" hidden/);
-  assert.match(app, /id="key-admin-phrase" class="key-input mono" type="password"/);
+  assert.match(app, /id="key-admin-phrase"[^>]*type="text"[^>]*inputmode="text"/);
+  assert.doesNotMatch(app.match(/<input id="key-admin-phrase"[^>]*>/)?.[0] || '', /type="password"/, 'Chinese admin phrases must allow normal IME text composition');
   assert.match(ui, /isAdminAlias\(keyInput\.value\.trim\(\)\).*DEFAULT_GATEWAY_ID/);
   assert.match(ui, /unlockAdminKey\(typed, \{ phrase \}\)/);
   assert.equal(translateUI('管理员暗号', 'en'), 'Admin phrase');

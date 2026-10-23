@@ -1,6 +1,7 @@
 // ─── 供应商图标：本地 SVG ───────────────────────────────────────────────
 // Wikimedia 与用户提供图稿的来源、许可提示见 README「图标来源与版权」及 THIRD-PARTY-NOTICES.md。
 // mono = 纯黑 Logo（暗色主题下 CSS 反色）；word = 横排 wordmark（宽度自适应）
+import { sanitizeSvgMarkup, svgDataUrl } from './svg-safety.js';
 
 export const PROVIDER_ICON = {
   Anthropic: { file: 'anthropic.svg', mono: false, word: false }, // Claude 符号（品牌珊瑚色）
@@ -73,13 +74,32 @@ export const ICON = {
   git: ico('<circle cx="6.5" cy="6.5" r="2.5"/><circle cx="6.5" cy="17.5" r="2.5"/><circle cx="17.5" cy="12" r="2.5"/><path d="M6.5 9v6"/><path d="M9 6.5h3.5a2 2 0 0 1 2 2v1.5"/><path d="M9 17.5h3.5a2 2 0 0 0 2-2V14"/>'),
 };
 
-export function providerIcon(provider) {
+function iconEscape(value) {
+  return String(value || '').replace(/[&<>\"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;', "'": '&#39;' })[c]);
+}
+function safeCustomIconDataUrl(value) {
+  const raw = String(value || '');
+  if (!raw || raw.length > 300000) return '';
+  if (/^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/i.test(raw)) return raw;
+  const prefix = 'data:image/svg+xml;charset=utf-8,';
+  if (!raw.toLowerCase().startsWith(prefix)) return '';
+  try { return svgDataUrl(sanitizeSvgMarkup(decodeURIComponent(raw.slice(prefix.length)), { maxChars: 180000 })); }
+  catch { return ''; }
+}
+export function providerIcon(provider, { custom = false, iconDataUrl = '' } = {}) {
+  const label = String(provider || '?').trim() || '?';
+  if (custom) {
+    const safeIcon = safeCustomIconDataUrl(iconDataUrl);
+    if (safeIcon) return `<img class="p-icon custom-provider-icon" src="${iconEscape(safeIcon)}" alt="" loading="eager" decoding="async">`;
+    const initial = Array.from(label)[0] || '?';
+    return `<span class="p-icon-fallback custom-provider-initial" aria-label="${iconEscape(label)}">${iconEscape(initial.toLocaleUpperCase())}</span>`;
+  }
   if (provider === 'Moderator') {
     return `<svg class="p-icon moderator" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-label="Moderator"><path d="M12 3.2 19 6v5.2c0 4.4-2.8 7.9-7 9.6-4.2-1.7-7-5.2-7-9.6V6l7-2.8Z"/><path d="m8.8 12.1 2.1 2.1 4.5-5"/></svg>`;
   }
   const def = PROVIDER_ICON[provider];
-  if (!def) return `<span class="p-icon-fallback">${String(provider || '?').slice(0, 1)}</span>`;
+  if (!def) return `<span class="p-icon-fallback">${iconEscape(Array.from(label)[0] || '?')}</span>`;
   const cls = ['p-icon', def.mono ? 'mono' : '', def.word ? 'word' : '', def.white ? 'white' : ''].filter(Boolean).join(' ');
   // These same-origin SVGs are pre-cached by the service worker; eager loading avoids a blank logo when the picker opens.
-  return `<img class="${cls}" src="assets/icons/${def.file}" alt="${provider}" loading="eager" decoding="async">`;
+  return `<img class="${cls}" src="assets/icons/${def.file}" alt="${iconEscape(provider)}" loading="eager" decoding="async">`;
 }

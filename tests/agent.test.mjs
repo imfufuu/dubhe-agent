@@ -10673,7 +10673,7 @@ test('runLoop = premise → plan → select → loop → finalize：五个具名
     "if (!(await stagePremise())) return;", "stagePlan();", "stageSelect();", "await stageLoop();", "stageFinalize();"];
   let last = -1;
   for (const tok of order) { const i = src.indexOf(tok); assert.ok(i > last, `阶段定义 / 调用顺序错误：${tok}`); last = i; }
-  assert.match(src, /if \(!apiKey\) \{ emit\('onNeedKey'\); return false; \}/, 'premise 返回 false 表示本轮不开始');
+  assert.match(src, /if \(!apiKey && !offlineOnly\) \{ emit\('onNeedKey'\); return false; \}/, 'premise 返回 false 表示本轮不开始；离线本地模型不要求远程 Key');
   assert.match(src, /exec\.machine\.audit\.record\('turn-pipeline', \{ order: pipeline\.order, timings: \{ \.\.\.pipeline\.timings \} \}\)/);
   assert.match(src, /try \{ stageFinalize\(\); \} finally \{ stageDone\('finalize'\); \}/, 'finalize 自身也计时，且异常不吞');
   const tf = fsp.readFileSync(new URL('../js/turnfinalizer.js', import.meta.url), 'utf8');

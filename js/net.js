@@ -13,6 +13,7 @@
 
 // 当前选中的 relay endpoints 包；初始指向同源，探测成功后替换为公共 relay 地址
 import { readLocal } from './legacy-keys.js';
+import { isNetworkOffline } from './offline-network.js';
 
 let RELAY = { base: '', fetch: '/api/fetch', git: '/api/git', health: '/api/health' };
 let activeRelay = null; // { base, label, endpoints, capabilities }
@@ -86,6 +87,13 @@ async function probeRelayEndpoint(endpoints, signal, timeoutMs = 3500) {
 
 /** 探测可用中继（成功结果缓存；失败结果缓存 RELAY_FAIL_TTL_MS 后自动重探；并发调用共享同一个探测） */
 export async function relayAvailable(signal) {
+  if (isNetworkOffline()) {
+    activeRelay = null;
+    featureRelays = { search: null, crawl: null, file: null };
+    relayOk = false;
+    relayFailedAt = nowFn();
+    return false;
+  }
   if (relayOk === true) return true;
   if (relayOk === false && relayFailedAt && (nowFn() - relayFailedAt) < RELAY_FAIL_TTL_MS) return false;
   if (relayProbe) return relayProbe;

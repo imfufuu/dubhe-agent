@@ -13,7 +13,22 @@ const META = new URL('__dubhe_cache_manifest__', SCOPE).href;
 const PYODIDE_BASE = 'https://cdn.jsdelivr.net/pyodide/v0.26.4/full/';
 let manifestPromise;
 let cacheDisabled = false;
+let networkOffline = self.navigator?.onLine === false;
 let lastRecovery = 0;
+const activeNetworkControllers = new Set();
+const isNetworkOffline = () => networkOffline || self.navigator?.onLine === false;
+function assertOnline() { if (isNetworkOffline()) throw Error('Offline mode blocks network access.'); }
+function setNetworkOffline(value) {
+  networkOffline = value === true;
+  if (networkOffline) for (const controller of activeNetworkControllers) controller.abort();
+}
+async function networkFetch(input, options = {}) {
+  assertOnline();
+  const controller = new AbortController();
+  activeNetworkControllers.add(controller);
+  try { return await fetch(input, { ...options, signal: controller.signal }); }
+  finally { activeNetworkControllers.delete(controller); }
+}
 let cacheProgress = { phase: 'idle', version: DEPLOY_VERSION, completed: 0, total: 0 };
 let progressQueue = Promise.resolve();
 function reportCacheProgress(next, broadcast = true) {
@@ -30,10 +45,14 @@ function reportCacheProgress(next, broadcast = true) {
   return progressQueue;
 }
 self.addEventListener('message', event => {
+  if (event.data?.type === 'dubhe-network-state') {
+    setNetworkOffline(event.data.offline === true);
+    return;
+  }
   if (event.data?.type === 'dubhe-cache-cleared') { cacheDisabled = true; manifestPromise = null; }
   else if (event.data?.type === 'dubhe-cache-progress-request') {
     try { event.source?.postMessage({ ...cacheProgress, type: 'dubhe-cache-progress' }); } catch { /* requesting tab closed */ }
-  } else if (event.data?.type === 'dubhe-cache-refresh-request' && event.data.version === DEPLOY_VERSION && event.waitUntil) {
+  } else if (event.data?.type === 'dubhe-cache-refresh-request' && event.data.version === DEPLOY_VERSION && event.waitUntil && !isNetworkOffline()) {
     event.waitUntil(prepare({ notifyProgress: true }).catch(async error => {
       await reportCacheProgress({ phase: 'error', completed: cacheProgress.completed || 0, total: cacheProgress.total || 0 });
       throw error;
@@ -50,6 +69,9 @@ function corePath(path) {
   return /^js\/.*\.m?js$/.test(path) || /^css\/.*\.css$/.test(path)
     || /^(?:index|app|docs)\.html$/.test(path) || /^demo\/.*\.(?:html|css)$/.test(path)
     || /^assets\/(?:md|hljs|katex)\/.*\.(?:js|css)$/.test(path)
+    || /^assets\/(?:skills\/.*\.(?:json|md)|knowledge\/index\.json)$/.test(path)
+    || /^assets\/vendor\/wllama\/wllama-3\.8\.1\.(?:js|wasm)$/.test(path)
+    || /^assets\/vendor\/office\/[^/]+\.js$/.test(path)
     || /^assets\/icons\/[^/]+\.svg$/i.test(path) || /^assets\/app-icon-\d+\.png$/i.test(path)
     || /^assets\/katex\/fonts\/.*\.(?:woff2?|ttf|otf)$/i.test(path)
     || /^fonts\/.*\.(?:css|woff2?|ttf|otf)$/i.test(path);
@@ -75,8 +97,11 @@ function validateManifest(m) {
   return m;
 }
 async function timedFetch(url, options = {}) {
+  assertOnline();
   const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 20000);
-  try { return await fetch(url, { ...options, signal: controller.signal }); } finally { clearTimeout(timer); }
+  activeNetworkControllers.add(controller);
+  try { return await fetch(url, { ...options, signal: controller.signal }); }
+  finally { clearTimeout(timer); activeNetworkControllers.delete(controller); }
 }
 async function matches(response, entry) {
   if (!response.ok || response.type === 'opaque') return false;
@@ -100,6 +125,7 @@ async function metadata(cache) {
 function currentManifest() {
   return manifestPromise ||= caches.open(CACHE).then(metadata).then(async m => {
     if (m) return m;
+    if (isNetworkOffline()) { manifestPromise = null; return null; }
     // Browser storage may be evicted independently of SW registration. Rebuild
     // once, with backoff on quota/network failure; never use a different build.
     if (!cacheDisabled && Date.now() - lastRecovery > 60000) {
@@ -111,6 +137,7 @@ function currentManifest() {
   });
 }
 async function prepare({ notifyProgress = false } = {}) {
+  assertOnline();
   if (notifyProgress) await reportCacheProgress({ phase: 'manifest', completed: 0, total: 0 });
   const response = await timedFetch(new URL('build.json', SCOPE).href, { cache: 'no-store', credentials: 'omit' });
   if (!response.ok) throw Error('No deployment manifest; leave development pages uncached');
@@ -171,6 +198,7 @@ async function prepare({ notifyProgress = false } = {}) {
   } catch (error) { await caches.delete(CACHE); throw error; }
 }
 self.addEventListener('install', event => {
+  if (isNetworkOffline()) return;
   event.waitUntil(prepare({ notifyProgress: true }).catch(async error => {
     await reportCacheProgress({ phase: 'error', completed: cacheProgress.completed || 0, total: cacheProgress.total || 0 });
     throw error;
@@ -200,29 +228,51 @@ function singleFlight(key, work) {
   if (!inflight.has(key)) inflight.set(key, work().finally(() => inflight.delete(key)));
   return inflight.get(key).then(response => response.clone());
 }
+async function offlineCacheOnly(request, path, external) {
+  const unavailable = () => new Response('Offline mode: resource is not present in the local cache.', {
+    status: 503,
+    headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' },
+  });
+  if (cacheDisabled || request.method !== 'GET' || request.headers.has('Authorization') || request.headers.has('Range')) return unavailable();
+  if (!path && !external) return unavailable();
+  const key = external ? request.url : new URL(path, SCOPE).href;
+  const names = await caches.keys();
+  const candidates = [CACHE, ...names.filter((name) => name.startsWith(PREFIX) && name !== CACHE).reverse()];
+  for (const name of candidates) {
+    try {
+      const hit = await (await caches.open(name)).match(key);
+      if (hit) return hit;
+    } catch { /* try the next known static cache */ }
+  }
+  return unavailable();
+}
 self.addEventListener('fetch', event => {
   const req = event.request;
-  if (cacheDisabled || req.method !== 'GET' || req.headers.has('Authorization') || req.headers.has('Range')) return;
   const path = relativePath(req.url), external = lazyExternal(req.url);
+  if (isNetworkOffline()) {
+    event.respondWith(offlineCacheOnly(req, path, external));
+    return;
+  }
+  if (cacheDisabled || req.method !== 'GET' || req.headers.has('Authorization') || req.headers.has('Range')) return;
   if ((!path && !external) || (external && req.credentials === 'include')) return;
   event.respondWith((async () => {
     let manifest = await currentManifest();
     // Storage eviction / manual clearing: recover via network, never treat APIs as static.
-    if (!manifest) return fetch(req, { cache: 'no-store' });
-    if (path && !manifest.files[path]) return fetch(req);
+    if (!manifest) return networkFetch(req, { cache: 'no-store' });
+    if (path && !manifest.files[path]) return networkFetch(req);
     const key = external ? req.url : new URL(path, SCOPE).href;
     let cache = await caches.open(CACHE);
     const hit = await cache.match(key);
     if (hit) return hit; // no conditional request and no background re-download
     if (!await cache.match(META)) {
       manifestPromise = null; manifest = await currentManifest();
-      if (!manifest) return fetch(req, { cache: 'no-store' });
+      if (!manifest) return networkFetch(req, { cache: 'no-store' });
       cache = await caches.open(CACHE);
       const recovered = await cache.match(key); if (recovered) return recovered;
     }
     return singleFlight(key, async () => {
       const response = external
-        ? await fetch(req.url, { mode: 'cors', credentials: 'omit', cache: 'force-cache' }).catch(() => fetch(req))
+        ? await networkFetch(req.url, { mode: 'cors', credentials: 'omit', cache: 'force-cache' }).catch(() => networkFetch(req))
         : await verified(path, manifest.files[path]);
       if (!cacheDisabled && response.ok && response.type !== 'opaque') {
         try { await cache.put(key, response.clone()); } catch { /* quota/eviction: current use remains available */ }

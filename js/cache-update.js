@@ -1,6 +1,8 @@
 // One-click, manifest-aware static-cache refresh. The Service Worker remains
 // waiting while other tabs are active; this module only downloads and verifies
 // the next cache, never interrupts the running page.
+import { isNetworkOffline } from './offline-network.js';
+
 const DEFAULT_SCOPE = new URL('../', import.meta.url).href;
 const VERSION_RE = /^\d{4}\.\d{1,2}\.\d{1,2}\.\d+$/;
 const META_NAME = '__dubhe_cache_manifest__';
@@ -70,6 +72,8 @@ export async function updateScriptCache({
   now = Date.now,
   onProgress = () => {},
 } = {}) {
+  const assertOnline = () => { if (isNetworkOffline()) throw makeError('offline'); };
+  assertOnline();
   if (!validVersion(currentVersion)) throw makeError('invalid-current-version');
   if (typeof fetchImpl !== 'function') throw makeError('fetch-unavailable');
 
@@ -80,12 +84,14 @@ export async function updateScriptCache({
   manifestUrl.searchParams.set('check', String(now()));
 
   let response;
-  try { response = await fetchImpl(manifestUrl.href, { cache: 'no-store', credentials: 'omit' }); }
-  catch (error) { throw makeError('manifest-network', error); }
+  try { assertOnline(); response = await fetchImpl(manifestUrl.href, { cache: 'no-store', credentials: 'omit' }); }
+  catch (error) { if (error?.code === 'offline') throw error; throw makeError('manifest-network', error); }
+  assertOnline();
   if (!response?.ok) throw makeError('manifest-http');
 
   let manifest;
   try { manifest = await response.json(); } catch (error) { throw makeError('manifest-invalid', error); }
+  assertOnline();
   const latestVersion = String(manifest?.version || '');
   if (manifest?.schema !== 'dubhe-build-manifest/1' || !validVersion(latestVersion) || !manifest.files || typeof manifest.files !== 'object') {
     throw makeError('manifest-invalid');
@@ -107,9 +113,11 @@ export async function updateScriptCache({
 
   let registration;
   try {
+    assertOnline();
     registration = await serviceWorker.getRegistration(scopeUrl);
     if (!registration) {
       if (typeof serviceWorker.register !== 'function') return { status: 'unsupported', version: latestVersion };
+      assertOnline();
       registration = await serviceWorker.register(new URL('sw.js', scopeUrl).href, { scope: scopeUrl, updateViaCache: 'none' });
     }
   } catch (error) { throw makeError('registration-failed', error); }
@@ -120,12 +128,15 @@ export async function updateScriptCache({
     let settled = false;
     let timer = 0;
     const watched = new WeakSet();
+    const networkEvents = globalThis.window && typeof globalThis.window.addEventListener === 'function' ? globalThis.window : null;
+    const onNetworkState = (event) => { if (event?.detail?.offline || isNetworkOffline()) finish(reject, makeError('offline')); };
     const finish = (callback, value) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
       serviceWorker.removeEventListener?.('message', onMessage);
       registration.removeEventListener?.('updatefound', onUpdateFound);
+      networkEvents?.removeEventListener?.('dubhe:network-state', onNetworkState);
       callback(value);
     };
     const onMessage = (event) => {
@@ -161,11 +172,13 @@ export async function updateScriptCache({
 
     serviceWorker.addEventListener?.('message', onMessage);
     registration.addEventListener?.('updatefound', onUpdateFound);
+    networkEvents?.addEventListener?.('dubhe:network-state', onNetworkState);
+    if (isNetworkOffline()) { finish(reject, makeError('offline')); return; }
     watchWorker(registration.installing);
     watchWorker(registration.waiting);
     watchWorker(registration.active);
 
-    Promise.resolve().then(() => registration.update()).then(async () => {
+    Promise.resolve().then(() => { assertOnline(); return registration.update(); }).then(async () => {
       if (settled) return;
       watchWorker(registration.installing);
       watchWorker(registration.waiting);
@@ -182,6 +195,7 @@ export async function updateScriptCache({
       }
     }).catch(async (error) => {
       if (settled) return;
+      if (isNetworkOffline()) { finish(reject, makeError('offline', error)); return; }
       if (await hasReadyCache(cachesImpl, scopeUrl, latestVersion)) finish(resolve, { status: 'cached', version: latestVersion });
       else finish(reject, makeError('worker-update-failed', error));
     });

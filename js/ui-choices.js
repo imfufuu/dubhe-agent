@@ -1,4 +1,5 @@
 import { $, $$, esc } from './ui-markdown.js?v=2026.10.11.1';
+import { isOfflineModelId } from './offline-model-config.js';
 export function installChoiceHandler({ root, store, agent, getBusy, openKeyModal, toast }) {
   function readChoiceAnswers(box) {
     try { return JSON.parse(box.dataset.choiceAnswers || '[]'); } catch { return []; }
@@ -57,7 +58,7 @@ export function installChoiceHandler({ root, store, agent, getBusy, openKeyModal
         setChoiceStep(box, idx + 1);
         return true;
       }
-      if (!store.state.apiKey) { openKeyModal(); toast('请先配置 TeamoRouter API Key', 'warn'); setChoiceStep(box, idx); return true; }
+      if (!store.state.apiKey && !isOfflineModelId(store.state.model)) { openKeyModal(); toast('请先配置 TeamoRouter API Key', 'warn'); setChoiceStep(box, idx); return true; }
       const reply = choiceReplyText(box) || text;
       for (const b of $$('.choice-box', msgList)) b.remove();
       agent.send(reply, []);

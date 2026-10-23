@@ -1,5 +1,6 @@
 // Same-origin LOCAL companion only. Never selected through relay/Cloudflare.
 import { isSafeFsPath, contentByteSize } from './sandbox.js';
+import { isNetworkOffline } from './offline-network.js';
 export const LOCAL_BROWSER_LIMITS = Object.freeze({ files: 512, bytes: 8 * 1024 * 1024 });
 let available = false;
 let lastProbe = 0;
@@ -7,6 +8,7 @@ let pending = null;
 export const localBrowserAvailable = () => available;
 export function resetLocalBrowserProbe() { available = false; lastProbe = 0; pending = null; }
 export async function probeLocalBrowser({ signal, force = false } = {}) {
+  if (isNetworkOffline()) { available = false; lastProbe = Date.now(); return false; }
   if (typeof location === 'undefined' || !/^https?:$/.test(location.protocol || '')) return false;
   if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
   if (pending) return pending;
@@ -57,6 +59,7 @@ export function sandboxProject(fs, entry, root) {
   return { entry: localEntry, files };
 }
 export async function sandboxBrowserRequest(payload, { signal, onEvent } = {}) {
+  if (isNetworkOffline()) throw new Error('离线状态下网页浏览器工具被禁用。');
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('浏览器参数无效');
   const supported = new Set(['action', 'entry', 'files', 'preview_id', 'selector', 'text', 'expression', 'width', 'height', 'full_page', 'wait_ms']);
   if (Object.keys(payload).some((k) => !supported.has(k))) throw new Error('网页沙箱只接受项目参数，禁止公网 URL 或未知运行参数');

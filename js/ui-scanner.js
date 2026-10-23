@@ -7,6 +7,7 @@ import { jpegPagesToPdf } from './doc-scanner.js';
 const PREVIEW_EDGE = 980;
 const OUTPUT_EDGE = 2400;
 const DETECT_EDGE = 320;
+export const SCANNER_HANDLE_HIT_RADIUS = 46;
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
@@ -28,6 +29,14 @@ export const scannerOverlayToImage = (point, m) => ({
   x: m.sx ? (point.x - m.ox) / m.sx : 0,
   y: m.sy ? (point.y - m.oy) / m.sy : 0,
 });
+export function nearestScannerHandle(point, handles, radius = SCANNER_HANDLE_HIT_RADIUS) {
+  let best = -1; let bestDistance = radius * radius;
+  handles.forEach((handle, index) => {
+    const distance = (handle.x - point.x) ** 2 + (handle.y - point.y) ** 2;
+    if (distance <= bestDistance) { best = index; bestDistance = distance; }
+  });
+  return best;
+}
 
 function scaleToFit(w, h, edge) {
   const s = Math.max(w, h) > edge ? edge / Math.max(w, h) : 1;
@@ -89,13 +98,15 @@ export async function openScanner({ doc = document } = {}) {
         <div class="scan-filters" role="group" aria-label="滤镜">
           <button class="scan-f on" type="button" data-f="original" aria-pressed="true">原色</button><button class="scan-f" type="button" data-f="gray" aria-pressed="false">灰度</button><button class="scan-f" type="button" data-f="mono" aria-pressed="false">黑白</button>
         </div>
-        <span class="scan-count" data-r="count" aria-live="polite">已添加 0 页</span>
         <div class="scan-actions">
-          <button class="ghost-btn" type="button" data-r="toggle-preview" aria-expanded="false" hidden>校正预览</button>
           <button class="ghost-btn" type="button" data-r="reshoot" hidden>重新取景</button>
           <button class="primary-btn scan-shutter" type="button" data-r="shoot" disabled>拍摄</button>
+          <button class="ghost-btn" type="button" data-r="toggle-preview" aria-expanded="false" hidden>校正预览</button>
         </div>
-        <div class="scan-pages" data-r="pages"></div>
+        <div class="scan-session">
+          <span class="scan-count" data-r="count" aria-live="polite">已添加 0 页</span>
+          <div class="scan-pages" data-r="pages"></div>
+        </div>
       </div>
       <footer class="photo-editor-foot">
         <div class="photo-editor-hint"><span data-r="footer-hint">对准页面后拍摄；支持多页，可导出图片或 PDF。</span></div>
@@ -217,11 +228,18 @@ export async function openScanner({ doc = document } = {}) {
     g.beginPath();
     pts.forEach((p, i) => (i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y)));
     g.closePath(); g.fill(); g.stroke();
-    for (const p of pts) {
-      g.beginPath(); g.arc(p.x, p.y, 10, 0, Math.PI * 2);
-      g.fillStyle = '#fff'; g.fill();
-      g.beginPath(); g.arc(p.x, p.y, 6, 0, Math.PI * 2); g.fillStyle = '#a78bfa'; g.fill();
-    }
+    pts.forEach((p, index) => {
+      const active = index === dragIdx; const hovered = index === hoverIdx;
+      if (active || hovered) {
+        g.beginPath(); g.arc(p.x, p.y, active ? 25 : 21, 0, Math.PI * 2);
+        g.fillStyle = active ? 'rgba(124,58,237,.2)' : 'rgba(124,58,237,.12)'; g.fill();
+      }
+      g.beginPath(); g.arc(p.x, p.y, active ? 16 : hovered ? 14 : 12, 0, Math.PI * 2);
+      g.lineWidth = active ? 3 : 2; g.strokeStyle = '#5b21b6'; g.fillStyle = '#fff'; g.fill(); g.stroke();
+      g.beginPath(); g.arc(p.x, p.y, active ? 9 : hovered ? 8 : 6.5, 0, Math.PI * 2);
+      g.fillStyle = active ? '#6d28d9' : '#8b5cf6'; g.fill();
+      if (active) { g.beginPath(); g.arc(p.x, p.y, 2.5, 0, Math.PI * 2); g.fillStyle = '#fff'; g.fill(); }
+    });
   };
 
   function displayScale() {
@@ -305,38 +323,31 @@ export async function openScanner({ doc = document } = {}) {
     renderPreview();
   };
 
-  // 指针拖角
-  let dragIdx = -1;
+  // 指针拖角：视觉标记随 hover / drag 放大，命中半径按 CSS 像素扩大到 46px。
+  let dragIdx = -1; let hoverIdx = -1;
   overlay.addEventListener('pointerdown', (e) => {
     if (phase !== 'review') return;
     const r = overlay.getBoundingClientRect();
-    const x = (e.clientX - r.left); const y = (e.clientY - r.top);
+    const x = e.clientX - r.left; const y = e.clientY - r.top;
     const disp = displayScale();
     if (!disp.sx || !disp.sy) return;
-    let best = -1; let bestD = 30 * 30;
-    quad.forEach((p, i) => {
-      const screen = scannerImageToOverlay(p, disp);
-      const dx = screen.x - x; const dy = screen.y - y;
-      const d = dx * dx + dy * dy;
-      if (d < bestD) { bestD = d; best = i; }
-    });
+    const handles = quad.map((p) => scannerImageToOverlay(p, disp));
+    const best = nearestScannerHandle({ x, y }, handles);
     if (best >= 0) {
-      dragIdx = best; overlay.style.cursor = 'grabbing'; e.preventDefault();
+      dragIdx = best; hoverIdx = best; overlay.style.cursor = 'grabbing'; e.preventDefault(); drawOverlay();
       try { overlay.setPointerCapture(e.pointerId); } catch { /* 合成事件 / 失效指针：靠全局 pointerup 兜底 */ }
     }
   });
   overlay.addEventListener('pointermove', (e) => {
     if (phase !== 'review') return;
     const r = overlay.getBoundingClientRect();
-    const x = (e.clientX - r.left); const y = (e.clientY - r.top);
+    const x = e.clientX - r.left; const y = e.clientY - r.top;
     const disp = displayScale();
     if (!disp.sx || !disp.sy) { overlay.style.cursor = 'default'; return; }
     if (dragIdx < 0) {
-      const onHandle = quad.some((p) => {
-        const screen = scannerImageToOverlay(p, disp);
-        return (screen.x - x) ** 2 + (screen.y - y) ** 2 <= 30 * 30;
-      });
-      overlay.style.cursor = onHandle ? 'grab' : 'default';
+      const nextHover = nearestScannerHandle({ x, y }, quad.map((p) => scannerImageToOverlay(p, disp)));
+      overlay.style.cursor = nextHover >= 0 ? 'grab' : 'default';
+      if (nextHover !== hoverIdx) { hoverIdx = nextHover; drawOverlay(); }
       return;
     }
     overlay.style.cursor = 'grabbing';
@@ -344,7 +355,11 @@ export async function openScanner({ doc = document } = {}) {
     quad[dragIdx] = { x: clamp(source.x, 0, still.width), y: clamp(source.y, 0, still.height) };
     schedulePreview();
   });
-  const endDrag = () => { dragIdx = -1; overlay.style.cursor = 'default'; };
+  const endDrag = () => {
+    const wasActive = dragIdx >= 0;
+    dragIdx = -1; hoverIdx = -1; overlay.style.cursor = 'default';
+    if (wasActive) drawOverlay();
+  };
   doc.addEventListener('pointerup', endDrag);
   overlay.addEventListener('pointercancel', endDrag);
 

@@ -14,14 +14,25 @@ import { probeGatewayHosts } from './endpoint.js';
 import { mountDebugWindow, toggleDebug, debugActive, setDebug } from './debugwindow.js?v=2026.10.11.1';
 import { mountSettings, applyFontSize, applyMotion, browserFeatureReport } from './settings.js?v=2026.10.11.1';
 import { APP_RELEASE } from './config.js?v=2026.10.11.1';
+import { installOfflineNetworkFence, isNetworkOffline, announceNetworkState } from './offline-network.js';
+import { OFFLINE_MODEL_ID } from './offline-model-config.js';
+import { syncOfflineModelAvailability } from './offline-model.js';
+
+installOfflineNetworkFence();
 
 // 启动屏真实进度：模块图已下载并执行到这里 → 「加载模块」完成
 const bootStage = (name) => { try { const g = window.__dubheBootGuard; g && typeof g.stage === 'function' && g.stage(name); } catch { /* 启动屏已移除 */ } };
 bootStage('modules');
 
 const store = createStore();
-// relayOk 是运行时探测结果，不复用上次持久化值；null 表示探测进行中。
-store.state.relayOk = null;
+const offlineAtBoot = isNetworkOffline();
+if (offlineAtBoot) {
+  store.state.model = OFFLINE_MODEL_ID;
+  const activeSession = (store.state.sessions || []).find((session) => session.id === store.state.activeSessionId);
+  if (activeSession) activeSession.model = OFFLINE_MODEL_ID;
+}
+// relayOk 是运行时探测结果，不复用上次持久化值；离线时明确关闭中继。
+store.state.relayOk = offlineAtBoot ? false : null;
 // An explicit, versioned acknowledgement is required; legacy false does not silently disable checks.
 store.state.settings.contentModeration = effectiveModeration(store.state.settings);
 
@@ -125,6 +136,26 @@ mountSettings(store, {
   // 设置页任何开关 / 档位 / 主题变化 → 顶栏 pill（沙箱 / 联网 / 快速 / 思考）、能力行、主题按钮同步
   onSettingChanged: (key) => { if (ui && ui.syncToolbar) ui.syncToolbar(); if (key === 'sandboxEnabled') warmSandbox(); },
 });
+window.addEventListener('dubhe:network-state', (event) => {
+  if (!isNetworkOffline() && !event.detail?.offline) return;
+  try { agent.abort(); } catch { /* no active turn */ }
+  store.state.model = OFFLINE_MODEL_ID;
+  const activeSession = (store.state.sessions || []).find((session) => session.id === store.state.activeSessionId);
+  if (activeSession) activeSession.model = OFFLINE_MODEL_ID;
+  store.state.relayOk = false;
+  store.notify();
+  ui && ui.syncGateway && ui.syncGateway();
+  ui && ui.syncWeb && ui.syncWeb();
+});
+if (offlineAtBoot) announceNetworkState();
+window.addEventListener('dubhe:offline-model-status', () => ui && ui.syncGateway && ui.syncGateway());
+syncOfflineModelAvailability(store).then((status) => {
+  if (status.error) store.state.offlineModelStatusError = String(status.error.message || status.error).slice(0, 180);
+  ui && ui.syncGateway && ui.syncGateway();
+}).catch((error) => {
+  store.state.offlineModelChecked = true;
+  store.state.offlineModelStatusError = String(error?.message || error).slice(0, 180);
+});
 // β 调试浮窗：?debug=1 / Ctrl+Alt+D / ⌘K「打开调试浮窗」三种入口，挂载失败不影响主应用
 try {
   const dbgParams = new URLSearchParams(location.search);
@@ -140,14 +171,14 @@ try {
 // 启动即后台预热 JS 沙箱 Worker：先把 worker-js.js / worker-shims.js 取进缓存并拉起一个等待载荷的实例，
 // 用户在首次 execute_javascript 上就不会撞上冷启动超时。失败静默（真正执行时仍走原本的降级路径）。
 function warmSandbox() {
-  if (store.state.settings.sandboxEnabled === false) return;
+  if (isNetworkOffline() || store.state.settings.sandboxEnabled === false) return;
   Promise.resolve().then(() => import('./sandbox.js')).then((m) => m.warmSandboxWorker?.()).catch(() => {});
 }
 if (typeof requestIdleCallback === 'function') requestIdleCallback(warmSandbox, { timeout: 4000 });
 else setTimeout(warmSandbox, 2500);
 
 // 启动即后台预热图片审核模型（不等用户加附件）——慢网络给 26MB 资源留足下载窗口
-setTimeout(() => { try { globalThis.__dubhePrewarmImageModeration && globalThis.__dubhePrewarmImageModeration('startup'); } catch { /* 忽略 */ } }, 2000);
+if (!offlineAtBoot) setTimeout(() => { try { if (!isNetworkOffline()) globalThis.__dubhePrewarmImageModeration && globalThis.__dubhePrewarmImageModeration('startup'); } catch { /* 忽略 */ } }, 2000);
 // 这里不再 fs.import(state.files)：createAgent 已经用同一份 state.files 建好了 fs，
 // 再 import 一次不仅多余，还会把「挂载期间被清空的文件」重新灌回去（clearFiles 走的是
 // 同一批同步路径），表现为清空后文件又出现。

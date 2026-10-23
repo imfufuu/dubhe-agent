@@ -207,6 +207,7 @@ export const DROP_REASON_LABEL = Object.freeze({
   'capability-sandbox-off': '顶栏「沙箱」已关',
   'remote-cpp-off': '远程 C++ 已关',
   'local-browser-unavailable': '需本机 server.py 与 Playwright/Chromium',
+  'offline-local-only': '离线/本地模型仅允许本地工具',
   'no-tool-name': '工具定义缺少名称',
 });
 

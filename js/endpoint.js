@@ -49,6 +49,7 @@ let active = null;          // 当前选中的域名（未探测时为 null → 
 let chosenBy = 'default';   // 'default' | 'probe' | 'stored' | 'failover' | 'manual'
 
 import { readLocal } from './legacy-keys.js';
+import { isNetworkOffline } from './offline-network.js';
 const hasLS = () => { try { return typeof localStorage !== 'undefined' && !!localStorage; } catch { return false; } };
 
 function loadStored() {
@@ -90,6 +91,7 @@ export function otherGatewayBase() {
 
 /** 某个域名是否可达：只要能拿回任意 HTTP 响应就算可达（401/404 都说明域名通） */
 export async function hostReachable(host, { timeoutMs = PROBE_TIMEOUT_MS } = {}) {
+  if (isNetworkOffline()) return false;
   const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
   const timer = setTimeout(() => ctrl && ctrl.abort(), timeoutMs);
   try {
@@ -109,6 +111,7 @@ export async function hostReachable(host, { timeoutMs = PROBE_TIMEOUT_MS } = {})
  * 大陆用户代理开着时也会自然选到 .com（.cn 探测可能超时或慢）。
  */
 export async function probeGatewayHosts({ timeoutMs = PROBE_TIMEOUT_MS } = {}) {
+  if (isNetworkOffline()) return { host: gatewayBase(), by: 'offline', switched: false, region: guessRegion() };
   const stored = loadStored();
   if (stored) {
     if (await hostReachable(stored, { timeoutMs })) { active = stored; chosenBy = 'stored'; return { host: stored, by: 'stored', switched: false }; }

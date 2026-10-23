@@ -174,6 +174,11 @@ export function createStore(onChange) {
     modelsByGateway: {},
     modelsFetchedAtByGateway: {},
     manualModelsByGateway: {},
+    manualModelMetaByGateway: {},
+    offlineModelChecked: false,
+    offlineModelAvailable: false,
+    offlineModelStorageSupported: false,
+    offlineModelStatusError: '',
     model: DEFAULT_CHAT_MODEL,
     imageModel: DEFAULT_IMAGE_MODEL, // 生图模型（由 generate_image 工具使用，与会话绑定）
     models: [],
@@ -478,14 +483,30 @@ export function createStore(onChange) {
   state.modelsByGateway = cleanMap(state.modelsByGateway);
   state.modelsFetchedAtByGateway = cleanMap(state.modelsFetchedAtByGateway);
   state.manualModelsByGateway = cleanMap(state.manualModelsByGateway);
+  state.manualModelMetaByGateway = cleanMap(state.manualModelMetaByGateway);
   if (!Array.isArray(state.modelsByGateway.teamorouter) && Array.isArray(state.models)) state.modelsByGateway.teamorouter = state.models;
   if (!state.gatewayKeys.teamorouter && state.apiKey) state.gatewayKeys.teamorouter = state.apiKey;
   if (!state.gatewayKeys[state.gatewayId] && state.apiKey && state.gatewayId === 'teamorouter') state.gatewayKeys[state.gatewayId] = state.apiKey;
   for (const id of validGatewayIds) {
     if (!Array.isArray(state.modelsByGateway[id])) state.modelsByGateway[id] = [];
     if (!Array.isArray(state.manualModelsByGateway[id])) state.manualModelsByGateway[id] = [];
+    const rawMeta = cleanMap(state.manualModelMetaByGateway[id]);
+    const safeMeta = {};
+    for (const [modelId, value] of Object.entries(rawMeta)) {
+      if (!state.manualModelsByGateway[id].includes(modelId) || !value || typeof value !== 'object') continue;
+      const providerName = String(value.providerName || '').replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 80);
+      const rawIcon = String(value.iconDataUrl || '');
+      const iconDataUrl = rawIcon.length <= 300000 && /^data:image\/(?:png|jpeg|webp|svg\+xml)(?:;|,)/i.test(rawIcon) ? rawIcon : '';
+      safeMeta[modelId] = { providerName, iconDataUrl };
+    }
+    state.manualModelMetaByGateway[id] = safeMeta;
   }
   for (const session of state.sessions || []) if (!validGatewayIds.has(String(session.gatewayId || ''))) session.gatewayId = state.gatewayId;
+  // OPFS cache state is runtime-only and is rechecked without network at boot.
+  state.offlineModelChecked = false;
+  state.offlineModelAvailable = false;
+  state.offlineModelStorageSupported = false;
+  state.offlineModelStatusError = '';
   state.apiKey = String(state.gatewayKeys[state.gatewayId] || (state.gatewayId === 'teamorouter' ? state.apiKey : '') || '');
   state.models = state.modelsByGateway[state.gatewayId] || [];
   state.modelsFetchedAt = Number(state.modelsFetchedAtByGateway[state.gatewayId]) || state.modelsFetchedAt || 0;

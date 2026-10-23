@@ -9,6 +9,9 @@ import { gatewayBase, setGatewayBase, otherGatewayBase, isNetworkError } from '.
 import { webCapFor, injectWeb, buildResponsesInput, createResponsesStream } from './websearch.js';
 import { resolveTemperature, canSendTemperature } from './temperature.js';
 import { CORE_TOOL_NAMES } from './capabilities.js';
+import { isNetworkOffline } from './offline-network.js';
+import { isOfflineModelId } from './offline-model-config.js';
+import { streamOfflineModel } from './offline-model.js';
 import {
   DEFAULT_GATEWAY_ID, getGateway, gatewayPath, gatewayBaseUrl as configuredGatewayBaseUrl,
   gatewayNativeBaseUrl, joinGatewayUrl, gatewayModelListUrl, gatewayModelIdsFromResponse, filterGatewayChatModels,
@@ -59,6 +62,7 @@ export function tookEndpointSwitch() { const v = endpointSwitched; endpointSwitc
 //         这一步让用户不用手动改配置
 //   ③ 仍失败 → 本地服务端代理 /api/proxy（本地跑 server.py 时可用，能绕开浏览器网络限制）
 async function request(path, { method = 'POST', headers = {}, body, signal, gatewayId = DEFAULT_GATEWAY_ID, gatewayBaseUrl = '' } = {}) {
+  if (isNetworkOffline()) throw new Error(localeText('离线模式已阻止网关请求。', 'Offline mode blocked the gateway request.'));
   // First-party and user-defined gateways are isolated: one direct HTTPS destination only,
   // with no TeamoRouter failover or same-origin proxy fallback.
   if (gatewayId !== DEFAULT_GATEWAY_ID) {
@@ -509,6 +513,23 @@ export const FIRST_TOKEN_MAX_RETRIES = 3;
 export async function streamChat({ model, apiKey, messages, tools, fastMode = false, thinking = false, reasoningLevel = 'medium', temperature, plan = null, iteration = 1, phase = '', subagentId = '', signal, onEvent, onThinkingFallback, webEnabled = false, onWebFallback, gatewayId = DEFAULT_GATEWAY_ID, gatewayBaseUrl = '', firstTokenTimeoutMs = FIRST_TOKEN_TIMEOUT_MS }) {
   // 废弃/改名模型别名解析（agent 层已做，但子智能体直传时再保底一次）
   model = resolveModelAlias(model);
+  if (isNetworkOffline() && !isOfflineModelId(model)) {
+    throw new Error(localeText('离线模式只允许使用已下载的本地模型；没有发送网关请求。', 'Offline mode only permits the installed local model; no gateway request was sent.'));
+  }
+  if (isOfflineModelId(model)) {
+    const localMessages = buildOpenAIMessages(stripEmptyAssistantMessages(messages), { includeReasoning: false });
+    if (localMessages.some((message) => Array.isArray(message.content))) {
+      throw new Error(localeText('此本地 Qwen 模型仅支持文本；离线模式暂不处理图片/视频附件。', 'This local Qwen model is text-only; image/video attachments are not supported offline.'));
+    }
+    await streamOfflineModel({
+      messages: localMessages,
+      tools: tools && tools.length ? toOpenAITools(tools) : [],
+      signal,
+      temperature: typeof temperature === 'number' ? temperature : 0.7,
+      onChunk: createOpenAIStream(onEvent || (() => {})),
+    });
+    return;
+  }
   const gateway = getGateway(gatewayId);
   const protocol = gateway.protocol === 'auto' ? protocolOf(model) : gateway.protocol;
   const modelKey = modelScopeKey(model, gateway.id);

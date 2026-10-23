@@ -1,5 +1,6 @@
 // Stable entry shared by app, homepage and docs. A waiting update must not
 // silently replace modules underneath running agents or open editing panels.
+import { isNetworkOffline } from './offline-network.js';
 const base = new URL('../', import.meta.url);
 let registration;
 function showWaitingUpdate() {
@@ -21,6 +22,7 @@ function showWaitingUpdate() {
   note.append(text, close); document.body.append(note);
 }
 export function registerOfflineCache() {
+  if (isNetworkOffline()) return Promise.resolve(null);
   if (registration) return registration;
   try {
     if (!('serviceWorker' in navigator) || !globalThis.isSecureContext) return Promise.resolve(null);
@@ -32,8 +34,8 @@ export function registerOfflineCache() {
       };
       if (reg.waiting && navigator.serviceWorker.controller) showWaitingUpdate();
       watch(reg.installing); reg.addEventListener('updatefound', () => watch(reg.installing));
-      // Worker-version check is small; cached static files themselves make zero requests.
-      reg.update().catch(() => {});
+      // ServiceWorkerRegistration.update() itself fetches the worker script; never call it offline.
+      if (!isNetworkOffline()) reg.update().catch(() => {});
       return reg;
     }).catch(() => null); // no manifest / private mode must not block app boot
     return registration;

@@ -9,11 +9,13 @@
      · 渲染层无内联脚本（全部外部文件），script 仅放行 self 与 Pyodide CDN
      · style 'unsafe-inline' 为 KaTeX 输出与少量 style 属性所需
      · worker 放行 self 与 blob:（sandbox.js 的 blob Worker 兜底通道）
-     · connect 放行网关（.com 与 .cn 双域名，中国网络自动择路）/ 第一方官方 API 直连
+     · connect 放行网关（.com 与 .cn 双域名，中国网络自动择路）/ 用户手动点击下载的固定 Hugging Face GGUF（文件会重定向到 hf.co CDN）/ 第一方官方 API 直连
      ·   （DeepSeek、Anthropic、OpenAI、Gemini、GLM、Grok、Kimi、Doubao、Qwen 的官方域名——
      ·    少了这些，设置里切到第一方网关时 fetch 会被本 CSP 直接拦下，表现为「直连失败」）/ C++ 远程执行 / Pyodide CDN / 本站代理
      · 'wasm-unsafe-eval' 为 Pyodide 在 Worker 内编译 WebAssembly 所需 -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' 'sha256-KWAlpbtB4R45zBOqEtLM+90JdLvHqoOyoaQRSGS6uBs=' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; img-src 'self' data: blob: https:; media-src 'self' blob: data:; font-src 'self' data: https://fonts.gstatic.com https://cdn.jsdelivr.net; connect-src 'self' https://api.teamorouter.com https://api.teamorouter.cn https://api.deepseek.com https://api.anthropic.com https://api.openai.com https://generativelanguage.googleapis.com https://open.bigmodel.cn https://api.x.ai https://api.moonshot.ai https://api.moonshot.cn https://ark.cn-beijing.volces.com https://dashscope.aliyuncs.com https://dashscope-intl.aliyuncs.com https://godbolt.org https://cdn.jsdelivr.net https://*.workers.dev; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' 'sha256-KWAlpbtB4R45zBOqEtLM+90JdLvHqoOyoaQRSGS6uBs=' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; img-src 'self' data: blob: https:; media-src 'self' blob: data:; font-src 'self' data: https://fonts.gstatic.com https://cdn.jsdelivr.net; connect-src 'self' https://api.teamorouter.com https://api.teamorouter.cn https://api.deepseek.com https://api.anthropic.com https://api.openai.com https://generativelanguage.googleapis.com https://open.bigmodel.cn https://api.x.ai https://api.moonshot.ai https://api.moonshot.cn https://ark.cn-beijing.volces.com https://dashscope.aliyuncs.com https://dashscope-intl.aliyuncs.com https://godbolt.org https://cdn.jsdelivr.net https://*.workers.dev https://huggingface.co https://*.hf.co; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'" />
+<!-- Runs synchronously before fonts or remote resources; offline entry immediately fences the page. -->
+<script src="js/offline-bootstrap.js?v=2026.10.22.1"></script>
 <meta name="app-version" content="2026.10.11.1" />
 <meta name="app-release" content="V1.8" />
 <!-- 首帧主题 / 动效偏好：先于样式同步，并由 css/page-fx.css 提供 CSP-safe 跨页扫场；
@@ -444,7 +446,7 @@
     <input id="key-input" class="key-input mono" type="password" placeholder="API Key" spellcheck="false" autocomplete="off" />
     <div id="key-admin-phrase-wrap" class="key-admin-phrase-wrap" hidden>
       <label for="key-admin-phrase">管理员暗号</label>
-      <input id="key-admin-phrase" class="key-input mono" type="password" placeholder="请输入管理员暗号" spellcheck="false" autocomplete="off" />
+      <input id="key-admin-phrase" class="key-input mono" type="text" inputmode="text" placeholder="请输入管理员暗号" spellcheck="false" autocomplete="off" autocapitalize="off" />
     </div>
     <div class="modal-actions">
       <button id="key-save" class="primary-btn" type="button">保存</button>
@@ -517,6 +519,17 @@
           <div class="set-lbl"><div class="set-title">自定义网关模型 ID</div><div class="set-sub" id="set-gateway-note">仅自定义网关支持手动添加</div></div>
           <div class="set-ctl manual-model-controls"><input id="set-manual-model" class="set-input mono" type="text" placeholder="例如 model-id" spellcheck="false" autocomplete="off"/><button id="set-add-model" class="mini-btn" type="button">添加</button></div>
         </div>
+        <div class="set-row" id="set-manual-provider-row" hidden>
+          <div class="set-lbl"><div class="set-title">供应商名称与图标</div><div class="set-sub">名称必填；图标可选，未上传时显示首字母</div></div>
+          <div class="set-ctl manual-provider-controls">
+            <div id="set-manual-provider-icon-preview" class="manual-provider-preview" aria-label="供应商图标预览"></div>
+            <input id="set-manual-provider-name" class="set-input" type="text" maxlength="80" placeholder="例如：My Gateway" autocomplete="off" />
+            <label class="mini-btn manual-icon-pick" for="set-manual-provider-icon" title="支持 PNG / JPEG / WebP / SVG，最大 128 KB">选择图标</label>
+            <input id="set-manual-provider-icon" type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml,text/plain,.svg,.txt" hidden />
+            <button id="set-clear-provider-icon" class="mini-btn" type="button" hidden>移除图标</button>
+            <button id="set-cancel-manual-model-edit" class="mini-btn" type="button" hidden>取消编辑</button>
+          </div>
+        </div>
         <div id="set-manual-model-list-row" class="manual-model-list-row" hidden>
           <div class="set-sub">已添加模型 ID（点击 × 移除）</div>
           <div id="set-manual-model-list" class="manual-model-list" aria-label="已添加的自定义模型 ID"></div>
@@ -584,6 +597,21 @@
         </div>
         <div class="set-row"><div class="set-lbl"><div class="set-sub" id="set-mm-note">—</div></div></div>
         <div class="set-row" id="row-image-review"><div class="set-lbl"><div class="set-title">灰区图片远程复核</div><div class="set-sub">本地拿不准时交 Gemini 3.5 Flash Lite 复核 · 每轮 ≤ 3 张</div></div><div class="set-ctl"><label class="sw"><input type="checkbox" id="set-image-review"/><span></span></label></div></div>
+      </section>
+
+      <section class="set-sec offline-model-settings" id="set-offline-model-sec">
+        <h4 id="set-offline-model-heading">离线本地模型</h4>
+        <div class="set-row">
+          <div class="set-lbl"><div class="set-title" id="set-offline-model-title">Qwen2.5 1.5B Heretic · Q4_K_M</div><div class="set-sub" id="set-offline-model-description">可选下载；约 940 MiB。下载只会在点击后开始，推理在本机浏览器内运行。</div></div>
+          <div class="set-ctl offline-model-actions">
+            <button type="button" id="set-offline-model-download" class="ghost-btn">下载离线模型（约 940 MiB）</button>
+            <button type="button" id="set-offline-model-cancel" class="mini-btn" hidden>取消</button>
+            <button type="button" id="set-offline-model-remove" class="mini-btn" hidden>删除本地模型</button>
+          </div>
+        </div>
+        <div class="set-row offline-model-status-row"><div class="set-lbl"><div class="set-title" id="set-offline-model-status" role="status" aria-live="polite">检查本地存储…</div><div class="set-sub" id="set-offline-model-provenance">仓库的 heretic / uncensored 标签是社区自述，非独立测评。</div></div></div>
+        <div id="set-offline-model-progress-wrap" class="offline-model-progress" hidden><progress id="set-offline-model-progress" max="100" value="0" aria-label="离线模型下载进度"></progress><span id="set-offline-model-progress-label">0%</span></div>
+        <div class="set-row offline-model-meta"><div class="set-lbl"><div class="set-sub"><span id="set-offline-model-file">模型文件</span> · <span id="set-offline-model-hash">SHA-256</span></div><div class="set-sub" id="set-offline-model-license">模型仓库元数据声明 Apache-2.0；请查看模型仓库及上游说明。</div></div><div class="set-ctl"><a id="set-offline-model-repo" class="offline-model-repo" href="https://huggingface.co/saidutta69/Qwen2.5-1.5B-Instruct-heretic/tree/aef80af71c5b26237c31454f1f570e30eb05f9eb" target="_blank" rel="noopener noreferrer">查看固定版本仓库</a></div></div>
       </section>
 
       <section class="set-sec">

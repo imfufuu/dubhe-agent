@@ -13,7 +13,7 @@ const prefix = 'dubhe-static-v3:%2Fdubhe-agent%2F:';
 const version = n => `2026.10.14.${n}`;
 const name = n => prefix + version(n);
 const sha = s => createHash('sha256').update(s).digest('hex');
-const defaults = () => ({ 'index.html': '<h1>Home</h1>', 'app.html': '<h1>App</h1>', 'js/a.js': 'export const a=1;', 'js/b.js': 'export const b=1;', 'css/a.css': 'body{color:black}', 'assets/icons/openai.svg': '<svg/>', 'assets/app-icon-192.png': 'app-icon', 'assets/katex/fonts/KaTeX_Main.woff2': 'font', 'fonts/literary.css': '@font-face{}', 'fonts/NotoSerif-Regular.ttf': 'font', 'assets/audio/landing.mp3': 'audio', 'assets/vendor/lazy.js': 'lazy1', 'assets/moderation/large.bin': 'model1' });
+const defaults = () => ({ 'index.html': '<h1>Home</h1>', 'app.html': '<h1>App</h1>', 'js/a.js': 'export const a=1;', 'js/b.js': 'export const b=1;', 'css/a.css': 'body{color:black}', 'assets/icons/openai.svg': '<svg/>', 'assets/app-icon-192.png': 'app-icon', 'assets/katex/fonts/KaTeX_Main.woff2': 'font', 'fonts/literary.css': '@font-face{}', 'fonts/NotoSerif-Regular.ttf': 'font', 'assets/skills/index.json': '{"skills":[]}', 'assets/knowledge/index.json': '{"records":[]}', 'assets/vendor/wllama/wllama-3.8.1.js': 'wllama', 'assets/vendor/wllama/wllama-3.8.1.wasm': 'wasm', 'assets/vendor/office/docx-9.5.1.js': 'docx', 'assets/audio/landing.mp3': 'audio', 'assets/vendor/lazy.js': 'lazy1', 'assets/moderation/large.bin': 'model1' });
 function world() {
   const stores = new Map(), requests = [], handlers = new Map(), progressMessages = [];
   const client = { url: scope + 'app.html', postMessage: message => progressMessages.push(message) };
@@ -51,11 +51,11 @@ function world() {
   return { caches, requests, worker, stores, reset() { requests.length = 0; }, set(n, f = files) { revision = n; files = f; }, files: () => files,
     offline(v = true) { offline = v; }, corrupt(p, v) { override[p] = v; }, quota(v = true) { quota = v; }, manifest(v) { badManifest = v; } };
 }
-test('cold install pre-caches site code, local UI logos/app icons/fonts, not large lazy dependencies', async () => {
+test('cold install pre-caches site code, offline runtime/skills/knowledge and Office parsers, not large unrelated dependencies', async () => {
   const w = world(), sw = w.worker(1); await sw.install(); await sw.activate();
   assert.equal(sw.skipped(), 0); assert.equal(sw.claimed(), 1);
   const paths = (await (await w.caches.open(name(1))).keys()).map(r => r.url);
-  for (const p of ['index.html', 'app.html', 'js/a.js', 'js/b.js', 'css/a.css', 'assets/icons/openai.svg', 'assets/app-icon-192.png', 'assets/katex/fonts/KaTeX_Main.woff2', 'fonts/literary.css', 'fonts/NotoSerif-Regular.ttf']) assert.ok(paths.includes(scope + p), `${p} should be cached before first use`);
+  for (const p of ['index.html', 'app.html', 'js/a.js', 'js/b.js', 'css/a.css', 'assets/icons/openai.svg', 'assets/app-icon-192.png', 'assets/katex/fonts/KaTeX_Main.woff2', 'fonts/literary.css', 'fonts/NotoSerif-Regular.ttf', 'assets/skills/index.json', 'assets/knowledge/index.json', 'assets/vendor/wllama/wllama-3.8.1.js', 'assets/vendor/wllama/wllama-3.8.1.wasm', 'assets/vendor/office/docx-9.5.1.js']) assert.ok(paths.includes(scope + p), `${p} should be cached before first use`);
   for (const p of ['assets/audio/landing.mp3', 'assets/vendor/lazy.js', 'assets/moderation/large.bin']) assert.ok(!paths.includes(scope + p), `${p} should remain lazy`);
 });
 test('cache installation reports monotonic asset progress and marks ready only after writing the manifest', async () => {

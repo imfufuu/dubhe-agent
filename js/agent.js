@@ -67,6 +67,9 @@ import {
 } from './nexus.js';
 import { moderateUserTurn } from './moderation.js?v=2026.10.11.1';
 import { DEFAULT_GATEWAY_ID } from './gateway-registry.js?v=2026.10.11.1';
+import { isNetworkOffline } from './offline-network.js';
+import { OFFLINE_MODEL_ID, isOfflineModelId } from './offline-model-config.js';
+import { isOfflineToolAllowed } from './offline-policy.js';
 // ─── P0 执行内核（Dubhe Helix 2.5 · P0）：统一状态机 + 预算与风险治理 + 工具契约校验 ───
 // 新模块单独成文件并带 ?v=（混版纪律）：旧版 agent.js 不 import 它，不会因缺导出白屏。
 import {
@@ -232,7 +235,9 @@ export function subagentTools(sandboxEnabled, def, { remoteCpp = true } = {}) {
 }
 
 export async function runSubagent(def, task, { apiKey, gatewayId = 'teamorouter', gatewayBaseUrl = '', model, thinking, reasoningLevel, sandboxEnabled, remoteCpp = true, webEnabled, fs, signal, onThinkingFallback, onWebFallback, imageModel, visionModel, videoModel, audioModel, onSubagentUsage, memory }) {
-  const subTools = subagentTools(sandboxEnabled, def, { remoteCpp });
+  const offlineOnly = isNetworkOffline() || isOfflineModelId(model);
+  const availableSubTools = subagentTools(sandboxEnabled, def, { remoteCpp: offlineOnly ? false : remoteCpp });
+  const subTools = offlineOnly ? (availableSubTools || []).filter((tool) => isOfflineToolAllowed(tool.name)) : availableSubTools;
   const memBlock = formatMemory(memory);
   const messages = [
     { role: 'system', text: `${specialistPrompt(def)}\n\n${getLanguage() === 'en' ? `You are ${def.tag}, a Dubhe Agent specialist. Give a final report without small talk. Current time: ${new Date().toISOString()}` : `你是 Dubhe Agent 体系中的「${def.name}」子智能体。直接产出最终报告，不要寒暄。当前时间：${new Date().toISOString()}`}${memBlock ? `\n\n${memBlock}` : ''}\n\n${compactOutputSpec()}` },
@@ -252,7 +257,7 @@ export async function runSubagent(def, task, { apiKey, gatewayId = 'teamorouter'
       model, apiKey, gatewayId, gatewayBaseUrl, thinking, reasoningLevel, signal, tools: subTools,
       subagentId: def.id, iteration: i + 1,
       onThinkingFallback,
-      webEnabled: !!webEnabled, onWebFallback,
+      webEnabled: !offlineOnly && !!webEnabled, onWebFallback,
       messages,
       onEvent: (ev) => {
         if (ev.type === 'text') text += ev.text;
@@ -566,7 +571,7 @@ export function createAgent(store, hooks = {}) {
     // 阶段边界有时间戳与审计（turn-pipeline），任何一个阶段抛错都会落到同一个 catch / finally。
     // 不把它们挪成独立模块的原因：阶段之间共享 40+ 个回合变量，拆成参数包只会把隐式耦合变成巨型形参；
     // 先把边界、顺序、计时显式化，模块化留给各阶段内部已经独立的部分（toolrunner / turnfinalizer / executionContext）。
-    let userModel, settings, apiKey, lastUserMsgRaw, resolvedModel, routerDecision, model, t0, signal, relayOk, initTier, lv, canDispatch, legacyTools, tools, turn, iterations, tempFS, finalAnswerText, jevNote, turnPlan, usedTools, stepHistory, hadToolError, lastStepFailed, lastUserInit, taskLedger, telemetry, nexusState, sessionId, prevRecord, resumeInfo, userCapabilityOverrides, capabilities, budgetGov, machine, userIntentText, execCtx, alignment, exec, experimentSubject, experimentOverrides, experimentGuard, faultCfg, claimedBits, whitelist, selection, lastCheckpoint, prevCommitted, continuationRe;
+    let offlineOnly, userModel, settings, apiKey, lastUserMsgRaw, resolvedModel, routerDecision, model, t0, signal, relayOk, initTier, lv, canDispatch, legacyTools, tools, turn, iterations, tempFS, finalAnswerText, jevNote, turnPlan, usedTools, stepHistory, hadToolError, lastStepFailed, lastUserInit, taskLedger, telemetry, nexusState, sessionId, prevRecord, resumeInfo, userCapabilityOverrides, capabilities, budgetGov, machine, userIntentText, execCtx, alignment, exec, experimentSubject, experimentOverrides, experimentGuard, faultCfg, claimedBits, whitelist, selection, lastCheckpoint, prevCommitted, continuationRe;
     const pipeline = { order: [...TURN_PIPELINE], timings: {}, startedAt: performance.now() };
     const stageDone = (name) => { pipeline.timings[name] = Math.round(performance.now() - pipeline.startedAt); };
 
@@ -576,9 +581,23 @@ export function createAgent(store, hooks = {}) {
       // 整轮锁定 apiKey/model/settings：中途用户换模型不会让后续迭代与子智能体错位
       //（旧写法一处读 store.state、一处读快照，等于两个来源）
       // 管理员别名（admin-…）在这里换成真密钥：密钥只在内存里，且不进本轮日志/导出
-      ({ model: userModel, settings } = store.state);
-      apiKey = effectiveApiKey(store.state.apiKey);
-      if (!apiKey) { emit('onNeedKey'); return false; }
+      offlineOnly = isNetworkOffline() || isOfflineModelId(store.state.model);
+      settings = { ...(store.state.settings || {}) };
+      userModel = offlineOnly ? OFFLINE_MODEL_ID : store.state.model;
+      if (isNetworkOffline()) {
+        store.state.model = OFFLINE_MODEL_ID;
+        const activeSession = (store.state.sessions || []).find((session) => session.id === store.state.activeSessionId);
+        if (activeSession) activeSession.model = OFFLINE_MODEL_ID;
+      }
+      if (offlineOnly) {
+        settings.webEnabled = false;
+        settings.remoteCppEnabled = false;
+        settings.imageRemoteReview = false;
+        settings.thinking = false;
+        settings.reasoningLevel = 'low';
+      }
+      apiKey = offlineOnly ? '' : effectiveApiKey(store.state.apiKey);
+      if (!apiKey && !offlineOnly) { emit('onNeedKey'); return false; }
       if (status === 'connecting' || status === 'streaming' || status === 'thinking' || status === 'executing') return false;
 
       // ── 智能路由器：根据用户最近一条消息判断任务类型/难度，选实际模型 ──
@@ -593,7 +612,7 @@ export function createAgent(store, hooks = {}) {
         resolvedModel = routerDecision.chosenModel;
       }
       // 废弃/改名模型自动别名到可用版本（例如 gemini-3.5-flash → gemini-3.8-flash）
-      model = resolveModelAlias(resolvedModel);
+      model = isOfflineModelId(resolvedModel) ? OFFLINE_MODEL_ID : resolveModelAlias(resolvedModel);
 
       t0 = performance.now(); // 整轮计时：思考 + 生成 + 沙箱执行
       abortController = new AbortController();
@@ -602,18 +621,19 @@ export function createAgent(store, hooks = {}) {
       // 沙箱关闭时仍保留文件/生图/时间/委派工具（只有代码执行三件套被摘掉）
       // Worker 状态来自运行时健康探测：null 等待启动探测，false 在网页意图下可复探，
       // true 则复用已确认的路由与 capability，避免每个普通回合重复请求 /api/health。
-      relayOk = store.state.relayOk !== false;
+      relayOk = !offlineOnly && store.state.relayOk !== false;
+      if (offlineOnly) store.state.relayOk = false;
       // 启动期探测可能因冷启动/瞬时网络抖动误判离线。已有 Premise Self-Verification
       // 必须在真实回合入口执行，而不只停留在单测：遇到 URL / 搜索 / 最新信息时复探 Worker，
       // 并用同一个结果构造能力掩码、工具表、UI 状态和系统提示词。
-      if (store.state.relayOk === null) {
+      if (!offlineOnly && store.state.relayOk === null) {
         // Initial probing is already in flight from main.js; share it rather than optimistically
         // declaring Web on while the UI still shows a pending/offline relay state.
         relayOk = await relayAvailable(signal);
         store.state.relayOk = relayOk;
         emit('onRelayStatus', relayOk, { reverified: false, initial: true });
         if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
-      } else if (settings.webEnabled !== false && store.state.relayOk === false) {
+      } else if (!offlineOnly && settings.webEnabled !== false && store.state.relayOk === false) {
         const premise = await verifyRuntimePremises({
           relayOk: false,
           webEnabled: true,
@@ -638,8 +658,10 @@ export function createAgent(store, hooks = {}) {
         }
         if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
       }
-      try { await probeLocalBrowser({ signal }); }
-      catch (err) { if (err.name !== 'AbortError') console.warn('[Dubhe] local browser health', err); }
+      if (!offlineOnly) {
+        try { await probeLocalBrowser({ signal }); }
+        catch (err) { if (err.name !== 'AbortError') console.warn('[Dubhe] local browser health', err); }
+      }
       if (signal.aborted) { abortController = null; setStatus('cancelled'); emit('onCancelled'); return false; }
       return true;
     }
@@ -651,7 +673,7 @@ export function createAgent(store, hooks = {}) {
         reasoningLevel: settings.reasoningLevel || 'medium',
       });
       lv = initTier.effectiveLevel;
-      canDispatch = initTier.canDispatch;
+      canDispatch = offlineOnly ? false : initTier.canDispatch;
       // 旧路径工具表：保留它只为**交叉验证**——真正的工具表由统一执行上下文派生（见下方 P2 段落），
       // 两条路径算出的表必须逐项一致；不一致说明有人只改了一处，当场报缺陷而不是让它悄悄生效。
       legacyTools = toolsFor(settings.sandboxEnabled, { remoteCpp: settings.remoteCppEnabled !== false })
@@ -663,7 +685,8 @@ export function createAgent(store, hooks = {}) {
           if (t.name === 'download_file' || t.name === 'pull_github_project') return relayOk && settings.webEnabled !== false && relaySupports('file');
           return relayOk || !RELAY_ONLY_TOOLS.has(t.name);
         })
-        .filter((t) => t.name !== 'dispatch_subagent' || canDispatch);
+        .filter((t) => t.name !== 'dispatch_subagent' || canDispatch)
+        .filter((t) => !offlineOnly || isOfflineToolAllowed(t.name));
       tools = legacyTools;
       const gatewayId = store.state.gatewayId || DEFAULT_GATEWAY_ID;
       const gatewayBaseUrl = (store.state.gatewayBaseUrls || {})[gatewayId] || '';
@@ -671,13 +694,13 @@ export function createAgent(store, hooks = {}) {
         apiKey, model, signal, gatewayId, gatewayBaseUrl,
         userModel, // 用户在 UI 选择的模型（可能是 __smart_router__），UI 显示用
         routerDecision, // 智能路由结果：含 provider/类别/难度，不含具体模型 ID
-        fastMode: !!settings.fastMode,
+        fastMode: !offlineOnly && !!settings.fastMode,
         thinking: settings.thinking !== false,
         reasoningLevel: lv,
         canDispatch,
         sandboxEnabled: settings.sandboxEnabled,
-        remoteCpp: settings.remoteCppEnabled !== false,
-        webEnabled: settings.webEnabled !== false && relayOk,
+        remoteCpp: !offlineOnly && settings.remoteCppEnabled !== false,
+        webEnabled: !offlineOnly && settings.webEnabled !== false && relayOk,
         imageModel: store.state.imageModel || DEFAULT_IMAGE_MODEL,
         // 识图 / 视频识别模型：设置页「多模态模型」全局生效（不随会话）
         visionModel: settings.visionModel || null,
@@ -721,7 +744,12 @@ export function createAgent(store, hooks = {}) {
         sandboxEnabled: settings.sandboxEnabled !== false,
         remoteCppEnabled: settings.remoteCppEnabled !== false,
         canDispatch,
-        overrides: {
+        overrides: offlineOnly ? {
+          ...userCapabilityOverrides,
+          web: { ...(userCapabilityOverrides.web || {}), enabled: false, allowedHosts: [], search: false, crawl: false, file: false },
+          sandbox: { ...(userCapabilityOverrides.sandbox || {}), network: false, remoteCpp: false, browser: false },
+          dispatch: { ...(userCapabilityOverrides.dispatch || {}), enabled: false },
+        } : {
           ...userCapabilityOverrides,
           sandbox: { ...(userCapabilityOverrides.sandbox || {}), browser: localBrowserAvailable() },
           web: {
@@ -812,8 +840,9 @@ export function createAgent(store, hooks = {}) {
       // 从这里开始：能力（可用性+约束）、工具表、预算、风险上限、确认策略、策略版本、实验臂、
       // 审计绑定字段全部收进一个冻结对象；工具表**由它派生**，构造上就不可能「声明有 Web 却没有 Web 工具」。
       // claimedBits 只在对故障注入自测时被改写（模拟「对外宣称的能力与实际不符」），真机路径等于实际值。
-      claimedBits = (settings.faultCapabilityClaim && typeof settings.faultCapabilityClaim === 'object')
-        ? settings.faultCapabilityClaim : null;
+      const claimedCapabilityBits = store.state.settings?.faultCapabilityClaim;
+      claimedBits = (claimedCapabilityBits && typeof claimedCapabilityBits === 'object')
+        ? claimedCapabilityBits : null;
       exec.turnContext = createTurnExecutionContext({
         turnId: machine.turnId,
         sessionId,
@@ -848,6 +877,13 @@ export function createAgent(store, hooks = {}) {
       // 派生输入是**完整工具表**（TOOL_DEFS）：能力裁剪（沙箱/联网/委派）从此只发生在一个地方，
       // 旧路径结果只用来交叉验证——两条独立计算必须逐项一致，否则说明有人只改了一处。
       whitelist = deriveToolWhitelist(exec.turnContext, TOOL_DEFS);
+      if (offlineOnly) {
+        const blocked = whitelist.allowed.filter((tool) => !isOfflineToolAllowed(toolName(tool)));
+        whitelist = {
+          allowed: whitelist.allowed.filter((tool) => isOfflineToolAllowed(toolName(tool))),
+          dropped: [...whitelist.dropped, ...blocked.map((tool) => ({ name: toolName(tool), reason: 'offline-local-only' }))],
+        };
+      }
       // P6 修正：能力裁剪后由轻量规则在首个模型请求前路由；核心工具稳定前置，动态工具追加。
       // 请求体里的 tools 从此是 selection.mounted；whitelist.allowed 仍是「本轮能力上允许」的全集，
       // 模型点名调用未挂载工具时内核会从这个全集里当场挂载（见 toolrunner 的 lazy-mount 回执）。
@@ -1492,6 +1528,8 @@ export function createAgent(store, hooks = {}) {
   }
 
   async function runContentModeration(userText, attachments) {
+    // 本地模型回合不会触发远端审核；离线时绝不下载审核模型或调用网关。
+    if (isNetworkOffline() || isOfflineModelId(store.state.model)) return { blocked: false, skipped: 'offline-local' };
     // 默认由 main.js 为正式应用打开；测试/嵌入方未显式开启时不额外加载模型。
     if (store.state.settings.contentModeration !== true) return { blocked: false, skipped: 'disabled' };
     const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
@@ -1571,29 +1609,38 @@ export function createAgent(store, hooks = {}) {
   // P6：可选传入 { text, attachments } 预演按需挂载的结果（mounted / deferred），口径与发请求时 selectToolsForTurn 一致。
   const previewToolTable = ({ text = '', attachments = [] } = {}) => {
     const settings = store.state.settings || {};
-    const relayOk = store.state.relayOk === true;
+    const offlineOnly = isNetworkOffline() || isOfflineModelId(store.state.model);
+    const relayOk = !offlineOnly && store.state.relayOk === true;
     const webOn = relayOk && settings.webEnabled !== false;
     const tier = resolveEffectiveReasoningState({ thinking: settings.thinking, reasoningLevel: settings.reasoningLevel || 'medium' });
+    const canDispatchPreview = !offlineOnly && tier.canDispatch;
     const wl = deriveToolWhitelistFromBits({
       relay: relayOk,
       web: webOn,
       sandbox: settings.sandboxEnabled !== false,
-      dispatch: tier.canDispatch,
+      dispatch: canDispatchPreview,
       search: webOn && relaySupports('search'),
       crawl: webOn && relaySupports('crawl'),
       file: webOn && relaySupports('file'),
-      remoteCpp: settings.remoteCppEnabled !== false,
-      browser: localBrowserAvailable(),
+      remoteCpp: !offlineOnly && settings.remoteCppEnabled !== false,
+      browser: !offlineOnly && localBrowserAvailable(),
     }, TOOL_DEFS);
-    const sel = selectToolsForTurn({ allowed: wl.allowed, text, attachments, recentTools: recentToolNames(store.state.messages) });
+    let allowed = wl.allowed;
+    let dropped = wl.dropped;
+    if (offlineOnly) {
+      const blocked = allowed.filter((tool) => !isOfflineToolAllowed(toolName(tool)));
+      allowed = allowed.filter((tool) => isOfflineToolAllowed(toolName(tool)));
+      dropped = [...dropped, ...blocked.map((tool) => ({ name: toolName(tool), reason: 'offline-local-only' }))];
+    }
+    const sel = selectToolsForTurn({ allowed, text, attachments, recentTools: recentToolNames(store.state.messages) });
     return {
-      allowed: wl.allowed.map(toolName),
-      dropped: wl.dropped.map((d) => ({ ...d, label: describeDropReason(d.reason) })),
-      summary: formatDroppedTools(wl.dropped),
+      allowed: allowed.map(toolName),
+      dropped: dropped.map((d) => ({ ...d, label: describeDropReason(d.reason) })),
+      summary: formatDroppedTools(dropped),
       mounted: sel.mounted.map(toolName),
       deferred: sel.deferred.map((d) => d.name),
       mountReasons: sel.reasons,
-      tier: { effectiveLevel: tier.effectiveLevel, displayTier: tier.displayTier, canDispatch: tier.canDispatch },
+      tier: { effectiveLevel: tier.effectiveLevel, displayTier: tier.displayTier, canDispatch: canDispatchPreview },
       total: TOOL_DEFS.length,
     };
   };
@@ -1708,8 +1755,13 @@ export function createAgent(store, hooks = {}) {
     },
 
     async send(userText, attachments = []) {
-      // 管理员别名刷新后默认锁定；先要求重新输入密钥与暗号，不能让空 Key 进入远程图片审核。
-      if (isAdminAlias(store.state.apiKey) && !effectiveApiKey(store.state.apiKey)) { emit('onNeedKey'); return; }
+      if (isNetworkOffline()) {
+        store.state.model = OFFLINE_MODEL_ID;
+        const activeSession = (store.state.sessions || []).find((session) => session.id === store.state.activeSessionId);
+        if (activeSession) activeSession.model = OFFLINE_MODEL_ID;
+      }
+      // 管理员别名刷新后默认锁定；本地模型不需要 Key，也不进入远程图片审核。
+      if (!isOfflineModelId(store.state.model) && isAdminAlias(store.state.apiKey) && !effectiveApiKey(store.state.apiKey)) { emit('onNeedKey'); return; }
       clearTransientModeration();
       // 视频附件带着 5 张审核抽帧进来：只给审核用，不进消息 / 不落 localStorage（海报图 poster 保留给气泡缩略图）
       const videoFrames = new Map();
