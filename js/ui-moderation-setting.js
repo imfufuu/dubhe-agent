@@ -37,6 +37,6 @@ export function installModerationSetting({ store, changed = () => {} }) {
     if (e.key === 'Tab') { const controls = [...modal.querySelectorAll('button:not(:disabled),input')], first = controls[0], last = controls.at(-1); if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); } else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); } }
   }, true);
   const note = document.getElementById('set-moderation-note');
-  const paintNote = () => { if (note) note.textContent = text('默认开启；关闭前需确认风险与责任，仅影响本地检查，不改变上游政策', 'On by default. Disabling requires risk acknowledgement; upstream policies still apply.'); };
+  const paintNote = () => { if (note) note.textContent = text('默认开启；称谓始终只在本地检查。普通文本在默认网关可能发送给 Jev 复核，图片灰区可能远程复核；关闭前需确认风险。', 'On by default. Salutations stay local; default-gateway text and uncertain images may be sent for review. Risk acknowledgement is required to disable.'); };
   onLanguageChange(paintNote); paintNote(); store.subscribe?.(sync); sync(); return { sync };
 }

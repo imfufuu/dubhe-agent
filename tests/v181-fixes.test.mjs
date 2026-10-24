@@ -826,7 +826,12 @@ test('暖纸色编辑对话、助手无回复卡片、用户气泡保留及编�
   assert.match(css, /#composer-input \{[^}]*transition: height \.18s/);
   assert.match(read('../js/ui.js'), /function autoGrow\(\) \{[\s\S]*?shell\?\.classList\.remove\('is-multiline'\)[\s\S]*?shell\?\.classList\.toggle\('is-multiline', multiline\)[\s\S]*?composer\.scrollTop = 0;/s, '按紧凑布局测量，收缩回单行时清掉 textarea 旧滚动偏移');
   assert.match(css, /\.composer \.attach-menu-wrap \{ grid-area: attach; align-self: center; \}/, '多行时附件按钮留在下方工具行');
-  assert.match(css, /\.app:has\(#sandbox-panel:not\(\.collapsed\)\) \.messages \{ padding-right: clamp\(28px, 3\.5vw, 48px\); \}/, '停靠面板展开时，助手正文与分割线保持间距');
+  assert.match(css, /\.app:has\(#sandbox-panel:not\(\.collapsed\)\) \.messages \{ padding-inline: clamp\(28px, 3\.5vw, 48px\); \}/, '停靠面板展开时，助手消息与两侧分割线都保持间距');
+  const composerUi = read('../js/ui.js');
+  const newlineGuard = read('../js/composer-newline-guard.js');
+  assert.match(newlineGuard, /if \(value\.startsWith\(probe\.prefix\)[\s\S]*?\/\^\\n\{2,\}\$\/u\.test\(inserted\)/, 'Shift+Enter 若在单次输入中插入多个换行，只保留一个');
+  assert.match(composerUi, /if \(e\.shiftKey\) \{ shiftEnterGuard\.capture\(\); return; \}/, '空输入 Shift+Enter 仍交给浏览器输入一个换行');
+  assert.doesNotMatch(composerUi, /e\.shiftKey && !composer\.value\.trim\(\)/, '空输入 Shift+Enter 不会被吞掉');
   assert.match(css, /\.msg-user \.bubble \{[^}]*max-width: 100%/);
   assert.doesNotMatch(css, /\.msg-user \.bubble \{[^}]*max-width: 82%/, '用户气泡不施加窄于消息容器的额外宽度上限');
   assert.match(css, /\.composer \{[^}]*transition:[^}]*border-radius/);
@@ -873,7 +878,8 @@ test('文档页首页长描述与独立声明按实际文案精确翻译', () =>
 
 test('思考强度菜单左侧带浅灰细线，不影响各档位按钮布局', () => {
   const css = read('../css/styles.css');
-  assert.match(css, /\.think-menu \{ padding: 6px; border-left: 1px solid color-mix\(in srgb, var\(--fg\) 18%, var\(--bg\)\); \}/);
+  assert.match(css, /\.think-menu \{ padding: 4px; max-height: min\(360px, calc\(100dvh - 80px\)\); border-left: 1px solid color-mix\(in srgb, var\(--fg\) 18%, var\(--bg\)\); \}/);
+  assert.match(css, /\.think-item \{[\s\S]*?padding: 5px 10px;[\s\S]*?line-height: 1\.18/s);
   assert.match(read('../app.html'), /id="think-menu" class="dd-menu think-menu"/);
 });
 

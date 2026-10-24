@@ -385,6 +385,7 @@
         <button id="voice-btn" type="button" aria-describedby="voice-privacy" title="语音输入" aria-label="语音输入" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3M8 22h8"/></svg></button>
         <button id="send-btn" type="button" title="发送 (Enter)" aria-label="发送"><span id="send-ico">↑</span></button>
       </div>
+      <div id="welcome-quick-prompts" class="welcome-quick-prompts" hidden></div>
       <span id="voice-privacy" class="sr-only">语音识别不会自动发送消息；音频由浏览器原生服务处理</span>
       <div id="voice-status" class="voice-status" role="status" aria-live="polite"></div>
       <div class="composer-hint">内容由AI生成，请仔细甄别 · <a href="./docs.html" target="_blank" rel="noopener">文档与协议</a></div>
@@ -543,6 +544,14 @@
       <section class="set-sec">
         <h4>外观</h4>
         <div class="set-row"><div class="set-lbl"><div class="set-title">语言</div><div class="set-sub">英文界面启用英文系统提示词；回复仍跟随用户语言</div></div><div class="set-ctl"><select id="set-language" class="set-select" aria-label="语言"><option value="zh">中文</option><option value="en">English</option></select></div></div>
+        <div class="set-row user-salutation-row">
+          <div class="set-lbl"><div id="set-user-salutation-title" class="set-title">用户称谓</div><div id="set-user-salutation-note" class="set-sub">最多 8 个字符；本地强制审核每秒刷新。默认称谓随机生成并保存在此设备。</div></div>
+          <div class="set-ctl user-salutation-control">
+            <span id="set-user-salutation-status" class="user-salutation-status" role="status" aria-live="polite">…</span>
+            <input id="set-user-salutation" class="set-input" type="text" maxlength="16" autocomplete="nickname" spellcheck="false" aria-labelledby="set-user-salutation-title" />
+            <button id="save-user-salutation" class="mini-btn" type="button" disabled>保存称谓</button>
+          </div>
+        </div>
         <div class="set-row">
           <div class="set-lbl"><div class="set-title">主题</div></div>
           <div class="set-ctl"><div class="seg" id="set-theme"><button type="button" data-v="light">浅色</button><button type="button" data-v="dark">深色</button></div></div>
@@ -559,7 +568,7 @@
 
       <section class="set-sec">
         <h4>对话行为</h4>
-        <div class="set-row"><div class="set-lbl"><div class="set-title">本地内容审核</div><div id="set-moderation-note" class="set-sub">默认开启；关闭前需确认风险与责任，仅影响本地检查，不改变上游政策</div></div><div class="set-ctl"><label class="sw"><input type="checkbox" id="set-moderation" checked/><span></span></label></div></div>
+        <div class="set-row"><div class="set-lbl"><div class="set-title">内容审核</div><div id="set-moderation-note" class="set-sub">默认开启；称谓始终只在本地检查。普通文本在默认网关可能发送给 Jev 复核，图片灰区可能远程复核；关闭前需确认风险。</div></div><div class="set-ctl"><label class="sw"><input type="checkbox" id="set-moderation" checked/><span></span></label></div></div>
         <div class="set-row"><div class="set-lbl"><div class="set-title">长任务完成通知</div><div id="notifications-note" class="set-sub">固定：超过60秒且在后台；手动停止不通知</div></div><div class="set-ctl"><button id="set-notifications" class="mini-btn" type="button" aria-pressed="false">开启通知</button></div></div>
         <div class="set-row"><div class="set-lbl"><div class="set-title">代码沙箱</div><div class="set-sub">JS / Python / C++</div></div><div class="set-ctl"><label class="sw"><input type="checkbox" id="set-sandbox"/><span></span></label></div></div>
         <div class="set-row"><div class="set-lbl"><div class="set-title">自动清理未引用文件</div><div class="set-sub">默认关闭；开启后清理未被回答引用的新文件；internal/、uploads/ 始终保留</div></div><div class="set-ctl"><label class="sw"><input type="checkbox" id="set-cleanup-unreferenced"/><span></span></label></div></div>
@@ -644,7 +653,7 @@
 </div>
 
 <div id="moderation-risk-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="moderation-risk-title">
- <div class="modal-card"><div class="modal-head"><h3 id="moderation-risk-title">关闭本地内容审核？</h3></div><p class="share-note">关闭后，输入和附件可能不再经过本地风险检查，可能包含有害、违法、隐私或不适宜内容。你需自行检查内容、保护敏感数据，并对使用和传播承担适用法律下的责任。关闭不改变网关或模型服务商的审核政策，也不代表内容安全。</p><label class="moderation-risk-check"><input id="moderation-risk-ack" type="checkbox">我已了解风险，会自行检查内容并承担使用责任</label><div class="modal-actions"><button id="moderation-risk-cancel" class="ghost-btn" type="button">保持开启</button><button id="moderation-risk-confirm" class="primary-btn" type="button" disabled>确认关闭本地审核</button></div></div>
+ <div class="modal-card"><div class="modal-head"><h3 id="moderation-risk-title">关闭内容审核？</h3></div><p class="share-note">关闭后，普通对话的本地文本规则与默认网关 Jev 复核、图片本地检查及可选灰区远程复核均会停用；用户称谓仍始终只做本地审核。你需自行检查对话内容、保护敏感数据，并对使用和传播承担适用法律下的责任。关闭不改变网关或模型服务商的审核政策，也不代表内容安全。</p><label class="moderation-risk-check"><input id="moderation-risk-ack" type="checkbox">我已了解风险，会自行检查内容并承担使用责任</label><div class="modal-actions"><button id="moderation-risk-cancel" class="ghost-btn" type="button">保持开启</button><button id="moderation-risk-confirm" class="primary-btn" type="button" disabled>确认关闭审核</button></div></div>
 </div>
 <div id="share-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="share-title">
   <div class="modal-card share-card"><div class="modal-head"><h3 id="share-title">分享对话</h3><button type="button" id="share-close" class="icon-btn" aria-label="关闭">×</button></div>

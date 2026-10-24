@@ -83,9 +83,9 @@ test('reduced-motion popover is immediate and does not create animations', () =>
 test('live catalog snapshot includes TeamoRouter V4.1 Flash 1017 and evidence-based low-cost labels', async () => {
   const { MODEL_CATALOG, MODEL_CATALOG_BY_ID } = await import('../js/model-catalog.js');
   const { FALLBACK_MODELS, resolveModelAlias } = await import('../js/config.js');
-  assert.equal(MODEL_CATALOG.length,56);assert.equal(new Set(MODEL_CATALOG.map(m=>m.id)).size,56);
-  assert.deepEqual(MODEL_CATALOG.filter(m=>m.newlyListed).map(m=>m.id).sort(),['claude-haiku-5-5','doubao-seed-2.0-lite','gemini-4-argon','grok-4.7','mimo-v2.6-flash','mimo-v2.6-pro']);
-  assert.equal(FALLBACK_MODELS.length,49);assert.equal(FALLBACK_MODELS.some(m=>m.id.startsWith('kimi')),true);
+  assert.equal(MODEL_CATALOG.length,60);assert.equal(new Set(MODEL_CATALOG.map(m=>m.id)).size,60);
+  assert.deepEqual(MODEL_CATALOG.filter(m=>m.newlyListed).map(m=>m.id).sort(),['MiniMax-M3','claude-haiku-5-5','doubao-seed-2.0-lite','gemini-4-argon','grok-4.7','kimi-k3.1-pro','mimo-v2.6-flash','mimo-v2.6-pro']);
+  assert.equal(FALLBACK_MODELS.length,53);assert.equal(FALLBACK_MODELS.some(m=>m.id.startsWith('kimi')),true);
   for(const [id,provider] of [['doubao-seed-2.1-pro','Doubao'],['kimi-k3','Kimi'],['MiniMax-M3','MiniMax'],['qwen3.8-max','Qwen']]) {
     const model=MODEL_CATALOG_BY_ID.get(id);assert.equal(model?.provider,provider,id);assert.ok(FALLBACK_MODELS.some(m=>m.id===id),id+' offline fallback');
   }
@@ -114,27 +114,28 @@ test('DeepSeek fallback matches official /models, and the versioned TeamoRouter 
   assert.ok(gatewayFallbackModelIds('teamorouter').includes('deepseek-flash-1017'));
   assert.ok(!gatewayFallbackModelIds('deepseek').includes('deepseek-flash-1017'));
 });
-test('a live model response is authoritative, including an empty result; offline fallback stays available', async()=>{
-  const { mergeAvailableModels }=await import('../js/model-catalog.js');
+test('TeamoRouter user-confirmed IDs survive partial/empty price responses; offline fallback remains available', async()=>{
+  const { mergeAvailableModels, TEAMOROUTER_CONFIRMED_MODEL_IDS }=await import('../js/model-catalog.js');
   const { FALLBACK_MODELS }=await import('../js/config.js');
-  assert.deepEqual(mergeAvailableModels(['gemini-4-argon','gemini-4-argon'],FALLBACK_MODELS).map(m=>m.id),['__smart_router__','gemini-4-argon']);
-  assert.deepEqual(mergeAvailableModels([],FALLBACK_MODELS,true).map(m=>m.id),['__smart_router__']);
+  const expected = ['__smart_router__', ...TEAMOROUTER_CONFIRMED_MODEL_IDS];
+  assert.deepEqual(mergeAvailableModels(['gemini-4-argon','gemini-4-argon'],FALLBACK_MODELS).map(m=>m.id),expected);
+  assert.deepEqual(mergeAvailableModels([],FALLBACK_MODELS,true).map(m=>m.id),expected, 'an empty price response does not revoke the user-confirmed availability list');
   assert.equal(mergeAvailableModels([],FALLBACK_MODELS).length,FALLBACK_MODELS.length);
-  assert.ok(mergeAvailableModels(['future-chat-model'],FALLBACK_MODELS).some(m=>m.id==='future-chat-model'),'live directory may introduce new models');
+  assert.ok(mergeAvailableModels(['future-chat-model'],FALLBACK_MODELS).some(m=>m.id==='future-chat-model'),'live directory may introduce additional models');
   const kimiFallback=mergeAvailableModels(['kimi-k3','kimi-k3[1M]'],FALLBACK_MODELS).map(m=>m.id);
-  assert.ok(kimiFallback.includes('kimi-k3'),'当前公开目录中的 Kimi K3 可用');
-  assert.ok(!kimiFallback.includes('kimi-k3[1M]'),'历史 1M 变体不由旧目录复活');
+  assert.ok(kimiFallback.includes('kimi-k3'),'current Kimi K3 is available');
+  assert.ok(!kimiFallback.includes('kimi-k3[1M]'),'historical 1M variant stays retired');
 });
-test('MiMo disappearance is explained by authoritative live catalog filtering, not lost static entries', async () => {
-  const { mergeAvailableModels, MODEL_CATALOG_BY_ID } = await import('../js/model-catalog.js');
+test('MiMo models from the user-confirmed list stay available when the public price snapshot omits them', async () => {
+  const { mergeAvailableModels, MODEL_CATALOG_BY_ID, TEAMOROUTER_CONFIRMED_MODEL_IDS } = await import('../js/model-catalog.js');
   const { FALLBACK_MODELS } = await import('../js/config.js');
-  const currentPublicIds = ['qwen3.7-flash', 'MiniMax-M3']; // TeamoRouter GET /v1/models/pricing, 2026-10-23; no MiMo IDs returned
-  for (const id of ['mimo-v2.6-flash', 'mimo-v2.6-pro']) assert.ok(MODEL_CATALOG_BY_ID.has(id), `${id} remains in the static fallback catalog`);
-  const live = mergeAvailableModels(currentPublicIds, FALLBACK_MODELS).map(m => m.id);
-  assert.deepEqual(live, ['__smart_router__', ...currentPublicIds]);
-  assert.ok(!live.includes('mimo-v2.6-flash') && !live.includes('mimo-v2.6-pro'), 'a successful live catalog hides static IDs it does not advertise');
+  const currentPublicIds = ['qwen3.7-flash', 'MiniMax-M3']; // 2026-10-23 pricing snapshot omitted MiMo IDs
+  for (const id of ['mimo-v2.6-flash', 'mimo-v2.6-pro']) assert.ok(MODEL_CATALOG_BY_ID.has(id), `${id} remains in the catalog`);
+  const listed = mergeAvailableModels(currentPublicIds, FALLBACK_MODELS).map(m => m.id);
+  assert.deepEqual(listed, ['__smart_router__', ...TEAMOROUTER_CONFIRMED_MODEL_IDS]);
+  assert.ok(listed.includes('mimo-v2.6-flash') && listed.includes('mimo-v2.6-pro'), 'the user-confirmed availability list supersedes a partial pricing snapshot');
   const offline = mergeAvailableModels([], FALLBACK_MODELS).map(m => m.id);
-  assert.ok(offline.includes('mimo-v2.6-flash') && offline.includes('mimo-v2.6-pro'), 'the static fallback still retains both entries');
+  assert.ok(offline.includes('mimo-v2.6-flash') && offline.includes('mimo-v2.6-pro'), 'offline fallback retains both entries too');
 });
 
 test('updated gateway list prices cover all visible catalog models, including MiniMax context tiers',async()=>{
@@ -148,6 +149,20 @@ test('updated gateway list prices cover all visible catalog models, including Mi
   const tiered=estimateChatCost('MiniMax-M3',{input_tokens:512001,output_tokens:1000});
   assert.equal(tiered.inRate,0.6);assert.equal(tiered.outRate,2.4);
 });
+test('Doubao estimate discloses that token-hour cache storage is excluded in both UI languages', async () => {
+  const { estimateChatCost } = await import('../js/pricing.js');
+  const { setLanguagePreference } = await import('../js/locale.js');
+  try {
+    setLanguagePreference('zh');
+    const zh = estimateChatCost('doubao-seed-2.0-lite', { input: 1000, cached: 200, output: 20 });
+    assert.match(zh.rateLabel, /token·小时/);
+    assert.match(zh.rateLabel, /未计入估价/);
+    setLanguagePreference('en');
+    const en = estimateChatCost('doubao-seed-2.0-lite', { input: 1000, cached: 200, output: 20 });
+    assert.match(en.rateLabel, /token-hour/);
+    assert.match(en.rateLabel, /not included/);
+  } finally { setLanguagePreference('zh'); }
+});
 test('thumb down has its own downward path, with no second CSS or SVG rotation',async()=>{
   const { ICON }=await import('../js/icons.js');
   const doc=documentOf(ICON.thumbUp+ICON.thumbDown);const paths=doc.querySelectorAll('path');
@@ -160,10 +175,10 @@ test('thumb down has its own downward path, with no second CSS or SVG rotation',
   assert.doesNotMatch(css,/\[data-theme="dark"\] \.feedback-btn\[data-vote="(?:up|down)"\]\[aria-pressed="true"\]\s*\{[^}]*background:/);
 });
 
-// ── 2026-10-21：目录热度复核（grok-4.7 / doubao-seed-2.0-lite / kimi-k3）、预览档不再挂徽标、使用规范分区、渲染语法防瞎猜 ──
-test('2026-10-21 目录复核：热门按 10 月调研重排，新增 grok-4.7 与 doubao-seed-2.0-lite', async () => {
+// ── 2026-10-24：目录热度复核（补齐 TeamoRouter 清单、供应商排序与价格标签） ──
+test('2026-10-24 目录复核：热门按当前清单重排并补齐国产供应商标签', async () => {
   const { MODEL_CATALOG_BY_ID } = await import('../js/model-catalog.js');
-  const hotIds = ['claude-fable-5-1','claude-haiku-5-5','claude-opus-5-5','claude-sonnet-5-5','deepseek-flash','deepseek-v4-pro','gemini-3.8-flash','gemini-4-argon','glm-5.3','glm-5.3-flash','gpt-6-astra','gpt-6-luna','gpt-6.1-sol','grok-4.7','kimi-k3'];
+  const hotIds = ['MiniMax-M3','claude-fable-5-1','claude-haiku-5-5','claude-opus-5-5','claude-sonnet-5-5','deepseek-flash','deepseek-v4-pro','doubao-seed-2.1-pro','gemini-3.8-flash','gemini-4-argon','glm-5.3','glm-5.3-flash','gpt-6-astra','gpt-6-luna','gpt-6.1-sol','grok-4.7','kimi-k3.1-pro','mimo-v2.6-pro','qwen3.8-max'];
   const { MODEL_CATALOG } = await import('../js/model-catalog.js');
   assert.deepEqual(MODEL_CATALOG.filter(m => m.hot).map(m => m.id).sort(), [...hotIds].sort(), '热门集合应与调研结论一致');
   assert.equal(MODEL_CATALOG_BY_ID.get('grok-4.6').hot, undefined, 'grok-4.6 已被 4.7 取代，不再标热门');
@@ -171,7 +186,7 @@ test('2026-10-21 目录复核：热门按 10 月调研重排，新增 grok-4.7 �
   assert.deepEqual(grok47.listPrice, { currency: 'USD', input: 2.0, output: 6.0, cached_input: 0.5 });
   assert.equal(grok47.contextWindow, 500000);
   const lite = MODEL_CATALOG_BY_ID.get('doubao-seed-2.0-lite');
-  assert.deepEqual(lite.listPrice, { currency: 'USD', input: 0.0857, output: 0.5143, cached_input: 0.0171 });
+  assert.deepEqual(lite.listPrice, { currency: 'USD', input: 0.089312295, output: 0.535873772, cached_input: 0.017862459 });
   assert.equal(lite.contextWindow, 256000);
   assert.equal(lite.cheap, true, '0.0857/0.5143 满足低价阈值');
   const picker = fs.readFileSync(new URL('../js/ui-model-picker.js', import.meta.url), 'utf8');

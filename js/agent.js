@@ -247,12 +247,16 @@ export async function runSubagent(def, task, { apiKey, gatewayId = 'teamorouter'
   let subInput = 0;
   let subOutput = 0;
   let subReasoning = 0;
+  let subCached = 0;
+  let subCacheCreation = 0;
+  let subCacheCreation5m = 0;
+  let subCacheCreation1h = 0;
   for (let i = 0; SUBAGENT_LOOP_MAX <= 0 || i < SUBAGENT_LOOP_MAX; i++) {
     if (signal && signal.aborted) throw new DOMException('Aborted', 'AbortError');
     const acc = createToolCallAccumulator();
     const tb = createThinkingTracker(); // 思考块需随 tool_use 回合回传，否则下一轮 400
     let text = '';
-    const roundUsage = { input: 0, output: 0, reasoning: 0 };
+    const roundUsage = { input: 0, output: 0, reasoning: 0, cached: 0, cacheCreation: 0, cacheCreation5m: 0, cacheCreation1h: 0 };
     await streamChat({
       model, apiKey, gatewayId, gatewayBaseUrl, thinking, reasoningLevel, signal, tools: subTools,
       subagentId: def.id, iteration: i + 1,
@@ -269,6 +273,10 @@ export async function runSubagent(def, task, { apiKey, gatewayId = 'teamorouter'
           if (ev.usage.input != null) roundUsage.input = ev.usage.input;
           if (ev.usage.output != null) roundUsage.output = ev.usage.output;
           if (ev.usage.reasoning != null) roundUsage.reasoning = ev.usage.reasoning;
+          if (ev.usage.cached != null) roundUsage.cached = ev.usage.cached;
+          if (ev.usage.cacheCreation != null) roundUsage.cacheCreation = ev.usage.cacheCreation;
+          if (ev.usage.cacheCreation5m != null) roundUsage.cacheCreation5m = ev.usage.cacheCreation5m;
+          if (ev.usage.cacheCreation1h != null) roundUsage.cacheCreation1h = ev.usage.cacheCreation1h;
         }
         else if (ev.type === 'error') throw new Error(ev.message);
       },
@@ -276,6 +284,10 @@ export async function runSubagent(def, task, { apiKey, gatewayId = 'teamorouter'
     subInput += roundUsage.input;
     subOutput += roundUsage.output;
     subReasoning += roundUsage.reasoning;
+    subCached += roundUsage.cached;
+    subCacheCreation += roundUsage.cacheCreation;
+    subCacheCreation5m += roundUsage.cacheCreation5m;
+    subCacheCreation1h += roundUsage.cacheCreation1h;
     finalText = text;
     const calls = acc.result();
     if (!calls.length) break;
@@ -287,8 +299,8 @@ export async function runSubagent(def, task, { apiKey, gatewayId = 'teamorouter'
       messages.push({ role: 'tool', toolCallId: c.id, name: c.name, content: res });
     }
   }
-  if (typeof onSubagentUsage === 'function' && (subInput || subOutput || subReasoning)) {
-    try { onSubagentUsage({ model, usage: { input: subInput, output: subOutput, ...(subReasoning ? { reasoning: subReasoning } : {}) } }); } catch { /* noop */ }
+  if (typeof onSubagentUsage === 'function' && (subInput || subOutput || subReasoning || subCached || subCacheCreation || subCacheCreation5m || subCacheCreation1h)) {
+    try { onSubagentUsage({ model, usage: { input: subInput, output: subOutput, ...(subReasoning ? { reasoning: subReasoning } : {}), ...(subCached ? { cached: subCached } : {}), ...(subCacheCreation ? { cacheCreation: subCacheCreation } : {}), ...(subCacheCreation5m ? { cacheCreation5m: subCacheCreation5m } : {}), ...(subCacheCreation1h ? { cacheCreation1h: subCacheCreation1h } : {}) } }); } catch { /* noop */ }
   }
   return finalText || '（子智能体未产生最终报告）';
 }
@@ -1116,9 +1128,9 @@ export function createAgent(store, hooks = {}) {
                     }
                     case 'usage':
                       // 单次流内 Anthropic 的 message_delta 是累计值；pull 收尾时再并入整轮计量。
-                      if (ev.usage.input != null) pullUsage.input = ev.usage.input;
-                      if (ev.usage.output != null) pullUsage.output = ev.usage.output;
-                      if (ev.usage.reasoning != null) pullUsage.reasoning = ev.usage.reasoning;
+                      for (const key of ['input', 'output', 'reasoning', 'cached', 'cacheCreation', 'cacheCreation5m', 'cacheCreation1h']) {
+                        if (ev.usage[key] != null) pullUsage[key] = ev.usage[key];
+                      }
                       break;
                     case 'finish':
                       finishReason = ev.reason;
@@ -1129,7 +1141,7 @@ export function createAgent(store, hooks = {}) {
                   }
                 },
               }).finally(() => {
-                for (const key of ['input', 'output', 'reasoning']) {
+                for (const key of ['input', 'output', 'reasoning', 'cached', 'cacheCreation', 'cacheCreation5m', 'cacheCreation1h']) {
                   if (pullUsage[key] != null) usage[key] = (Number(usage[key]) || 0) + (Number(pullUsage[key]) || 0);
                 }
               });
@@ -1278,7 +1290,7 @@ export function createAgent(store, hooks = {}) {
             reasoningMs: turn.thinking && reasonT0 ? Math.round(nowT - reasonT0) : undefined,
             reasoningLevel: turn.thinking ? (turn.reasoningLevel || 'medium') : 'off',
             durationMs: Math.round(nowT - streamT0),
-            usage: usage.input != null || usage.output != null || usage.reasoning != null ? { ...usage } : undefined,
+            usage: usage.input != null || usage.output != null || usage.reasoning != null || usage.cached != null || usage.cacheCreation != null || usage.cacheCreation5m != null || usage.cacheCreation1h != null ? { ...usage } : undefined,
             jevUsage: iterations === 1 && turnPlan && turnPlan.usage ? { ...turnPlan.usage } : undefined,
             fastMode: !!settings.fastMode,
             thoughtHidden: !!(turn.thinking && !reasoning && (thinkingBlocks.length || usage.reasoning)),

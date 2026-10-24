@@ -45,14 +45,14 @@ export const STORAGE_KEY = 'dubhe-agent-state-v1';
 export const SMART_ROUTER_ID = '__smart_router__';
 export const SMART_ROUTER_PROVIDER = 'DUBHEROUTER';
 
-// 2026-10-19 实际目录快照；仅作未取得实时目录时的兜底，不代表所有账户的可用性。
-// 生图入口仍在设置页；福利档保持隐藏。热门标签为应用精选，Cheap 按网关标价阈值判定；不显示「新收录」徽标。
+// 2026-10-24 目录快照；未取得实时目录时作兜底，并保留用户确认的 TeamoRouter 模型 ID。
+// 生图入口仍在设置页；福利档保持隐藏。热门标签为应用精选，低价标签按目录价格阈值判定；不显示「新收录」徽标。
 export const FALLBACK_MODELS = [
   { id: SMART_ROUTER_ID, provider: SMART_ROUTER_PROVIDER, hot: true },
   ...MODEL_CATALOG.filter(m => m.channel === 'chat' && !m.hidden).map(m => ({ ...m })),
 ];
 
-export const PROVIDER_ORDER = [SMART_ROUTER_PROVIDER, 'Anthropic', 'OpenAI', 'Google', 'DeepSeek', 'GLM', 'Grok', 'Kimi', 'Doubao', 'Qwen', 'MiniMax', 'Xiaomi', '其他'];
+export const PROVIDER_ORDER = [SMART_ROUTER_PROVIDER, 'Anthropic', 'OpenAI', 'Google', 'DeepSeek', 'Doubao', 'GLM', 'Kimi', 'MiniMax', 'Qwen', 'Xiaomi', 'Grok', '其他'];
 
 // ── 厂商组内模型排序：热度优先级 + 版本号降序 + 旗舰档位权重 ──────────────
 const PINNED_FAMILY_RANK = new Map(FALLBACK_MODELS.map((m, idx) => [m.id, idx]));
@@ -60,7 +60,11 @@ const PINNED_FAMILY_RANK = new Map(FALLBACK_MODELS.map((m, idx) => [m.id, idx]))
 export function extractModelVersionTuple(id) {
   const s = String(id || '').toLowerCase()
     .replace(/\[1m\]/g, '')
-    .replace(/-(?:20\d{6}|\d{6})$/, ''); // 剥离末尾日期快照（如 -20251001 / -260425）
+    .replace(/-(?:20\d{6}|\d{6}|1017)$/, ''); // Strip snapshot suffixes (e.g. -20251001, -260425, -1017).
+  const qwenMatch = s.match(/^qwen(\d+)(?:\.(\d+))?(?:-|$)/);
+  if (qwenMatch) return [Number(qwenMatch[1]) || 0, Number(qwenMatch[2]) || 0];
+  const kimiMatch = s.match(/^kimi-k(\d+)(?:\.(\d+))?/);
+  if (kimiMatch) return [Number(kimiMatch[1]) || 0, Number(kimiMatch[2]) || 0];
   // Claude 家族：claude-{tier}-{major}-{minor}
   const claudeMatch = s.match(/^claude-[a-z]+-(\d+)(?:-(\d+))?/);
   if (claudeMatch) return [Number(claudeMatch[1]) || 0, Number(claudeMatch[2]) || 0];
@@ -73,7 +77,8 @@ export function extractModelVersionTuple(id) {
 export function modelTierRank(id) {
   const s = String(id || '').toLowerCase();
   let tier = 50;
-  if (/\b(?:opus|astra)\b/.test(s)) tier = 95;
+  if (/^glm-\d+(?:\.\d+)?$/.test(s)) tier = 86;
+  else if (/\b(?:opus|astra|max)\b/.test(s)) tier = 95;
   else if (/\b(?:sonnet|sol)\b/.test(s)) tier = 88;
   else if (/\b(?:fable|pro|terra)\b/.test(s)) tier = 80;
   else if (/\b(?:flash|k3)\b/.test(s)) tier = 68;
@@ -128,7 +133,7 @@ export const IMAGE_MODELS = [
   // 网关 2026-10 新上的 nano-banana-2-1：名字不带 -image-，之前被当成对话模型混进模型菜单（.33 修）。与 Nano Banana 2 同走 Gemini generateContent。
   // 2026-10-08 实测（一次成功调用）：ID = gemini-nano-banana-2.1（网关价目表 /v1/models/pricing 同名），Gemini 原生 generateContent，
   // responseModalities IMAGE + imageConfig { aspectRatio, imageSize }；imageSize '512' 上游 503，1K 正常（44s，1120 输出 token ≈ $0.0097/图）。
-  { id: 'gemini-nano-banana-2.1', label: 'Nano Banana 2.1',        tag: 'Gemini 原生 · 新', note: 'Nano Banana 2.1 · 实测 1K 一张约 $0.01 / 44 秒；不支持 512，low 质量自动按 1K', tagEn: 'Gemini native · New', noteEn: 'Nano Banana 2.1 · measured ~$0.01 per 1K image in 44s; 512 unsupported, low quality falls back to 1K' },
+  { id: 'gemini-nano-banana-2.1', label: 'Nano Banana 2.1',        tag: 'Gemini 原生 · 新', note: 'Nano Banana 2.1 · 实测 1K 一张约 ¥0.07 / 44 秒（按 2026-10-23 中间价折算）；不支持 512，low 质量自动按 1K', tagEn: 'Gemini native · New', noteEn: 'Nano Banana 2.1 · measured ~$0.01 per 1K image in 44s; 512 unsupported, low quality falls back to 1K' },
 ];
 export const DEFAULT_IMAGE_MODEL = 'gpt-image-2';
 // 识图模型（analyze_image / analyze_pdf 页图）与视频识别模型（analyze_video）：
@@ -136,11 +141,11 @@ export const DEFAULT_IMAGE_MODEL = 'gpt-image-2';
 // 视频档位只收录 2026-10-06 用 11.5s 测试视频在网关实测能真正收到视频（usage 含 VIDEO modality）的模型；
 // Claude / GPT / DeepSeek / GLM / Kimi / Grok 经网关要么剥掉视频部件、要么上游 400，不列入。
 export const VISION_MODELS = [
-  {"id": "deepseek-v4-flash-vision-exp", "label": "DeepSeek V4 Vision", "tag": "默认 · 实验", "tagEn": "Default · Experimental", "note": "网关标价 $0.22/M 输入；实际账单以网关为准", "noteEn": "Gateway list price $0.22/M input; actual billing may vary"},
-  {"id": "gemini-3.5-flash-lite", "label": "Gemini 3.5 Flash Lite", "tag": "低价", "tagEn": "Cheap", "note": "网关标价 $0.3/M 输入；实际账单以网关为准", "noteEn": "Gateway list price $0.3/M input; actual billing may vary"},
-  {"id": "gemini-3.8-flash", "label": "Gemini 3.8 Flash", "tag": "通用", "tagEn": "General", "note": "网关标价 $0.75/M 输入；实际账单以网关为准", "noteEn": "Gateway list price $0.75/M input; actual billing may vary"},
-  {"id": "gemini-3.1-pro-preview", "label": "Gemini 3.1 Pro", "tag": "预览版", "tagEn": "Preview", "note": "网关标价 $2/M 输入；实际账单以网关为准", "noteEn": "Gateway list price $2/M input; actual billing may vary"},
-  {"id": "claude-sonnet-5-5", "label": "Claude Sonnet 5.5", "tag": "文档 / 代码截图", "tagEn": "Docs / code shots", "note": "网关标价 $2/M 输入；实际账单以网关为准", "noteEn": "Gateway list price $2/M input; actual billing may vary"},
+  {"id": "deepseek-v4-flash-vision-exp", "label": "DeepSeek V4 Vision", "tag": "默认 · 实验", "tagEn": "Default · Experimental", "note": "旧别名按 DeepSeek V4.1 Flash 非高峰官方价计费，约 ¥1.01/M 输入（高峰时段更高）", "noteEn": "Legacy alias billed at DeepSeek V4.1 Flash's official off-peak rate: $0.15/M input; peak rates are higher"},
+  {"id": "gemini-3.5-flash-lite", "label": "Gemini 3.5 Flash Lite", "tag": "低价", "tagEn": "Cheap", "note": "网关标价约 ¥2.02/M 输入（按 2026-10-23 中间价折算）；实际账单以网关为准", "noteEn": "Gateway list price $0.3/M input; actual billing may vary"},
+  {"id": "gemini-3.8-flash", "label": "Gemini 3.8 Flash", "tag": "通用", "tagEn": "General", "note": "网关标价约 ¥5.04/M 输入（按 2026-10-23 中间价折算）；实际账单以网关为准", "noteEn": "Gateway list price $0.75/M input; actual billing may vary"},
+  {"id": "gemini-3.1-pro-preview", "label": "Gemini 3.1 Pro", "tag": "预览版", "tagEn": "Preview", "note": "网关标价约 ¥13.44/M 输入（按 2026-10-23 中间价折算）；实际账单以网关为准", "noteEn": "Gateway list price $2/M input; actual billing may vary"},
+  {"id": "claude-sonnet-5-5", "label": "Claude Sonnet 5.5", "tag": "文档 / 代码截图", "tagEn": "Docs / code shots", "note": "网关标价约 ¥13.44/M 输入（按 2026-10-23 中间价折算）；实际账单以网关为准", "noteEn": "Gateway list price $2/M input; actual billing may vary"},
 ];
 export const DEFAULT_VISION_MODEL = 'deepseek-v4-flash-vision-exp';
 export const VIDEO_MODELS = [

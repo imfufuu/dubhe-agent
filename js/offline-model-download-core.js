@@ -1,5 +1,5 @@
 const META_PREFIX = '__metadata__';
-const DEFAULT_CHECKPOINT_BYTES = 4 * 1024 * 1024;
+const DEFAULT_CHECKPOINT_BYTES = 1024 * 1024;
 
 function abortError() {
   if (typeof DOMException === 'function') return new DOMException('Aborted', 'AbortError');
@@ -67,7 +67,7 @@ export async function downloadOpfsFile({
 
     let remoteEtag = '';
     try {
-      const head = await fetchImpl(url, { method: 'HEAD', signal });
+      const head = await fetchImpl(url, { method: 'HEAD', cache: 'no-store', signal });
       if (head.ok) {
         remoteEtag = head.headers.get('etag') || '';
         const headSize = Number(head.headers.get('content-length')) || 0;
@@ -84,6 +84,7 @@ export async function downloadOpfsFile({
       access.truncate(0); offset = 0;
     }
     const requestFile = (start) => fetchImpl(url, {
+      cache: 'no-store',
       ...(start > 0 ? { headers: { Range: `bytes=${start}-` } } : {}),
       ...(signal ? { signal } : {}),
     });

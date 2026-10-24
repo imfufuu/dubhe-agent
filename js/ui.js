@@ -4,7 +4,7 @@ import { installCaretEffect } from './ui-caret.js';
 import { publicPlanHtml } from './ui-publicplan.js';
 import { installChoiceHandler } from './ui-choices.js?v=2026.10.11.1';
 import { installSharing } from './ui-share.js?v=2026.10.11.1';
-import { text as localeText, onLanguageChange } from './locale.js';
+import { text as localeText, getLanguage, onLanguageChange } from './locale.js';
 import { installFeedback } from './ui-feedback.js';
 import { installSpeechInput } from './ui-speech.js';
 import { createToolPresentation, presentationCallSettled, turnToolResults } from './toolpresentation.js?v=2026.10.11.1';
@@ -33,7 +33,10 @@ import { pickSuggestionCards } from './suggestions.js';
 import { revealChunks } from './ui-chunks.js?v=2026.10.11.1';
 import { unlockAdminKey, adminUnlocked, isAdminAlias, adminExpiresAt } from './adminkey.js';
 import { shortSuggest } from './commands.js';
-import { summarizeTurnCost, formatUsd } from './pricing.js';
+import { getOrCreateUserSalutation, buildWelcomeGreeting } from './user-salutation.js';
+import { installShiftEnterGuard } from './composer-newline-guard.js';
+import { summarizeTurnCost, formatCcy } from './pricing.js';
+import { installLanguageCostRefresh } from './ui-language-costs.js';
 import { relayAvailable, relaySupports, currentRelay, resetRelayProbe, relayState } from './net.js';
 // P3：编辑直播预览模块单独版本化；缺失时不影响核心对话。
 import { buildEditPreview, editFoldLabel, pathsOfEdits, PREVIEW_REFRESH_MS, findTurnTempCommit, discardedForFold, discardedFoldLabel, turnRange } from './editpreview.js?v=2026.10.11.1';
@@ -209,7 +212,7 @@ export function mountUI(store, agent) {
     if (!themeColorMeta) return;
     const dark = document.documentElement.dataset.theme === 'dark';
     const base = dark ? [11, 11, 11] : [250, 249, 245];
-    // 与 styles.css 对齐：.overlay-backdrop rgba(10,10,10,.35)、.modal rgba(10,10,10,.4)、.img-lightbox rgba(8,8,8,.88)
+    // Alpha values mirror styles.css for the backdrop, modal, and lightbox.
     let overlay = null;
     const lb = $('#img-lightbox');
     if (lb && !lb.hidden) overlay = [8, 8, 8, 0.88];
@@ -574,7 +577,7 @@ const fmtAdminExp = (ms) => {
     btn.disabled = n === 0;
     btn.textContent = n ? `删除 ${n}` : '删除';
   }
-// 长效记忆空状态插画：两张记忆卡（后一张斜一点）+ 书签 + 浮动的小星标；与文件面板 FILES_EMPTY_ART 同一套线稿语言（1.4 描边 / currentColor / var(--bg) 填充）
+// Memory empty state uses the same line-art style as the Files panel.
 const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 160 112" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
   <defs><linearGradient id="meg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="currentColor" stop-opacity=".10"/><stop offset="1" stop-color="currentColor" stop-opacity="0"/></linearGradient></defs>
   <ellipse cx="80" cy="98" rx="52" ry="7" fill="url(#meg)"/>
@@ -972,29 +975,44 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       composer.focus(); autoGrow();
     }));
   }
+  function paintWelcomeGreeting() {
+    const heading = $('#welcome-greeting', msgList), prompt = $('#welcome-prompt', msgList);
+    if (!heading) return;
+    const settings = store.state.settings || (store.state.settings = {});
+    const salutation = getOrCreateUserSalutation(settings.userSalutation, { language: getLanguage() });
+    settings.userSalutation = salutation;
+    const copy = buildWelcomeGreeting(salutation, getLanguage());
+    heading.textContent = copy.title;
+    if (prompt) prompt.textContent = copy.prompt;
+  }
+  function renderWelcomePrompts(picks) {
+    const box = $('#welcome-quick-prompts');
+    if (!box) return;
+    const shuffleLabel = localeText('换一批', 'Shuffle');
+    const paint = (next) => {
+      box.innerHTML = `${suggestCardsHtml(next)}<button class="suggest-shuffle" type="button" title="${esc(localeText('换一批任务示例', 'Shuffle ideas'))}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 21v-5h5"/></svg>${shuffleLabel}</button>`;
+      bindSuggestCards(box);
+      $('.suggest-shuffle', box)?.addEventListener('click', () => paint(pickEmptyPicks()));
+    };
+    box.hidden = false;
+    paint(picks);
+  }
   function renderEmpty() {
     if (store.state.messages.length) return;
     const jb = $('#jump-bottom');
     if (jb) jb.classList.remove('show');
-    const picks = pickEmptyPicks();
-    msgList.appendChild(el('div', 'empty-state', `
-      <div class="empty-logo">${APP_LOGO}</div>
-      <h2>Dubhe Agent</h2>
-      <p>${localeText('Dubhe Agent · 基于 <span class="mono">TeamoRouter</span> 网关的网页端智能体<br>模型自选 · 代码沙箱 · 对话回滚 · 工具调用循环', 'Dubhe Agent · a browser agent powered by the <span class="mono">TeamoRouter</span> gateway<br>Your model · code sandbox · rollback · real tool loops')}</p>
-      <div class="empty-cards">${suggestCardsHtml(picks)}</div>
-      <button class="suggest-shuffle" type="button" title="换一批任务示例">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 21v-5h5"/></svg>换一批</button>`));
-    bindSuggestCards(msgList);
-    const shuffle = $('.suggest-shuffle', msgList);
-    if (shuffle) shuffle.addEventListener('click', () => {
-      const box = $('.empty-cards', msgList);
-      if (!box) { clearEmpty(); renderEmpty(); return; }
-      box.innerHTML = suggestCardsHtml(pickEmptyPicks());
-      bindSuggestCards(box);
-    });
+    msgList.appendChild(el('div', 'empty-state', `<div class="welcome-heading"><span class="welcome-mark">${APP_LOGO}</span><h2 id="welcome-greeting"></h2><button class="welcome-refresh" type="button" title="${esc(localeText('换个问候', 'New greeting'))}" aria-label="${esc(localeText('换个问候', 'New greeting'))}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M5.5 9a7 7 0 0 1 11.7-2L20 12M4 12l2.8 5a7 7 0 0 0 11.7-2"/></svg></button></div><p id="welcome-prompt"></p>`));
+    paintWelcomeGreeting();
+    $('.welcome-refresh', msgList)?.addEventListener('click', paintWelcomeGreeting);
+    renderWelcomePrompts(pickEmptyPicks());
   }
 
-  function clearEmpty() { const e = $('.empty-state', msgList); if (e) e.remove(); }
+  function clearEmpty() {
+    const e = $('.empty-state', msgList); if (e) e.remove();
+    const quick = $('#welcome-quick-prompts');
+    if (quick) { quick.hidden = true; quick.replaceChildren(); }
+  }
+  window.addEventListener('dubhe:user-salutation-changed', () => { if (!store.state.messages.length) paintWelcomeGreeting(); });
 
   function messageNode(m) {
     const wrap = el('div', `msg msg-${m.role} enter`);
@@ -1812,9 +1830,9 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       const tipParts = [`本轮 API 用量：输入 ${s.inputTokens} tok / 输出 ${s.outputTokens} tok${s.reasoningTokens ? `（含推理 ${s.reasoningTokens} tok）` : ''}`];
       if (costReady) {
         tipParts.push(`官方定价预估：${s.formatted}`);
-        if (s.visionUsd > 0) tipParts.push(`含识图模型：${formatUsd(s.visionUsd)}`);
-        if (s.imageUsd > 0) tipParts.push(`含生图模型：${formatUsd(s.imageUsd)}`);
-        if (s.subagentUsd > 0) tipParts.push(`含子智能体：${formatUsd(s.subagentUsd)}`);
+        if (s.visionUsd > 0) tipParts.push(`含识图模型：${formatCcy(s.visionUsd)}`);
+        if (s.imageUsd > 0) tipParts.push(`含生图模型：${formatCcy(s.imageUsd)}`);
+        if (s.subagentUsd > 0) tipParts.push(`含子智能体：${formatCcy(s.subagentUsd)}`);
       }
       parts.push(`<button type="button" class="tok-btn" title="${esc(tipParts.join(' · '))}">↑${s.inputTokens} ↓${s.outputTokens} tok${costHtml}</button>`);
     }
@@ -2027,6 +2045,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     clearConfirmCards(); syncPresentationScope(); pendingPaints.clear();
     for (const node of $$('.edited-files', msgList)) if (node._previewTimer != null) clearTimeout(node._previewTimer);
     msgNodes.clear(); msgList.innerHTML = '';
+    clearEmpty();
     renderEmpty();
     // 收集可见消息（跳过 tool/silent）
     const visible = store.state.messages.filter((m) => m.role !== 'tool' && !m.silent);
@@ -2059,8 +2078,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     if (scroll === 'bottom') jumpToBottom();
     else restoreMessageScroll(scrollSnapshot);
   }
-  // Rebuilds that change sessions opt into the tail; ordinary repaints preserve the reader's anchor.
-
+  // Session changes scroll to the tail; repaints preserve the reader's anchor.
   function attachToolResult(toolMsg) {
     const id = String(toolMsg && toolMsg.toolCallId != null ? toolMsg.toolCallId : '');
     if (!id) return;
@@ -2187,7 +2205,6 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
   }
 
   // ── 会话统计 & 导出 ───────────────────────────────────────────────────
-  // ── 会话统计 & 导出 ──────────────────────────
   // Token / 路由弹层：见 ui-popovers.js（P4 拆分）
   const { hideTokPop, placeTokPop, showRouterPop, showTokBreak } = installPopovers({
     store,
@@ -2271,7 +2288,6 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     const multiline = singleRowHeight > lineHeight + 1;
     shell?.classList.toggle('is-multiline', multiline);
 
-    // Re-measure after the textarea moves above the attachment / voice controls.
     composer.style.height = 'auto';
     const style = getComputedStyle(composer);
     const contentHeight = Math.max(lineHeight, composer.scrollHeight || lineHeight);
@@ -2281,11 +2297,9 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     const clipped = contentHeight > maxHeight + 1;
     composer.style.height = Math.min(contentHeight, maxHeight) + 'px';
     composer.style.overflowY = clipped ? 'auto' : 'hidden';
-    // A textarea keeps its old scrollTop after deleting lines. Reset it once all
-    // content fits so the first line doesn't appear vertically displaced.
     if (!clipped) composer.scrollTop = 0;
   }
-  composer.addEventListener('input', autoGrow);
+  const shiftEnterGuard = installShiftEnterGuard(composer, autoGrow);
   const composerShell = composer.closest('.composer');
   if (typeof ResizeObserver === 'function' && composerShell) {
     let previousWidth = 0;
@@ -2300,7 +2314,9 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     window.addEventListener('resize', autoGrow, { passive: true });
   }
   composer.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); doSend(); }
+    if (e.key !== 'Enter' || e.isComposing) return;
+    if (e.shiftKey) { shiftEnterGuard.capture(); return; }
+    e.preventDefault(); doSend();
   });
   sendBtn.addEventListener('click', () => {
     if (getBusy()) { agent.abort(); return; }
@@ -2576,6 +2592,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
   }
   syncComposerPh();
   onLanguageChange(() => { syncComposerPh(); if (!store.state.messages.length) { clearEmpty(); renderEmpty(); } });
+  installLanguageCostRefresh({ store, msgNodes, paintTurnMeta });
   if (mqPanel.addEventListener) mqPanel.addEventListener('change', () => { syncComposerPh(); if (!store.state.messages.length) { clearEmpty(); renderEmpty(); } });
 
   // ── 全屏预览：见 ui-lightbox.js（图片 / SVG / 图表全屏，缩放拖动，document 级事件委派）──

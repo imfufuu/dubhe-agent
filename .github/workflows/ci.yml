@@ -42,6 +42,15 @@ jobs:
       - name: tests/app-boot.mjs · 应用装配冒烟
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/app-boot.mjs
+      - name: tests/composer-newline-guard.test.mjs · 换行与发送键行为
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/composer-newline-guard.test.mjs
+      - name: tests/local-text-policy.test.mjs · 本地文本审核规则
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/local-text-policy.test.mjs
+      - name: tests/user-salutation.test.mjs · 本地称谓审核与状态
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/user-salutation.test.mjs
       - name: tests/dom-smoke.mjs · DOM 冒烟
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/dom-smoke.mjs

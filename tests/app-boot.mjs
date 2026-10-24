@@ -184,24 +184,26 @@ ok(`侧栏构建标识 = Dubhe Agent ${cfg.APP_RELEASE} · v${cfg.APP_VERSION}`,
 const htmlSrc = fs.readFileSync(path.join(ROOT, 'app.html'), 'utf8');
 ok('入口样式/脚本带 ?v=（穿透 Pages 静态资源缓存）', htmlSrc.includes(`css/styles.css?v=${cfg.APP_VERSION}`) && htmlSrc.includes(`js/main.js?v=${cfg.APP_VERSION}`));
 
-console.log('\n空状态：随机三条任务示例');
-const cards = $$('#messages .empty-state .suggest');
+console.log('\n空状态：Claude 风格的问候与紧凑快捷提示');
+ok('欢迎页显示个性化问候与简短引导', !!$('#welcome-greeting') && !!$('#welcome-prompt') && $('#welcome-greeting').textContent.trim() && $('#welcome-prompt').textContent.trim());
+ok('随机默认称谓保存在本机', !!localStorage.getItem('dubhe.user-salutation.v1'));
+const cards = $$('#welcome-quick-prompts .suggest');
 ok('展示 3 条示例卡片', cards.length === 3, `${cards.length} 张`);
 ok('示例卡显示短主题、data-prompt 是完整提示词', cards.every((c) => {
   const title = c.textContent.trim();
   const prompt = c.dataset.prompt || '';
   return !c.querySelector('.suggest-tag') && title.length > 0 && prompt.length > title.length && title !== prompt;
 }));
-ok('「换一批」可点', !!$('#messages .suggest-shuffle'));
+ok('「换一批」可点', !!$('#welcome-quick-prompts .suggest-shuffle'));
 const firstBatch = cards.map((c) => c.dataset.prompt).join('|');
 let changed = false;
 for (let i = 0; i < 10 && !changed; i++) {
-  click($('#messages .suggest-shuffle'));
-  changed = $$('#messages .empty-state .suggest').map((c) => c.dataset.prompt).join('|') !== firstBatch;
+  click($('#welcome-quick-prompts .suggest-shuffle'));
+  changed = $$('#welcome-quick-prompts .suggest').map((c) => c.dataset.prompt).join('|') !== firstBatch;
 }
 ok('换一批换出不同组合', changed);
-click($$('#messages .empty-state .suggest')[0]);
-const clicked = $$('#messages .empty-state .suggest')[0];
+click($$('#welcome-quick-prompts .suggest')[0]);
+const clicked = $$('#welcome-quick-prompts .suggest')[0];
 ok('点卡片把完整提示词填进输入框', $('#composer-input').value === clicked.dataset.prompt
   && $('#composer-input').value !== clicked.textContent.trim() && $('#composer-input').value.length > 8,
   JSON.stringify($('#composer-input').value).slice(0, 50));
@@ -396,7 +398,7 @@ ok('侧栏 Logo 旁徽章与当前发布版本一致', !!$('.ver-badge') && $('.
 ok('「清空」一键删除全部会话记录', $$('#session-list .sess-item').length === 0 && !!$('#session-list .sess-empty-hint'));
 ok('没有会话记录时只显示一句短提示', $('#session-list .sess-empty-hint').textContent.trim() === '还没有会话记录'
   && $('#session-list .sess-empty-hint').querySelectorAll('br').length === 0, $('#session-list .sess-empty-hint').textContent.trim());
-ok('清空后对话区回到空状态示例', $$('#messages .empty-state .suggest').length === 3 && !$$('#messages .msg-assistant').length);
+ok('清空后对话区回到空状态示例', $$('#welcome-quick-prompts .suggest').length === 3 && !$$('#messages .msg-assistant').length);
 
 console.log('\n网络与 git 工具（只留中继抓取 + 本地 git）');
 {

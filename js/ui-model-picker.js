@@ -5,7 +5,7 @@ import { mergeAvailableModels, MODEL_CATALOG_DATE } from './model-catalog.js?v=2
 // 不拥有：会话切换、消息渲染、能力条。这些经 deps 注入（rebuildMessages / renderSessions / renderFiles / updateStats /
 //       syncCapLine / syncWeb / getBusy / openKeyModal），本文件绝不 import ui.js。
 // deps 里 renderFiles / syncWeb 在 mountUI 中定义得比本模块晚：调用方必须以惰性箭头函数传入。
-import { text as localeText } from './locale.js';
+import { text as localeText, onLanguageChange } from './locale.js';
 import { $, el, esc } from './ui-markdown.js?v=2026.10.11.1';
 import { FALLBACK_MODELS, isImageModel, providerOf, SMART_ROUTER_ID, PROVIDER_ORDER, SMART_ROUTER_PROVIDER, sortModelsInFamily, isFreeModel, supportsVision, supportsFastMode, IMAGE_MODELS, DEFAULT_IMAGE_MODEL, imageModelLabel } from './config.js?v=2026.10.11.1';
 import { isJevModel } from './jev.js';
@@ -13,6 +13,8 @@ import { ICON, providerIcon } from './icons.js';
 import { ROUTER_ICON_SVG, isSmartRouter, SMART_ROUTER_LABEL, SMART_ROUTER_PROVIDER_LABEL } from './smartrouter.js?v=2026.10.11.1';
 import { fetchModels } from './api.js?v=2026.10.11.1';
 import { effectiveApiKey } from './adminkey.js';
+import { formatRate } from './pricing.js';
+import { USD_TO_CNY_RATE, USD_TO_CNY_RATE_DATE } from './currency.js';
 import { isNetworkOffline } from './offline-network.js';
 import { OFFLINE_MODEL_DISPLAY_NAME, OFFLINE_MODEL_ID, OFFLINE_MODEL_PROVIDER_EN, OFFLINE_MODEL_PROVIDER_ZH, isOfflineModelId } from './offline-model-config.js';
 import { DEFAULT_GATEWAY_ID, gatewayFallbackModels, defaultModelForGateway, gatewayModelListLabel, isModelForGateway } from './gateway-registry.js?v=2026.10.11.1';
@@ -35,6 +37,32 @@ export function installModelPicker({ store, agent, toast, getBusy, openKeyModal,
       available: store.state.offlineModelAvailable === true,
       contextWindow: 4096,
     };
+  }
+  function modelPriceTitle(hit) {
+    const p = hit?.listPrice;
+    if (!p) return hit?.id || '';
+    const official = hit.priceSource === 'official';
+    const label = official
+      ? localeText('供应商官方价目表', 'Official provider rate card')
+      : localeText('TeamoRouter 网关标价', 'TeamoRouter gateway list price');
+    const cny = `；中文金额按 ${USD_TO_CNY_RATE_DATE} 中间价 1 USD = ¥${USD_TO_CNY_RATE} 折算`;
+    const rates = localeText(
+      `输入 ${formatRate(p.input, 'zh')} / 输出 ${formatRate(p.output, 'zh')}`
+        + (p.cached_input != null ? ` / 缓存命中 ${formatRate(p.cached_input, 'zh')}` : '')
+        + (p.cached_input_explicit != null ? ` / 显式缓存命中 ${formatRate(p.cached_input_explicit, 'zh')}` : '')
+        + (p.cache_write != null ? ` / 缓存写入 ${formatRate(p.cache_write, 'zh')}` : ''),
+      `${formatRate(p.input, 'en')} input / ${formatRate(p.output, 'en')} output`
+        + (p.cached_input != null ? ` / ${formatRate(p.cached_input, 'en')} cache hit` : '')
+        + (p.cached_input_explicit != null ? ` / ${formatRate(p.cached_input_explicit, 'en')} explicit cache hit` : '')
+        + (p.cache_write != null ? ` / ${formatRate(p.cache_write, 'en')} cache write` : ''),
+    );
+    const note = localeText(hit.priceNote || '', hit.priceNoteEn || '');
+    return localeText(
+      `${label}（核验 ${MODEL_CATALOG_DATE}${official ? cny : ''}）：${rates}，每百万 token；${note}`
+        + (official ? ' 实际账单可能因地区、服务档位或网关而异。' : ' 实际账单以网关为准。'),
+      `${label} (checked ${MODEL_CATALOG_DATE}): ${rates} per million tokens; ${note}`
+        + (official ? ' Actual billing may vary by region, service tier, or gateway.' : ' Final billing is determined by the gateway.'),
+    );
   }
   function mergedModels() {
     if (isNetworkOffline()) return [localModelRecord()];
@@ -114,6 +142,10 @@ export function installModelPicker({ store, agent, toast, getBusy, openKeyModal,
         const free = !local && isFreeModel(m.id);
         const hot = !local && !!hit.hot;
         const cheap = !local && (!!hit.cheap || free);
+        const cheapBadgeTitle = localeText(
+          `目录低价标签阈值：输入≤${formatRate(1, 'zh')}/M、输出≤${formatRate(5, 'zh')}/M（按 ${USD_TO_CNY_RATE_DATE} 中间价折算；非实时账单价）`,
+          `Curated cheap-tag threshold: input ≤ ${formatRate(1, 'en')}/M and output ≤ ${formatRate(5, 'en')}/M; not a live bill.`,
+        );
         const localState = store.state.offlineModelAvailable
           ? localeText('已安装', 'Installed')
           : (store.state.offlineModelChecked ? localeText('未下载', 'Not downloaded') : localeText('检查中', 'Checking'));
@@ -122,7 +154,7 @@ export function installModelPicker({ store, agent, toast, getBusy, openKeyModal,
           ? (hit.available
             ? localeText('本地 GGUF · Q4_K_M · 约 986 MB。低拒答/uncensored 是仓库自述标签，未经独立测评。', 'Local GGUF · Q4_K_M · about 986 MB. Low-refusal/uncensored are repository self-descriptions, not independently benchmarked.')
             : localeText('本地模型尚未下载；请先在设置 → 离线本地模型中手动下载。', 'Local model is not installed. Download it manually in Settings → Offline local model first.'))
-          : (hit.listPrice ? localeText(`网关标价（${MODEL_CATALOG_DATE}）：输入 $${hit.listPrice.input} / 输出 $${hit.listPrice.output}，每百万 token；实际账单以网关为准`, `Gateway list price (${MODEL_CATALOG_DATE}): $${hit.listPrice.input} input / $${hit.listPrice.output} output per million tokens; final billing is determined by the gateway`) : m.id);
+          : modelPriceTitle(hit);
         const isRouter = isSmartRouter(m.id);
         item.innerHTML = isRouter
           ? `<span class="dd-item-id mono router-name">${esc(SMART_ROUTER_LABEL)}</span>
@@ -139,7 +171,7 @@ export function installModelPicker({ store, agent, toast, getBusy, openKeyModal,
             : `<span class="dd-item-id mono">${esc(m.id)}</span>
               <span class="dd-item-badges">
                 ${hot ? `<span class="badge hot" title="${localeText('应用预设热门精选，非实时使用热度或质量实测排行', 'App-curated popular pick, not live usage popularity or benchmark rank')}">${localeText('热门', 'Popular')}</span>` : ''}
-                ${free ? '<span class="badge">FREE</span>' : (cheap ? `<span class="badge cheap" title="${localeText('网关标价：输入不高于 $1/M 且输出不高于 $5/M', 'Gateway list price: input ≤ $1/M and output ≤ $5/M')}">${localeText('低价', 'Cheap')}</span>` : '')}
+                ${free ? '<span class="badge">FREE</span>' : (cheap ? `<span class="badge cheap" title="${esc(cheapBadgeTitle)}">${localeText('低价', 'Cheap')}</span>` : '')}
                 ${supportsVision(m.id) ? '<span class="badge vision" title="支持图片输入（多模态）"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg></span>' : ''}
               </span>`);
         item.addEventListener('click', () => selectModel(m.id));
@@ -281,6 +313,7 @@ export function installModelPicker({ store, agent, toast, getBusy, openKeyModal,
   const closeMenu = () => ddMenu.classList.remove('open');
   ddBtn.addEventListener('click', () => ddMenu.classList.contains('open') ? closeMenu() : openMenu());
   ddSearch.addEventListener('input', renderModelMenu);
+  onLanguageChange(() => { if (!ddMenu.hidden) renderModelMenu(); });
   // 搜索框一键清空（.18）
   const ddClear = $('#model-search-clear');
   if (ddClear) {

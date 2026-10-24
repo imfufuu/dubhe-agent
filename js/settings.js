@@ -6,6 +6,7 @@ import { isNetworkOffline } from './offline-network.js';
 import { providerIcon } from './icons.js';
 import { sanitizeSvgMarkup, svgDataUrl } from './svg-safety.js';
 import { text as localeText } from './locale.js';
+import { getOrCreateUserSalutation, validateUserSalutation, saveUserSalutation } from './user-salutation.js';
 import { getLanguage, onLanguageChange } from './locale.js';
 // 设置弹窗：API Key / 中继地址 / 主题 / 字号 / 沙箱 / 联网 / 快速 / 思考 / 识图·音视频解析模型 / 清空数据 / 关于
 import { APP_RELEASE, APP_VERSION, STORAGE_KEY, VISION_MODELS, VIDEO_MODELS, IMAGE_MODELS, DEFAULT_IMAGE_MODEL, isImageGenModel, imageModelLabel, resolveVisionModel, resolveVideoModel } from './config.js?v=2026.10.11.1';
@@ -25,7 +26,9 @@ let manualModelIconDraft = '';
 let offlineModelStore = null;
 let offlineDownloadController = null;
 let offlineModelDownloadBusy = false;
+let offlineModelStatusChecking = false;
 let offlineDownloadProgress = null;
+let salutationCheckTimer = null;
 
 const ADMIN_PREFIX = 'admin-';
 const isAdmin = (s) => String(s || '').startsWith(ADMIN_PREFIX);
@@ -79,7 +82,10 @@ function renderOfflineModelUI(status = null) {
   const available = status?.available ?? offlineModelStore.state.offlineModelAvailable === true;
   const supported = status?.supported ?? offlineModelStore.state.offlineModelStorageSupported === true;
   const partialBytes = Math.max(0, Number(status?.partialBytes ?? offlineModelStore.state.offlineModelPartialBytes) || 0);
-  if (offlineDownloadProgress && offlineModelDownloadBusy) {
+  if (offlineModelStatusChecking && !offlineModelDownloadBusy) {
+    if (progressWrap) progressWrap.hidden = true;
+    statusEl.textContent = localeText('正在检查已保存的下载进度…', 'Checking saved download progress…');
+  } else if (offlineDownloadProgress && offlineModelDownloadBusy) {
     const p = formatOfflineDownloadProgress(offlineDownloadProgress);
     const verifying = offlineDownloadProgress.phase === 'verify';
     if (progressWrap) progressWrap.hidden = false;
@@ -104,10 +110,12 @@ function renderOfflineModelUI(status = null) {
   }
   if (downloadBtn) {
     downloadBtn.hidden = available;
-    downloadBtn.disabled = offline || !supported || offlineModelDownloadBusy;
-    downloadBtn.textContent = offlineModelDownloadBusy
-      ? localeText(offlineDownloadProgress?.phase === 'verify' ? '正在校验…' : '下载中…', offlineDownloadProgress?.phase === 'verify' ? 'Verifying…' : 'Downloading…')
-      : partialBytes >= OFFLINE_MODEL_SIZE_BYTES
+    downloadBtn.disabled = offline || !supported || offlineModelDownloadBusy || offlineModelStatusChecking;
+    downloadBtn.textContent = offlineModelStatusChecking && !offlineModelDownloadBusy
+      ? localeText('检查下载进度…', 'Checking progress…')
+      : offlineModelDownloadBusy
+        ? localeText(offlineDownloadProgress?.phase === 'verify' ? '正在校验…' : '下载中…', offlineDownloadProgress?.phase === 'verify' ? 'Verifying…' : 'Downloading…')
+        : partialBytes >= OFFLINE_MODEL_SIZE_BYTES
         ? localeText('继续校验模型', 'Continue model verification')
         : partialBytes > 0
           ? localeText('继续下载模型', 'Resume model download')
@@ -120,9 +128,15 @@ function renderOfflineModelUI(status = null) {
 async function refreshOfflineModelUI(store = offlineModelStore) {
   if (!store) return null;
   offlineModelStore = store;
-  const status = await syncOfflineModelAvailability(store, { notify: false });
-  renderOfflineModelUI(status);
-  return status;
+  offlineModelStatusChecking = true;
+  let status = null;
+  try {
+    status = await syncOfflineModelAvailability(store, { notify: false });
+    return status;
+  } finally {
+    offlineModelStatusChecking = false;
+    renderOfflineModelUI(status);
+  }
 }
 
 function syncSeg(sel, v) {
@@ -345,11 +359,58 @@ function syncGatewayFields(store) {
   renderManualModelList(store);
 }
 
+function paintSalutationCopy() {
+  const language = getLanguage();
+  const title = $('#set-user-salutation-title'), note = $('#set-user-salutation-note');
+  const input = $('#set-user-salutation'), save = $('#save-user-salutation');
+  if (title) title.textContent = localeText('用户称谓', 'What should we call you?');
+  if (note) note.textContent = localeText('最多 8 个字符；本地强制审核每秒刷新。默认称谓随机生成并保存在此设备。', 'Up to 8 characters. A mandatory local review refreshes every second. A random default is saved on this device.');
+  if (input) { input.placeholder = localeText('输入称谓', 'Your name'); input.setAttribute('aria-label', localeText('用户称谓', 'Your name')); }
+  if (save) save.textContent = localeText('保存称谓', 'Save name');
+  return language;
+}
+
+function refreshSalutationCheck(store) {
+  const input = $('#set-user-salutation'), status = $('#set-user-salutation-status'), save = $('#save-user-salutation');
+  if (!input || !status) return null;
+  const settings = store?.state?.settings || {};
+  const current = getOrCreateUserSalutation(settings.userSalutation, { language: getLanguage() });
+  settings.userSalutation = current;
+  const result = validateUserSalutation(input.value);
+  const saved = result.ok && result.value === current;
+  status.classList.toggle('available', result.ok);
+  status.classList.toggle('unavailable', !result.ok);
+  status.textContent = result.ok ? localeText('✓ 可用', '✓ Available') : localeText('✗ 不可用', '✗ Unavailable');
+  status.title = result.ok ? localeText('通过本地称谓审核', 'Passed local salutation review') : result.reason;
+  input.setAttribute('aria-invalid', String(!result.ok));
+  if (save) {
+    save.disabled = !result.ok || saved;
+    save.textContent = saved ? localeText('已保存', 'Saved') : localeText('保存称谓', 'Save name');
+  }
+  return result;
+}
+
+function syncSalutationField(store) {
+  const input = $('#set-user-salutation');
+  if (!input) return;
+  const settings = store.state.settings || (store.state.settings = {});
+  input.value = getOrCreateUserSalutation(settings.userSalutation, { language: getLanguage() });
+  settings.userSalutation = input.value;
+  paintSalutationCopy();
+  refreshSalutationCheck(store);
+}
+
 export function openSettingsModal({ store } = {}) {
   const m = $('#settings-modal');
   if (!m || !store) return;
   offlineModelStore = store;
   syncGatewayFields(store);
+  syncSalutationField(store);
+  const downloadBtn = $('#set-offline-model-download');
+  if (downloadBtn) {
+    downloadBtn.disabled = true;
+    downloadBtn.textContent = localeText('检查下载进度…', 'Checking progress…');
+  }
   refreshOfflineModelUI(store).catch((error) => {
     store.state.offlineModelStatusError = error?.message || String(error);
     renderOfflineModelUI();
@@ -496,6 +557,32 @@ export function mountSettings(store, { onRelayChanged, onKeySaved, onSettingChan
     if (!m.classList.contains('open')) return;
     if (e.key === 'Escape') closeSettingsModal();
   });
+
+  const salutationInput = $('#set-user-salutation');
+  const salutationSave = $('#save-user-salutation');
+  if (salutationInput) {
+    const refreshSalutation = () => refreshSalutationCheck(store);
+    salutationInput.addEventListener('input', refreshSalutation);
+    salutationInput.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      if (salutationSave && !salutationSave.disabled) salutationSave.click();
+    });
+    salutationSave?.addEventListener('click', () => {
+      const result = saveUserSalutation(salutationInput.value);
+      if (!result.ok) { refreshSalutation(); return; }
+      store.state.settings.userSalutation = result.value;
+      salutationInput.value = result.value;
+      store.notify();
+      refreshSalutation();
+      try { window.dispatchEvent(new CustomEvent('dubhe:user-salutation-changed', { detail: { salutation: result.value } })); } catch { /* non-browser tests */ }
+      toast(localeText('用户称谓已保存。', 'Your salutation is saved.'), 'ok');
+    });
+    if (salutationCheckTimer) clearInterval(salutationCheckTimer);
+    salutationCheckTimer = setInterval(refreshSalutation, 1000);
+    salutationCheckTimer?.unref?.();
+    refreshSalutation();
+  }
 
   function saveKey() {
     const v = $('#set-key').value.trim();
@@ -682,7 +769,11 @@ export function mountSettings(store, { onRelayChanged, onKeySaved, onSettingChan
     try {
       await downloadOfflineModel({
         signal: offlineDownloadController.signal,
-        onProgress: (progress) => { offlineDownloadProgress = progress; renderOfflineModelUI(); },
+        onProgress: (progress) => {
+          offlineDownloadProgress = progress;
+          if (offlineModelStore?.state) offlineModelStore.state.offlineModelPartialBytes = Math.max(0, Math.min(OFFLINE_MODEL_SIZE_BYTES, Number(progress?.loaded) || 0));
+          renderOfflineModelUI();
+        },
       });
       const status = await syncOfflineModelAvailability(offlineModelStore, { notify: true });
       renderOfflineModelUI(status);
@@ -827,10 +918,13 @@ export function mountSettings(store, { onRelayChanged, onKeySaved, onSettingChan
   });
   // 语言切换：模型档位的 tag/note 有中英两版，切换后立刻重排（面板开着时也生效）
   onLanguageChange(() => {
+    paintMotionNote();
     for (const sel of ['#set-image-model', '#set-vision-model', '#set-av-model']) { const el = $(sel); if (el) el._lang = ''; }
     syncMultimodalSelects(store);
     renderOfflineModelUI();
     renderManualModelList(store);
+    paintSalutationCopy();
+    refreshSalutationCheck(store);
   });
 
   // 清除临时缓存：只动「丢了也能重建」的东西——Cache Storage（SW 离线资源：模型 / 审核资产 / 静态文件）、sessionStorage、
@@ -1011,12 +1105,18 @@ export function applyMotionValue(value, { persist = true } = {}) {
   return v;
 }
 export function applyMotion() { return applyMotionValue(readMotionPreference(), { persist: false }); }
-export function motionNoteText(pref = readMotionPreference(), systemReduce = systemPrefersReducedMotion()) {
-  if (pref === 'on') return systemReduce ? '强制开启（忽略系统「减少动效」）' : '强制开启';
-  if (pref === 'off') return '已关闭';
+export function motionNoteText(pref = readMotionPreference(), systemReduce = systemPrefersReducedMotion(), language = getLanguage()) {
+  const text = (zh, en) => language === 'en' ? en : zh;
+  if (pref === 'on') return systemReduce
+    ? text('强制开启（忽略系统「减少动效」）', 'Forced on (ignores system “Reduce motion”)')
+    : text('强制开启', 'Forced on');
+  if (pref === 'off') return text('已关闭', 'Off');
   return systemReduce
-    ? '系统要求减少动效，动画已停（Windows：设置 → 辅助功能 → 视觉效果 → 动画效果）。选「开」可忽略'
-    : '跟随系统';
+    ? text(
+      '系统要求减少动效，动画已停（Windows：设置 → 辅助功能 → 视觉效果 → 动画效果）。选「开」可忽略',
+      'Your system requests reduced motion, so animations are paused. Select “On” to override.',
+    )
+    : text('跟随系统', 'Follow system');
 }
 function paintMotionNote() {
   const n = $('#set-motion-note');

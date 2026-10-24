@@ -203,7 +203,7 @@ click($('#panel-toggle'));
 const preservedRow = $$('.sess-item').find((n) => n.querySelector('.sess-title')?.textContent === '当前仍打开的会话');
 click(preservedRow);
 click(preservedRow.querySelector('.sess-del'));
-ok('删除活动会话回到空白主页', store.state.messages.length === 0 && !!$('#messages .empty-state') && $$('#messages .empty-state .suggest').length > 0);
+ok('删除活动会话回到空白主页', store.state.messages.length === 0 && !!$('#messages .empty-state') && $$('#welcome-quick-prompts .suggest').length > 0);
 ok('删除后清空出错状态', $('#status-text').textContent === '' && $('#status-dot').className.includes('ok'));
 ok('删除活动会话后面板也收起', $('#sandbox-panel').classList.contains('collapsed'));
 
@@ -417,25 +417,25 @@ ok('示例池 ≥12 条', sg.SUGGESTIONS.length >= 12, `${sg.SUGGESTIONS.length}
 const savedMsgs = [...store.state.messages];
 store.state.messages.length = 0;
 ui.rebuildMessages();
-const emptyState = $('#messages .empty-state');
-const cards = emptyState ? [...emptyState.querySelectorAll('.suggest')] : [];
+const quickPrompts = $('#welcome-quick-prompts');
+const cards = quickPrompts ? [...quickPrompts.querySelectorAll('.suggest')] : [];
 ok('空状态展示 3 条示例卡片', cards.length === 3, `${cards.length} 张`);
 const cmp = (a, b) => { const n = Math.min(a.length, b.length); for (let i = 0; i < n; i++) if (a[i] !== b[i]) return `${i}:${a.charCodeAt(i)}≠${b.charCodeAt(i)}`; return a.length === b.length ? 'eq' : `len ${a.length}/${b.length}`; };
 ok('示例卡不再带「任务类型」标签，主题短于完整提示词', cards.every((c) => !c.querySelector('.suggest-tag') && c.textContent.trim() && c.dataset.prompt && c.textContent.trim() !== c.dataset.prompt && c.textContent.trim().length < c.dataset.prompt.length),
   cards.map((c) => `${cmp(c.textContent.trim(), c.dataset.prompt || '')}/${c.querySelector('.suggest-tag') ? '有标签' : '无标签'}`).join(' | '));
 ok('CSS 里也没有 .suggest-tag 残留', !cssText.includes('.suggest-tag'));
 ok('示例文本来自池子且本轮不重复', cards.every((c) => sg.SUGGESTIONS.some((x) => x.text === c.dataset.prompt)) && new Set(cards.map((c) => c.dataset.prompt)).size === 3);
-ok('有「换一批」按钮', !!$('#messages .suggest-shuffle svg'));
+ok('有「换一批」按钮', !!$('#welcome-quick-prompts .suggest-shuffle svg'));
 const firstBatch = cards.map((c) => c.dataset.prompt).join('|');
 // 连续重挂若干次，期望至少出现一次不同的组合（随机生效）
 let sawDifferent = false;
 for (let i = 0; i < 12 && !sawDifferent; i++) {
-  click($('#messages .suggest-shuffle'));
-  const now = [...window.document.querySelectorAll('#messages .empty-state .suggest')].map((c) => c.dataset.prompt).join('|');
+  click($('#welcome-quick-prompts .suggest-shuffle'));
+  const now = [...window.document.querySelectorAll('#welcome-quick-prompts .suggest')].map((c) => c.dataset.prompt).join('|');
   if (now !== firstBatch) sawDifferent = true;
 }
 ok('换一批会换出不同组合', sawDifferent);
-const cardEl = window.document.querySelector('#messages .empty-state .suggest');
+const cardEl = window.document.querySelector('#welcome-quick-prompts .suggest');
 click(cardEl);
 ok('点示例卡把完整提示词填进输入框', (() => {
   const v = $('#composer-input').value;
@@ -554,7 +554,7 @@ console.log('\n⑭ 欢迎页在 y 轴居中');
 {
   const css = fs.readFileSync(path.join(ROOT, 'css/styles.css'), 'utf8');
   const rule = /\.empty-state\s*\{[^}]*\}/.exec(css)?.[0] || '';
-  ok('empty-state 自己是 flex 纵向居中容器', /display: flex/.test(rule) && /align-items: center/.test(rule) && /justify-content: center/.test(rule), rule);
+  ok('empty-state 自己是 flex 纵向居中容器', /display: flex/.test(rule) && /align-items: center/.test(rule) && /justify-content: (?:safe )?center/.test(rule), rule);
   ok('靠 min-height:100% 占满视口而不是拍脑袋的 margin', /min-height: 100%/.test(rule) && !/margin: 9vh/.test(rule), rule);
   ok('内容超高时不裁顶（safe center）', /justify-content: safe center/.test(rule), rule);
   ok('有对话时布局不变（.messages 仍是普通滚动容器）', !/\.messages\s*\{[^}]*display: flex/.test(css));

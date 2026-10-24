@@ -1,27 +1,32 @@
-// ─── 模型官方价格表与费用预估（USD）──────────────────────────────────────
-// 2026-10-21 复核；展示网关 list_cost 标价，不写入账户折扣或声称供应商实测。
-// 数据来源：TeamoRouter 官方定价接口（GET /v1/models/pricing 的 list_cost 字段与 per_call_tiers）
+// ─── 模型公开标价与费用预估（USD 内部计价；界面按语言显示 USD / CNY）────────
+// 2026-10-24 复核；国产模型优先使用供应商官方标准费率，其他条目沿用 TeamoRouter public list_cost。
+// CNY 价目表按 2026-10-23 中间价归一为内部 USD；促销价、账户折扣和实际区域账单不计入。
+// 分层价格在 contextTier 中显式建模；DeepSeek 当前 off-peak 值为预估基准，peak 时段会更高。
 // 独立模块：不修改 config.js / api.js 的既有导出列表，避免 Pages 混版缓存下 ESM link 失败。
+import { getLanguage } from './locale.js';
+import { formatCurrency as formatCcy, formatRate, USD_TO_CNY_RATE } from './currency.js';
+export { formatCcy, formatRate };
+const cnyToUsd = (amountCny) => Number((Number(amountCny) / USD_TO_CNY_RATE).toFixed(9));
 
 export const VISION_MODEL_ID = 'deepseek-v4-flash-vision-exp';
 
-// 对话/推理模型官方价格（USD / 1M tokens）
+// 对话/推理模型公开费率估价基准（USD / 1M tokens）；供应商价与网关目录价以 model-catalog 的来源标签区分。
 export const MODEL_PRICING = {
   'gemini-4-argon': { input: 2.0, output: 10.0, cachedInput: 0.1, cacheCreation: 2.0 },
-  'claude-haiku-5-5': { input: 0.1, output: 0.5, cachedInput: 0.01, cacheCreation: 0.125 },
+  'claude-haiku-5-5': { input: 0.1, output: 0.5, cachedInput: 0.01, cacheCreation: 0.125, cacheCreation1h: 0.2, contextTier: { thresholdTokens: 100000, inputMultiplier: 5, outputMultiplier: 5, cachedInputMultiplier: 5, cacheCreationMultiplier: 5, cacheCreation1hMultiplier: 5 } },
   // Anthropic Claude
-  'claude-opus-5-5':          { input: 4.0,   output: 20.0,  cachedInput: 0.2,   cacheCreation: 5.0 },
-  'claude-sonnet-5-5':        { input: 2.0,   output: 10.0,  cachedInput: 0.2,   cacheCreation: 2.5 },
-  'claude-fable-5-1':         { input: 10.0,  output: 50.0,  cachedInput: 0.25,  cacheCreation: 12.5 },
-  'claude-opus-5':            { input: 5.0,   output: 25.0,  cachedInput: 0.5,   cacheCreation: 6.25 },
-  'claude-fable-5':           { input: 10.0,  output: 50.0,  cachedInput: 1.0,   cacheCreation: 12.5 },
-  'claude-sonnet-5':          { input: 2.0,   output: 10.0,  cachedInput: 0.2,   cacheCreation: 2.5 },
-  'claude-opus-4-8':          { input: 5.0,   output: 25.0,  cachedInput: 0.5,   cacheCreation: 6.25 },
-  'claude-opus-4-7':          { input: 5.0,   output: 25.0,  cachedInput: 0.5,   cacheCreation: 6.25 },
-  'claude-opus-4-6':          { input: 5.0,   output: 25.0,  cachedInput: 0.5,   cacheCreation: 6.25 },
-  'claude-sonnet-4-6':        { input: 3.0,   output: 15.0,  cachedInput: 0.3,   cacheCreation: 3.75 },
-  'claude-haiku-4-5':         { input: 1.0,   output: 5.0,   cachedInput: 0.1,   cacheCreation: 1.25 },
-  'claude-haiku-4-5-20251001':{ input: 1.0,   output: 5.0,   cachedInput: 0.1,   cacheCreation: 1.25 },
+  'claude-opus-5-5':          { input: 4.0,   output: 20.0,  cachedInput: 0.2,   cacheCreation: 5.0, cacheCreation1h: 8.0 },
+  'claude-sonnet-5-5':        { input: 2.0,   output: 10.0,  cachedInput: 0.1,   cacheCreation: 2.5, cacheCreation1h: 4.0 },
+  'claude-fable-5-1':         { input: 10.0,  output: 50.0,  cachedInput: 0.25,  cacheCreation: 12.5, cacheCreation1h: 20.0 },
+  'claude-opus-5':            { input: 5.0,   output: 25.0,  cachedInput: 0.5,   cacheCreation: 6.25, cacheCreation1h: 10.0 },
+  'claude-fable-5':           { input: 10.0,  output: 50.0,  cachedInput: 1.0,   cacheCreation: 12.5, cacheCreation1h: 20.0 },
+  'claude-sonnet-5':          { input: 2.0,   output: 10.0,  cachedInput: 0.2,   cacheCreation: 2.5, cacheCreation1h: 4.0 },
+  'claude-opus-4-8':          { input: 5.0,   output: 25.0,  cachedInput: 0.5,   cacheCreation: 6.25, cacheCreation1h: 10.0 },
+  'claude-opus-4-7':          { input: 5.0,   output: 25.0,  cachedInput: 0.5,   cacheCreation: 6.25, cacheCreation1h: 10.0 },
+  'claude-opus-4-6':          { input: 5.0,   output: 25.0,  cachedInput: 0.5,   cacheCreation: 6.25, cacheCreation1h: 10.0 },
+  'claude-sonnet-4-6':        { input: 3.0,   output: 15.0,  cachedInput: 0.3,   cacheCreation: 3.75, cacheCreation1h: 6.0 },
+  'claude-haiku-4-5':         { input: 1.0,   output: 5.0,   cachedInput: 0.1,   cacheCreation: 1.25, cacheCreation1h: 2.0 },
+  'claude-haiku-4-5-20251001':{ input: 1.0,   output: 5.0,   cachedInput: 0.1,   cacheCreation: 1.25, cacheCreation1h: 2.0 },
 
   // OpenAI GPT（支持 Fast 模式 2x 官方价；272k 以上上下文阶梯计费）
   'gpt-6-astra':              { input: 10.0,  output: 50.0,  cachedInput: 1.0,   cacheCreation: 12.5,  fastMultiplier: 2.0, contextTier: true },
@@ -47,32 +52,40 @@ export const MODEL_PRICING = {
   'deepseek-flash':           { input: 0.15,   output: 0.6,   cachedInput: 0.003 },
   'deepseek-flash-1017':      { input: 0.15,   output: 0.6,   cachedInput: 0.003 },
   'deepseek-v4-pro':          { input: 0.66,  output: 1.98,  cachedInput: 0.022 },
-  'deepseek-v4-pro-260425':   { input: 1.74,  output: 3.48,  cachedInput: 0.145 },
-  'deepseek-v4-flash':        { input: 0.44,  output: 1.32,  cachedInput: 0.014 },
+  'deepseek-v4-pro-260425':   { input: 0.66,  output: 1.98,  cachedInput: 0.022 },
+  'deepseek-v4-flash':        { input: 0.15, output: 0.6,  cachedInput: 0.003 }, // legacy alias billed at V4.1 Flash off-peak rate
 
-  // Zhipu GLM
-  'glm-5.3':                  { input: 1.4,   output: 4.4,   cachedInput: 0.26 },
-  'glm-5.3-flash':            { input: 0.114, output: 0.4,   cachedInput: 0.03 },
-  'glm-5.3-flash-free':       { input: 0.114, output: 0.4,   cachedInput: 0.03,  freeTier: true },
-  'glm-5.2':                  { input: 1.4,   output: 4.4,   cachedInput: 0.26 },
+  // Zhipu GLM · BigModel standard CNY list prices normalized at the display FX rate.
+  'glm-5.3':                  { input: cnyToUsd(8), output: cnyToUsd(28), cachedInput: cnyToUsd(2) },
+  'glm-5.3-flash':            { input: cnyToUsd(0.8), output: cnyToUsd(2.8), cachedInput: cnyToUsd(0.23) },
+  'glm-5.3-flash-free':       { input: cnyToUsd(0.8), output: cnyToUsd(2.8), cachedInput: cnyToUsd(0.23), freeTier: true },
+  'glm-5.2':                  { input: cnyToUsd(8), output: cnyToUsd(28), cachedInput: cnyToUsd(2) },
 
-  // Doubao / 火山引擎
-  'doubao-seed-2.0-lite':     { input: 0.0857, output: 0.5143, cachedInput: 0.0171 },
-  'doubao-seed-2.1-pro':      { input: 0.8571, output: 4.2857, cachedInput: 0.1714 },
+  // Doubao / 火山引擎 · standard online (not low-priority) CNY list prices.
+  'doubao-seed-2.0-lite':     { input: cnyToUsd(0.6), output: cnyToUsd(3.6), cachedInput: cnyToUsd(0.12),
+    contextTier: { thresholdTokens: 32000, inputMultiplier: 1.5, outputMultiplier: 1.5, cachedInputMultiplier: 1.5,
+      additionalTiers: [{ thresholdTokens: 128000, inputMultiplier: 3, outputMultiplier: 3, cachedInputMultiplier: 3 }] } },
+  'doubao-seed-2.1-pro':      { input: cnyToUsd(6), output: cnyToUsd(30), cachedInput: cnyToUsd(1.2) },
 
-  // Moonshot Kimi
-  'kimi-k3':                  { input: 3.0,   output: 15.0,  cachedInput: 0.3 },
-  'kimi-k3[1M]':              { input: 3.0,   output: 15.0,  cachedInput: 0.3 },
+  // Moonshot Kimi · official USD rates; cache writes billed separately at the same rate as input.
+  'kimi-k3.1-pro':            { input: 2.0,   output: 10.0,  cachedInput: 0.2, cacheCreation: 2.0, cacheCreation1h: 4.0 },
+  'kimi-k3':                  { input: 3.0,   output: 15.0,  cachedInput: 0.3, cacheCreation: 3.0, cacheCreation1h: 6.0 },
+  'kimi-k3[1M]':              { input: 3.0,   output: 15.0,  cachedInput: 0.3, cacheCreation: 3.0, cacheCreation1h: 6.0 },
 
-  // Xiaomi MiMo（官方 API 标价，网关上架后以网关 list_cost 复核）
+  // Xiaomi MiMo · official overseas real-time USD rates; TeamoRouter public pricing snapshot omitted these IDs.
   'mimo-v2.6-pro':            { input: 0.435, output: 0.87,  cachedInput: 0.0036 },
   'mimo-v2.6-flash':          { input: 0.14,  output: 0.28,  cachedInput: 0.0028 },
 
   // MiniMax · 512k 以上上下文输入/输出均按 2x 标价
   'minimax-m3':               { input: 0.3,   output: 1.2,   cachedInput: 0.06, contextTier: { thresholdTokens: 512000, inputMultiplier: 2.0, outputMultiplier: 2.0, cachedInputMultiplier: 2.0 } },
 
-  // Qwen / 通义千问
-  'qwen3.8-max':              { input: 1.7143, output: 5.1429, cachedInput: 0.2143 },
+  // Qwen / 通义千问 · official North China 2 standard CNY rates normalized at the display FX rate.
+  'qwen3.8-max':              { input: cnyToUsd(12), output: cnyToUsd(36), cachedInput: cnyToUsd(1.5), cacheCreation: cnyToUsd(15) },
+  'qwen3.8-flash':            { input: cnyToUsd(0.8), output: cnyToUsd(2.7), cachedInput: cnyToUsd(0.1), cacheCreation: cnyToUsd(1.25) },
+  'qwen3.7-max':              { input: cnyToUsd(12), output: cnyToUsd(36), cachedInput: cnyToUsd(2.4), cacheCreation: cnyToUsd(15) },
+  'qwen3.7-flash':            { input: cnyToUsd(0.2), output: cnyToUsd(0.8), cachedInput: cnyToUsd(0.04), cacheCreation: cnyToUsd(0.25),
+    contextTier: { thresholdTokens: 32000, inputMultiplier: 3, outputMultiplier: 3, cachedInputMultiplier: 3,
+      additionalTiers: [{ thresholdTokens: 256000, inputMultiplier: 6, outputMultiplier: 6, cachedInputMultiplier: 6 }] } },
 
   // xAI Grok
   'grok-4.6':                 { input: 2.0,   output: 6.0,   cachedInput: 0.5 },
@@ -87,10 +100,10 @@ export const MODEL_PRICING = {
 export const VISION_MODEL_PRICING = {
   'deepseek-v4-flash-vision-exp': {
     id: 'deepseek-v4-flash-vision-exp',
-    label: 'DeepSeek V4 Flash Vision Exp',
-    input: 0.22,
-    output: 0.66,
-    cachedInput: 0.007,
+    label: 'DeepSeek V4 Flash Vision (legacy alias)',
+    input: 0.15,
+    output: 0.6,
+    cachedInput: 0.003,
     defaultTokensPerImage: 1500,
   },
 };
@@ -150,7 +163,7 @@ export function normalizeModelKey(modelId) {
   return { base, isFast };
 }
 
-/** 查询任意模型的官方价格配置 */
+/** 查询模型公开费率估价配置；价格来源由模型目录的来源标签标明。 */
 export function getModelPricing(modelId) {
   const { base, isFast } = normalizeModelKey(modelId);
   if (!base) return null;
@@ -181,17 +194,17 @@ export function getModelPricing(modelId) {
   if (base.startsWith('gemini-3.5-flash')) return { input: 1.5, output: 9.0, cachedInput: 0.15, id: base, kind: 'chat' };
   if (base.startsWith('gemini')) return { input: 0.75, output: 3.75, cachedInput: 0.075, id: base, kind: 'chat' };
   if (base.includes('vision')) return { ...VISION_MODEL_PRICING[VISION_MODEL_ID], id: base, kind: 'vision' };
-  if (base.startsWith('deepseek-v4-pro')) return { input: 1.32, output: 3.96, cachedInput: 0.044, id: base, kind: 'chat' };
-  if (base.startsWith('deepseek-v4-flash')) return { input: 0.44, output: 1.32, cachedInput: 0.014, id: base, kind: 'chat' };
+  if (base.startsWith('deepseek-v4-pro')) return { input: 0.66, output: 1.98, cachedInput: 0.022, id: base, kind: 'chat' };
+  if (base.startsWith('deepseek-v4-flash')) return { input: 0.15, output: 0.6, cachedInput: 0.003, id: base, kind: 'chat' };
   if (base.startsWith('deepseek')) return { input: 0.3, output: 1.2, cachedInput: 0.006, id: base, kind: 'chat' };
-  if (base.startsWith('glm-5.3-flash')) return { input: 0.114, output: 0.4, cachedInput: 0.03, id: base, kind: 'chat' };
+  if (base.startsWith('glm-5.3-flash')) return { input: cnyToUsd(0.8), output: cnyToUsd(2.8), cachedInput: cnyToUsd(0.23), id: base, kind: 'chat' };
   if (base.startsWith('glm')) return { input: 1.4, output: 4.4, cachedInput: 0.26, id: base, kind: 'chat' };
   if (base.startsWith('kimi')) return { input: 3.0, output: 15.0, cachedInput: 0.3, id: base, kind: 'chat' };
   if (base.startsWith('grok')) return { input: 2.0, output: 6.0, cachedInput: 0.5, id: base, kind: 'chat' };
   return null;
 }
 
-/** 计算单次对话/推理模型调用的官方预估费用（USD） */
+/** 计算单次对话/推理模型调用的公开费率估算费用（USD） */
 export function estimateChatCost(modelId, usage, opts = {}) {
   const p = getModelPricing(modelId);
   if (!p || !usage) return null;
@@ -208,31 +221,77 @@ export function estimateChatCost(modelId, usage, opts = {}) {
   const inputTok = Math.max(0, Number(usage.input ?? usage.prompt_tokens ?? usage.input_tokens ?? 0) || 0);
   const outputTok = Math.max(0, Number(usage.output ?? usage.completion_tokens ?? usage.output_tokens ?? 0) || 0);
   const cachedTok = Math.max(0, Number(usage.cached ?? usage.cached_tokens ?? usage.cache_read_input_tokens ?? 0) || 0);
-  const uncachedInput = Math.max(0, inputTok - cachedTok);
+  const cacheCreation5mReported = Math.max(0, Number(usage.cacheCreation5m ?? usage.cache_creation_5m_input_tokens ?? 0) || 0);
+  const cacheCreation1hReported = Math.max(0, Number(usage.cacheCreation1h ?? usage.cache_creation_1h_input_tokens ?? 0) || 0);
+  const cacheCreationTotalReported = Math.max(0, Number(usage.cacheCreation ?? usage.cache_creation_input_tokens ?? usage.cache_write_tokens ?? 0) || 0);
+  const splitCacheCreationTok = cacheCreation5mReported + cacheCreation1hReported;
+  // Some protocols report only the TTL-specific split, others report only a combined write count.
+  const cacheCreationTok = Math.max(cacheCreationTotalReported, splitCacheCreationTok);
+  const cacheCreation5mTok = Math.min(cacheCreation5mReported, cacheCreationTok);
+  const cacheCreation1hTok = Math.min(cacheCreation1hReported, Math.max(0, cacheCreationTok - cacheCreation5mTok));
+  const cacheCreationUnspecifiedTok = Math.max(0, cacheCreationTok - cacheCreation5mTok - cacheCreation1hTok);
+  const uncachedInput = Math.max(0, inputTok - cachedTok - cacheCreationTok);
 
   const fast = !!(opts.fastMode || p.isFast) && (p.fastMultiplier || 1) > 1;
   const fastMult = fast ? p.fastMultiplier : 1;
   const tier = p.contextTier && typeof p.contextTier === 'object'
     ? p.contextTier
     : { thresholdTokens: 272000, inputMultiplier: 2.0, outputMultiplier: 1.5, cachedInputMultiplier: 2.0 };
-  const overTier = !!p.contextTier && inputTok > tier.thresholdTokens;
-  const inRate = p.input * fastMult * (overTier ? tier.inputMultiplier : 1.0);
-  const outRate = p.output * fastMult * (overTier ? tier.outputMultiplier : 1.0);
-  const cachedRate = (p.cachedInput != null ? p.cachedInput : p.input * 0.1) * fastMult * (overTier ? tier.cachedInputMultiplier : 1.0);
+  let inputTier = 1, outputTier = 1, cachedTier = 1, cacheCreationTier = 1, cacheCreation1hTier = 1;
+  if (p.contextTier && inputTok > tier.thresholdTokens) {
+    inputTier = tier.inputMultiplier || 1;
+    outputTier = tier.outputMultiplier || 1;
+    cachedTier = tier.cachedInputMultiplier || inputTier;
+    cacheCreationTier = tier.cacheCreationMultiplier || inputTier;
+    cacheCreation1hTier = tier.cacheCreation1hMultiplier || cacheCreationTier;
+    for (const next of tier.additionalTiers || []) {
+      if (inputTok > next.thresholdTokens) {
+        inputTier = next.inputMultiplier || inputTier;
+        outputTier = next.outputMultiplier || outputTier;
+        cachedTier = next.cachedInputMultiplier || inputTier;
+        cacheCreationTier = next.cacheCreationMultiplier || inputTier;
+        cacheCreation1hTier = next.cacheCreation1hMultiplier || cacheCreationTier;
+      }
+    }
+  }
+  const inRate = p.input * fastMult * inputTier;
+  const outRate = p.output * fastMult * outputTier;
+  const cachedRate = (p.cachedInput != null ? p.cachedInput : p.input * 0.1) * fastMult * cachedTier;
+  const cacheCreation5mRate = (p.cacheCreation != null ? p.cacheCreation : p.input) * fastMult * cacheCreationTier;
+  const cacheCreation1hRate = (p.cacheCreation1h != null ? p.cacheCreation1h : (p.cacheCreation != null ? p.cacheCreation : p.input)) * fastMult * cacheCreation1hTier;
+  const cacheCreationRate = cacheCreation5mRate; // legacy summary field; aggregate-only usage defaults to 5m.
+  const cacheStorageNote = String(p.id || modelId).startsWith('doubao-seed-')
+    ? (getLanguage() === 'en'
+      ? ' · Volcengine cache storage is billed per token-hour and is not included because storage-duration usage is unavailable'
+      : ' · 火山引擎缓存存储按 token·小时计费；因未提供存储时长用量，未计入估价')
+    : '';
 
-  const costUsd = (uncachedInput * inRate + cachedTok * cachedRate + outputTok * outRate) / 1e6;
+  const costUsd = (
+    uncachedInput * inRate + cachedTok * cachedRate
+    + cacheCreation5mTok * cacheCreation5mRate
+    + cacheCreation1hTok * cacheCreation1hRate
+    + cacheCreationUnspecifiedTok * cacheCreation5mRate
+    + outputTok * outRate
+  ) / 1e6;
   return {
     kind: 'chat',
     model: p.id || String(modelId || ''),
     inputTokens: inputTok,
     outputTokens: outputTok,
     cachedTokens: cachedTok,
+    cacheCreationTokens: cacheCreationTok,
+    cacheCreation5mTokens: cacheCreation5mTok,
+    cacheCreation1hTokens: cacheCreation1hTok,
     inRate,
     outRate,
+    cachedRate,
+    cacheCreationRate,
+    cacheCreation5mRate,
+    cacheCreation1hRate,
     fast,
     freeTier: !!p.freeTier,
     costUsd,
-    rateLabel: `官方价 输入 $${inRate}/M · 输出 $${outRate}/M${fast ? '（Fast 2x）' : ''}${p.freeTier ? '（网关免费档）' : ''}`,
+    rateLabel: rateEstimateLabel('chat', inRate, outRate, `${fast ? (getLanguage() === 'en' ? ' (Fast 2×)' : '（Fast 2×）') : ''}${p.freeTier ? (getLanguage() === 'en' ? ' (gateway free tier)' : '（网关免费档）') : ''}${contextTierNote(p)}${cacheStorageNote}`),
   };
 }
 
@@ -270,7 +329,7 @@ export function estimateVisionCost({
     inRate: p.input,
     outRate: p.output,
     costUsd,
-    rateLabel: `识图官方价 输入 $${p.input}/M · 输出 $${p.output}/M`,
+    rateLabel: rateEstimateLabel('vision', p.input, p.output),
   };
 }
 
@@ -317,7 +376,7 @@ export function estimateImageCost({
       inRate: p.input,
       outRate: p.output,
       costUsd,
-      rateLabel: `生图官方价 输入 $${p.input}/M · 输出 $${p.output}/M（${n} 张）`,
+      rateLabel: `${rateEstimateLabel('image', p.input, p.output)}${getLanguage() === 'en' ? ` (${n} images)` : `（${n} 张）`}`,
     };
   }
 
@@ -347,7 +406,9 @@ export function estimateImageCost({
     count: n,
     referenceCount: refs,
     costUsd,
-    rateLabel: `生图官方价 ${tier.toUpperCase()} $${perImage.toFixed(2)}/张 × ${n} 张${refs ? `（含 ${refs} 张参考图输入）` : ''}`,
+    rateLabel: getLanguage() === 'en'
+      ? `Official image rate ${tier.toUpperCase()} ${formatCcy(perImage)}/image × ${n}${refs ? ` (plus ${refs} reference images)` : ''}`
+      : `生图官方价 ${tier.toUpperCase()} ${formatCcy(perImage)}/张 × ${n} 张${refs ? `（含 ${refs} 张参考图输入）` : ''}`,
   };
 }
 
@@ -362,17 +423,43 @@ export function formatUsd(amount) {
   return `$${n.toFixed(2)}`;
 }
 
-/** 生成用于模型选择器或提示条的简短官方价格标签 */
-export function priceBadgeFor(modelId, { fastMode = false } = {}) {
+function contextTierNote(p, language = getLanguage()) {
+  const tier = p?.contextTier;
+  if (!tier || typeof tier !== 'object' || !Number.isFinite(Number(tier.thresholdTokens))) return '';
+  const additional = tier.additionalTiers || [];
+  const thresholds = [tier.thresholdTokens, ...additional.map((x) => x.thresholdTokens)];
+  const multipliers = [tier.inputMultiplier || 1, ...additional.map((x) => x.inputMultiplier || 1)];
+  const parts = [`≤${Math.round(thresholds[0] / 1000)}K ×1`];
+  for (let i = 0; i < thresholds.length; i++) {
+    const mult = multipliers[i];
+    if (mult === 1) continue;
+    const start = Math.round(thresholds[i] / 1000);
+    const end = thresholds[i + 1] == null ? null : Math.round(thresholds[i + 1] / 1000);
+    parts.push(end == null ? `>${start}K ×${mult}` : `${start}K–${end}K ×${mult}`);
+  }
+  return language === 'en' ? ` (${parts.join('; ')})` : `（${parts.join('；')}）`;
+}
+
+function rateEstimateLabel(kind, input, output, extras = '', language = getLanguage()) {
+  const name = language === 'en'
+    ? ({ chat: 'Rate estimate', vision: 'Vision rate estimate', image: 'Image rate estimate' }[kind] || 'Rate estimate')
+    : ({ chat: '费率估算', vision: '识图费率估算', image: '生图费率估算' }[kind] || '费率估算');
+  return language === 'en'
+    ? `${name}: input ${formatRate(input, language)}/M · output ${formatRate(output, language)}/M${extras}`
+    : `${name} 输入 ${formatRate(input, language)}/M · 输出 ${formatRate(output, language)}/M${extras}`;
+}
+
+/** 生成用于模型选择器或提示条的简短价格标签 */
+export function priceBadgeFor(modelId, { fastMode = false, language = getLanguage() } = {}) {
   const p = getModelPricing(modelId);
   if (!p) return '';
-  if (p.kind === 'vision') return `识图 $${p.input}/$${p.output} /M`;
+  if (p.kind === 'vision') return `${language === 'en' ? 'Vision' : '识图'} ${formatRate(p.input, language)}/${formatRate(p.output, language)} /M`;
   if (p.kind === 'image') {
-    if (p.mode === 'tier' && p.tiers) return `生图 $${p.tiers['1k'] || 0.06}~$${p.tiers['4k'] || 0.25}/张`;
-    return `生图 $${p.input}/$${p.output} /M`;
+    if (p.mode === 'tier' && p.tiers) return `${language === 'en' ? 'Image' : '生图'} ${formatCcy(p.tiers['1k'] || 0.06, language)}~${formatCcy(p.tiers['4k'] || 0.25, language)}/${language === 'en' ? 'image' : '张'}`;
+    return `${language === 'en' ? 'Image' : '生图'} ${formatRate(p.input, language)}/${formatRate(p.output, language)} /M`;
   }
   const mult = (fastMode || p.isFast) && p.fastMultiplier ? p.fastMultiplier : 1;
-  return `$${+(p.input * mult).toFixed(3)}/$${+(p.output * mult).toFixed(3)} /M`;
+  return `${formatRate(p.input * mult, language)}/${formatRate(p.output * mult, language)} /M${contextTierNote(p, language)}`;
 }
 
 /**
@@ -397,6 +484,10 @@ export function summarizeTurnCost(arg1, opts = {}) {
 
   let inputTokens = 0;
   let outputTokens = 0;
+  let cachedTokens = 0;
+  let cacheCreationTokens = 0;
+  let cacheCreation5mTokens = 0;
+  let cacheCreation1hTokens = 0;
   let reasoningTokens = 0;
   let hasChatUsage = false;
   let chatCostUsd = 0;
@@ -452,6 +543,10 @@ export function summarizeTurnCost(arg1, opts = {}) {
         hasChatUsage = true;
         inputTokens += c.inputTokens;
         outputTokens += c.outputTokens;
+        cachedTokens += c.cachedTokens;
+        cacheCreationTokens += c.cacheCreationTokens;
+        cacheCreation5mTokens += c.cacheCreation5mTokens;
+        cacheCreation1hTokens += c.cacheCreation1hTokens;
         if (m.usage.reasoning) reasoningTokens += Number(m.usage.reasoning) || 0;
         chatCostUsd += c.costUsd;
         chatModels.add(c.model);
@@ -463,6 +558,10 @@ export function summarizeTurnCost(arg1, opts = {}) {
         hasChatUsage = true;
         inputTokens += sc.inputTokens;
         outputTokens += sc.outputTokens;
+        cachedTokens += sc.cachedTokens;
+        cacheCreationTokens += sc.cacheCreationTokens;
+        cacheCreation5mTokens += sc.cacheCreation5mTokens;
+        cacheCreation1hTokens += sc.cacheCreation1hTokens;
         subagentCostUsd += sc.costUsd;
       }
     }
@@ -476,6 +575,21 @@ export function summarizeTurnCost(arg1, opts = {}) {
       const tm = toolMsgById.get(tc.id);
       const tContent = tm ? String(tm.content || '') : '';
       const b = tc.billing || tc.toolCost;
+      if (b && b.kind === 'subagent') {
+        const sc = estimateChatCost(b.model || defaultModel, b.usage || {}, { fastMode: !!(b.fastMode ?? m.fastMode ?? fastMode) });
+        if (sc) {
+          hasChatUsage = true;
+          inputTokens += sc.inputTokens;
+          outputTokens += sc.outputTokens;
+          cachedTokens += sc.cachedTokens;
+          cacheCreationTokens += sc.cacheCreationTokens;
+          cacheCreation5mTokens += sc.cacheCreation5mTokens;
+          cacheCreation1hTokens += sc.cacheCreation1hTokens;
+          subagentCostUsd += sc.costUsd;
+          chatModels.add(sc.model);
+        }
+        continue;
+      }
       if (b && b.kind === 'vision') {
         const vc = b.costUsd != null ? b : estimateVisionCost({
           model: b.model || VISION_MODEL_ID,
@@ -570,33 +684,37 @@ export function summarizeTurnCost(arg1, opts = {}) {
   if (!hasAny && !isConfigObj) return null;
 
   const extraTags = [];
-  if (visionItems.length) extraTags.push(`识图 ${formatUsd(visionCostUsd)}`);
-  if (imageItems.length) extraTags.push(`生图 ${formatUsd(imageCostUsd)}`);
+  if (visionItems.length) extraTags.push(`识图 ${formatCcy(visionCostUsd)}`);
+  if (imageItems.length) extraTags.push(`生图 ${formatCcy(imageCostUsd)}`);
   const badgeText = extraTags.length
-    ? `≈ ${formatUsd(totalCostUsd)}（${extraTags.join(' + ')}）`
-    : `≈ ${formatUsd(totalCostUsd)}`;
+    ? `≈ ${formatCcy(totalCostUsd)}（${extraTags.join(' + ')}）`
+    : `≈ ${formatCcy(totalCostUsd)}`;
 
-  const tooltipLines = [`本轮官方预估总价：${formatUsd(totalCostUsd)}`];
+  const tooltipLines = [`本轮官方预估总价：${formatCcy(totalCostUsd)}`];
   if (incomplete) tooltipLines.push('音频输入用量未完整回传，以上费用不完整；以网关账单为准。');
   if (hasChatUsage) {
     const mName = [...chatModels].join(', ') || defaultModel;
     const p = estimateChatCost(mName, { input: inputTokens, output: outputTokens }, { fastMode });
-    tooltipLines.push(`· 对话模型（${mName}）：${formatUsd(chatCostUsd + subagentCostUsd)}（↑${inputTokens} ↓${outputTokens} tok${p ? ` · ${p.rateLabel}` : ''}）`);
+    tooltipLines.push(`· 对话模型（${mName}）：${formatCcy(chatCostUsd + subagentCostUsd)}（↑${inputTokens} ↓${outputTokens} tok${p ? ` · ${p.rateLabel}` : ''}）`);
   }
   if (visionItems.length) {
     const imgs = visionItems.reduce((s, x) => s + (Number(x.imageCount) || 1), 0);
     const vModels = [...new Set(visionItems.map((x) => x.model || VISION_MODEL_ID))].join(' / ');
-    tooltipLines.push(`· 识图/视频/音频模型（${vModels}）：${formatUsd(visionCostUsd)}（共 ${imgs} 项 · ${visionItems[0].rateLabel || '官方价 输入 $0.44/M · 输出 $1.32/M'}）`);
+    tooltipLines.push(`· 识图/视频/音频模型（${vModels}）：${formatCcy(visionCostUsd)}（共 ${imgs} 项 · ${visionItems[0].rateLabel || rateEstimateLabel('vision', 0.44, 1.32)}）`);
   }
   if (imageItems.length) {
     const imgs = imageItems.reduce((s, x) => s + (Number(x.count) || 1), 0);
     const imgModel = imageItems[0].model || defaultImageModel;
-    tooltipLines.push(`· 生图模型（${imgModel}）：${formatUsd(imageCostUsd)}（共 ${imgs} 张 · ${imageItems[0].rateLabel || ''}）`);
+    tooltipLines.push(`· 生图模型（${imgModel}）：${formatCcy(imageCostUsd)}（共 ${imgs} 张 · ${imageItems[0].rateLabel || ''}）`);
   }
 
   return {
     inputTokens,
     outputTokens,
+    cachedTokens,
+    cacheCreationTokens,
+    cacheCreation5mTokens,
+    cacheCreation1hTokens,
     reasoningTokens,
     chatCostUsd,
     chatUsd: chatCostUsd,
@@ -611,7 +729,7 @@ export function summarizeTurnCost(arg1, opts = {}) {
     totalCostUsd,
     totalUsd: totalCostUsd,
     incomplete,
-    formatted: incomplete ? '用量不完整' : formatUsd(totalCostUsd),
+    formatted: incomplete ? '用量不完整' : formatCcy(totalCostUsd),
     visionCount: visionItems.length,
     imageCount: imageItems.length,
     badgeText,

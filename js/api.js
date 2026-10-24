@@ -201,6 +201,21 @@ export function createOpenAIStream(onEv) {
     }
     if (json.usage) {
       const usage = { input: json.usage.prompt_tokens, output: json.usage.completion_tokens };
+      const billing = json.usage.billing_usage || {};
+      const cached = json.usage.prompt_tokens_details?.cached_tokens
+        ?? json.usage.input_tokens_details?.cached_tokens
+        ?? json.usage.input_tokens_details?.cache_read_tokens
+        ?? json.usage.cached_tokens
+        ?? json.usage.cache_read_input_tokens
+        ?? json.usage.gemini_usage_metadata?.cachedContentTokenCount
+        ?? billing.openai_usage?.input_tokens_details?.cached_tokens
+        ?? billing.gemini_usage_metadata?.cachedContentTokenCount;
+      const cacheCreation = json.usage.cache_creation_input_tokens
+        ?? json.usage.cache_write_input_tokens
+        ?? json.usage.prompt_tokens_details?.cache_write_tokens
+        ?? json.usage.input_tokens_details?.cache_write_tokens;
+      if (cached != null) usage.cached = Number(cached) || 0;
+      if (cacheCreation != null) usage.cacheCreation = Number(cacheCreation) || 0;
       const r = reasoningTokensOf(json.usage);
       if (r) usage.reasoning = r;
       onEv({ type: 'usage', usage });
@@ -245,6 +260,23 @@ export function createAnthropicStream(onEv) {
   // executeTool('web_fetch') 然后报「未知工具」；实际内容仍由服务端以 web_search_tool_result 回灌。
   // 这里统一按服务端工具对待：不进客户端累积器，只上报进度。
   const SERVER_TOOL_NAMES = new Set(['web_search', 'web_fetch', 'web_search_preview', 'google_search']);
+  const normalizedUsage = (u = {}) => {
+    const usage = {};
+    const creation5m = Number(u.cache_creation?.ephemeral_5m_input_tokens ?? u.cache_creation?.ephemeral_5m_tokens ?? 0) || 0;
+    const creation1h = Number(u.cache_creation?.ephemeral_1h_input_tokens ?? u.cache_creation?.ephemeral_1h_tokens ?? 0) || 0;
+    const hasCreation = u.cache_creation_input_tokens != null || u.cache_creation != null;
+    const cacheCreation = Math.max(Number(u.cache_creation_input_tokens) || 0, creation5m + creation1h);
+    const hasInput = u.input_tokens != null || u.cache_read_input_tokens != null || hasCreation;
+    if (hasInput) usage.input = (Number(u.input_tokens) || 0) + (Number(u.cache_read_input_tokens) || 0) + cacheCreation;
+    if (u.cache_read_input_tokens != null) usage.cached = Number(u.cache_read_input_tokens) || 0;
+    if (hasCreation) usage.cacheCreation = cacheCreation;
+    if (creation5m > 0) usage.cacheCreation5m = creation5m;
+    if (creation1h > 0) usage.cacheCreation1h = creation1h;
+    if (u.output_tokens != null) usage.output = Number(u.output_tokens) || 0;
+    const reasoning = reasoningTokensOf(u);
+    if (reasoning) usage.reasoning = reasoning;
+    return usage;
+  };
   const flushQuery = (idx) => {
     const raw = serverArgs.get(idx);
     if (!raw) return;
@@ -264,10 +296,8 @@ export function createAnthropicStream(onEv) {
       case 'message_start': {
         const u = json.message && json.message.usage;
         if (u) {
-          const usage = { input: u.input_tokens, output: u.output_tokens };
-          const r = reasoningTokensOf(u);
-          if (r) usage.reasoning = r;
-          onEv({ type: 'usage', usage });
+          const usage = normalizedUsage(u);
+          if (Object.keys(usage).length) onEv({ type: 'usage', usage });
         }
         break;
       }
@@ -320,11 +350,9 @@ export function createAnthropicStream(onEv) {
         break;
       }
       case 'message_delta': {
-        if (json.usage && json.usage.output_tokens != null) {
-          const usage = { output: json.usage.output_tokens };
-          const r = reasoningTokensOf(json.usage);
-          if (r) usage.reasoning = r;
-          onEv({ type: 'usage', usage });
+        if (json.usage) {
+          const usage = normalizedUsage(json.usage);
+          if (Object.keys(usage).length) onEv({ type: 'usage', usage });
         }
         if (json.delta && json.delta.stop_reason) onEv({ type: 'finish', reason: json.delta.stop_reason });
         break;

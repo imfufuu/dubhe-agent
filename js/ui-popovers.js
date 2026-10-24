@@ -8,8 +8,9 @@ import { providerOf, systemPrompt } from './config.js?v=2026.10.11.1';
 import { providerIcon } from './icons.js';
 import { estimateTokens } from './context.js';
 import { tokenBreakdown, formatTokBreak } from './commands.js';
-import { priceBadgeFor, formatUsd } from './pricing.js';
+import { priceBadgeFor, formatCcy } from './pricing.js';
 import { modelDisplayName } from './smartrouter.js?v=2026.10.11.1';
+import { onLanguageChange } from './locale.js';
 
 export function installPopovers({ store }) {
   function hideTokPop() {
@@ -98,6 +99,8 @@ export function installPopovers({ store }) {
     if (!pop) return;
     if (!pop.hidden && pop.dataset.kind !== 'router') { hideTokPop(); return; }
     pop.dataset.kind = 'tokens';
+    pop._turnInfo = turnInfo || null;
+    pop._anchor = anchor && anchor.nodeType ? anchor : stats;
     const headEl = $('.tok-pop-h', pop);
     if (headEl) headEl.textContent = 'Token 构成';
     const sysTok = estimateTokens([{ role: 'system', text: systemPrompt(new Date(), { webEnabled: false }) }]);
@@ -111,10 +114,10 @@ export function installPopovers({ store }) {
       const s = turnInfo.summary;
       const headModel = (turnInfo.headMsg && turnInfo.headMsg.model) || store.state.model;
       const rateBadge = priceBadgeFor(headModel, { fastMode: !!(turnInfo.headMsg && turnInfo.headMsg.fastMode) });
-      html += `<div class="tok-row total"><span>对话模型 (${esc(rateBadge || modelDisplayName(headModel))})</span><span>${esc(formatUsd(s.chatUsd))}</span></div>`;
-      if (s.visionUsd > 0) html += `<div class="tok-row"><span>识图模型</span><span>${esc(formatUsd(s.visionUsd))}</span></div>`;
-      if (s.imageUsd > 0) html += `<div class="tok-row"><span>生图模型</span><span>${esc(formatUsd(s.imageUsd))}</span></div>`;
-      if (s.subagentUsd > 0) html += `<div class="tok-row"><span>子智能体</span><span>${esc(formatUsd(s.subagentUsd))}</span></div>`;
+      html += `<div class="tok-row total"><span>对话模型 (${esc(rateBadge || modelDisplayName(headModel))})</span><span>${esc(formatCcy(s.chatUsd))}</span></div>`;
+      if (s.visionUsd > 0) html += `<div class="tok-row"><span>识图模型</span><span>${esc(formatCcy(s.visionUsd))}</span></div>`;
+      if (s.imageUsd > 0) html += `<div class="tok-row"><span>生图模型</span><span>${esc(formatCcy(s.imageUsd))}</span></div>`;
+      if (s.subagentUsd > 0) html += `<div class="tok-row"><span>子智能体</span><span>${esc(formatCcy(s.subagentUsd))}</span></div>`;
       html += `<div class="tok-row total"><span>本轮预估总价</span><span>${esc(s.formatted)}</span></div>`;
     }
     if (body) body.innerHTML = html;
@@ -123,6 +126,14 @@ export function installPopovers({ store }) {
     pop.hidden = false;
     placeTokPop(anchor && anchor.nodeType ? anchor : stats);
   }
+  onLanguageChange(() => {
+    const pop = $('#tok-pop');
+    if (!pop || pop.hidden || pop.dataset.kind !== 'tokens') return;
+    if (pop._turnInfo?.summary) pop._turnInfo.summary.formatted = formatCcy(pop._turnInfo.summary.totalUsd);
+    const anchor = pop._anchor || $('#conv-stats');
+    pop.hidden = true;
+    showTokBreak(anchor, pop._turnInfo);
+  });
   // 打开期间：Esc 收起（对话框语义，模态优先）；窗口尺寸 / 滚动变了就重新贴回锚点
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;

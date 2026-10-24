@@ -62,7 +62,7 @@ test('an interrupted OPFS write preserves bytes and the next request resumes wit
     url: 'https://example.test/model.gguf', fileName: 'model.gguf', totalBytes: full.length,
     storage,
     fetchImpl: async (_url, options = {}) => {
-      calls.push({ method: options.method || 'GET', range: options.headers?.Range || '' });
+      calls.push({ method: options.method || 'GET', range: options.headers?.Range || '', cache: options.cache });
       if (options.method === 'HEAD') return head(full.length);
       assert.equal(options.headers?.Range, 'bytes=2-');
       return new Response(interrupted, { status: 206, headers: { 'content-range': `bytes 2-5/${full.length}`, 'content-length': '4', etag: '"model-v1"' } });
@@ -75,7 +75,7 @@ test('an interrupted OPFS write preserves bytes and the next request resumes wit
     url: 'https://example.test/model.gguf', fileName: 'model.gguf', totalBytes: full.length,
     etag: '"model-v1"', storage,
     fetchImpl: async (_url, options = {}) => {
-      calls.push({ method: options.method || 'GET', range: options.headers?.Range || '' });
+      calls.push({ method: options.method || 'GET', range: options.headers?.Range || '', cache: options.cache });
       if (options.method === 'HEAD') return head(full.length);
       assert.equal(options.headers?.Range, 'bytes=4-');
       return rangeResponse(full, 4);
@@ -84,6 +84,7 @@ test('an interrupted OPFS write preserves bytes and the next request resumes wit
   assert.deepEqual(bytes(files.get('model.gguf')), bytes(full));
   assert.equal(resumed.loaded, full.length);
   assert.deepEqual(calls.map((call) => call.method), ['HEAD', 'GET', 'HEAD', 'GET']);
+  assert.ok(calls.every((call) => call.cache === 'no-store'), 'resume probes and byte-range requests bypass any cached full response');
 });
 
 test('a legacy Wllama-normalized ETag resumes the existing OPFS offset instead of restarting', async () => {
@@ -115,7 +116,7 @@ test('a server that ignores Range triggers a safe truncate-and-restart instead o
     url: 'https://example.test/model.gguf', fileName: 'model.gguf', totalBytes: full.length,
     etag: '"model-v1"', storage,
     fetchImpl: async (_url, options = {}) => {
-      calls.push({ method: options.method || 'GET', range: options.headers?.Range || '' });
+      calls.push({ method: options.method || 'GET', range: options.headers?.Range || '', cache: options.cache });
       if (options.method === 'HEAD') return head(full.length);
       return new Response(full, { status: 200, headers: { 'content-length': String(full.length), etag: '"model-v1"' } });
     },

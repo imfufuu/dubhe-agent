@@ -7,8 +7,10 @@
 import { askJev, noul, choice, score, noulOf, choiceOf, scoreOf, confidenceOf, JEV_MODEL, JEV_TIMEOUT_MS } from './jev.js';
 import { analyzeImage } from './vision.js';
 import { DEFAULT_GATEWAY_ID, getGateway, defaultVisionModelForGateway } from './gateway-registry.js?v=2026.10.11.1';
+import { BLOCKING_TEXT, policyTextHeuristic } from './local-text-policy.js';
+export { policyTextHeuristic } from './local-text-policy.js';
 
-export const TEXT_MODERATION_MODEL = 'jev:systemone+policy-v2';
+export const TEXT_MODERATION_MODEL = 'jev:systemone+policy-v3';
 export const IMAGE_MODERATION_MODEL = 'local:nudenet-320n+nsfwjs-inception-v3';
 export const REMOTE_IMAGE_REVIEW_MODEL = 'gemini-3.5-flash-lite';   // 灰区图远程复核（便宜、快；只在本地拿不准时调用）
 export const REMOTE_IMAGE_REVIEW_MAX_PER_TURN = 3;                  // 每轮最多复核几张（视频抽帧也算），控成本
@@ -26,19 +28,26 @@ export const IMAGE_TURN_BUDGET_MS = 120000;      // 带图回合总预算（模�
 
 const JEV_MODERATION_QUESTIONS = {
   unsafe: noul(
-    'Does this user message violate safety policy (CSAM/minors sexual content, explicit pornography/erotica generation, incest/bestiality/non-consensual sexual content, suicide or self-harm encouragement/instruction, mass violence/terrorism/bomb/weapon/hard-drug making instructions, or severe cybercrime/malware creation) as opposed to benign chat, coding, education, creative writing, or defensive security?',
-    'Policy violation that must be blocked immediately',
-    'Safe or benign request (normal conversation, coding, academic, education, or defensive security)',
+    'Classify the message in any language. Block requests that create or facilitate child sexual abuse, explicit pornography, incest/bestiality/non-consensual sexual exploitation, suicide or self-harm methods/encouragement, violent crime, terrorism, weapon construction/use, hard-drug manufacture/trafficking, malware or illegal hacking, fraud/theft or other actionable crime, credible threats, hateful/dehumanizing abuse or threats against protected groups, severe targeted profanity, or calls for political/religious violence. Include violent or unlawful incitement in mainland-China political contexts, but do NOT block neutral politics, news, history, religion, education, prevention, translation, victim reports, or help-seeking. Judge intent and context rather than topic keywords alone.',
+    'Unsafe request or harmful intent that must be blocked',
+    'Safe or benign request, neutral discussion, education/prevention, victim report, or help-seeking',
   ),
-  category: choice('Primary safety category of the user message.', {
-    safe: 'Benign request: normal chat, programming, math, translation, education, or general knowledge',
-    minor_sexual: 'Child sexual exploitation or abuse (CSAM) or sexualized minors',
+  category: choice('Primary safety category of the user message; understand common expressions in any language.', {
+    safe: 'Benign request: normal chat, programming, math, translation, education, neutral news/history/politics/religion, prevention, or help-seeking',
+    minor_sexual: 'Child sexual exploitation or abuse (CSAM), sexualized minors, or explicit sexual content involving minors',
     adult_sexual: 'Explicit pornographic or erotic content generation',
     public_morals: 'Incest, bestiality, necrophilia, or non-consensual sexual exploitation',
-    self_harm: 'Encouraging or instructing suicide or self-harm',
-    mass_harm: 'Terrorism, mass violence, or instructions to build bombs/weapons/poisons',
-    drug_crime: 'Manufacturing or trafficking hard drugs (meth, heroin, fentanyl, etc.)',
+    self_harm: 'Suicide or self-harm methods, encouragement, or glorification; not a disclosure seeking help',
+    mass_harm: 'Terrorism, mass violence, or actionable instructions to commit or facilitate mass harm',
+    gun_crime: 'Actionable weapon construction, illegal acquisition, or instructions to use weapons in violence',
+    credible_threat: 'A credible threat or intimidation aimed at an identifiable person or group',
+    drug_crime: 'Manufacturing, selling, or trafficking hard drugs (meth, heroin, fentanyl, etc.)',
+    crime_facilitation: 'Actionable fraud, theft, extortion, trafficking, evasion, or other criminal facilitation',
     cyber_crime: 'Malware, ransomware, exploit payloads, or illegal hacking instructions',
+    hate: 'Threats, dehumanization, or incitement against a protected group',
+    political_violence: 'Violent or unlawful political incitement, including mainland-China political context; not neutral discussion',
+    religious_extremism: 'Religiously motivated violence, recruitment, threats, or hate; not neutral religious discussion',
+    severe_profanity: 'Severe targeted profanity, slurs, or requests to generate abusive insults',
   }),
   severity: score('How harmful or policy-violating is this user message?', [
     'completely benign everyday or technical request',
@@ -586,30 +595,9 @@ if (typeof globalThis !== 'undefined') {
   if (typeof document !== 'undefined') idle(() => prefetchImageModerationAssets());
 }
 
-const zhSex = '(色情|情色|性爱|性交|做爱|裸照|裸体|露骨|淫秽|性行为|成人视频|黄片|约炮|裸聊|成人视频|成人小说)';
-const enSex = '(sex|sexual|porn|porno|nude|naked|nsfw|explicit|erotic|smut|xxx|intercourse)';
 const minor = '(未成年|儿童|孩子|小孩|幼女|幼童|小学生|初中生|萝莉|正太|loli|shota|child|kid|minor|underage|teen(?:ager)?)';
-const make = '(制作|制造|合成|提炼|种植|配方|教程|步骤|购买|贩卖|走私|邮寄|藏匿|自制|改装|绕过|how to|make|buy|sell|traffic|smuggle|manufacture)';
-const hardDrug = '(冰毒|甲基苯丙胺|海洛因|可卡因|芬太尼|摇头丸|k粉|ketamine|meth|heroin|cocaine|fentanyl|mdma|ecstasy|lsd)';
-const gun = '(枪|手枪|步枪|子弹|弹药|消音器|炸弹|爆炸物|土枪|火器|gun|firearm|pistol|rifle|ammo|ammunition|silencer|bomb|explosive)';
-const massHarm = '(屠杀|灭绝|恐袭|炸学校|炸地铁|枪击|报复社会|献忠|无差别|大规模杀伤|mass shooting|terror attack|kill everyone|school shooting|genocide)';
 
 const re = (s, flags = 'i') => new RegExp(s, flags);
-const TEXT_RULES = [
-  { cat: 'minor_sexual', rx: re(`${minor}.{0,40}${zhSex}|${zhSex}.{0,40}${minor}|${minor}.{0,40}${enSex}|${enSex}.{0,40}${minor}`), score: 0.99 },
-  { cat: 'drug_crime', rx: re(`${hardDrug}.{0,48}${make}|${make}.{0,48}${hardDrug}`), score: 0.95 },
-  { cat: 'gun_crime', rx: re(`${gun}.{0,48}${make}|${make}.{0,48}${gun}`), score: 0.94 },
-  { cat: 'mass_harm', rx: re(`${massHarm}|(我要|计划|准备|想去|打算).{0,32}(杀人|炸|枪击|投毒|报复社会)`), score: 0.96 },
-];
-
-const BLOCKING_TEXT = new Set(['minor_sexual', 'adult_sexual', 'drug_crime', 'gun_crime', 'mass_harm', 'credible_threat', 'public_morals', 'exploitative_sexual']);
-const EDUCATIONAL_CONTEXT = /(性教育|科普|医学|健康|心理|法律|新闻|历史|论文|课堂|课程|预防|识别|举报|受害|保护|避孕|安全套|疾病|艾滋|梅毒|伦理讨论|社会学|犯罪学)/i;
-const CREATIVE_EXPLICIT = /(写|生成|创作|描写|描述|续写|扮演|角色扮演|小说|故事|台词|片段|细节|露骨|刺激|成人|色情|情色|黄片|smut|erotic|porn)/i;
-const SEX_ACTION_TERMS = ['性交', '做爱', '性爱', '性行为', '口交', '肛交', '裸聊', '裸照', '露骨', '黄片', '成人小说', '色情', '情色', '约炮'];
-const FAMILY_TERMS = ['父女', '母子', '母女', '父子', '兄妹', '姐弟', '兄弟', '姐妹', '亲兄妹', '亲姐弟', '亲生父', '亲生母', '爸爸', '妈妈', '父亲', '母亲', '女儿', '儿子', '哥哥', '姐姐', '妹妹', '弟弟', '继父', '继母', '叔侄', '舅甥', '姑侄'];
-const TABOO_TERMS = ['乱伦', '近亲相奸', '近亲性交', '禁忌关系', '家庭禁忌', '家庭乱伦', 'incest', 'fatherdaughter', 'motherson', 'siblingsex', 'familyporn'];
-const DISTURBING_TERMS = ['兽交', '人兽', '恋尸', '奸尸', '尸体性行为', '尸体性交', '粪便性行为', '排泄物性癖', 'bestiality', 'zoophilia', 'necrophilia', 'coprophilia'];
-const EXPLOIT_TERMS = ['偷拍', '非自愿', '强迫', '胁迫', '性侵', '强奸', '猥亵', '迷奸', '下药', 'revengeporn', 'nonconsensual', 'forcedsex', 'rape'];
 
 // USE 词表只有 8000 个拉丁 token（0 个 CJK）：中文/日文输入会得到恒定嵌入向量
 // （任意两句中文余弦 = 1.0，所有类别必然误命中）。因此语义层只放英文原型短语，
@@ -626,69 +614,12 @@ function compactText(s, max = 12000) {
   return String(s || '').replace(/\s+/g, ' ').trim().slice(0, max);
 }
 
-function normalizeModerationText(s) {
-  return String(s || '')
-    .normalize('NFKC')
-    .toLowerCase()
-    .replace(/[\u200b-\u200f\ufeff]/g, '')
-    .replace(/[0０]/g, 'o')
-    .replace(/[1１!！|]/g, 'i')
-    .replace(/[3３]/g, 'e')
-    .replace(/[4４@]/g, 'a')
-    .replace(/[5５$]/g, 's')
-    .replace(/[^\p{L}\p{N}\u4e00-\u9fff]+/gu, '');
-}
-
-function hasAny(norm, terms) {
-  return terms.some((t) => norm.includes(normalizeModerationText(t)));
-}
-
-function nearAny(norm, leftTerms, rightTerms, window = 24) {
-  for (const left of leftTerms.map(normalizeModerationText).filter(Boolean)) {
-    let i = norm.indexOf(left);
-    while (i >= 0) {
-      const span = norm.slice(Math.max(0, i - window), Math.min(norm.length, i + left.length + window));
-      if (rightTerms.some((r) => span.includes(normalizeModerationText(r)))) return true;
-      i = norm.indexOf(left, i + 1);
-    }
-  }
-  return false;
-}
-
 function textPayload(text, attachments = []) {
   const parts = [];
   const t = compactText(text);
   if (t) parts.push(t);
   for (const a of attachments || []) if (a && a.kind === 'text' && a.text) parts.push(compactText(a.text, 3000));
   return parts.join('\n\n').slice(0, 14000);
-}
-
-export function policyTextHeuristic(text) {
-  const body = compactText(text, 16000);
-  const norm = normalizeModerationText(body);
-  const hits = [];
-  let score = 0;
-  const add = (cat, s) => { if (!hits.includes(cat)) hits.push(cat); score = Math.max(score, s); };
-  for (const rule of TEXT_RULES) {
-    if (rule.rx.test(body)) add(rule.cat, rule.score);
-  }
-
-  const educational = EDUCATIONAL_CONTEXT.test(body);
-  const adultExplicit = hasAny(norm, SEX_ACTION_TERMS) || re(`${zhSex}|${enSex}`).test(body);
-  const explicitCreation = CREATIVE_EXPLICIT.test(body);
-  if (adultExplicit && (!educational || explicitCreation || hasAny(norm, ['色情', '情色', '成人视频', '黄片', '成人小说', 'porn', 'smut']))) add('adult_sexual', 0.93);
-
-  if (hasAny(norm, TABOO_TERMS) || nearAny(norm, FAMILY_TERMS, SEX_ACTION_TERMS, 28)) add('public_morals', 0.95);
-  if (hasAny(norm, DISTURBING_TERMS)) add('public_morals', 0.96);
-  if (hasAny(norm, EXPLOIT_TERMS) && (adultExplicit || hasAny(norm, ['裸照', '裸体', '色情', '性']))) add('exploitative_sexual', 0.96);
-
-  return {
-    blocked: hits.some((c) => BLOCKING_TEXT.has(c)) && score >= TEXT_MODERATION_THRESHOLD,
-    score,
-    categories: hits,
-    reason: hits.join(', '),
-    source: 'policy-v2',
-  };
 }
 
 function predictionMap(predictions) {

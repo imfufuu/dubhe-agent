@@ -32,7 +32,7 @@ const cfg = await import('../js/config.js');
 const api = await import('../js/api.js?v=2026.10.11.1');
 // V1.7.1：ui.js 已拆出 ui-files-panel.js / ui-lightbox.js / quickviz.js。源码级断言（grep 字符串）
 // 一律读「UI 层整体」，拆分不应改变这些契约；只需精确到某个文件的断言请直接 readFileSync 该文件。
-const UI_SOURCE_PARTS = ['../js/ui.js', '../js/ui-message-scroll.js', '../js/ui-common.js', '../js/ui-choices.js', '../js/ui-toolflow.js', '../js/ui-editpreview.js', '../js/ui-markdown.js', '../js/ui-model-picker.js', '../js/ui-popovers.js', '../js/ui-command-palette.js', '../js/ui-system-commands.js', '../js/ui-files-panel.js', '../js/ui-lightbox.js', '../js/ui-attachments.js', '../js/ui-capability.js', '../js/quickviz.js', '../js/ui-rollback-fx.js', '../js/ui-file-viewer.js', '../js/ui-gateway-key.js'];
+const UI_SOURCE_PARTS = ['../js/ui.js', '../js/ui-message-scroll.js', '../js/ui-common.js', '../js/ui-language-costs.js', '../js/ui-choices.js', '../js/ui-toolflow.js', '../js/ui-editpreview.js', '../js/ui-markdown.js', '../js/ui-model-picker.js', '../js/ui-popovers.js', '../js/ui-command-palette.js', '../js/ui-system-commands.js', '../js/ui-files-panel.js', '../js/ui-lightbox.js', '../js/ui-attachments.js', '../js/ui-capability.js', '../js/quickviz.js', '../js/ui-rollback-fx.js', '../js/ui-file-viewer.js', '../js/ui-gateway-key.js'];
 function readUiSource() {
   const fsp = _fs;
   return UI_SOURCE_PARTS.map((rel) => fsp.readFileSync(new URL(rel, import.meta.url), 'utf8')).join('\n');
@@ -1773,7 +1773,7 @@ test('TeamoRouter 新增 Doubao / Kimi / Qwen / MiniMax，品牌图标均为本�
     assert.ok(cfg.FALLBACK_MODELS.some((model) => model.id === id), `${id} offline fallback`);
     assert.ok(cfg.PROVIDER_ORDER.includes(provider), `${provider} has a group`);
   }
-  assert.equal(MODEL_CATALOG_DATE, '2026-10-21');
+  assert.equal(MODEL_CATALOG_DATE, '2026-10-24');
   const { PROVIDER_ICON, providerIcon } = await import('../js/icons.js');
   const fs = await import('node:fs');
   for (const [provider, file] of [['Doubao', 'doubao.svg'], ['Kimi', 'kimi.svg'], ['Qwen', 'qwen.svg'], ['MiniMax', 'minimax.svg'], ['Xiaomi', 'xiaomi.svg']]) {
@@ -4933,6 +4933,13 @@ test('侧栏 860、761 以上面板停靠，窄屏面板浮层，开面板时藏
   assert.match(css, /#sandbox-panel:not\(\.collapsed\)\) #panel-toggle/);
   assert.match(css, /border-radius:\s*0/);
 });
+test('用户气泡长 URL 自动换行且不新增窄幅限制', async () => {
+  const css = _fs.readFileSync(new URL('../css/styles.css', import.meta.url), 'utf8');
+  assert.match(css, /\.msg-user \.bubble \{[^}]*max-width:\s*100%;[^}]*min-width:\s*0;[^}]*overflow-wrap:\s*anywhere/);
+  assert.match(css, /\.msg-user \.bubble\.md-body a \{[^}]*overflow-wrap:\s*anywhere/);
+  assert.doesNotMatch(css, /\.msg-user \.bubble \{[^}]*max-width:\s*82%/);
+});
+
 test('代码块语言在左侧、复制始终可见；用户气泡反色链接', async () => {
   const fsp = await import('node:fs');
   const hl = fsp.readFileSync(new URL('../assets/hljs/dubhe.css', import.meta.url), 'utf8');
@@ -6055,12 +6062,116 @@ test('Req 3：全模型官方价格查询（识图与生图单独处理）与单
   }
   const vp = pricing.getModelPricing('deepseek-v4-flash-vision-exp');
   assert.equal(vp.kind, 'vision');
-  assert.equal(vp.input, 0.22);
-  assert.equal(vp.output, 0.66);
+  assert.equal(vp.input, 0.15, '旧 vision alias 现按供应商 V4.1 Flash 非高峰官方价计费');
+  assert.equal(vp.output, 0.6);
+
+  // 新增国产模型使用供应商公开标准价；CNY 价目归一到 USD 内部口径，界面再按语言显示。
+  const catalog = await import('../js/model-catalog.js');
+  assert.equal(catalog.TEAMOROUTER_CONFIRMED_MODEL_IDS.length, 51);
+  assert.equal(new Set(catalog.TEAMOROUTER_CONFIRMED_MODEL_IDS).size, 51, 'TeamoRouter 确认清单无重复');
+  const mergedConfirmed = catalog.mergeAvailableModels([], [], true, { gatewayId: 'teamorouter' });
+  for (const id of catalog.TEAMOROUTER_CONFIRMED_MODEL_IDS) {
+    assert.ok(catalog.MODEL_CATALOG_BY_ID.has(id), `${id} 应有目录数据`);
+    assert.ok(mergedConfirmed.some((m) => m.id === id), `${id} 应在公开价格接口漏项时仍保留`);
+  }
+  for (const id of ['MiniMax-M3', 'kimi-k3.1-pro', 'mimo-v2.6-flash', 'mimo-v2.6-pro', 'qwen3.7-flash', 'qwen3.7-max', 'qwen3.8-flash', 'qwen3.8-max', 'doubao-seed-2.0-lite', 'doubao-seed-2.1-pro', 'glm-5.3', 'glm-5.3-flash']) {
+    const row = catalog.MODEL_CATALOG_BY_ID.get(id);
+    assert.equal(row?.priceSource, 'official', `${id} 应带供应商官方定价来源`);
+    assert.ok(row?.priceSourceUrl && row?.priceNote, `${id} 应保留价格来源和中文说明`);
+    const p = pricing.getModelPricing(id);
+    assert.ok(p && p.input > 0 && p.output > 0, `${id} 应有正值单价`);
+  }
+  const domesticStart = ['DeepSeek', 'Doubao', 'GLM', 'Kimi', 'MiniMax', 'Qwen', 'Xiaomi', 'Grok'].map((p) => cfg.PROVIDER_ORDER.indexOf(p));
+  assert.deepEqual(domesticStart, [...domesticStart].sort((a, b) => a - b), '国产供应商分组应排在 Grok 前，并保持明确顺序');
+  assert.deepEqual(cfg.sortModelsInFamily(['qwen3.7-flash', 'qwen3.8-flash', 'qwen3.7-max', 'qwen3.8-max']), ['qwen3.8-max', 'qwen3.8-flash', 'qwen3.7-max', 'qwen3.7-flash']);
+  assert.deepEqual(cfg.sortModelsInFamily(['kimi-k3', 'kimi-k3.1-pro']), ['kimi-k3.1-pro', 'kimi-k3']);
+  const kimi = pricing.getModelPricing('kimi-k3.1-pro');
+  assert.equal(kimi.input, 2); assert.equal(kimi.output, 10); assert.equal(kimi.cachedInput, 0.2); assert.equal(kimi.cacheCreation, 2);
+  const doubao = pricing.getModelPricing('doubao-seed-2.1-pro');
+  assert.ok(Math.abs(doubao.input * 6.718 - 6) < 1e-6); assert.ok(Math.abs(doubao.output * 6.718 - 30) < 1e-6);
+  const qwen = pricing.getModelPricing('qwen3.7-flash');
+  assert.ok(Math.abs(qwen.input * 6.718 - 0.2) < 1e-6); assert.equal(qwen.contextTier.thresholdTokens, 32000);
+  assert.equal(qwen.contextTier.additionalTiers[0].thresholdTokens, 256000);
+  const doubaoLite = pricing.getModelPricing('doubao-seed-2.0-lite');
+  assert.equal(doubaoLite.contextTier.thresholdTokens, 32000);
+  assert.equal(doubaoLite.contextTier.additionalTiers[0].thresholdTokens, 128000);
+  const currency = await import('../js/currency.js');
+  assert.equal(currency.formatCurrency(1, 'en'), '$1.00');
+  assert.equal(currency.formatCurrency(1, 'zh'), '¥6.72');
+  assert.equal(currency.formatRate(2, 'en'), '$2.00');
+  assert.equal(currency.formatRate(2, 'zh'), '¥13.44');
+  assert.match(pricing.priceBadgeFor('qwen3.7-flash', { language: 'en' }), /\$0\.0298/);
+  assert.match(pricing.priceBadgeFor('qwen3.7-flash', { language: 'zh' }), /¥0\.2/);
+  const fs = await import('node:fs');
+  const picker = fs.readFileSync(new URL('../js/ui-model-picker.js', import.meta.url), 'utf8');
+  assert.match(picker, /formatRate\(p\.input, 'zh'\)/); assert.match(picker, /formatRate\(p\.input, 'en'\)/);
+  assert.match(picker, /cached_input_explicit/); assert.match(picker, /cache_write/);
+  assert.match(picker, /onLanguageChange\(\(\) => \{ if \(!ddMenu\.hidden\) renderModelMenu\(\); \}\)/);
+  const popovers = fs.readFileSync(new URL('../js/ui-popovers.js', import.meta.url), 'utf8');
+  assert.match(popovers, /summary\.formatted = formatCcy\(pop\._turnInfo\.summary\.totalUsd\)/);
+  const languageCosts = fs.readFileSync(new URL('../js/ui-language-costs.js', import.meta.url), 'utf8');
+  assert.match(languageCosts, /onLanguageChange/);
+
+  // Cache-aware usage: OpenAI cache reads are a subset of prompt_tokens; Anthropic reports input, read, and write separately.
+  const openUsage = [];
+  createOpenAIStream((ev) => openUsage.push(ev))({ usage: { prompt_tokens: 100, completion_tokens: 10, prompt_tokens_details: { cached_tokens: 40 } }, choices: [{ delta: {} }] });
+  assert.deepEqual(openUsage[0], { type: 'usage', usage: { input: 100, output: 10, cached: 40 } });
+  const anthropicUsage = [];
+  const anthropicStream = createAnthropicStream((ev) => anthropicUsage.push(ev));
+  anthropicStream({ type: 'message_start', message: { usage: { input_tokens: 10, cache_creation_input_tokens: 20, cache_creation: { ephemeral_5m_input_tokens: 12, ephemeral_1h_input_tokens: 8 }, cache_read_input_tokens: 30 } } });
+  anthropicStream({ type: 'message_delta', usage: { output_tokens: 5 } });
+  assert.deepEqual(anthropicUsage, [
+    { type: 'usage', usage: { input: 60, cached: 30, cacheCreation: 20, cacheCreation5m: 12, cacheCreation1h: 8 } },
+    { type: 'usage', usage: { output: 5 } },
+  ]);
+  const oldFetch = globalThis.fetch;
+  const fakeEvents = [
+    { type: 'message_start', message: { usage: { input_tokens: 5, cache_read_input_tokens: 20, cache_creation_input_tokens: 15, cache_creation: { ephemeral_5m_input_tokens: 10, ephemeral_1h_input_tokens: 5 } } } },
+    { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
+    { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'ok' } },
+    { type: 'content_block_stop', index: 0 },
+    { type: 'message_delta', usage: { output_tokens: 4 } },
+    { type: 'message_stop' },
+  ];
+  globalThis.fetch = async () => new Response(fakeEvents.map((ev) => `data: ${JSON.stringify(ev)}\n\n`).join(''), { status: 200, headers: { 'content-type': 'text/event-stream' } });
+  try {
+    const { runSubagent } = await import('../js/agent.js');
+    let subagentUsage;
+    const report = await runSubagent({ id: 'cache-test', name: 'cache test', tag: 'CACHE', tools: [] }, 'return a short test report', {
+      apiKey: 'unit-test-only', gatewayId: 'anthropic', model: 'claude-haiku-5-5', onSubagentUsage: (event) => { subagentUsage = event; },
+    });
+    assert.equal(report, 'ok');
+    assert.deepEqual(subagentUsage.usage, { input: 40, output: 4, cached: 20, cacheCreation: 15, cacheCreation5m: 10, cacheCreation1h: 5 });
+  } finally { globalThis.fetch = oldFetch; }
+  const agentSource = (await import('node:fs')).readFileSync(new URL('../js/agent.js', import.meta.url), 'utf8');
+  assert.match(agentSource, /'cacheCreation5m', 'cacheCreation1h'/, 'main-turn usage aggregation preserves Anthropic TTL splits');
+  const kimiCache = pricing.estimateChatCost('kimi-k3.1-pro', { input: 1_000_000, output: 0, cached: 400_000, cacheCreation: 200_000 });
+  assert.equal(kimiCache.costUsd, 1.28); assert.equal(kimiCache.cacheCreationTokens, 200_000);
+  const claudeCache = pricing.estimateChatCost('claude-haiku-5-5', {
+    input: 110_000, output: 1_000, cached: 20_000, cacheCreation: 30_000,
+    cacheCreation5m: 20_000, cacheCreation1h: 10_000,
+  });
+  assert.equal(claudeCache.inRate, 0.5); assert.equal(claudeCache.cachedRate, 0.05);
+  assert.equal(claudeCache.cacheCreation5mRate, 0.625); assert.equal(claudeCache.cacheCreation1hRate, 1);
+  assert.ok(Math.abs(claudeCache.costUsd - 0.056) < 1e-12, 'Anthropic TTL-specific writes and the >100K tier must both be billed');
+  const anthroTurn = pricing.summarizeTurnCost({ model: 'claude-haiku-5-5', messages: [{ role: 'assistant', model: 'claude-haiku-5-5', usage: {
+    input: 110_000, output: 1_000, cached: 20_000, cacheCreation: 30_000, cacheCreation5m: 20_000, cacheCreation1h: 10_000,
+  } }] });
+  assert.equal(anthroTurn.cacheCreation5mTokens, 20_000); assert.equal(anthroTurn.cacheCreation1hTokens, 10_000);
+  assert.ok(Math.abs(anthroTurn.totalUsd - 0.056) < 1e-12);
+  assert.equal(pricing.getModelPricing('claude-sonnet-5-5').cachedInput, 0.1, 'Sonnet 5.5 cache hits are 5% of standard input price');
+  const qwenCache = pricing.estimateChatCost('qwen3.7-flash', { input: 300_000, output: 0, cached: 50_000, cacheCreation: 50_000 });
+  assert.ok(Math.abs(qwenCache.costUsd * 6.718 - 0.327) < 1e-8, 'Qwen 显式写入/缓存命中应按 256K+ 阶梯计价');
+  const cachedTurn = pricing.summarizeTurnCost({ model: 'kimi-k3.1-pro', messages: [{
+    role: 'assistant', model: 'kimi-k3.1-pro', usage: { input: 1_000_000, output: 0, cached: 400_000, cacheCreation: 200_000 },
+    toolCalls: [{ id: 'sub-cache', name: 'dispatch_subagent', billing: { kind: 'subagent', model: 'kimi-k3', usage: { input: 100_000, output: 0 } } }],
+  }] });
+  assert.equal(cachedTurn.cachedTokens, 400_000); assert.equal(cachedTurn.cacheCreationTokens, 200_000);
+  assert.ok(Math.abs(cachedTurn.totalUsd - 1.58) < 1e-9, '单轮总价应包含缓存写入与子智能体调用');
 
   // 识图单独估算
   const vc = pricing.estimateVisionCost({ inputTokens: 2000, outputTokens: 500, imageCount: 1 });
-  assert.ok(Math.abs(vc.costUsd - (2000 * 0.22 + 500 * 0.66) / 1e6) < 1e-9);
+  assert.ok(Math.abs(vc.costUsd - (2000 * 0.15 + 500 * 0.6) / 1e6) < 1e-9);
 
   // 生图单独估算（GPT Image 阶梯价 & Nano Banana 2 token 价）
   const ic1k = pricing.estimateImageCost({ model: 'gpt-image-2.5-sunburst', size: '1024x1024', quality: 'medium', count: 2 });
@@ -6520,7 +6631,7 @@ test('2026.9.30.6 八项体验与渲染升级（空状态隐藏最新输出、re
 
 group('2026.9.30.7 40模型全支持与热度版本排序 / 长期记忆自动生效 / 天枢2.5自演进增强 / 黑粒回滚与图表微交互');
 
-test('2026.10.19：支持固定对话目录（DeepSeek 两个免费档继续下架，TeamoRouter 新增模型已加入 → 47 个），且按热度与版本优先级排序', async () => {
+test('2026.10.24：支持固定对话目录（DeepSeek 两个免费档继续下架，TeamoRouter 用户确认模型已加入 → 51 个），且按热度与版本优先级排序', async () => {
   const expected41 = [
     'claude-opus-5-5', 'claude-fable-5-1', 'claude-opus-5', 'claude-fable-5', 'claude-sonnet-5',
     'claude-opus-4-8', 'claude-opus-4-7', 'claude-opus-4-6', 'claude-sonnet-4-6', 'claude-haiku-4-5',
@@ -6539,7 +6650,7 @@ test('2026.10.19：支持固定对话目录（DeepSeek 两个免费档继续下�
     assert.ok(fallbackIds.has(id), `FALLBACK_MODELS 缺少模型：${id}`);
   }
   const chatModels = cfg.FALLBACK_MODELS.filter((m) => m.id !== cfg.SMART_ROUTER_ID && !cfg.isImageModel(m.id));
-  assert.equal(chatModels.length, 47, '排除智能路由、识图/生图专用模型后应恰好包含 47 个固定对话模型（不含 DeepSeek 免费档）');
+  assert.equal(chatModels.length, 51, '排除智能路由、识图/生图专用模型后应恰好包含用户确认的 51 个固定对话模型（不含 DeepSeek 免费档）');
   assert.ok(!fallbackIds.has('deepseek-v4-flash-free') && !fallbackIds.has('deepseek-flash-free'), 'DeepSeek 两个免费模型必须下架');
 
   // Claude 与 GPT 新模型热度与组内版本优先级排序验证
@@ -10830,10 +10941,15 @@ test('界面动效偏好：auto / on / off 三态，on 覆盖系统 reduce，off
     assert.equal(st.applyMotionValue('off'), 'off'); assert.equal(ds.motion, 'off');
     assert.equal(st.applyMotionValue('auto'), 'auto'); assert.equal('motion' in ds, false); assert.equal(store.has('dubhe-motion'), false);
     assert.equal(st.applyMotionValue('weird'), 'auto');
-    assert.match(st.motionNoteText('auto', true), /系统要求减少动效/); assert.match(st.motionNoteText('auto', true), /Windows：设置 → 辅助功能 → 视觉效果 → 动画效果/);
-    assert.equal(st.motionNoteText('auto', false), '跟随系统');
-    assert.match(st.motionNoteText('on', true), /忽略系统「减少动效」/);
-    assert.equal(st.motionNoteText('off', false), '已关闭');
+    assert.match(st.motionNoteText('auto', true, 'zh'), /系统要求减少动效/); assert.match(st.motionNoteText('auto', true, 'zh'), /Windows：设置 → 辅助功能 → 视觉效果 → 动画效果/);
+    assert.equal(st.motionNoteText('auto', false, 'zh'), '跟随系统');
+    assert.match(st.motionNoteText('on', true, 'zh'), /忽略系统「减少动效」/);
+    assert.equal(st.motionNoteText('off', false, 'zh'), '已关闭');
+    assert.equal(st.motionNoteText('auto', false, 'en'), 'Follow system');
+    assert.equal(st.motionNoteText('on', false, 'en'), 'Forced on');
+    assert.match(st.motionNoteText('on', true, 'en'), /Forced on \(ignores system “Reduce motion”\)/);
+    assert.equal(st.motionNoteText('off', false, 'en'), 'Off');
+    assert.match(st.motionNoteText('auto', true, 'en'), /animations are paused/);
     globalThis.matchMedia = () => ({ matches: true });
     assert.equal(st.systemPrefersReducedMotion(), true);
   } finally {
@@ -10846,6 +10962,8 @@ test('界面动效偏好：auto / on / off 三态，on 覆盖系统 reduce，off
   const fsp = await import('node:fs');
   const app = fsp.readFileSync(new URL('../app.html', import.meta.url), 'utf8');
   assert.match(app, /<div class="seg" id="set-motion"><button type="button" data-v="auto">跟随系统<\/button><button type="button" data-v="on">开<\/button><button type="button" data-v="off">关<\/button><\/div>/);
+  const settingsSource = fsp.readFileSync(new URL('../js/settings.js', import.meta.url), 'utf8');
+  assert.match(settingsSource, /onLanguageChange\(\(\) => \{\s*paintMotionNote\(\);/, '语言切换后重绘已打开的动效说明');
   assert.match(app, /var mo=localStorage\.getItem\('dubhe-motion'\); if\(mo==='on'\|\|mo==='off'\) doc\.setAttribute\('data-motion',mo\);/, '启动脚本提前套用动效偏好（加载屏动画也受控）');
   const main = fsp.readFileSync(new URL('../js/main.js', import.meta.url), 'utf8');
   assert.match(main, /applyMotion\(\);/);
