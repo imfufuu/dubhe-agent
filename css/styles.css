@@ -622,6 +622,10 @@ html { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
 
 /* 消息区（min-height:0 保证 flex 子项可收缩，滚动被限制在本区域） */
 .messages { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 32px 0 12px; scroll-behavior: auto; overscroll-behavior: contain; }
+@media (min-width: 761px) {
+  /* 面板停靠后给助手正文留出分割线呼吸区，避免长行贴着文件面板。 */
+  .app:has(#sandbox-panel:not(.collapsed)) .messages { padding-right: clamp(28px, 3.5vw, 48px); }
+}
 /* 长会话「展开更早对话」接缝（.36 重做）：与消息同在 min(760px,100%) 中轴线上，两侧发丝线收进中间胶囊。
    旧版是 inline-flex + margin:auto 挂在 .messages 里 —— 中轴线的 auto 外边距对行内级盒子无效，于是整条贴左边缘。 */
 .lazy-seam { display: flex; align-items: center; gap: 12px; max-width: min(760px, 100%); margin: 2px auto 18px; padding: 0 28px; }
@@ -681,7 +685,7 @@ html { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
 .msg-user .bubble {
   background: var(--chat-user-bubble); color: var(--chat-user-text);
   padding: 10px 16px; border-radius: 16px 16px 5px 16px;
-  max-width: 82%; word-break: break-word;
+  max-width: 100%; word-break: break-word;
   box-shadow: var(--conversation-shadow);
 }
 .msg-user .bubble p { margin: 0; }
@@ -689,7 +693,7 @@ html { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
 .msg-user .bubble.md-body a:hover { color: var(--chat-user-text); }
 .msg-user-bar {
   display: flex; align-items: center; justify-content: flex-end; gap: 10px;
-  margin-top: 6px; max-width: 82%;
+  margin-top: 6px; max-width: 100%;
 }
 .msg-user-bar .msg-actions { margin-top: 0; flex: 0 0 auto; }
 .jev-chip {
@@ -1367,20 +1371,30 @@ html { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
 .conv-stats { font-size: var(--ui-fs-10_5px, 10.5px); color: var(--fg-3); font-family: var(--mono); letter-spacing: .02em; }
 
 .composer {
-  max-width: 760px; margin: 0 auto; display: flex; align-items: center; gap: 10px;
+  max-width: 760px; margin: 0 auto; display: grid; align-items: center;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-areas: "attach input voice send";
+  gap: 10px;
   border: 1px solid var(--line); border-radius: 28px; padding: 10px 10px 10px 18px;
   background: var(--conversation-bg, var(--bg));
   transition: background-color var(--theme-speed) var(--ease), border-color .25s var(--ease), border-radius .2s var(--ease), box-shadow .25s var(--ease), transform .25s var(--ease);
 }
 .composer:focus-within { border-color: var(--line-2); box-shadow: none; }
-.composer.is-multiline { align-items: flex-end; border-radius: 18px; }
-.composer.is-multiline .attach-menu-wrap { align-self: flex-end; }
+.composer.is-multiline {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-areas: "input input input" "attach voice send";
+  row-gap: 6px; border-radius: 18px;
+}
+.composer .attach-menu-wrap { grid-area: attach; align-self: center; }
+.composer #attach-btn { margin: 0; }
 #composer-input {
-  flex: 1; border: none; outline: none; resize: none; background: none; color: var(--fg);
-  font-family: var(--font); font-size: var(--ui-fs-14px, 14px); line-height: 24px; padding: 0; margin: 0; align-self: center; min-height: 24px; max-height: 200px; overflow-y: hidden;
+  grid-area: input; width: 100%; min-width: 0; border: none; outline: none; resize: none; background: none; color: var(--fg);
+  font-family: var(--font); font-size: var(--ui-fs-14px, 14px); line-height: 24px; padding: 0; margin: 0; align-self: center; min-height: 24px; max-height: 48px; overflow-y: hidden;
   transition: height .18s var(--ease);
 }
-.composer.is-multiline #composer-input { align-self: stretch; }
+.composer.is-multiline #composer-input { align-self: start; }
+.composer #voice-btn { grid-area: voice; align-self: center; margin: 0; }
+.composer #send-btn { grid-area: send; align-self: center; }
 #composer-input::placeholder { color: var(--fg-3); }
 #send-btn {
   width: 34px; height: 34px; border-radius: 10px; background: var(--fg); color: var(--bg);
@@ -1901,7 +1915,6 @@ html[data-motion="off"] .file-viewer.switching > :not(.file-viewer-head) { anima
   /* 消息区：左右 14px，气泡与操作条不贴边 */
   .messages { padding: 16px 0 8px; }
   .msg { padding: 0 14px; margin-bottom: 14px; max-width: 100%; }
-  .msg-user .bubble { max-width: 100%; }
   .msg-head { flex-wrap: nowrap; justify-content: flex-start; gap: 6px; margin-bottom: 6px; }
   .msg-model { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 0 1 auto; }
   .msg-meta { flex: 0 0 auto; white-space: nowrap; margin-left: 0; } /* 紧跟模型名，不要右对齐 */
@@ -1936,9 +1949,9 @@ html[data-motion="off"] .file-viewer.switching > :not(.file-viewer-head) { anima
     padding: 8px 12px max(10px, env(safe-area-inset-bottom));
     padding-left: max(12px, env(safe-area-inset-left)); padding-right: max(12px, env(safe-area-inset-right));
   }
-  /* 手机端输入框：外框约 50px，按钮 38px，文字与按钮同一中线（居中，不用外边距微调） */
+  /* 手机端单行仍与按钮同排；多行时文字独占上行，工具按钮落到下行。 */
   .composer { padding: 5px 5px 5px 10px; gap: 6px; align-items: center; }
-  #composer-input { font-size: 16px; min-height: 24px; max-height: 40vh; margin: 0; padding: 0; } /* 16px：iOS 不放大页面 */
+  #composer-input { font-size: 16px; min-height: 24px; max-height: 48px; margin: 0; padding: 0; } /* 两行后内部滚动；16px 防 iOS 放大页面 */
   #attach-btn { width: 38px; height: 38px; }
   #send-btn { width: 38px; height: 38px; font-size: var(--ui-fs-17px, 17px); }
   .composer-hint { font-size: var(--ui-fs-10px, 10px); line-height: 1.5; margin-top: 6px; opacity: .85;

@@ -820,9 +820,15 @@ test('暖纸色编辑对话、助手无回复卡片、用户气泡保留及编�
   assert.match(css, /\.composer \{[^}]*background: var\(--conversation-bg, var\(--bg\)\)/, '输入容器使用对话暖纸色');
   assert.match(css, /\.composer \{[^}]*border-radius: 28px/);
   assert.match(css, /\.composer\.is-multiline \{[^}]*border-radius: 18px/);
+  assert.match(css, /\.composer \{[^}]*display: grid[^}]*grid-template-areas: "attach input voice send"/s, '单行输入维持附件—文本—语音—发送的顺序');
+  assert.match(css, /\.composer\.is-multiline \{[^}]*grid-template-areas: "input input input" "attach voice send"/s, '多行文本独占上方一行，附件与操作按钮固定在下方');
+  assert.match(css, /#composer-input \{[^}]*max-height: 48px/);
   assert.match(css, /#composer-input \{[^}]*transition: height \.18s/);
-  assert.match(read('../js/ui.js'), /function autoGrow\(\) \{[\s\S]*?composer\.closest\('\.composer'\)\?\.classList\.toggle\('is-multiline', multiline\);[\s\S]*?composer\.style\.overflowY = contentHeight > maxHeight \+ 1 \? 'auto' : 'hidden';/s, '多行时向上平滑扩展，超过上限可滚动');
-  assert.match(css, /\.composer\.is-multiline \.attach-menu-wrap \{ align-self: flex-end; \}/, '多行增长时附件按钮贴住输入框底边');
+  assert.match(read('../js/ui.js'), /function autoGrow\(\) \{[\s\S]*?shell\?\.classList\.remove\('is-multiline'\)[\s\S]*?shell\?\.classList\.toggle\('is-multiline', multiline\)[\s\S]*?composer\.scrollTop = 0;/s, '按紧凑布局测量，收缩回单行时清掉 textarea 旧滚动偏移');
+  assert.match(css, /\.composer \.attach-menu-wrap \{ grid-area: attach; align-self: center; \}/, '多行时附件按钮留在下方工具行');
+  assert.match(css, /\.app:has\(#sandbox-panel:not\(\.collapsed\)\) \.messages \{ padding-right: clamp\(28px, 3\.5vw, 48px\); \}/, '停靠面板展开时，助手正文与分割线保持间距');
+  assert.match(css, /\.msg-user \.bubble \{[^}]*max-width: 100%/);
+  assert.doesNotMatch(css, /\.msg-user \.bubble \{[^}]*max-width: 82%/, '用户气泡不施加窄于消息容器的额外宽度上限');
   assert.match(css, /\.composer \{[^}]*transition:[^}]*border-radius/);
   assert.match(css, /#composer-input \{[^}]*background: none/);
   assert.match(css, /\.photo-editor \{[^}]*height:\s*min\(96dvh, 900px\)/, '照片编辑器给工作区分配更充足的视口高度');

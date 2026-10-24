@@ -2260,19 +2260,45 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
 
   // ── 输入区 ────────────────────────────────────────────────────────────
   function autoGrow() {
+    const shell = composer.closest('.composer');
+    // Always measure the compact row first. Measuring while the multiline grid is
+    // active can make a near-wrap sentence fit on one line, causing layout flicker.
+    shell?.classList.remove('is-multiline');
+    composer.style.height = 'auto';
+    const singleRowStyle = getComputedStyle(composer);
+    const lineHeight = Number.parseFloat(singleRowStyle.lineHeight) || 24;
+    const singleRowHeight = Math.max(lineHeight, composer.scrollHeight || lineHeight);
+    const multiline = singleRowHeight > lineHeight + 1;
+    shell?.classList.toggle('is-multiline', multiline);
+
+    // Re-measure after the textarea moves above the attachment / voice controls.
     composer.style.height = 'auto';
     const style = getComputedStyle(composer);
-    const lineHeight = Number.parseFloat(style.lineHeight) || 24;
     const contentHeight = Math.max(lineHeight, composer.scrollHeight || lineHeight);
-    const multiline = contentHeight > lineHeight + 1;
-    composer.closest('.composer')?.classList.toggle('is-multiline', multiline);
     let maxHeight = Number.parseFloat(style.maxHeight);
     if (String(style.maxHeight).endsWith('vh')) maxHeight = window.innerHeight * maxHeight / 100;
-    if (!Number.isFinite(maxHeight) || maxHeight <= 0) maxHeight = 200;
+    if (!Number.isFinite(maxHeight) || maxHeight <= 0) maxHeight = 48;
+    const clipped = contentHeight > maxHeight + 1;
     composer.style.height = Math.min(contentHeight, maxHeight) + 'px';
-    composer.style.overflowY = contentHeight > maxHeight + 1 ? 'auto' : 'hidden';
+    composer.style.overflowY = clipped ? 'auto' : 'hidden';
+    // A textarea keeps its old scrollTop after deleting lines. Reset it once all
+    // content fits so the first line doesn't appear vertically displaced.
+    if (!clipped) composer.scrollTop = 0;
   }
   composer.addEventListener('input', autoGrow);
+  const composerShell = composer.closest('.composer');
+  if (typeof ResizeObserver === 'function' && composerShell) {
+    let previousWidth = 0;
+    const composerSizeObserver = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect?.width || 0;
+      if (!width || Math.abs(width - previousWidth) < 1) return;
+      previousWidth = width;
+      autoGrow();
+    });
+    composerSizeObserver.observe(composerShell);
+  } else {
+    window.addEventListener('resize', autoGrow, { passive: true });
+  }
   composer.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); doSend(); }
   });
