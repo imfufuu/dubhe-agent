@@ -6,6 +6,7 @@ import {
   WLLAMA_VERSION,
 } from './offline-model-config.js';
 import { estimateGGUFMemory, readDeviceMemoryGB, readGGUFMetadata } from './gguf.js';
+import { patchWllamaAbortMessageHandling } from './wllama-abort-compat.js';
 
 const MODEL_METADATA_FILE = 'dubhe-local-model.json';
 const MODEL_FILE_PREFIX = 'dubhe-local-model-';
@@ -368,7 +369,9 @@ async function createOfflineEngine() {
   if (!supportsOfflineModelStorage()) throw new Error('本地模型需要支持 OPFS 的安全浏览器环境（HTTPS 或 localhost）。');
   const entryUrl = new URL(`../assets/vendor/wllama/wllama-${WLLAMA_VERSION}.js`, import.meta.url).href;
   const wasmUrl = new URL(`../assets/vendor/wllama/wllama-${WLLAMA_VERSION}.wasm`, import.meta.url).href;
-  const { Wllama, LoggerWithoutDebug } = await import(entryUrl);
+  const wllamaModule = await import(entryUrl);
+  patchWllamaAbortMessageHandling(wllamaModule.Wllama);
+  const { Wllama, LoggerWithoutDebug } = wllamaModule;
   const runtime = new Wllama({ default: wasmUrl }, {
     allowOffline: true,
     parallelDownloads: 1,

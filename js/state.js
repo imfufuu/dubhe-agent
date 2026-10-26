@@ -281,7 +281,7 @@ export function createStore(onChange) {
     models: [],
     // webEnabled：联网开关。控制模型原生联网格式与已探测到的 Worker 搜索/抓取工具；
     // fetch_url/search_web/crawl_site 仍须存在相应 relay capability 才会进入工具表。
-    settings: { sandboxEnabled: true, fastMode: false, theme: 'light', thinking: true, reasoningLevel: 'medium', webEnabled: true, jevEnabled: true, visionModel: 'deepseek-v4-flash-vision-exp', videoModel: 'gemini-3.5-flash-lite', audioModel: 'gemini-3.5-flash-lite', imageRemoteReview: true, cleanupUnreferencedFiles: false, userSalutation: '' },
+    settings: { sandboxEnabled: true, localCppEnabled: true, fastMode: false, theme: 'light', thinking: true, reasoningLevel: 'medium', webEnabled: true, jevEnabled: true, visionModel: 'deepseek-v4-flash-vision-exp', videoModel: 'gemini-3.5-flash-lite', audioModel: 'gemini-3.5-flash-lite', imageRemoteReview: true, cleanupUnreferencedFiles: false, userSalutation: '' },
     sessions: [newSession()],
     activeSessionId: null,
     // 根级字段 = 活动会话的实时引用（由 hydrate/commit 同步，其余代码零改动）
@@ -538,7 +538,17 @@ export function createStore(onChange) {
       const parsed = JSON.parse(raw);
       Object.assign(state, parsed);
       // 旧快照里没有的开关要补上默认值（整块 settings 被 parsed 覆盖时不能留下 undefined）
-      state.settings = Object.assign({ sandboxEnabled: true, remoteCppEnabled: true, fastMode: false, theme: 'light', thinking: true, reasoningLevel: 'medium', webEnabled: true, jevEnabled: true, visionModel: 'deepseek-v4-flash-vision-exp', videoModel: 'gemini-3.5-flash-lite', audioModel: 'gemini-3.5-flash-lite', imageRemoteReview: true, cleanupUnreferencedFiles: false, userSalutation: '' }, state.settings || {});
+      const storedSettings = state.settings && typeof state.settings === 'object' ? state.settings : {};
+      const localCppEnabled = storedSettings.localCppEnabled !== undefined
+        ? storedSettings.localCppEnabled !== false
+        : storedSettings.remoteCppEnabled !== false;
+      state.settings = Object.assign({ sandboxEnabled: true, localCppEnabled: true, fastMode: false, theme: 'light', thinking: true, reasoningLevel: 'medium', webEnabled: true, jevEnabled: true, visionModel: 'deepseek-v4-flash-vision-exp', videoModel: 'gemini-3.5-flash-lite', audioModel: 'gemini-3.5-flash-lite', imageRemoteReview: true, cleanupUnreferencedFiles: false, userSalutation: '' }, storedSettings, { localCppEnabled });
+      delete state.settings.remoteCppEnabled;
+      const sandboxOverride = state.settings.capabilityConstraints?.sandbox;
+      if (sandboxOverride && typeof sandboxOverride === 'object' && !Array.isArray(sandboxOverride)) {
+        if (sandboxOverride.localCpp === undefined && sandboxOverride.remoteCpp !== undefined) sandboxOverride.localCpp = sandboxOverride.remoteCpp !== false;
+        delete sandboxOverride.remoteCpp;
+      }
       // 音视频解析模型合并为一个设置：以 videoModel 为准收敛 audioModel（两者同一档位，analyze_video / analyze_audio 共用）；
       // 旧快照只有 audioModel 时用它顶替 videoModel，两者都有则统一到 videoModel。
       if (!state.settings.videoModel && state.settings.audioModel) state.settings.videoModel = state.settings.audioModel;

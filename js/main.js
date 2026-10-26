@@ -182,7 +182,7 @@ function warmSandbox() {
 if (typeof requestIdleCallback === 'function') requestIdleCallback(warmSandbox, { timeout: 4000 });
 else setTimeout(warmSandbox, 2500);
 
-// 启动即后台预热图片审核模型（不等用户加附件）——慢网络给 26MB 资源留足下载窗口
+// 启动时只预取图片审核静态资产，不在无图片任务时把大模型权重常驻内存；选择图片附件时再完整预热。
 if (!offlineAtBoot) setTimeout(() => { try { if (!isNetworkOffline()) globalThis.__dubhePrewarmImageModeration && globalThis.__dubhePrewarmImageModeration('startup'); } catch { /* 忽略 */ } }, 2000);
 // 这里不再 fs.import(state.files)：createAgent 已经用同一份 state.files 建好了 fs，
 // 再 import 一次不仅多余，还会把「挂载期间被清空的文件」重新灌回去（clearFiles 走的是

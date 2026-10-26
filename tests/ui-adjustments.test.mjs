@@ -8,15 +8,16 @@ import { renderQuickChart, renderQuickDiagram } from '../js/quickviz.js';
 
 const read = (path) => fs.readFileSync(new URL(path, import.meta.url), 'utf8');
 
-test('local model picker adds a gray provider-column label and preserves the original row badges', () => {
+test('offline model menu uses LOCAL in the provider column and keeps only the muted-gray local badge', () => {
   const picker = read('../js/ui-model-picker.js');
   const css = read('../css/styles.css');
   assert.match(picker, /const LOCAL_PROVIDER_ICON = '<svg class="p-icon local-provider-icon" viewBox="0 0 24 24"/);
+  assert.match(picker, /const isLocalGroup = groups\.get\(p\)\.some\(\(model\) => model\.localModel\)/);
   assert.match(picker, /isLocalGroup \? LOCAL_PROVIDER_ICON : providerIcon\(p\)/);
-  assert.match(picker, /class="badge local-model-badge">\$\{localeText\('本地', 'Local'\)\}<\/span>[\s\S]*?<span class="badge">\$\{localState\}<\/span>/);
-  assert.match(picker, /const localState = store\.state\.offlineModelAvailable[\s\S]*?localeText\('已就绪', 'Ready'\)[\s\S]*?localeText\('未选择', 'Not selected'\)[\s\S]*?localeText\('检查中', 'Checking'\)/);
-  assert.doesNotMatch(picker, /<span>LOCAL<\/span>/);
-  assert.match(css, /\.badge\.local-model-badge \{ color: #2563eb; border-color: #93c5fd; \}/);
+  assert.match(picker, /isLocalGroup \? 'LOCAL' : p/);
+  assert.match(picker, /class="badge local-model-badge">\$\{localeText\('本地', 'Local'\)\}<\/span>/);
+  assert.doesNotMatch(picker, /localState|localeText\('已就绪', 'Ready'\)|localeText\('未选择', 'Not selected'\)|localeText\('检查中', 'Checking'\)/);
+  assert.match(css, /\.badge\.local-model-badge \{ color: var\(--fg-3\); border-color: var\(--line-2\); \}/);
   assert.match(css, /\.dd-item\.active \.badge\.local-model-badge \{ color: var\(--bg\); border-color: var\(--bg\); \}/);
   assert.match(css, /\.dd-group-title \.local-provider-icon \{[^}]*width: 12px; height: 12px; color: var\(--fg-3\)/);
 });

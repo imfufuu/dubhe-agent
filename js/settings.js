@@ -381,7 +381,7 @@ function paintSalutationCopy() {
   const title = $('#set-user-salutation-title'), note = $('#set-user-salutation-note');
   const input = $('#set-user-salutation'), save = $('#save-user-salutation');
   if (title) title.textContent = localeText('用户称谓', 'What should we call you?');
-  if (note) note.textContent = localeText('最多 8 个字符；本地强制审核每秒刷新。默认称谓随机生成并保存在此设备。', 'Up to 8 characters. A mandatory local review refreshes every second. A random default is saved on this device.');
+  if (note) note.textContent = localeText('最多 16 个字符；本地强制审核每秒刷新。默认称谓随机生成并保存在此设备。', 'Up to 16 characters. A mandatory local review refreshes every second. A random default is saved on this device.');
   if (input) { input.placeholder = localeText('输入称谓', 'Your name'); input.setAttribute('aria-label', localeText('用户称谓', 'Your name')); }
   if (save) save.textContent = localeText('保存称谓', 'Save name');
   return language;
@@ -436,7 +436,7 @@ export function openSettingsModal({ store } = {}) {
   syncSeg('#set-motion', readMotionPreference());
   paintMotionNote();
   $('#set-sandbox').checked = store.state.settings.sandboxEnabled !== false;
-  if ($('#set-cpp')) $('#set-cpp').checked = store.state.settings.remoteCppEnabled !== false;
+  if ($('#set-cpp')) $('#set-cpp').checked = store.state.settings.localCppEnabled !== false;
   $('#set-web').checked = store.state.settings.webEnabled !== false;
   $('#set-fast').checked = !!store.state.settings.fastMode;
   if ($('#set-image-review')) $('#set-image-review').checked = store.state.settings.imageRemoteReview !== false;
@@ -896,7 +896,7 @@ export function mountSettings(store, { onRelayChanged, onKeySaved, onSettingChan
     });
   };
   bindSw('#set-sandbox', 'sandboxEnabled');
-  if ($('#set-cpp')) bindSw('#set-cpp', 'remoteCppEnabled');
+  if ($('#set-cpp')) bindSw('#set-cpp', 'localCppEnabled');
   bindSw('#set-web', 'webEnabled');
   bindSw('#set-fast', 'fastMode');
   bindSw('#set-image-review', 'imageRemoteReview');

@@ -150,9 +150,9 @@ import { buildFileEditPreview, formatEditPreviewNote, pathsOfEdits } from './edi
 // 跨模块「新增具名导出」在混版缓存下会让整个模块图 link 失败（表现为页面直接白屏），
 // 而 TOOL_DEFS 是新旧两版都存在的导出，用它本地过滤最稳。
 const CODE_TOOL_NAMES = [...REG_CODE_TOOL_NAMES]; // Helix 3.0：能力登记处派生
-const toolsFor = (sandboxEnabled, { remoteCpp = true } = {}) =>
+const toolsFor = (sandboxEnabled, { localCpp = true } = {}) =>
   (sandboxEnabled ? TOOL_DEFS : TOOL_DEFS.filter((t) => !CODE_TOOL_NAMES.includes(t.name)))
-    .filter((t) => remoteCpp || t.name !== 'execute_cpp');
+    .filter((t) => localCpp || t.name !== 'execute_cpp');
 // 只在具备中继路由时可用的网页工具；搜索/爬虫还须由 Worker health 明确声明对应特性。
 const RELAY_ONLY_TOOLS = new Set(['fetch_url', 'search_web', 'crawl_site', 'download_file', 'pull_github_project']);
 // Helix 3.0：回合的五个显式阶段（runLoop 按此顺序执行；审计事件 turn-pipeline 记录各阶段耗时）
@@ -186,7 +186,7 @@ function formatWebCapabilityNote({ relayOk, webEnabled, tools, dropped, deferred
     .map((name) => (reasonOf.has(name) ? `${name}（${describeDropReason(reasonOf.get(name))}）` : name));
   return `\n\n【联网】本轮已开启；中继健康检查通过。实际网页工具表：${names.map((name) => label[name] || name).join('、') || '（本轮无）'}。${lazy.length ? `${lazy.join(' / ')} 本轮按需未挂载（需要时直接调用，内核会当场挂载）。` : ''}${unavailable.length ? `未列出的 ${unavailable.join(' / ')} 本轮不可用。` : ''}${WEB_FACTS_NOTE}`;
 }
-// P3 修正：整张工具表的裁剪清单（含委派 / 沙箱 / 远程 C++ 等非联网门控）——与能力弹层逐字相同
+// P3 修正：整张工具表的裁剪清单（含委派 / 沙箱 / 本地 C++ 等非联网门控）——与能力弹层逐字相同
 function formatToolTableNote(dropped, deferred, language = getLanguage()) {
   const line = formatDroppedTools(dropped);
   const lazy = formatDeferredTools(deferred, { language }); // 紧凑目录只给摘要，不预装完整 Schema
@@ -225,18 +225,18 @@ export function copyAttachmentsToFS(fs, attachments = []) {
 
 // ─── 子智能体运行器：独立上下文的迷你工具循环（不可再委派，防递归）────
 // （导出以供 tests/live-smoke.mjs 对真实 API 验证）
-export function subagentTools(sandboxEnabled, def, { remoteCpp = true } = {}) {
+export function subagentTools(sandboxEnabled, def, { localCpp = true } = {}) {
   // 按「本轮实际可用的工具」取交集：沙箱关闭时代码执行工具不可用，
   // 但读写文件之类不执行任意代码的工具仍应留给子智能体（旧写法直接给了 null，
   // 等于一关沙箱就把所有子智能体退化成纯推理）。
-  const allow = new Set(toolsFor(sandboxEnabled, { remoteCpp }).map((t) => t.name));
+  const allow = new Set(toolsFor(sandboxEnabled, { localCpp }).map((t) => t.name));
   const list = TOOL_DEFS.filter((t) => (t.name === 'knowledge_search' || t.name === 'skill_library' || def.tools.includes(t.name)) && t.name !== 'dispatch_subagent' && allow.has(t.name));
   return list.length ? list : null;
 }
 
-export async function runSubagent(def, task, { apiKey, gatewayId = 'teamorouter', gatewayBaseUrl = '', model, thinking, reasoningLevel, sandboxEnabled, remoteCpp = true, webEnabled, fs, signal, onThinkingFallback, onWebFallback, imageModel, visionModel, videoModel, audioModel, onSubagentUsage, memory }) {
+export async function runSubagent(def, task, { apiKey, gatewayId = 'teamorouter', gatewayBaseUrl = '', model, thinking, reasoningLevel, sandboxEnabled, localCpp = true, webEnabled, fs, signal, onThinkingFallback, onWebFallback, imageModel, visionModel, videoModel, audioModel, onSubagentUsage, memory }) {
   const offlineOnly = isNetworkOffline() || isOfflineModelId(model);
-  const availableSubTools = subagentTools(sandboxEnabled, def, { remoteCpp: offlineOnly ? false : remoteCpp });
+  const availableSubTools = subagentTools(sandboxEnabled, def, { localCpp });
   const subTools = offlineOnly ? (availableSubTools || []).filter((tool) => isOfflineToolAllowed(tool.name)) : availableSubTools;
   const memBlock = formatMemory(memory);
   const messages = [
@@ -295,7 +295,7 @@ export async function runSubagent(def, task, { apiKey, gatewayId = 'teamorouter'
     messages.push({ role: 'assistant', text, toolCalls: calls, ...(blocks.length ? { thinkingBlocks: blocks } : {}) });
     for (const c of calls) {
       // imageModel 要透传：否则子智能体出图会绕开用户在模型菜单里选定的生图模型
-      const res = await executeTool(c.name, c.args, { fs, onUi: () => {}, apiKey, model, gatewayId, gatewayBaseUrl, imageModel: imageModel || null, visionModel: visionModel || null, videoModel: videoModel || null, audioModel: audioModel || null, sandboxEnabled, remoteCpp, signal });
+      const res = await executeTool(c.name, c.args, { fs, onUi: () => {}, apiKey, model, gatewayId, gatewayBaseUrl, imageModel: imageModel || null, visionModel: visionModel || null, videoModel: videoModel || null, audioModel: audioModel || null, sandboxEnabled, localCpp, signal });
       messages.push({ role: 'tool', toolCallId: c.id, name: c.name, content: res });
     }
   }
@@ -603,7 +603,6 @@ export function createAgent(store, hooks = {}) {
       }
       if (offlineOnly) {
         settings.webEnabled = false;
-        settings.remoteCppEnabled = false;
         settings.imageRemoteReview = false;
         settings.thinking = false;
         settings.reasoningLevel = 'low';
@@ -688,7 +687,7 @@ export function createAgent(store, hooks = {}) {
       canDispatch = offlineOnly ? false : initTier.canDispatch;
       // 旧路径工具表：保留它只为**交叉验证**——真正的工具表由统一执行上下文派生（见下方 P2 段落），
       // 两条路径算出的表必须逐项一致；不一致说明有人只改了一处，当场报缺陷而不是让它悄悄生效。
-      legacyTools = toolsFor(settings.sandboxEnabled, { remoteCpp: settings.remoteCppEnabled !== false })
+      legacyTools = toolsFor(settings.sandboxEnabled, { localCpp: settings.localCppEnabled !== false })
         .filter((t) => {
           if (t.name === 'browser_sandbox') return localBrowserAvailable();
           if (t.name === 'fetch_url') return relayOk && settings.webEnabled !== false;
@@ -711,7 +710,7 @@ export function createAgent(store, hooks = {}) {
         reasoningLevel: lv,
         canDispatch,
         sandboxEnabled: settings.sandboxEnabled,
-        remoteCpp: !offlineOnly && settings.remoteCppEnabled !== false,
+        localCpp: settings.localCppEnabled !== false,
         webEnabled: !offlineOnly && settings.webEnabled !== false && relayOk,
         imageModel: store.state.imageModel || DEFAULT_IMAGE_MODEL,
         // 识图 / 视频识别模型：设置页「多模态模型」全局生效（不随会话）
@@ -754,12 +753,12 @@ export function createAgent(store, hooks = {}) {
         relayOk,
         webEnabled: settings.webEnabled !== false,
         sandboxEnabled: settings.sandboxEnabled !== false,
-        remoteCppEnabled: settings.remoteCppEnabled !== false,
+        localCppEnabled: settings.localCppEnabled !== false,
         canDispatch,
         overrides: offlineOnly ? {
           ...userCapabilityOverrides,
           web: { ...(userCapabilityOverrides.web || {}), enabled: false, allowedHosts: [], search: false, crawl: false, file: false },
-          sandbox: { ...(userCapabilityOverrides.sandbox || {}), network: false, remoteCpp: false, browser: false },
+          sandbox: { ...(userCapabilityOverrides.sandbox || {}), network: false, localCpp: settings.localCppEnabled !== false, browser: false },
           dispatch: { ...(userCapabilityOverrides.dispatch || {}), enabled: false },
         } : {
           ...userCapabilityOverrides,
@@ -1634,7 +1633,7 @@ export function createAgent(store, hooks = {}) {
       search: webOn && relaySupports('search'),
       crawl: webOn && relaySupports('crawl'),
       file: webOn && relaySupports('file'),
-      remoteCpp: !offlineOnly && settings.remoteCppEnabled !== false,
+      localCpp: settings.localCppEnabled !== false,
       browser: !offlineOnly && localBrowserAvailable(),
     }, TOOL_DEFS);
     let allowed = wl.allowed;

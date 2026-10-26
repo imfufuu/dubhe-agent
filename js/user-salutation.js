@@ -1,7 +1,7 @@
 import { policyTextHeuristic } from './local-text-policy.js';
 
 export const USER_SALUTATION_KEY = 'dubhe.user-salutation.v1';
-export const MAX_USER_SALUTATION_LENGTH = 8;
+export const MAX_USER_SALUTATION_LENGTH = 16;
 
 const SAFE_DEFAULTS_ZH = ['小星', '青禾', '远山', '云舟', '知微', '小满', '星野', '清和', '北辰', '拾光', '阿澈', '听雨', '行舟', '青松', '小岚', '一诺', '沐风', '向晚', '麦芽', '秋白'];
 const SAFE_DEFAULTS_EN = ['Nova', 'Sage', 'River', 'Sky', 'Sunny', 'Robin', 'Avery', 'Rowan', 'Riley', 'Quinn', 'Casey', 'Taylor', 'Jamie', 'Morgan', 'Reese', 'Alex'];
@@ -27,12 +27,12 @@ export function validateUserSalutation(raw) {
   const value = normalizeUserSalutation(raw);
   if (!value) return { ok: false, value, reason: '称谓不能为空。', code: 'empty' };
   if (CONTROL_CHARS.test(value) || /[\r\n\t]/u.test(String(raw ?? ''))) return { ok: false, value, reason: '请使用单行称谓。', code: 'control-character' };
-  if (countUserSalutationCharacters(value) > MAX_USER_SALUTATION_LENGTH) return { ok: false, value, reason: '称谓最多 8 个字符。', code: 'too-long' };
+  if (countUserSalutationCharacters(value) > MAX_USER_SALUTATION_LENGTH) return { ok: false, value, reason: '称谓最多 16 个字符。', code: 'too-long' };
   if (!ALLOWED_CHARS.test(value)) return { ok: false, value, reason: '仅支持文字、数字、空格和常用连接符。', code: 'invalid-characters' };
 
   // Strict, local-only gate: this calls the deterministic policy layer directly. It never
   // calls Jev, a gateway, or a model API, regardless of the app's moderation toggle.
-  const policy = policyTextHeuristic(value);
+  const policy = policyTextHeuristic(value, { purpose: 'salutation' });
   if (policy.blocked || (policy.categories || []).length) {
     return { ok: false, value, reason: '称谓未通过本地内容审核。', code: 'moderation', policy };
   }

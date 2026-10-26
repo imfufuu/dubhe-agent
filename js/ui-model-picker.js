@@ -144,13 +144,13 @@ export function installModelPicker({ store, agent, toast, getBusy, openKeyModal,
       const g = el('div', 'dd-group');
       const isRouterGroup = p === SMART_ROUTER_PROVIDER;
       const customProviderModel = groups.get(p).find((m) => m.customProvider);
-      const isLocalGroup = p === localeText(OFFLINE_MODEL_PROVIDER_ZH, OFFLINE_MODEL_PROVIDER_EN);
+      const isLocalGroup = groups.get(p).some((model) => model.localModel);
       const groupIcon = customProviderModel
         ? providerIcon(p, { custom: true, iconDataUrl: customProviderModel.providerIconDataUrl })
         : (isLocalGroup ? LOCAL_PROVIDER_ICON : providerIcon(p));
       const groupLabel = isRouterGroup
         ? SMART_ROUTER_PROVIDER_LABEL
-        : (isLocalGroup ? localeText('本地', 'Local') : p);
+        : (isLocalGroup ? 'LOCAL' : p);
       g.appendChild(el('div', 'dd-group-title', `${isRouterGroup ? `<span class="router-group-ico">${ROUTER_ICON_SVG}</span>` : groupIcon}<span>${esc(groupLabel)}</span>`));
       for (const m of sortModelsInFamily(groups.get(p))) {
         const item = el('button', 'dd-item' + (m.id === store.state.model ? ' active' : ''));
@@ -161,9 +161,6 @@ export function installModelPicker({ store, agent, toast, getBusy, openKeyModal,
           item.title = localeText('尚未选择本地 GGUF；请先在设置 → 离线本地模型中选择文件。', 'No local GGUF is selected. Choose a file in Settings → Offline local model first.');
         }
         const local = !!hit.localModel;
-        const localState = store.state.offlineModelAvailable
-          ? localeText('已就绪', 'Ready')
-          : (store.state.offlineModelChecked ? localeText('未选择', 'Not selected') : localeText('检查中', 'Checking'));
         const free = !local && isFreeModel(m.id);
         const hot = !local && !!hit.hot;
         const cheap = !local && (!!hit.cheap || free);
@@ -187,7 +184,6 @@ export function installModelPicker({ store, agent, toast, getBusy, openKeyModal,
             ? `<span class="dd-item-id mono">${esc(localModelName())}</span>
               <span class="dd-item-badges">
                 <span class="badge local-model-badge">${localeText('本地', 'Local')}</span>
-                <span class="badge">${localState}</span>
               </span>`
             : `<span class="dd-item-id mono">${esc(m.id)}</span>
               <span class="dd-item-badges">

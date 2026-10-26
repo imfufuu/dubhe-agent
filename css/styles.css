@@ -1813,8 +1813,7 @@ html[data-motion="off"] .file-viewer.switching > :not(.file-viewer-head) { anima
 .offline-model-warning { margin: 6px 0 10px; padding: 9px 11px; border: 1px solid #d7a84e; border-left-width: 3px; border-radius: 8px; background: color-mix(in srgb, #f6c453 10%, var(--bg)); color: var(--fg); font-size: var(--ui-fs-11_5px, 11.5px); line-height: 1.55; }
 .offline-model-warning[hidden] { display: none !important; }
 .offline-model-warning.critical { border-color: #db7777; background: color-mix(in srgb, #df6666 10%, var(--bg)); }
-.badge.local-model-badge { color: #2563eb; border-color: #93c5fd; }
-[data-theme="dark"] .badge.local-model-badge { color: #93c5fd; border-color: #2563eb; }
+.badge.local-model-badge { color: var(--fg-3); border-color: var(--line-2); }
 .dd-item.active .badge.local-model-badge { color: var(--bg); border-color: var(--bg); }
 .dd-group-title .local-provider-icon { width: 12px; height: 12px; color: var(--fg-3); opacity: .9; }
 .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; background: var(--bg-soft); }

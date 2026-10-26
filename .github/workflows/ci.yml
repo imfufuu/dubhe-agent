@@ -39,6 +39,15 @@ jobs:
       - name: tests/agent.test.mjs · 主单测
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/agent.test.mjs
+      - name: tests/local-cpp-policy.test.mjs · 本地 C++ 策略、工具门控与无网络集成
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/local-cpp-policy.test.mjs
+      - name: tests/local-cpp.test.mjs · 本地 C++ WASM 多文件编译执行
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/local-cpp.test.mjs
+      - name: tests/wllama-abort-compat.test.mjs · Wllama 取消兼容
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/wllama-abort-compat.test.mjs
       - name: tests/app-boot.mjs · 应用装配冒烟
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/app-boot.mjs
@@ -48,6 +57,9 @@ jobs:
       - name: tests/local-text-policy.test.mjs · 本地文本审核规则
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/local-text-policy.test.mjs
+      - name: tests/moderation-prewarm.test.mjs · 图像审核按需加载，避免与本地 C++ 抢内存
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/moderation-prewarm.test.mjs
       - name: tests/user-salutation.test.mjs · 本地称谓审核与状态
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/user-salutation.test.mjs

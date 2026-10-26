@@ -188,7 +188,7 @@ export function deriveToolWhitelist(ctx, allTools = []) {
     if (SANDBOX_GATED_TOOLS.includes(name) && !bits.sandbox) { dropped.push({ name, reason: 'capability-sandbox-off' }); continue; }
     if (name === 'browser_sandbox' && ctx?.capability?.constraints?.sandbox?.browser !== true) { dropped.push({ name, reason: 'local-browser-unavailable' }); continue; }
     if (name === 'execute_cpp' && ctx && ctx.capability && ctx.capability.constraints && ctx.capability.constraints.sandbox
-        && ctx.capability.constraints.sandbox.remoteCpp === false) { dropped.push({ name, reason: 'remote-cpp-off' }); continue; }
+        && ctx.capability.constraints.sandbox.localCpp === false) { dropped.push({ name, reason: 'local-cpp-off' }); continue; }
     allowed.push(tool);
   }
   return { allowed, dropped };
@@ -205,7 +205,7 @@ export const DROP_REASON_LABEL = Object.freeze({
   'relay-crawl-unavailable': '中继未声明 crawl',
   'relay-file-unavailable': '中继未声明 file',
   'capability-sandbox-off': '顶栏「沙箱」已关',
-  'remote-cpp-off': '远程 C++ 已关',
+  'local-cpp-off': '本地 C++ 已关',
   'local-browser-unavailable': '需本机 server.py 与 Playwright/Chromium',
   'offline-local-only': '离线/本地模型仅允许本地工具',
   'no-tool-name': '工具定义缺少名称',
@@ -220,7 +220,7 @@ export const DROP_REASON_FIX = Object.freeze({
   'relay-crawl-unavailable': Object.freeze({ kind: 'relay-reprobe', label: '重新探测中继' }),
   'relay-file-unavailable': Object.freeze({ kind: 'relay-reprobe', label: '重新探测中继' }),
   'capability-sandbox-off': Object.freeze({ kind: 'sandbox-on', label: '打开沙箱' }),
-  'remote-cpp-off': Object.freeze({ kind: 'settings', label: '打开设置' }),
+  'local-cpp-off': Object.freeze({ kind: 'settings', label: '打开设置' }),
   'local-browser-unavailable': Object.freeze({ kind: 'settings', label: '本地浏览器需运行服务' }),
 });
 
@@ -244,14 +244,14 @@ export function formatDroppedTools(dropped, { max = 16 } = {}) {
  */
 export function deriveToolWhitelistFromBits({
   relay = false, web = false, sandbox = true, dispatch = false,
-  search = false, crawl = false, file = false, remoteCpp = true, browser = false,
+  search = false, crawl = false, file = false, localCpp = true, browser = false,
 } = {}, allTools = []) {
   const ctx = {
     capability: {
       bits: { relay: !!relay, web: !!web, sandbox: !!sandbox, dispatch: !!dispatch },
       constraints: {
         web: { search: search === true, crawl: crawl === true, file: file === true },
-        sandbox: { remoteCpp: remoteCpp !== false, browser: browser === true },
+        sandbox: { localCpp: localCpp !== false, browser: browser === true },
       },
     },
   };

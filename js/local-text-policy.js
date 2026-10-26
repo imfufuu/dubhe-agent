@@ -1,3 +1,5 @@
+import { CN_WEAPON_EXPLOSIVE_TERMS, hasExternalProfanity } from './local-moderation-lexicons.js';
+
 // Local, language-aware policy rules. This is a conservative lexical layer, not a substitute for contextual review.
 export const BLOCKING_TEXT = new Set([
   'minor_sexual', 'adult_sexual', 'drug_crime', 'gun_crime', 'crime_facilitation',
@@ -125,6 +127,20 @@ const SUPPORT_CONTEXT = list(`求助|需要帮助|需要協助|如何帮助|如�
 const QUOTE_OR_TRANSLATION = list(`翻译|翻譯|词义|詞義|定义|定義|语言学|引用|原文|translation|translate|definition|linguistic|quoted|quotation|meaning of|traducción|traduccion|significado|traduction|définition|definition|übersetzung|übersetzen|bedeutung|übersetzung|tradução|traducao|번역|뜻|Перевод|значение|ترجمة|معنى`);
 const CREATIVE_INTENT = list(`写|撰写|生成|创作|描写|描述|续写|扮演|小说|故事|片段|台词|写出|编写|制作|write|draft|generate|create|compose|describe|depict|roleplay|role play|novel|story|scene|script|make|produce|draw|write me|escribe|redacta|crear|generar|describir|relato|historia|écris|rédige|créer|générer|décrire|récit|schreibe|erstellen|generieren|beschreiben|geschichte|skript|escreva|criar|gerar|descrever|história|historia|작성|쓰다|생성|창작|묘사|소설|이야기|написать|создать|сгенерировать|описать|рассказ|история|اكتب|أنشئ|انشئ|إنشاء|إنشاء قصة|وصف`);
 const REQUEST_CUES = list(`怎么|如何|教我|告诉我|告訴我|给我步骤|給我步驟|一步一步|步骤|步驟|方法|配方|计划|計劃|教程|指南|绕过|逃避警察|躲避警方|藏匿证据|藏匿證據|どうやって|教えて|教えろ|手順|作り方|how to|tell me how|teach me|show me how|how do i|how do you|how can i|how would i|step by step|instructions|recipe|method|plan|guide me|avoid police|evade police|hide evidence|get away with|cómo|como|enséñame|ensename|paso a paso|instrucciones|receta|método|metodo|plan|éviter la police|eviter la police|comment|étapes|etapes|anleitung|schritt für schritt|wie kann ich|polizei umgehen|beweise verstecken|como fazer|passo a passo|instruções|instrucoes|방법을 알려|어떻게|단계별|지침|방법|как|научи меня|расскажи как|как сделать|пошагово|инструкция|способ|как обойти полицию|скрыть улики|كيف|علمني|أخبرني|اخبرني|كيف أصنع|كيف اصنع|خطوة بخطوة|طريقة|تعليمات|كيف أتجنب الشرطة|كيف اتجنب الشرطة`);
+const HAZARD_NEUTRAL_CONTEXT = list(`science|scientific|chemistry|chemical|biochemistry|pharmacology|public health|drug policy|substance use disorder|history|historical|historically|news|news report|journalism|reporting|research|research paper|academic|academic discussion|case study|learn about|understand|overview|explain|discussion|analysis|politics|political science|religion|religious studies|theology|translation|translate|definition|write about|essay|paper|article|documentary|school project|class project|discussion|talk about|victim report|court case|social science|ethics|documentary|museum|科学|科學|化学|化學|药学|藥學|药理学|藥理學|历史|歷史|历史上|新聞|新闻|报道|報導|研究|学术|學術|政治|宗教|翻译|翻譯|解释|解釋|讨论|討論|科普|公共卫生|公共衛生|薬学|化学|科学|歴史|ニュース|報道|報告|研究|学術|政治|宗教|翻訳|解説|교육|과학|화학|공중 보건|역사|뉴스|보도|연구|정치|종교|과학적|historia|histórico|historico|noticias|reportaje|periodismo|investigación|investigacion|académico|academico|ciencia|científico|cientifico|química|quimica|salud pública|salud publica|política|politica|religión|religion|traducción|traduccion|étude|histoire|historique|actualités|actualites|journalisme|recherche|universitaire|science|scientifique|chimie|santé publique|sante publique|politique|religion|traduction|geschichte|historisch|nachrichten|journalismus|forschung|wissenschaft|chemie|gesundheitspolitik|politik|religion|übersetzung|ubersetzung|história|historia|notícias|noticias|jornalismo|pesquisa|ciência|ciencia|química|quimica|saúde pública|saude publica|política|politica|religião|religiao|tradução|traducao|история|исторический|новости|репортаж|журналистика|исследование|наука|химия|общественное здравоохранение|политика|религия|перевод|تاريخ|تاريخي|أخبار|صحافة|بحث|علم|كيمياء|الصحة العامة|سياسة|دين|ترجمة`);
+const HAZARD_REPORT_CONTEXT = list(`report|reporting|news report|journalism|article|court report|victim report|report to police|report a crime|denunciar|informe|noticia|noticias|reportaje|periodismo|denúncia|denuncia|signaler|reportage|journalisme|opferbericht|anzeige erstatten|berichterstattung|denúncia|reportagem|신고|피해 신고|뉴스 보도|사례 보고|報告|報道|通報|被害届|新聞記事|举报|舉報|报警|報警|报案|報案|受害者|受害人|新闻报道|新聞報導|сообщить|сообщение|репортаж|новостной|полиция|пострадавший|الإبلاغ|أبلغ|تقرير|خبر|صحفي|ضحية|الشرطة`);
+const NEUTRAL_META_CUES = list(`learn about|understand|study|studies|research|researching|historical|history|news|report|reporting|journalism|academic|academic discussion|overview|explain|explanation|analysis|discuss|discussion|paper|article|documentary|museum|translation|translate|definition|science|scientific|chemistry|public health|politics|political science|religion|religious studies|learn about|了解|理解|研究|历史|歷史|历史上|新闻|新聞|报道|報導|学术|學術|政治|宗教|翻译|翻譯|解释|解釋|讨论|討論|科普|历史课|歷史課|科学课|科學課|勉強|研究|歴史|報道|ニュース|翻訳|解説|学術|政治|宗教|공부|연구|역사|보도|뉴스|설명|번역|교육|historia|estudiar|investigar|investigación|investigacion|explicar|análisis|analisis|artículo|articulo|noticias|ciencia|química|quimica|histórico|historico|étudier|recherche|expliquer|analyse|article|histoire|actualité|actualite|wissenschaft|geschichte|bericht|nachrichten|analyse|erklären|erklaeren|artikel|forschung|pesquisa|história|historia|notícia|noticia|ciência|ciencia|pesquisar|explicar|análise|analise|изучать|исследовать|история|объяснить|анализ|новости|статья|علمي|دراسة|بحث|تاريخ|شرح|تحليل|أخبار|مقال`);
+const PREVENTION_REQUEST_CUES = list(`how to prevent|how do i prevent|how can i prevent|ways to prevent|how to stop|how can i stop|harm reduction|cómo prevenir|como prevenir|cómo evitar|como evitar|comment prévenir|comment prevenir|wie verhindert man|как предотвратить|как остановить|كيف أمنع|كيف امنع|如何预防|如何預防|怎么预防|怎麼預防|如何防止|如何阻止|预防|預防|방지하는 방법|예방 방법`);
+const ACTIONABLE_REQUEST_CUES = list(`how to|how do i|how do you|how can i|how would i|tell me how|teach me|show me how|give me steps|step by step|instructions|recipe|method to|guide me|怎么|如何|教我|告诉我|告訴我|给我步骤|給我步驟|一步一步|教程|制作方法|製作方法|作り方|方法を教えて|教えて|어떻게|방법|방법을 알려|단계별|지침|cómo traficar|como traficar|cómo vender|como vender|cómo fabricar|como fabricar|enséñame|ensename|paso a paso|instrucciones|comment fabriquer|comment vendre|comment trafiquer|apprends-moi|étapes|etapes|anleitung|schritt für schritt|wie kann ich|wie mache ich|bring mir bei|способ сделать|как сделать|как изготовить|как собрать|как создать|как сконструировать|как продать|как продавать|как сбывать|как торговать|научи меня|пошагово|инструкция|كيف أصنع|كيف اصنع|كيف أبيع|كيف ابيع|كيف أهرب|كيف اهرب|علمني|خطوة بخطوة|طريقة صنع`);
+const PERSONAL_INTENT_CUES = list(`我想|我要|我打算|我准备|我計劃|我计划|我想要|我會|我会|I want to|i wanna|i intend to|i plan to|i am going to|im going to|i will|we want to|we plan to|je veux|je compte|je vais|je prévois|je prevois|ich will|ich möchte|ich moechte|ich plane|ich werde|quiero|voy a|planeo|pienso|私は|僕は|俺は|したい|やりたい|팔고 싶|만들고 싶|하려고|хочу|я планирую|я собираюсь|я намерен|أريد|سوف|أنوي|سأقوم`);
+const NEUTRAL_PERSONAL_INTENT_CUES = list(`learn about|learn|understand|study|research|discuss|write about|write a report|write a paper|write an article|make a documentary|create a documentary|make a film|create a film|make a course|create a course|prepare a presentation|create a presentation|make educational material|write a history|analyze|analyse|explain|report|translate|翻译|翻譯|了解|理解|学习|學習|研究|讨论|討論|撰写|撰寫|解释|解釋|歴史を学|研究する|勉強する|알아보|배우|연구하|공부하|investigar|estudiar|aprender|entender|explicar|analizar|étudier|apprendre|comprendre|expliquer|rechercher|untersuchen|lernen|verstehen|erklären|erklaeren|forschen|изучать|исследовать|понять|объяснить|دراسة|بحث|فهم|شرح`);
+const EXTENDED_DRUG_TERMS = list(`drug|drugs|controlled substance|controlled substances|illegal drugs|illicit drugs|narcotic|narcotics|drug trafficking|drug trade|drug dealing|trafficking drugs|毒品|违禁药物|違禁藥物|违禁品|違禁品|贩毒|販毒|贩卖毒品|販賣毒品|走私毒品|毒品交易|药物走私|藥物走私|麻薬|薬物|違法薬物|薬物取引|麻薬取引|薬物密売|마약|불법 약물|마약 거래|마약 밀매|droga|drogas|tráfico de drogas|trafico de drogas|narcotráfico|narcotrafico|estupefacientes|narcóticos|narcoticos|drogue|drogues|trafic de drogue|trafic de drogues|stupéfiants|stupefiants|Drogen|Drogenhandel|Rauschgift|Betäubungsmittel|Betaeubungsmittel|Betäubungsmittelhandel|наркотик|наркотики|наркотиками|наркотиков|наркотикам|наркотиках|наркоторговля|наркотрафик|запрещённые наркотики|запрещенные наркотики|مخدر|مخدرات|مواد مخدرة|الاتجار بالمخدرات|تهريب المخدرات`);
+const EXTENDED_DRUG_ACTIONS = list(`贩毒|販毒|贩卖毒品|販賣毒品|销售毒品|出售毒品|卖毒品|賣毒品|买卖毒品|買賣毒品|交易毒品|走私毒品|运毒|運毒|运输毒品|運輸毒品|分销毒品|分銷毒品|traffic|traffick|trafficking|traffic drugs|traffic in drugs|sell drugs|selling drugs|deal drugs|dealing drugs|drug dealing|drug trafficking|distribute drugs|drug distribution|smuggle drugs|smuggle narcotics|sell narcotics|buy drugs|purchase drugs|source drugs|密売|薬物を売|麻薬を売|売買|販売|売る|密輸|薬物取引|마약 밀매|밀매|마약 판매|마약 유통|밀수|판매|유통|마약 거래|traficar|traficar drogas|traficar con drogas|vender drogas|vender estupefacientes|distribuir drogas|tráfico de drogas|trafico de drogas|trafiquer|trafiquer des drogues|vendre des drogues|vendre des stupéfiants|vendre des stupefiants|trafic de drogues|contrebande de drogues|Drogen verkaufen|mit Drogen handeln|Drogenhandel|Drogen schmuggeln|Drogen vertreiben|торговать наркотиками|продавать наркотики|сбывать наркотики|перевозить наркотики|контрабанда наркотиков|بيع المخدرات|تجارة المخدرات|تهريب المخدرات|توزيع المخدرات|الاتجار بالمخدرات|نقل المخدرات`);
+const EXTENDED_DRUG_HARD_ACTIONS = list(`制造|製造|制作|製作|合成|提炼|提煉|制毒|製毒|配方|traffic|traffick|trafficking|sell|selling|deal|dealing|smuggle|distribute|密売|密輸|麻薬を売|薬物を売|판매|밀매|유통|밀수|traficar|vender|trafiquer|vendre|schmuggeln|verkaufen|сбывать|продавать|перевозить|تهريب|بيع|توزيع|تصنيع|تركيب|تكرير`);
+const EXTENDED_WEAPON_TERMS = list(`炸药|炸藥|火药|火藥|爆破物|爆炸物|易爆物|爆炸装置|爆炸裝置|燃烧弹|燃燒彈|燃烧瓶|燃燒瓶|汽油弹|汽油彈|黑火药|黑火藥|硝酸甘油|炸弹|炸彈|爆炸|explosives|explosive device|explosive devices|explosive material|explosive materials|bomb-making|bomb making|improvised explosive|improvised explosive device|IED|TNT|C4|thermite|Molotov cocktail|firebomb|火薬|火薬類|爆薬|爆発物|爆発装置|화약|폭약|폭발물|폭발 장치|explosivos|explosivo|artefacto explosivo|explosif|explosifs|engin explosif|Sprengstoff|Sprengstoffe|Explosivstoff|Explosivstoffe|взрывчатое вещество|взрывчатые вещества|взрывчатка|взрывчатку|взрывчаткой|взрывчатые вещества|взрывчатых веществ|взрывное устройство|материалы для взрывчатки|مواد متفجرة|متفجرات|عبوة ناسفة`);
+const EXTENDED_WEAPON_ACTIONS = list(`制造|製造|制作|製作|组装|組裝|自制|自製|配方|方法|爆破|引爆|出售|销售|販賣|出售|制造炸药|制造炸彈|卖|買賣|make|build|manufacture|assemble|craft|mix|prepare|recipe|detonate|sell|traffic|smuggle|buy|purchase|作る|製造|製作|組み立て|爆破|販売|売る|밀다|제조|만들|만드는|만들기|만들다|만들어|조립|폭파|판매|제작|fabricar|construir|preparar|mezclar|vender|detonar|traficar|fabriquer|construire|mélanger|melanger|vendre|faire exploser|herstellen|bauen|mischen|verkaufen|sprengen|fabricar|construir|misturar|vender|explodir|изготовить|собрать|смешать|продать|взорвать|تصنيع|صنع|تركيب|خلط|بيع|تفجير`);
+const EXTENDED_WEAPON_HARD_ACTIONS = list(`制造|製造|制作|製作|组装|組裝|自制|自製|配方|爆破|引爆|出售|销售|販賣|卖|買賣|make|build|manufacture|assemble|craft|mix|prepare|recipe|detonate|sell|traffic|smuggle|buy|purchase|作る|組み立て|爆破|販売|売る|제조|만들|만드는|만들기|만들다|만들어|조립|폭파|판매|제작|fabricar|construir|preparar|mezclar|vender|detonar|traficar|fabriquer|construire|mélanger|melanger|vendre|herstellen|bauen|mischen|verkaufen|sprengen|изготовить|собрать|смешать|продать|взорвать|تصنيع|صنع|تركيب|خلط|بيع|تفجير`);
+
 const DIRECT_HARM_INTENT = list(`号召|鼓动|鼓動|煽动|煽動|组织袭击|組織襲擊|策划袭击|策劃襲擊|计划杀|計劃殺|準備殺|准备杀|应该杀|應該殺|必须杀|必須殺|杀光|殺光|灭绝所有|滅絕所有|消灭所有|消滅所有|刺杀所有|刺殺所有|暗杀领导人|暗殺領導人|炸毁政府|炸毀政府|袭击政府|襲擊政府|袭击官员|襲擊官員|枪杀官员|槍殺官員|屠杀所有|屠殺所有|去死吧|殺せ|皆殺し|殺すべき|襲撃しろ|爆破しろ|call for violence|call to kill|call to attack|urge violence|kill all|killing all|kill them|kill immigrants|kill refugees|kill muslims|kill jews|kill the president|should kill|let's kill|let us kill|we should kill|we must kill|exterminate all|wipe out all|murder them|attack now|attack parliament|attack the government|bomb parliament|bomb the government|shoot officials|assassinate the president|rape them|burn them|should die|merecen morir|hay que matar|matar a todos|deberían matar|deberian matar|exterminar a todos|aniquilar a todos|tuer tout|il faut tuer|devrait tuer|exterminer tous|ausrotten alle|alle töten|töten soll|убить всех|уничтожить всех|убить их|надо убить|اقتل الجميع|اقتلهم|إبادة|ابادة|يجب قتل|모두 죽여|죽여야 한다|죽여야해|皆殺しにしろ|殺すべき`);
 const DIRECT_GENERATION_INTENT = list(`写|写出|写一段|撰写|生成|创作|编写|写口号|制作口号|发布|发表|write|draft|generate|create|compose|produce|publish|post|write a slogan|make a slogan|escribe|redacta|crea|genera|écris|rédige|créer|générer|schreibe|erstelle|generiere|verfasse|작성해|만들어|напиши|создай|напишите|اكتب|أنشئ|انشئ`);
 
@@ -178,19 +194,24 @@ function add(hits, blocking, category, score, shouldBlock = true) {
   return score;
 }
 
-export function policyTextHeuristic(text) {
+export function policyTextHeuristic(text, { purpose = 'message' } = {}) {
   const body = String(text ?? '').slice(0, 16000);
   const input = makeInput(body);
-  if (!input.words) return { blocked: false, score: 0, categories: [], reason: '', source: 'policy-v3' };
+  if (!input.words) return { blocked: false, score: 0, categories: [], reason: '', source: 'policy-v4' };
   const hits = [];
   const blocking = new Set();
   let score = 0;
   const mark = (category, amount, shouldBlock = true) => { score = Math.max(score, add(hits, blocking, category, amount, shouldBlock)); };
   const safeContext = hasAny(input, SAFE_CONTEXT);
   const prevention = hasAny(input, PREVENTION_CONTEXT);
+  const hazardNeutralContext = hasAny(input, HAZARD_NEUTRAL_CONTEXT);
+  const reportingContext = hasAny(input, HAZARD_REPORT_CONTEXT);
+  const supportContext = hasAny(input, SUPPORT_CONTEXT);
+  const safeHazardContext = safeContext || prevention || hazardNeutralContext || reportingContext || supportContext;
   const request = hasAny(input, REQUEST_CUES);
   const create = hasAny(input, CREATIVE_INTENT);
   const quotedContext = hasAny(input, QUOTE_OR_TRANSLATION);
+  const hazardSafeContext = safeHazardContext || quotedContext;
   const advocacy = hasAny(input, DIRECT_HARM_INTENT);
   const advocacyRequest = advocacy && (request || hasAny(input, DIRECT_GENERATION_INTENT)) && !quotedContext;
 
@@ -204,14 +225,42 @@ export function policyTextHeuristic(text) {
   if (tabooSex && (explicitSex || create) && !(safeContext && !create)) mark('public_morals', 0.96);
   if (exploitativeSex && !(safeContext && !create)) mark('exploitative_sexual', 0.97);
 
-  const safeEducationalProduct = safeContext && hasAny(input, EDUCATION_PRODUCT_CONTEXT);
-  const drugPair = nearby(input, DRUG_TERMS, DRUG_ACTIONS);
-  const drugHardPair = nearby(input, DRUG_TERMS, DRUG_HARD_ACTIONS);
-  if (drugPair && (!safeContext || request) && !(prevention && !drugHardPair) && !safeEducationalProduct) mark('drug_crime', 0.95);
+  const safeEducationalProduct = (safeContext || hazardNeutralContext) && hasAny(input, EDUCATION_PRODUCT_CONTEXT);
+  const drugTerms = [...DRUG_TERMS, ...EXTENDED_DRUG_TERMS];
+  const drugActions = [...DRUG_ACTIONS, ...EXTENDED_DRUG_ACTIONS];
+  const drugHardActions = [...DRUG_HARD_ACTIONS, ...EXTENDED_DRUG_HARD_ACTIONS];
+  const drugPair = nearby(input, drugTerms, drugActions);
+  const drugHardPair = nearby(input, drugTerms, drugHardActions);
+  const neutralPersonalIntent = nearby(input, PERSONAL_INTENT_CUES, NEUTRAL_PERSONAL_INTENT_CUES, 16);
+  const drugPersonalAction = nearby(input, PERSONAL_INTENT_CUES, drugActions, 20)
+    && nearby(input, drugActions, drugTerms, 18) && !neutralPersonalIntent;
+  const neutralQuestionRequest = nearby(input, ACTIONABLE_REQUEST_CUES, NEUTRAL_PERSONAL_INTENT_CUES, 16);
+  const drugActionableRequest = nearby(input, ACTIONABLE_REQUEST_CUES, drugActions, 28) && !neutralQuestionRequest;
+  const preventionQuestion = hasAny(input, PREVENTION_REQUEST_CUES);
+  const drugInstructionIntent = drugActionableRequest && !reportingContext && !preventionQuestion && !supportContext
+    && !quotedContext && (!hazardNeutralContext || drugHardPair) && !safeEducationalProduct;
+  const drugPersonalIntent = drugPersonalAction && !quotedContext;
+  const drugCreationIntent = drugPair && drugHardPair && create && !hazardSafeContext && !safeEducationalProduct;
+  const drugCommandIntent = drugPair && startsWithAny(input, drugHardActions) && !hazardSafeContext && !safeEducationalProduct;
+  if (drugPair && (drugInstructionIntent || drugPersonalIntent || drugCreationIntent || drugCommandIntent)) mark('drug_crime', 0.96);
 
-  const weaponPair = nearby(input, WEAPON_TERMS, WEAPON_ACTIONS);
-  const weaponHardPair = nearby(input, WEAPON_TERMS, WEAPON_HARD_ACTIONS);
-  if (weaponPair && (!safeContext || request) && !(prevention && !weaponHardPair) && !safeEducationalProduct) mark('gun_crime', 0.94);
+  const weaponTerms = [...WEAPON_TERMS, ...EXTENDED_WEAPON_TERMS];
+  const weaponActions = [...WEAPON_ACTIONS, ...EXTENDED_WEAPON_ACTIONS];
+  const weaponHardActions = [...WEAPON_HARD_ACTIONS, ...EXTENDED_WEAPON_HARD_ACTIONS];
+  const explosiveLexiconHit = hasAny(input, CN_WEAPON_EXPLOSIVE_TERMS);
+  const weaponDatasetIntent = explosiveLexiconHit && (create || hasAny(input, PERSONAL_INTENT_CUES)
+    || nearby(input, ACTIONABLE_REQUEST_CUES, weaponActions, 18));
+  const weaponPair = nearby(input, weaponTerms, weaponActions) || weaponDatasetIntent;
+  const weaponHardPair = nearby(input, weaponTerms, weaponHardActions) || weaponDatasetIntent;
+  const weaponPersonalAction = nearby(input, PERSONAL_INTENT_CUES, weaponActions, 20)
+    && nearby(input, weaponActions, weaponTerms, 18) && !neutralPersonalIntent;
+  const weaponActionableRequest = nearby(input, ACTIONABLE_REQUEST_CUES, weaponActions, 28) && !neutralQuestionRequest;
+  const weaponInstructionIntent = weaponActionableRequest && !reportingContext && !preventionQuestion && !supportContext
+    && !quotedContext && (!hazardNeutralContext || weaponHardPair) && !safeEducationalProduct;
+  const weaponPersonalIntent = weaponPersonalAction && !quotedContext;
+  const weaponCreationIntent = weaponPair && weaponHardPair && create && !hazardSafeContext && !safeEducationalProduct;
+  const weaponCommandIntent = weaponPair && startsWithAny(input, weaponHardActions) && !hazardSafeContext && !safeEducationalProduct;
+  if (weaponPair && (weaponInstructionIntent || weaponPersonalIntent || weaponCreationIntent || weaponCommandIntent)) mark('gun_crime', 0.96);
 
   const actionableCrimePair = nearby(input, CRIME_ACTIONS, CRIME_OBJECTS);
   const crimeEvasion = hasAny(input, CRIME_EVASION_TERMS);
@@ -228,7 +277,6 @@ export function policyTextHeuristic(text) {
   const selfHarmMention = hasAny(input, SELF_HARM_TERMS);
   const selfHarmMethod = nearby(input, SELF_HARM_TERMS, SELF_HARM_METHODS);
   const selfHarmEncouragement = hasAny(input, SELF_HARM_ENCOURAGEMENT, { suffix: false });
-  const supportContext = hasAny(input, SUPPORT_CONTEXT);
   if ((selfHarmMethod || selfHarmEncouragement) && !supportContext && !safeContext && !quotedContext) mark('self_harm', 0.99);
   else if (selfHarmMention && (supportContext || safeContext || quotedContext)) mark('self_harm', 0.91, false);
 
@@ -253,7 +301,8 @@ export function policyTextHeuristic(text) {
     || (hasAny(input, RELIGIOUS_TARGETS) && hasAny(input, TERROR_TERMS));
   if (religiousPair) mark('religious_extremism', 0.97, (!safeContext && !quotedContext) || advocacyRequest);
 
-  const profanity = hasAny(input, PROFANITY_TERMS, { suffix: false }) || hasObfuscatedAny(input, PROFANITY_TERMS);
+  const profanity = hasAny(input, PROFANITY_TERMS, { suffix: false }) || hasObfuscatedAny(input, PROFANITY_TERMS)
+    || (purpose === 'salutation' && hasExternalProfanity(input));
   const abusiveRequest = create && hasAny(input, ABUSE_REQUEST_TERMS);
   if (profanity || abusiveRequest) {
     const quoted = hasAny(input, QUOTE_OR_TRANSLATION) || (safeContext && !create);
@@ -265,6 +314,6 @@ export function policyTextHeuristic(text) {
     score,
     categories: hits,
     reason: hits.join(', '),
-    source: 'policy-v3',
+    source: 'policy-v4',
   };
 }

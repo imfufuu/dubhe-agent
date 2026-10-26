@@ -2750,34 +2750,50 @@ test('search_files 不跳过 data URL：能搜 mime / 宽高 / ASCII strings', a
   const textHit = await executeTool('search_files', { pattern: 'const n = 42' }, { fs });
   assert.match(textHit, /src\/ok\.js/);
 });
-test('execute_cpp 把沙箱多文件与 stdin 交给 Godbolt files', async () => {
-  const real = globalThis.fetch;
-  const bodies = [];
-  globalThis.fetch = async (url, opts) => {
-    const u = String(url);
-    if (u.includes('/api/compilers')) {
-      return new Response(JSON.stringify([{ id: 'g142', semver: '14.2.0' }]), { status: 200, headers: { 'content-type': 'application/json' } });
+test('execute_cpp collects workspace files/stdin/argv for its local module Worker without network calls', async () => {
+  const previousWorker = globalThis.Worker;
+  const workers = [];
+  class FakeCppWorker {
+    constructor(url, options) {
+      this.url = String(url);
+      this.options = options;
+      this.terminated = false;
+      workers.push(this);
+      queueMicrotask(() => this.onmessage?.({ data: { __dubheReady: 'cpp-runtime-1' } }));
     }
-    if (u.includes('/compile')) {
-      bodies.push(JSON.parse(opts.body));
-      return new Response(JSON.stringify({ code: 0, stdout: [{ text: 'ok-cpp' }], stderr: [] }), { status: 200, headers: { 'content-type': 'application/json' } });
+    postMessage(payload) {
+      this.payload = payload;
+      queueMicrotask(() => {
+        this.onmessage?.({ data: { __phase: 'loading-assets' } });
+        this.onmessage?.({ data: { __phase: 'compiling' } });
+        this.onmessage?.({ data: { __phase: 'program-start' } });
+        this.onmessage?.({ data: { ok: true, logs: [{ level: 'log', text: 'ok-cpp' }], exitCode: 0 } });
+      });
     }
-    return new Response('no', { status: 404 });
-  };
+    terminate() { this.terminated = true; }
+  }
+  globalThis.Worker = FakeCppWorker;
   try {
     const fs = createFS({
       'src/main.cpp': '#include "util.h"\nint main(){ return 0; }\n',
       'src/util.h': 'int n = 42;\n',
       'src/in.txt': 'hello-stdin\n',
     });
-    const out = await executeTool('execute_cpp', { path: 'src/main.cpp', stdin_path: 'src/in.txt', args: ['--quiet'] }, { fs });
+    const out = await executeTool('execute_cpp', { path: 'src/main.cpp', stdin_path: 'src/in.txt', args: ['--quiet'] }, { fs, sandboxEnabled: true, localCpp: true });
     assert.match(out, /ok-cpp/);
-    assert.equal(bodies.length, 1);
-    assert.ok(bodies[0].files && bodies[0].files.some((f) => f.filename === 'util.h' && f.contents.includes('int n = 42')), JSON.stringify(bodies[0].files));
-    assert.equal(bodies[0].options.executeParameters.stdin, 'hello-stdin\n');
-    assert.deepEqual(bodies[0].options.executeParameters.args, ['--quiet']);
-    assert.match(bodies[0].source, /#include "util.h"/);
-  } finally { globalThis.fetch = real; }
+    assert.equal(workers.length, 1);
+    assert.match(workers[0].url, /worker-cpp\.js/);
+    assert.equal(workers[0].options.type, 'module');
+    assert.equal(workers[0].payload.mainPath, 'src/main.cpp');
+    assert.match(workers[0].payload.code, /#include "util.h"/);
+    assert.ok(workers[0].payload.files.some((file) => file.filename === 'src/util.h' && file.contents.includes('int n = 42')));
+    assert.equal(workers[0].payload.stdin, 'hello-stdin\n');
+    assert.deepEqual(workers[0].payload.args, ['--quiet']);
+    assert.equal(workers[0].terminated, true, 'worker must be terminated after returning its result');
+  } finally {
+    if (previousWorker === undefined) delete globalThis.Worker;
+    else globalThis.Worker = previousWorker;
+  }
 });
 test('execute_python / execute_cpp 描述不再写「刷新后重装 / 无法访问文件系统」', () => {
   const py = TOOL_DEFS.find((t) => t.name === 'execute_python');
@@ -6363,7 +6379,7 @@ test('对话区图表修复：CSS 定义 --accent/--sans/--warn 且思维导图�
 - 计算
   - JavaScript (Web Worker)
   - Python (Pyodide)
-  - C++ (Compiler Explorer)
+  - C++ (local WASM)
 - 工作区
   - 读写与局部修改
   - 正则搜索与 Diff
@@ -6395,7 +6411,7 @@ test('对话区图表修复：CSS 定义 --accent/--sans/--warn 且思维导图�
     }
   }
   assert.ok(html.includes('JavaScript (Web Worker)'), '长英文标签不应被截断');
-  assert.ok(html.includes('C++ (Compiler Explorer)'), '长英文标签不应被截断');
+  assert.ok(html.includes('C++ (local WASM)'), '长英文标签不应被截断');
 });
 
 test('介绍片优化：聚集时 ZIP 打包与 Ultra 不重叠、开片平滑过渡、尾声渐变缩短且舞台细节丰富', async () => {
@@ -8772,38 +8788,65 @@ test('Agent 主循环已改用 planToolWaves（按原始下标回填结果）', 
   assert.match(src, /group\.forEach\(\(n, m\) => \{ out\[n\] = rs\[m\]; \}\)/);
 });
 
-group('V1.7.1 架构完善：远程 C++ 开关 / 增量 FILES / token 缓存 / Pyodide 误判');
-test('远程 C++ 开关：关闭后两条工具表派生路径都不含 execute_cpp，executeTool 直接拒绝', async () => {
+group('Local C++ WASM / 增量 FILES / token 缓存 / Pyodide 误判');
+test('本地 C++ 开关：关闭后两条工具表派生路径都不含 execute_cpp，executeTool 直接拒绝', async () => {
   const { toolsFor, TOOL_DEFS, executeTool } = await import('../js/tools.js');
   const { subagentTools } = await import('../js/agent.js');
   const ex = await import('../js/execution.js');
   const ec = await import('../js/executionContext.js');
   assert.ok(toolsFor(true).some((t) => t.name === 'execute_cpp'));
-  assert.ok(!toolsFor(true, { remoteCpp: false }).some((t) => t.name === 'execute_cpp'));
-  assert.ok(toolsFor(true, { remoteCpp: false }).some((t) => t.name === 'execute_python'), '只关 C++，本地沙箱照常');
-  const cap = ex.buildCapabilityConstraints({ relayOk: false, webEnabled: false, sandboxEnabled: true, remoteCppEnabled: false, canDispatch: false });
-  assert.equal(cap.sandbox.remoteCpp, false);
-  assert.match(ex.describeCapabilityConstraints(cap), /远程C\+\+off/);
+  assert.ok(!toolsFor(true, { localCpp: false }).some((t) => t.name === 'execute_cpp'));
+  assert.ok(toolsFor(true, { localCpp: false }).some((t) => t.name === 'execute_python'), '只关 C++，本地沙箱照常');
+  const cap = ex.buildCapabilityConstraints({ relayOk: false, webEnabled: false, sandboxEnabled: true, localCppEnabled: false, canDispatch: false });
+  assert.equal(cap.sandbox.localCpp, false);
+  assert.match(ex.describeCapabilityConstraints(cap), /本地C\+\+off/);
   const ctx = ec.createTurnExecutionContext({ turnId: 't1', sessionId: 's1', capability: cap });
   const wl = ec.deriveToolWhitelist(ctx, TOOL_DEFS);
   assert.ok(!wl.allowed.some((t) => t.name === 'execute_cpp'));
-  assert.ok(wl.dropped.some((d) => d.name === 'execute_cpp' && d.reason === 'remote-cpp-off'));
+  assert.ok(wl.dropped.some((d) => d.name === 'execute_cpp' && d.reason === 'local-cpp-off'));
   const capOn = ex.buildCapabilityConstraints({ relayOk: false, webEnabled: false, sandboxEnabled: true, canDispatch: false });
   assert.ok(ec.deriveToolWhitelist(ec.createTurnExecutionContext({ turnId: 't2', sessionId: 's1', capability: capOn }), TOOL_DEFS).allowed.some((t) => t.name === 'execute_cpp'), '默认开启');
   const fs = createFS();
-  const out = await executeTool('execute_cpp', { code: 'int main(){}' }, { fs, sandboxEnabled: true, remoteCpp: false, onUi: () => {} });
+  const out = await executeTool('execute_cpp', { code: 'int main(){}' }, { fs, sandboxEnabled: true, localCpp: false, onUi: () => {} });
   assert.match(out, /已被用户关闭/);
-  assert.match(out, /godbolt\.org/);
-  const cr = subagentTools(true, { tools: ['execute_cpp', 'execute_python', 'read_file'] }, { remoteCpp: false });
+  assert.doesNotMatch(out, /godbolt\.org|Compiler Explorer|remote compiler/i, '关闭本地 C++ 时不得提及远程编译器');
+  const cr = subagentTools(true, { tools: ['execute_cpp', 'execute_python', 'read_file'] }, { localCpp: false });
   assert.deepEqual(cr.map((t) => t.name), ['skill_library', 'knowledge_search', 'execute_python', 'read_file']);
   const def = TOOL_DEFS.find((t) => t.name === 'execute_cpp');
-  assert.match(def.description, /godbolt\.org/, '工具描述必须明说代码会离开浏览器');
+  assert.match(def.description, /本地|WASM|on-device/i, '工具描述必须说明这是本地 WASM 编译');
+  assert.doesNotMatch(def.description, /godbolt\.org|Compiler Explorer|remote compiler/i, '不得宣传或调用远程编译器');
   const fsp = await import('node:fs');
   const html = fsp.readFileSync(new URL('../app.html', import.meta.url), 'utf8');
   assert.match(html, /id="set-cpp"/);
-  assert.match(html, /远程 C\+\+（Compiler Explorer）/);
+  assert.match(html, /本地 C\+\+（WASM）/);
+  assert.match(html, /connect-src 'self'/);
+  assert.doesNotMatch(html, /https:\/\/godbolt\.org/, 'CSP must not permit remote compiler access');
   const st = fsp.readFileSync(new URL('../js/state.js', import.meta.url), 'utf8');
-  assert.match(st, /remoteCppEnabled: true/, '默认值在 state.js 的 settings 合并处');
+  assert.match(st, /localCppEnabled: true/, '默认值在 state.js 的 settings 合并处');
+});
+test('本地 C++ 状态迁移：旧远程开关映射为新本地开关，并删除旧键', async () => {
+  const { STORAGE_KEY } = await import('../js/config.js');
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  const withSettings = (settings) => {
+    const values = new Map([[`${STORAGE_KEY}-v2`, JSON.stringify({ settings })]]);
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      value: { getItem: (key) => values.has(key) ? values.get(key) : null, setItem: (key, value) => values.set(key, String(value)), removeItem: (key) => values.delete(key) },
+    });
+    try { return createStore().state.settings; }
+    finally {
+      if (previous) Object.defineProperty(globalThis, 'localStorage', previous);
+      else delete globalThis.localStorage;
+    }
+  };
+  const oldOff = withSettings({ remoteCppEnabled: false });
+  assert.equal(oldOff.localCppEnabled, false, '旧版关闭状态必须保留');
+  assert.equal(Object.hasOwn(oldOff, 'remoteCppEnabled'), false, '旧键不应继续持久化');
+  assert.equal(withSettings({ remoteCppEnabled: true }).localCppEnabled, true);
+  assert.equal(withSettings({}).localCppEnabled, true, '缺省值默认启用本地 C++');
+  assert.equal(withSettings({ localCppEnabled: false, remoteCppEnabled: true }).localCppEnabled, false, '新键优先于旧键');
+  const offline = await import('../js/offline-policy.js');
+  assert.equal(offline.isOfflineToolAllowed('execute_cpp'), true, '离线策略应允许本地编译工具');
 });
 test('Python 沙箱增量同步：diffFiles / applyDelta 往返一致，引用相同的大文件不进 delta', async () => {
   const { diffFiles, applyDelta } = await import('../js/sandbox.js');
@@ -9887,7 +9930,7 @@ test('DROP_REASON_LABEL 覆盖 deriveToolWhitelist 会产出的每一种 reason�
   for (const r of reasons) assert.ok(ec.DROP_REASON_LABEL[r], `reason ${r} 缺少中文文案`);
   assert.equal(ec.DROP_REASON_LABEL['capability-dispatch-off'], '思考档位需 Max/Ultra');
   assert.equal(ec.DROP_REASON_LABEL['relay-crawl-unavailable'], '中继未声明 crawl');
-  assert.equal(ec.DROP_REASON_LABEL['remote-cpp-off'], '远程 C++ 已关');
+  assert.equal(ec.DROP_REASON_LABEL['local-cpp-off'], '本地 C++ 已关');
   const kinds = new Set(['reasoning-max', 'web-on', 'sandbox-on', 'relay-reprobe', 'settings']);
   for (const [r, fix] of Object.entries(ec.DROP_REASON_FIX)) {
     assert.ok(ec.DROP_REASON_LABEL[r], `FIX 表里的 ${r} 必须也在 LABEL 表`);
@@ -9900,8 +9943,8 @@ test('DROP_REASON_LABEL 覆盖 deriveToolWhitelist 会产出的每一种 reason�
   assert.equal(ec.formatDroppedTools([
     { name: 'dispatch_subagent', reason: 'capability-dispatch-off' },
     { name: 'crawl_site', reason: 'relay-crawl-unavailable' },
-    { name: 'execute_cpp', reason: 'remote-cpp-off' },
-  ]), '已禁用 3 个：dispatch_subagent（思考档位需 Max/Ultra）、crawl_site（中继未声明 crawl）、execute_cpp（远程 C++ 已关）');
+    { name: 'execute_cpp', reason: 'local-cpp-off' },
+  ]), '已禁用 3 个：dispatch_subagent（思考档位需 Max/Ultra）、crawl_site（中继未声明 crawl）、execute_cpp（本地 C++ 已关）');
   assert.equal(ec.formatDroppedTools([{ name: '(unnamed)', reason: 'no-tool-name' }]), '', '无名条目不进用户可见清单');
 });
 
@@ -9909,31 +9952,31 @@ test('deriveToolWhitelistFromBits 与整轮上下文 deriveToolWhitelist 逐项�
   const ec = await import('../js/executionContext.js');
   const ex = await import('../js/execution.js');
   const combos = [
-    { relayOk: false, webEnabled: true, sandboxEnabled: true, remoteCppEnabled: true, canDispatch: false, search: false, crawl: false, file: false },
-    { relayOk: true, webEnabled: true, sandboxEnabled: true, remoteCppEnabled: false, canDispatch: true, search: true, crawl: false, file: true },
-    { relayOk: true, webEnabled: false, sandboxEnabled: false, remoteCppEnabled: true, canDispatch: false, search: true, crawl: true, file: true },
-    { relayOk: true, webEnabled: true, sandboxEnabled: true, remoteCppEnabled: true, canDispatch: true, search: true, crawl: true, file: true },
+    { relayOk: false, webEnabled: true, sandboxEnabled: true, localCppEnabled: true, canDispatch: false, search: false, crawl: false, file: false },
+    { relayOk: true, webEnabled: true, sandboxEnabled: true, localCppEnabled: false, canDispatch: true, search: true, crawl: false, file: true },
+    { relayOk: true, webEnabled: false, sandboxEnabled: false, localCppEnabled: true, canDispatch: false, search: true, crawl: true, file: true },
+    { relayOk: true, webEnabled: true, sandboxEnabled: true, localCppEnabled: true, canDispatch: true, search: true, crawl: true, file: true },
   ];
   for (const c of combos) {
     const webOn = c.relayOk && c.webEnabled;
     const cap = ex.buildCapabilityConstraints({
-      relayOk: c.relayOk, webEnabled: c.webEnabled, sandboxEnabled: c.sandboxEnabled, remoteCppEnabled: c.remoteCppEnabled, canDispatch: c.canDispatch,
+      relayOk: c.relayOk, webEnabled: c.webEnabled, sandboxEnabled: c.sandboxEnabled, localCppEnabled: c.localCppEnabled, canDispatch: c.canDispatch,
       overrides: { web: { search: webOn && c.search, crawl: webOn && c.crawl, file: webOn && c.file } },
     });
     const ctx = ec.createTurnExecutionContext({ capability: cap, claimedBits: null });
     const full = ec.deriveToolWhitelist(ctx, TOOL_DEFS);
     const quick = ec.deriveToolWhitelistFromBits({
       relay: c.relayOk, web: webOn, sandbox: c.sandboxEnabled, dispatch: c.canDispatch,
-      search: webOn && c.search, crawl: webOn && c.crawl, file: webOn && c.file, remoteCpp: c.remoteCppEnabled,
+      search: webOn && c.search, crawl: webOn && c.crawl, file: webOn && c.file, localCpp: c.localCppEnabled,
     }, TOOL_DEFS);
     assert.deepEqual(quick.allowed.map(ec.toolName), full.allowed.map(ec.toolName), `allowed 不一致：${JSON.stringify(c)}`);
     assert.deepEqual(quick.dropped, full.dropped, `dropped 不一致：${JSON.stringify(c)}`);
   }
-  const off = ec.deriveToolWhitelistFromBits({ relay: true, web: true, sandbox: true, dispatch: false, search: true, crawl: false, file: true, remoteCpp: false }, TOOL_DEFS);
+  const off = ec.deriveToolWhitelistFromBits({ relay: true, web: true, sandbox: true, dispatch: false, search: true, crawl: false, file: true, localCpp: false }, TOOL_DEFS);
   assert.deepEqual(off.dropped, [
     { name: 'browser_sandbox', reason: 'local-browser-unavailable' },
     { name: 'crawl_site', reason: 'relay-crawl-unavailable' },
-    { name: 'execute_cpp', reason: 'remote-cpp-off' },
+    { name: 'execute_cpp', reason: 'local-cpp-off' },
     { name: 'dispatch_subagent', reason: 'capability-dispatch-off' },
   ].sort((a, b) => off.dropped.findIndex((d) => d.name === a.name) - off.dropped.findIndex((d) => d.name === b.name)));
 });
@@ -9948,12 +9991,12 @@ test('端到端：思考 Off + 中继离线时，agent.previewToolTable().allowe
     store.state.relayOk = false;
     store.state.settings.webEnabled = true;
     store.state.settings.thinking = false;
-    store.state.settings.remoteCppEnabled = false;
+    store.state.settings.localCppEnabled = false;
     const agent = createAgent(store, {});
     const pv = agent.previewToolTable();
     assert.ok(pv.dropped.some((d) => d.name === 'dispatch_subagent' && d.reason === 'capability-dispatch-off' && d.label === '思考档位需 Max/Ultra'));
     assert.ok(pv.dropped.some((d) => d.name === 'fetch_url' && d.reason === 'relay-offline'));
-    assert.ok(pv.dropped.some((d) => d.name === 'execute_cpp' && d.reason === 'remote-cpp-off'));
+    assert.ok(pv.dropped.some((d) => d.name === 'execute_cpp' && d.reason === 'local-cpp-off'));
     assert.equal(pv.tier.canDispatch, false);
     assert.equal(pv.total, TOOL_DEFS.length);
     assert.match(pv.summary, /^已禁用 \d+ 个：/);
@@ -9969,7 +10012,7 @@ test('端到端：思考 Off + 中继离线时，agent.previewToolTable().allowe
     assert.match(sys, /【工具表】本轮已禁用 \d+ 个：/);
     assert.match(sys, /按需未挂载工具目录（\d+项；完整Schema未挂载）：/);
     assert.match(sys, /dispatch_subagent（思考档位需 Max\/Ultra）/);
-    assert.match(sys, /execute_cpp（远程 C\+\+ 已关）/);
+    assert.match(sys, /execute_cpp（本地 C\+\+ 已关）/);
     assert.ok(sys.includes(`【工具表】本轮${pv.summary}`), '系统提示的清单与 previewToolTable().summary 逐字相同');
     // 切到 Max 后预演表立刻变化：dispatch_subagent 不再被裁
     store.state.settings.thinking = true;
@@ -11235,7 +11278,7 @@ test('设置页文案瘦身：说明只留「什么时候会用到这条设置�
   assert.ok(subs.length >= 10, `应仍有说明文案，实际 ${subs.length}`);
   const tooLong = subs.filter((s) => s.length > 44);
   assert.deepEqual(tooLong, [], `说明文案应 ≤ 44 字（当前偏长的：${tooLong.map((s) => s.slice(0, 30)).join(' / ')}）`);
-  for (const gone of ['以 sk-teamo- 开头', 'Cloudflare Worker / 本地 server.py，留空自动探测', '界面字号基准', '允许执行 JS / Python / C++', '唯一会把代码送出浏览器的工具', '为支持模型开启 extended thinking', 'Mini 最快，Ultra 最长', '抓取、检索、下载、生图、识图、远程 C++']) {
+  for (const gone of ['以 sk-teamo- 开头', 'Cloudflare Worker / 本地 server.py，留空自动探测', '界面字号基准', '允许执行 JS / Python / C++', '唯一会把代码送出浏览器的工具', '为支持模型开启 extended thinking', 'Mini 最快，Ultra 最长', '抓取、检索、下载、生图、识图、本地 C++']) {
     assert.ok(!app.includes(gone), `设置页不应再有冗长说明：${gone}`);
   }
   const st = fsp.readFileSync(new URL('../js/settings.js', import.meta.url), 'utf8');

@@ -187,7 +187,7 @@ context.js    上下文预算与分级压缩（历史工具结果先收紧，本
 ui.js     渲染 / 动画 / 回滚交互 / 沙箱面板
 ```
 
-**工具集**：`execute_javascript`（Worker 隔离 + console 捕获 + files 快照）、`execute_python`（Pyodide WASM 常驻 Worker，运行时只加载一次；经典 Worker 中必须显式传 `indexURL`）、`execute_cpp`（Compiler Explorer 公共 API 远程编译执行，g++ -O2 -std=c++20，请求需 `compilerOptions.executorRequest: true`，编译器按 `semver` 字段选择——ID 数字大小≠版本）、`write_file` / `read_file` / `list_files`（虚拟 FS，随会话持久化）、`get_current_time`、`remember`（跨会话长效记忆）、`dispatch_subagent`（子智能体委派）、
+**工具集**：`execute_javascript`（Worker 隔离 + console 捕获 + files 快照）、`execute_python`（Pyodide WASM 常驻 Worker，运行时只加载一次；经典 Worker 中必须显式传 `indexURL`）、`execute_cpp`（同源浏览器 Worker 内的本地 Clang/LLD + WASI 编译执行；源码、文件和 stdin 不发送给远程编译器，支持多文件/argv/退出码/超时；首用按需下载约 30 MB 压缩工具链，WASI 不支持异常/线程。**这不代表整个 Agent 对话本地化：所选聊天模型仍按其网关政策处理对话与工具上下文。**）、`write_file` / `read_file` / `list_files`（虚拟 FS，随会话持久化）、`get_current_time`、`remember`（跨会话长效记忆）、`dispatch_subagent`（子智能体委派）、
 `fetch_url`（本地中继或 Worker + 联网开关）、`search_web` / `crawl_site` / `download_file`（新版 Worker + 联网开关；`download_file` 把任意 http(s) 文件原始字节拉进沙箱 `uploads/`，≤ 16 MB）、`run_git`（本地中继 `workspace/` 内 git）。
 另有本地工作台：`text_tool`（文本统计 / 去重 / 排序 / 大小写 / 折行，`action=regex|hash|codec|unicode` 分别承接原 `regex` / `hash` / `codec` / `unicode`）/ `data_tool`（`kind=csv` CSV 预览 / 过滤 / 排序 / 聚合 / 转 JSON；`kind=date` 日期差、加减、工作日；`kind=units` 长度、质量、温度、速度、面积、体积、数据、时间换算；`kind=qr` 本地二维码 SVG，Version 1–20，写入 `outputs/`）/ `search_files` / `diff_text` / `json_tool` / `zip_files` / `unzip_file` / `generate_image` / `analyze_image` / `analyze_video`，实现仍在 `js/utiltools.js` / `js/worktools.js`，纯本地、零依赖。构建 .26 起工具表 32 个、分两层下发：核心 12 个每轮必带，其余按用户消息 / 附件类型 / 近几轮用量按需挂载（模型点名未挂载工具时内核当场挂载并回执）。
 
@@ -394,7 +394,7 @@ V1.8.1 起工具表 38 个：新增 `convert_file`（媒体格式互转——图
 2. **token 估算缓存**：`estimateTokens` 以 WeakMap 按消息对象缓存，text / content / toolCalls / attachments 任一变化即失效；300 条长消息热路径从 ~173 ms 降到 <0.1 ms。
 3. **ui.js 拆分（第一刀）**：图表 / 示意图 SVG 渲染拆为 `js/quickviz.js`（纯函数、Node 可直接单测；.17 扩至 14 类统计图），ui.js 降到 4568 行。后续按「消息渲染 / 侧栏 / 沙箱面板 / 设置」继续拆。
 4. **Python FILES 增量同步**：常驻 Worker 持有工作区镜像，主线程只发 `diffFiles(镜像, files)`，Worker 只回传 `filesDelta {set, del}`；Worker 重建或上次失败自动退回全量；引用相同的大文件比较是 O(1)。顺带修了一个老 bug：Pyodide「不可用」判定曾用正则匹配错误文本，而用户代码回溯里天然带 `_pyodide/` 路径——任何一次异常都会禁用整个会话的 Python 沙箱，现改为只看加载阶段。
-5. **远程 C++ 开关**：设置页新增「远程 C++（Compiler Explorer）」；关闭后能力约束 `sandbox.remoteCpp=false` → `deriveToolWhitelist` 与旧路径 `toolsFor` 同步剔除 `execute_cpp`，`executeTool` 兜底拒绝；工具描述、运行芯片与 `describeCapabilityConstraints` 都明示代码会发送到 godbolt.org。
+5. **C++ 编译器迁移（已由 2026-10-26 本地实现取代）**：历史构建曾通过 Compiler Explorer 远程执行；当前设置改为「本地 C++（WASM）」，工具在同源 Worker 内编译运行，源码/输入不再发送到 godbolt.org。
 
 **构建 2026.10.5.11 继续落地**
 
@@ -713,8 +713,8 @@ python3 server.py    # http://localhost:8787，含 API 代理兜底通道
 
 - 浏览器直连时 Key 出现在前端，仅适合个人本地使用；生产环境请改为服务端持有 Key。
 - 顶栏「沙箱」开关决定三个代码执行工具及本地 browser_sandbox 是否下发（文件读写/生图/委派不受影响）；无鉴权中继 `server.py` 因此同源使用，不要暴露到共享网络。
-- JS/Python 沙箱为浏览器内隔离（Worker 无 DOM；Pyodide 为 WASM），非容器级安全边界。V1.7 加固：JS Worker 执行前拆除 `fetch` / `XMLHttpRequest` / `WebSocket` / `EventSource` / `importScripts` / `Worker` / `BroadcastChannel` / `indexedDB` / `caches` 并私有化 `postMessage`（用户代码无法联网、无法伪造结果帧）；Python Worker 的 `fetch` 只放行 Pyodide CDN 与 PyPI；日志 500 条 / 1 MB、返回值 200 KB、文件 128 MB / 5000 个硬上限；主线程 `sanitizeWorkerFiles` 逐键校验回写路径（拒绝绝对路径、`..`、反斜杠、控制字符、原型键），`internal/` 与 `.git/` 不可被沙箱代码增删改，超容量整体回滚；C++ 通过 Compiler Explorer 公共服务**远程**执行（代码会发送至 godbolt.org）。
-- 页面启用了 CSP（`index.html` meta）：脚本仅放行同源与 Pyodide CDN，连接仅放行网关 / godbolt / CDN / 本站代理；渲染层本身也经注入探针验证。
+- JS/Python 沙箱为浏览器内隔离（Worker 无 DOM；Pyodide 为 WASM），非容器级安全边界。V1.7 加固：JS Worker 执行前拆除 `fetch` / `XMLHttpRequest` / `WebSocket` / `EventSource` / `importScripts` / `Worker` / `BroadcastChannel` / `indexedDB` / `caches` 并私有化 `postMessage`（用户代码无法联网、无法伪造结果帧）；Python Worker 的 `fetch` 只放行 Pyodide CDN 与 PyPI；日志 500 条 / 1 MB、返回值 200 KB、文件 128 MB / 5000 个硬上限；主线程 `sanitizeWorkerFiles` 逐键校验回写路径（拒绝绝对路径、`..`、反斜杠、控制字符、原型键），`internal/` 与 `.git/` 不可被沙箱代码增删改，超容量整体回滚；C++ 通过同源浏览器 Worker 内本地 Clang/LLD 与 WASI **本机编译执行**；源码、输入和文件不发送给远程编译服务，首次使用会按需获取同源静态工具链资产。
+- 应用页启用 CSP（`app.html` meta）：脚本仅放行同源与 Pyodide CDN，连接仅放行网关 / 本站静态资产 / 必要 CDN / 本站代理；不再为 Compiler Explorer 配置远程编译例外。渲染层本身也经注入探针验证。
 - 本地服务器默认仅监听 `127.0.0.1`（代理通道无鉴权，`--host 0.0.0.0` 显式开放需自担风险）。
 
 ## 许可
