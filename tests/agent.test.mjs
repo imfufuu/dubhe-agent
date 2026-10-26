@@ -866,12 +866,12 @@ test('第 3 条：设置页 / 文件面板触屏密度 + 左下角按钮一行 +
   assert.match(css, /\[data-theme="dark"\] \{[\s\S]*?--fg-3: #8a8a8a;/, '暗色 --fg-3 = #8a8a8a（原 #666666 = 3.43:1）');
 });
 
-test('能力表迁入设置页 details；不再复用 Token / 路由弹层或窄屏抽屉', async () => {
+test('能力表在设置页常驻展开；不再复用 Token / 路由弹层或窄屏抽屉', async () => {
   const fsp = await import('node:fs');
   const css = fsp.readFileSync(new URL('../css/styles.css', import.meta.url), 'utf8');
   const pop = fsp.readFileSync(new URL('../js/ui-popovers.js', import.meta.url), 'utf8');
   const html = fsp.readFileSync(new URL('../app.html', import.meta.url), 'utf8');
-  assert.match(html, /<details id="set-capability-details"[\s\S]*?id="set-capability-table-body"/);
+  assert.match(html, /<div id="set-capability-details"[\s\S]*?id="set-capability-table-body"/);
   assert.doesNotMatch(pop, /TOK_SHEET_MQ|syncTokSheet|dataset\.kind === 'cap'|kind === 'cap'/);
   assert.doesNotMatch(css, /tok-sheet-scrim|tok-pop\[data-sheet\]/);
   assert.match(css, /\.capability-table-body \{ max-height: 280px; overflow: auto;/);
@@ -1064,6 +1064,16 @@ test('renderMarkdown：完整 Markdown（markdown-it）+ KaTeX 公式', async ()
   assert.match(fold, /详细推导/);
   assert.match(fold, /chip-detail/);
   assert.equal(/<details/.test(fold), false, '折叠栏不用原生 details（焦点黑框）');
+  const partialFence = renderMarkdown('```js\nconst answer = 42;', { streaming: true });
+  assert.match(partialFence, /class="code-block code-block-open"/, '流式代码围栏提前显示为打开态，而不是丢失内容');
+  assert.doesNotMatch(partialFence, /copy-code/, '未闭合的流式代码块不显示复制按钮');
+  const partialFold = renderMarkdown(':::fold 进行中的推导\n**正在逐字输出**', { streaming: true });
+  assert.match(partialFold, /class="md-fold"/, '流式内置折叠语法临时补闭合并正常渲染');
+  assert.match(partialFold, /<strong>正在逐字输出<\/strong>/, '内置语法正文中的 Markdown 不截断');
+  const partialChart = renderMarkdown(':::chart bar 进行中的图表\n一月, 12\n二月, 18', { streaming: true });
+  assert.match(partialChart, /class="md-chart md-chart-bar"/, '流式图表指令也临时补闭合');
+  const uiSource = readFileSync(new URL('../js/ui.js', import.meta.url), 'utf8');
+  assert.match(uiSource, /renderMarkdown\(m\.text \|\| '', \{ streaming: live \}\)/, 'UI 只在真实流式期间传入 streaming 标志');
   const lit = renderMarkdown('上文\n\n:::font 楷体\n春风又绿江南岸\n:::\n');
   assert.match(lit, /class="md-font md-font-kai"/);
   assert.match(lit, /春风又绿江南岸/);
@@ -4824,7 +4834,7 @@ test('气泡脚注耗时与相对时间；Off 不画思考过程', async () => {
   assert.match(ui, /classList\.toggle\('expanded'\)/);
   assert.match(ui, /chip-detail reason-detail/);
   const footPainter = fsp.readFileSync(new URL('../js/ui-foot.js', import.meta.url), 'utf8');
-  assert.doesNotMatch(footPainter, /message\.toolCalls && message\.toolCalls\.length\) \{ foot\.hidden = true/, 'tool-call assistant messages with metadata must keep their own footer');
+  assert.match(footPainter, /message\.toolCalls\?\.length\) \{ foot\.hidden = true/, 'tool-call assistant messages must not show footer metadata');
   assert.match(css, /\.reasoning \{[\s\S]{0,220}width:\s*100%/);
   assert.match(css, /\.tool-chips \{[^}]*gap:\s*0/); // 2026.9.27.16 行距统一：gap 归零由父级节奏控制
   assert.match(css, /\.reasoning \.chip-detail \{[\s\S]{0,280}padding-left:\s*21px/, '思考正文跟标题齐，不要顶到图标左边');
@@ -10028,7 +10038,7 @@ test('UI 接线：状态栏仅显示状态，工具能力表与直达修复操�
   assert.doesNotMatch(cap, /已禁用|showCapPop|renderCapabilityPopHtml/);
   assert.match(cap, /const table = \$\('#set-capability-table-body'\);/);
   assert.match(cap, /table\.addEventListener\('click'/, '设置页表格中的修复按钮仍可操作');
-  assert.match(app, /<details id=\"set-capability-details\"/);
+  assert.match(app, /<div id=\"set-capability-details\"/);
   assert.match(app, /id=\"set-capability-table-body\"/);
   assert.match(ui, /import \{ installCapabilityPanel \} from '\.\/ui-capability\.js\?v=/);
   assert.match(ui, /const \{ syncCapLine \} = installCapabilityPanel\(\{/);
@@ -11085,7 +11095,7 @@ test('能力表仅从设置页展开；状态栏不提供禁用计数或弹层�
   const cap = fsp.readFileSync(new URL('../js/ui-capability.js', import.meta.url), 'utf8');
   const html = fsp.readFileSync(new URL('../app.html', import.meta.url), 'utf8');
   const css = fsp.readFileSync(new URL('../css/styles.css', import.meta.url), 'utf8');
-  assert.match(html, /<details id="set-capability-details"/);
+  assert.match(html, /<div id="set-capability-details"/);
   assert.match(html, /id="set-capability-table-body"/);
   assert.match(cap, /renderCapabilityTableHtml/);
   assert.match(cap, /table\.addEventListener\('click'/);
@@ -11251,7 +11261,7 @@ test('.36：状态行仅在状态变化时重建；设置页能力表按裁剪�
   has(cap, 'table.innerHTML = renderCapabilityTableHtml(pv);');
   has(cap, "table.addEventListener('click', (event) => {");
   assert.doesNotMatch(cap, /liveCapAnchor|showCapPop|cap-line.*addEventListener/);
-  assert.match(html, /<details id="set-capability-details"[\s\S]*?id="set-capability-table-body"/);
+  assert.match(html, /<div id="set-capability-details"[\s\S]*?id="set-capability-table-body"/);
 });
 
 test('.36 UI：「更早的消息」= 中轴接缝（两侧发丝线 + 居中胶囊）；全局焦点环不再把圆角按钮切成方角；弹层有箭头、内容过长自己滚', async () => {

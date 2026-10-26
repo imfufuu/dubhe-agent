@@ -48,6 +48,8 @@ export function installWelcomeMotion({ main, messages, composerWrap, composer, i
     heading.dataset.typing = 'true';
     main?.classList.add('welcome-entering');
     const chars = Array.from(fullTitle);
+    const typedText = doc.createTextNode('');
+    heading.appendChild(typedText);
     let index = 0;
     const revealNext = () => {
       if (run !== greetingRun || !heading.isConnected) return;
@@ -58,21 +60,21 @@ export function installWelcomeMotion({ main, messages, composerWrap, composer, i
         main?.classList.remove('welcome-entering');
         return;
       }
+      typedText.appendData(chars[index]);
       index++;
-      heading.textContent = chars.slice(0, index).join('');
-      if (index < chars.length) greetingTimer = win.setTimeout(revealNext, 32);
+      if (index < chars.length) greetingTimer = win.setTimeout(revealNext, 64);
       else {
         heading.removeAttribute('data-typing');
         main?.classList.remove('welcome-entering');
         if (prompt) subtitleTimer = win.setTimeout(() => {
           if (run === greetingRun && prompt.isConnected) prompt.classList.add('is-visible');
-        }, 90);
+        }, 160);
       }
     };
     if (!chars.length) {
       heading.removeAttribute('data-typing');
       if (prompt) prompt.classList.add('is-visible');
-    } else greetingTimer = win.setTimeout(revealNext, 48);
+    } else greetingTimer = win.setTimeout(revealNext, 64);
   }
 
   function composerShift() {

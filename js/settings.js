@@ -395,8 +395,9 @@ function refreshSalutationCheck(store) {
   const saved = result.ok && result.value === current;
   status.classList.toggle('available', result.ok);
   status.classList.toggle('unavailable', !result.ok);
-  status.textContent = result.ok ? localeText('✓ 可用', '✓ Available') : localeText('✗ 不可用', '✗ Unavailable');
+  status.textContent = result.ok ? '✓' : '✗';
   status.title = result.ok ? localeText('通过本地称谓审核', 'Passed local salutation review') : result.reason;
+  status.setAttribute('aria-label', result.ok ? localeText('称谓通过本地审核', 'Salutation passed local review') : localeText('称谓未通过本地审核', 'Salutation did not pass local review'));
   input.setAttribute('aria-invalid', String(!result.ok));
   if (save) {
     save.disabled = !result.ok || saved;
@@ -564,6 +565,18 @@ export function mountSettings(store, { onRelayChanged, onKeySaved, onSettingChan
   $('#settings-done').addEventListener('click', closeSettingsModal);
   const m = $('#settings-modal');
   m.addEventListener('click', (e) => { if (e.target === m) closeSettingsModal(); });
+  const offlineDetails = $('#offline-model-details');
+  const offlineDetailsToggle = $('#offline-model-details-toggle');
+  const offlineDetailsPanel = $('#offline-model-detail-panel');
+  if (offlineDetails && offlineDetailsToggle && offlineDetailsPanel) {
+    offlineDetailsToggle.addEventListener('click', () => {
+      const expanded = offlineDetails.getAttribute('aria-expanded') !== 'true';
+      offlineDetails.setAttribute('aria-expanded', String(expanded));
+      offlineDetailsToggle.setAttribute('aria-expanded', String(expanded));
+      offlineDetailsPanel.setAttribute('aria-hidden', String(!expanded));
+      offlineDetailsPanel.inert = !expanded;
+    });
+  }
   document.addEventListener('keydown', (e) => {
     if (!m.classList.contains('open')) return;
     if (e.key === 'Escape') closeSettingsModal();

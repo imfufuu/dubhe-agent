@@ -222,6 +222,54 @@ test('local inference passes the OPFS Blob array to Wllama 3.8.1 and never fetch
   } finally { globalThis.fetch = originalFetch; }
 });
 
+test('local inference stop settles a stalled async iterator and tears down its worker as a fallback', async () => {
+  const controller = new AbortController();
+  let loaded = false, exits = 0;
+  const engine = {
+    isModelLoaded() { return loaded; },
+    async loadModel() { loaded = true; },
+    async exit() { exits++; loaded = false; },
+    async createChatCompletion() {
+      return {
+        [Symbol.asyncIterator]() {
+          return { next: () => new Promise(() => {}), return: () => new Promise(() => {}) };
+        },
+      };
+    },
+  };
+  const pending = streamOfflineModel({ signal: controller.signal, messages: [{ role: 'user', content: 'stop test' }] }, {
+    engineProvider: async () => engine,
+    modelFileProvider: async () => ({ file: new Blob(['local-model']), metadata: { fileName: 'abort-hanging-stream.gguf' } }),
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const stoppedAt = Date.now();
+  controller.abort();
+  await assert.rejects(pending, (error) => error.name === 'AbortError');
+  assert.ok(Date.now() - stoppedAt < 250, 'the caller should settle promptly rather than waiting for another model token');
+  await new Promise((resolve) => setTimeout(resolve, 720));
+  assert.equal(exits, 1, 'a non-cooperative worker is terminated after the abort grace period');
+});
+
+test('aborting model loading immediately retires the Wllama worker instead of waiting for loadModel', async () => {
+  const controller = new AbortController();
+  let loadStarted;
+  const started = new Promise((resolve) => { loadStarted = resolve; });
+  let exits = 0;
+  const engine = {
+    isModelLoaded() { return false; },
+    loadModel() { loadStarted(); return new Promise(() => {}); },
+    exit() { exits++; },
+  };
+  const pending = streamOfflineModel({ signal: controller.signal }, {
+    engineProvider: async () => engine,
+    modelFileProvider: async () => ({ file: new Blob(['local-model']), metadata: { fileName: 'abort-loading.gguf' } }),
+  });
+  await started;
+  controller.abort();
+  await assert.rejects(pending, (error) => error.name === 'AbortError');
+  assert.equal(exits, 1, 'load cancellation explicitly tears down the in-flight worker');
+});
+
 test('missing local GGUF fails before Wllama engine initialization and states that no network was attempted', async () => {
   let engineCalls = 0;
   await assert.rejects(streamOfflineModel({}, {

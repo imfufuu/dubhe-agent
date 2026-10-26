@@ -17,6 +17,7 @@ let enginePromise = null;
 let engineInstance = null;
 let loadedModelKey = '';
 let activeOfflineRuns = 0;
+const OFFLINE_CANCEL_GRACE_MS = 650;
 
 function abortError() {
   if (typeof DOMException === 'function') return new DOMException('Aborted', 'AbortError');
@@ -27,6 +28,79 @@ function abortError() {
 
 function throwIfAborted(signal) {
   if (signal?.aborted) throw abortError();
+}
+
+function withAbort(promise, signal, onAbort) {
+  const task = Promise.resolve(promise);
+  if (!signal) return task;
+  if (signal.aborted) {
+    task.catch(() => {});
+    try { onAbort?.(); } catch { /* abort cleanup must not mask cancellation */ }
+    return Promise.reject(abortError());
+  }
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const cleanup = () => signal.removeEventListener('abort', handleAbort);
+    const handleAbort = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      try { onAbort?.(); } catch { /* abort cleanup must not mask cancellation */ }
+      reject(abortError());
+    };
+    signal.addEventListener('abort', handleAbort, { once: true });
+    task.then((value) => {
+      if (settled) return;
+      settled = true; cleanup(); resolve(value);
+    }, (error) => {
+      if (settled) return;
+      settled = true; cleanup(); reject(error);
+    });
+  });
+}
+
+function retireOfflineEngine(engine) {
+  if (engine === engineInstance) {
+    engineInstance = null;
+    enginePromise = null;
+    loadedModelKey = '';
+  }
+  try { Promise.resolve(engine?.exit?.()).catch(() => {}); }
+  catch { /* Worker teardown is best effort; cancellation has already been surfaced. */ }
+}
+
+async function consumeOfflineStream(stream, { signal, engine, onChunk }) {
+  const iterator = stream[Symbol.asyncIterator]();
+  let streamFinished = false;
+  let cleanupReserved = false;
+  let cancelTimer = 0;
+  const releaseCleanupReservation = () => {
+    if (!cleanupReserved) return;
+    cleanupReserved = false;
+    activeOfflineRuns = Math.max(0, activeOfflineRuns - 1);
+  };
+  const consume = (async () => {
+    while (true) {
+      throwIfAborted(signal);
+      const result = await iterator.next();
+      if (result.done) return;
+      throwIfAborted(signal);
+      onChunk(result.value);
+    }
+  })().finally(() => {
+    streamFinished = true;
+    if (cancelTimer) clearTimeout(cancelTimer);
+    releaseCleanupReservation();
+  });
+  await withAbort(consume, signal, () => {
+    if (!cleanupReserved) { cleanupReserved = true; activeOfflineRuns++; }
+    try { Promise.resolve(iterator.return?.()).catch(() => {}); }
+    catch { /* iterator cancellation is best effort */ }
+    cancelTimer = setTimeout(() => {
+      if (!streamFinished) retireOfflineEngine(engine);
+      releaseCleanupReservation();
+    }, OFFLINE_CANCEL_GRACE_MS);
+  });
 }
 
 function isNotFoundError(error) {
@@ -328,28 +402,30 @@ export async function streamOfflineModel({
   activeOfflineRuns++;
   try {
     throwIfAborted(signal);
-    const localModel = await modelFileProvider();
+    const localModel = await withAbort(Promise.resolve().then(modelFileProvider), signal);
     if (!localModel?.file || typeof localModel.file.slice !== 'function') {
       throw new Error('尚未选择本地 GGUF。请前往“设置 → 离线本地模型”选择文件；本次推理没有尝试联网。');
     }
     throwIfAborted(signal);
-    const engine = await engineProvider();
+    const engineTask = Promise.resolve().then(engineProvider);
+    const engine = await withAbort(engineTask, signal, () => { engineTask.then(retireOfflineEngine, () => {}); });
+    const abandon = () => retireOfflineEngine(engine);
     const modelKey = String(localModel.metadata?.fileName || localModel.file.name || `${localModel.file.size}:${localModel.metadata?.importedAt || ''}`);
     const isLoaded = typeof engine.isModelLoaded === 'function' && engine.isModelLoaded();
     if (!isLoaded || loadedModelKey !== modelKey) {
-      if (isLoaded) await engine.exit?.();
+      if (isLoaded) await withAbort(Promise.resolve().then(() => engine.exit?.()), signal, abandon);
       // Wllama 3.8.1 accepts Blob[] directly; the OPFS File is passed locally, never as a URL.
-      await engine.loadModel([localModel.file], {
+      await withAbort(Promise.resolve().then(() => engine.loadModel([localModel.file], {
         n_ctx: OFFLINE_MODEL_CONTEXT_SIZE,
         n_batch: 512,
         n_threads: Math.max(1, Math.min(4, Math.floor(Number(globalThis.navigator?.hardwareConcurrency) / 2) || 2)),
         warmup: false,
-      });
+      })), signal, abandon);
       loadedModelKey = modelKey;
     }
     throwIfAborted(signal);
     const availableTools = Array.isArray(tools) && tools.length ? tools : undefined;
-    const stream = await engine.createChatCompletion({
+    const stream = await withAbort(Promise.resolve().then(() => engine.createChatCompletion({
       model: OFFLINE_MODEL_ID,
       messages: Array.isArray(messages) ? messages : [],
       ...(availableTools ? { tools: availableTools, tool_choice: 'auto' } : {}),
@@ -358,12 +434,9 @@ export async function streamOfflineModel({
       top_p: 0.9,
       max_tokens: Math.max(1, Math.min(OFFLINE_MODEL_MAX_OUTPUT_TOKENS, Number(maxTokens) || OFFLINE_MODEL_MAX_OUTPUT_TOKENS)),
       abortSignal: signal,
-    });
+    })), signal, abandon);
     if (!stream || typeof stream[Symbol.asyncIterator] !== 'function') throw new Error('本地推理运行时未返回可读流。');
-    for await (const chunk of stream) {
-      throwIfAborted(signal);
-      onChunk(chunk);
-    }
+    await consumeOfflineStream(stream, { signal, engine, onChunk });
   } finally {
     activeOfflineRuns = Math.max(0, activeOfflineRuns - 1);
   }

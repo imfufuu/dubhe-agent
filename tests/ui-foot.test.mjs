@@ -1,8 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createAssistantFootPainter } from '../js/ui-foot.js';
-import { fmtClock } from '../js/ui-common.js';
-import { reasoningLevelLabel } from '../js/reasoning.js';
 
 function harness(message, messages = [message]) {
   const foot = { hidden: true, textContent: '', title: '' };
@@ -12,7 +10,7 @@ function harness(message, messages = [message]) {
   return foot;
 }
 
-test('tool-call assistant messages retain their own time and reasoning metadata', () => {
+test('tool-call assistant messages never show a footer', () => {
   const message = {
     id: 'assistant-tool', role: 'assistant', done: true,
     toolCalls: [{ id: 'call-1', name: 'search_files' }],
@@ -20,11 +18,9 @@ test('tool-call assistant messages retain their own time and reasoning metadata'
     reasoning: 'private reasoning must not be copied into the footer',
   };
   const foot = harness(message, [{ id: 'user', role: 'user' }, message]);
-  assert.equal(foot.hidden, false);
-  assert.ok(foot.textContent.includes(reasoningLevelLabel('high')));
-  assert.ok(foot.textContent.includes(fmtClock(message.durationMs)));
-  assert.ok(!foot.textContent.includes('private reasoning'));
-  assert.ok(!foot.title.includes('private reasoning'));
+  assert.equal(foot.hidden, true);
+  assert.equal(foot.textContent, '');
+  assert.equal(foot.title, '');
 });
 
 test('messages without renderable footer metadata stay compact', () => {

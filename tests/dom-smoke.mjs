@@ -811,7 +811,7 @@ console.log('\n⑲ 设置页工具能力表（状态栏不提供弹层入口）'
   const labels = $$('#cap-line .cap-pill');
   ok('状态栏由静态标签组成，不可点击打开能力表', labels.length >= 2 && labels.every((node) => node.tagName === 'SPAN') && !capLine.querySelector('button'));
   ok('状态栏不显示「已禁用」计数', !/已禁用|未启用/.test(capLine.textContent), capLine.textContent);
-  ok('能力表入口位于设置页 details 中', !!details && !!tableBody && /查看当前工具能力表/.test(details.textContent));
+  ok('能力表位于设置页并默认常驻展开', !!details && !!tableBody && /工具能力/.test($('#set-capability-sec').textContent) && tableBody.textContent.length > 0);
   const drops = agent.previewToolTable().dropped;
   ok('设置页列出的裁剪项与 previewToolTable().dropped 一致', $$('#set-capability-table-body .cap-drop').map((node) => node.dataset.tool).join(',') === drops.map((item) => item.name).join(','));
   const row = $('#set-capability-table-body .cap-drop[data-tool="dispatch_subagent"]');
@@ -828,8 +828,7 @@ console.log('\n⑲ 设置页工具能力表（状态栏不提供弹层入口）'
     && store.state.settings.reasoningLevel === 'max'
     && !$('#set-capability-table-body .cap-drop[data-tool="dispatch_subagent"]'));
   ok('更新状态仍然不在对话状态栏暴露裁剪计数', !/已禁用|未启用/.test(capLine.textContent));
-  details.open = true;
-  ok('设置页能力表可在 details 内展开', details.open && tableBody.textContent.length > 0);
+  ok('能力表持续可见，修复按钮操作后仍完整展开', details.classList.contains('set-capability-details') && tableBody.textContent.length > 0);
   const allOkay = renderCapabilityTableHtml({ allowed: ['a', 'b'], dropped: [], total: 2, tier: { displayTier: 'Max', canDispatch: true } });
   ok('纯函数渲染全可用状态和工具总数', /全部工具均可用/.test(allOkay) && /2 \/ 2/.test(allOkay) && /Max（可委派）/.test(allOkay));
   ok('旧能力弹层入口已不再从状态栏打开', pop.hidden === true && pop.dataset.kind !== 'cap');
@@ -852,9 +851,8 @@ console.log('\n⑳ 设置页能力表随开关变化刷新，能力状态栏不�
   ok('有门控项时设置页显示原因与直达开关', $$('#set-capability-table-body .cap-drop').length > 0
     && !!$('#set-capability-table-body .cap-fix'));
   ok('对话状态栏无按钮、无禁用/未启用文案', !capLine.querySelector('button') && !/已禁用|未启用/.test(capLine.textContent));
-  ok('表格属于设置页 details，不属于 token 弹层', body.closest('#set-capability-details') === details && $('#tok-pop').dataset.kind !== 'cap');
-  details.open = false;
-  ok('能力表默认可收起', details.open === false);
+  ok('能力表没有 details/summary 折叠入口', !details.querySelector(':scope > summary') && !details.querySelector(':scope > button'));
+  ok('表格属于设置页常驻能力区域，不属于 token 弹层', body.closest('#set-capability-details') === details && $('#tok-pop').dataset.kind !== 'cap');
 }
 
 console.log('\n㉑ P8 单点依赖：失败态点「联网」胶囊 = 重置探测缓存并立刻重探；网关 5xx 错误框带「切换节点并重试」按钮');
