@@ -986,7 +986,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
   function bindSuggestCards(root) {
     $$('.suggest', root).forEach((b) => b.addEventListener('click', () => {
       composer.value = b.dataset.prompt || b.textContent;
-      composer.focus(); autoGrow(); welcomeMotion.sync();
+      composer.focus(); autoGrow({ follow: true }); welcomeMotion.sync();
     }));
   }
   function paintWelcomeGreeting() {
@@ -1246,9 +1246,12 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
 
   // 2026.10.9.1（第 4 条）：详情 = COMMAND / STDOUT / STDERR 三窗口（见 toolwindows.js），每个窗口右上角一枚复制按钮。
   // 一条命令一个芯片（不再按工具名合并）；chip._win 保存三段原文，复制按钮直接读它，不从 DOM 里抠文本。
-  // 消息顶部是否会出现思考折叠行（与下方 showThink / hiddenThink / thinkPending 同口径）——它是命令合并的分隔
-  const reasoningVisible = (x) => x.reasoningLevel !== 'off' && !!(x.reasoning || x.thoughtHidden || x.usage?.reasoning || x.thinkingBlocks?.length
-    || (!(x.thinkDone ?? x.done) && getBusy() && !x.cancelled));
+  // 只有真实且可展示的思考内容才作为命令分组分隔。
+  const reasoningVisible = (x) => {
+    if (!x || x.reasoningLevel === 'off' || typeof x.reasoning !== 'string' || !x.reasoning.trim()) return false;
+    const model = x.model || store.state.model;
+    return !isGptModel(model) || reasoningSummaryItems(x.reasoning, model).length > 0;
+  };
   function paintAssistant(wrap, m) {
     if (!m._displayFragment) {
       syncPresentationScope();
@@ -1270,15 +1273,14 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     const live = !m.done && getBusy();
     const toolMenuBusy = live && (m.toolCalls || []).some((t) => t && !FILE_FOLD_TOOLS.has(t.name)
       && (liveToolCallIds.has(String(t.id)) || t.status === 'running'));
-    // 思考过程：Off 本轮不画。Claude 5 / GPT / Gemini 常只返回签名或 reasoning_tokens、没有正文。
+    // 思考内容：Off 本轮不画；空标记不展示菜单，GPT 仅展示 **…** 摘要。
     const thinkOn = m.reasoningLevel !== 'off';
-    const showThink = thinkOn && m.reasoning;
-    const hiddenThink = thinkOn && !m.reasoning && (m.thoughtHidden || (m.usage && m.usage.reasoning) || (m.thinkingBlocks && m.thinkingBlocks.length));
+    const showThink = thinkOn && typeof m.reasoning === 'string' && !!m.reasoning.trim();
     if (live && noOutputYet && !thinkOn) {
       // 连接动画：请求已发出但首字未到（网关排队 / TTFB 慢），明确提示当前状态
       html += `<div class="connect-line"><span class="connect-dot" aria-hidden="true"></span><span>正在连接 <b class="mono">${esc(modelDisplayName(m.model || store.state.model))}</b>，等待首个响应…</span></div>`;
     }
-    html += m.model === '__system__' ? sysReplyHtml(m.text) : renderMarkdown(m.text || '');
+    html += m.model === '__system__' ? sysReplyHtml(m.text) : renderMarkdown(m.text || '', { streaming: live });
     if (live && !noOutputYet && !toolMenuBusy) html += '<span class="cursor"></span>';
     // Cancellation is a tail after text AND tool/file output, never a prefix.
     const lengthCapped = /^(length|max_tokens|max_output_tokens)$/i.test(String(m.finishReason || ''));
@@ -1305,10 +1307,11 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     const owner = String(m.id);
     const reasoningModel = m.model || store.state.model;
     const gptSummaryOnly = isGptModel(reasoningModel);
+    const summaryItems = showThink && gptSummaryOnly ? reasoningSummaryItems(m.reasoning, reasoningModel) : [];
+    const displayableThink = showThink && (!gptSummaryOnly || summaryItems.length > 0);
     const thinkRunning = !(m.thinkDone ?? m.done) && getBusy();
     let reason = [...wrap.querySelectorAll('.reasoning')].find((n) => n.dataset.owner === owner) || null;
-    const thinkPending = thinkRunning && thinkOn && !m.cancelled && !showThink && !hiddenThink;
-    if (showThink || hiddenThink || thinkPending) {
+    if (displayableThink) {
       if (!reason) {
         reason = el('div', 'reasoning'); reason.dataset.owner = owner;
         reason.setAttribute('role', 'button'); reason.tabIndex = 0;
@@ -1335,43 +1338,33 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       }
       const bits = [];
       if (m.reasoningLevel && m.reasoningLevel !== 'off') bits.push(reasoningLevelLabel(m.reasoningLevel));
-      if (hiddenThink && m.usage && m.usage.reasoning) bits.push(`${m.usage.reasoning} tok`);
       if (m.reasoningMs) bits.push(fmtSpan(m.reasoningMs));
-      const summaryItems = showThink && gptSummaryOnly ? reasoningSummaryItems(m.reasoning, reasoningModel) : [];
-      const title = thinkPending && !summaryItems.length
-        ? localeText('思考中', 'Thinking')
-        : (showThink || thinkPending)
-          ? (gptSummaryOnly
-            ? localeText(summaryItems.length ? '思考摘要' : '思考中', summaryItems.length ? 'Reasoning summary' : 'Thinking')
-            : localeText('思考过程', 'Reasoning process'))
-          : localeText('已思考', 'Reasoned');
+      const title = gptSummaryOnly
+        ? localeText('思考摘要', 'Reasoning summary')
+        : localeText('思考过程', 'Reasoning process');
       const nameEl = $('.chip-name', reason);
       const stateEl = $('.chip-state', reason);
       if (nameEl) nameEl.textContent = title;
       if (stateEl) stateEl.textContent = bits.join(' · ');
       const inner = $('.fold-inner', reason);
       const summaryMarkup = `<div class="think-summary-list" aria-live="polite"></div><div class="think-hidden think-summary-empty">${esc(localeText('等待 GPT 返回摘要标记…', 'Waiting for GPT summary markers…'))}</div>`;
-      const detail = showThink
-        ? (gptSummaryOnly ? summaryMarkup : '<pre class="think-full-text"></pre>')
-        : (hiddenThink
-          ? `<div class="think-hidden">${esc(localeText('模型未返回可展示的思考内容；仅显示推理用量。', 'No reasoning text is available to display; only reasoning usage is shown.'))}</div>`
-          : `<div class="think-hidden">${esc(localeText('正在等待思考过程…', 'Waiting for reasoning…'))}</div>`);
-      const sig = `${thinkRunning ? 'live' : 'done'}:${hiddenThink ? 'hidden' : (showThink ? 'visible' : 'pending')}:${gptSummaryOnly ? 'gpt' : 'full'}`;
+      const detail = gptSummaryOnly ? summaryMarkup : '<pre class="think-full-text"></pre>';
+      const sig = `${thinkRunning ? 'live' : 'done'}:visible:${gptSummaryOnly ? 'gpt' : 'full'}`;
       if (inner && inner.dataset.sig !== sig) {
         inner.dataset.sig = sig;
         inner.innerHTML = detail;
       }
-      if (inner && showThink && gptSummaryOnly) {
+      if (inner && displayableThink && gptSummaryOnly) {
         const list = $('.think-summary-list', inner);
         const empty = $('.think-summary-empty', inner);
         const count = renderReasoningLines(list, summaryItems, { summary: true, animate: thinkRunning });
         if (empty) empty.hidden = count > 0;
       }
-      if (inner && showThink && !gptSummaryOnly) {
+      if (inner && displayableThink && !gptSummaryOnly) {
         const full = $('.think-full-text', inner);
         if (full) renderReasoningLines(full, m.reasoning, { animate: thinkRunning });
       }
-      const thinkLive = thinkRunning && (thinkPending || !!m.reasoning) && !m.text && !(m.toolCalls && m.toolCalls.length);
+      const thinkLive = thinkRunning && displayableThink && !m.text && !(m.toolCalls && m.toolCalls.length);
       const expanded = reason._user == null ? thinkLive : !!reason._user;
       // Live reasoning is visible by default; a deliberate user collapse wins until this turn ends.
       reason.classList.toggle('live', thinkLive && expanded);
@@ -2230,30 +2223,34 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
   const attachments = installAttachments({ composer, toast, safeImgSrc, fmtSize });
 
   // ── 输入区 ────────────────────────────────────────────────────────────
-  function autoGrow() {
+  function autoGrow({ follow = false } = {}) {
     const shell = composer.closest('.composer');
-    // Always measure the compact row first. Measuring while the multiline grid is
-    // active can make a near-wrap sentence fit on one line, causing layout flicker.
-    shell?.classList.remove('is-multiline');
-    composer.style.height = 'auto';
-    const singleRowStyle = getComputedStyle(composer);
-    const lineHeight = Number.parseFloat(singleRowStyle.lineHeight) || 24;
-    const singleRowHeight = Math.max(lineHeight, composer.scrollHeight || lineHeight);
-    const multiline = singleRowHeight > lineHeight + 1;
-    shell?.classList.toggle('is-multiline', multiline);
-
+    // The composer is intentionally a six-line input: keep controls below it and
+    // grow with content until the viewport-based cap, then scroll inside the field.
+    shell?.classList.add('is-multiline');
     composer.style.height = 'auto';
     const style = getComputedStyle(composer);
-    const contentHeight = Math.max(lineHeight, composer.scrollHeight || lineHeight);
-    let maxHeight = Number.parseFloat(style.maxHeight);
-    if (String(style.maxHeight).endsWith('vh')) maxHeight = window.innerHeight * maxHeight / 100;
-    if (!Number.isFinite(maxHeight) || maxHeight <= 0) maxHeight = 48;
+    const lineHeight = Number.parseFloat(style.lineHeight) || 24;
+    const minHeight = Math.max(lineHeight * 6, Number.parseFloat(style.minHeight) || 0);
+    const contentHeight = Math.max(minHeight, composer.scrollHeight || minHeight);
+    const maxHeightValue = String(style.maxHeight || '');
+    const viewportLimit = /([\d.]+)\s*d?vh\b/i.exec(maxHeightValue);
+    const pixelLimit = /([\d.]+)\s*px\b/i.exec(maxHeightValue);
+    let maxHeight = viewportLimit && pixelLimit
+      ? Math.min(window.innerHeight * Number(viewportLimit[1]) / 100, Number(pixelLimit[1]))
+      : viewportLimit
+        ? window.innerHeight * Number(viewportLimit[1]) / 100
+        : Number.parseFloat(maxHeightValue);
+    if (!Number.isFinite(maxHeight) || maxHeight <= 0) maxHeight = window.innerHeight * 0.42;
+    maxHeight = Math.max(minHeight, maxHeight);
     const clipped = contentHeight > maxHeight + 1;
     composer.style.height = Math.min(contentHeight, maxHeight) + 'px';
     composer.style.overflowY = clipped ? 'auto' : 'hidden';
-    if (!clipped) composer.scrollTop = 0;
+    if (follow) composer.scrollTop = composer.scrollHeight;
+    else if (!clipped) composer.scrollTop = 0;
   }
-  const shiftEnterGuard = installShiftEnterGuard(composer, () => { autoGrow(); welcomeMotion.sync(); });
+  const shiftEnterGuard = installShiftEnterGuard(composer, () => { autoGrow({ follow: true }); welcomeMotion.sync(); });
+  autoGrow();
   const composerShell = composer.closest('.composer');
   if (typeof ResizeObserver === 'function' && composerShell) {
     let previousWidth = 0;
@@ -2616,7 +2613,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
   }
   sharingUI = installSharing({ store, agent, getBusy, root: msgList, toast });
   feedbackUI = installFeedback({ store, agent, getBusy, root: msgList, toast });
-  installSpeechInput({ composer, toast, onInput: () => { autoGrow(); welcomeMotion.sync(); } });
+  installSpeechInput({ composer, toast, onInput: () => { autoGrow({ follow: true }); welcomeMotion.sync(); } });
   const ui = {
     setStatus,
     syncToolbar,

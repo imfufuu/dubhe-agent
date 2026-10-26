@@ -822,14 +822,16 @@ test('暖纸色编辑对话、助手无回复卡片、用户气泡保留及编�
   assert.match(css, /\.composer \{[^}]*background: var\(--conversation-bg, var\(--bg\)\)/, '输入容器使用对话暖纸色');
   assert.match(css, /\.composer \{[^}]*border-radius: 28px/);
   assert.match(css, /\.composer\.is-multiline \{[^}]*border-radius: 18px/);
-  assert.match(css, /\.composer \{[^}]*display: grid[^}]*grid-template-areas: "attach input voice send"/s, '单行输入维持附件—文本—语音—发送的顺序');
-  assert.match(css, /\.composer\.is-multiline \{[^}]*grid-template-areas: "input input input" "attach voice send"/s, '多行文本独占上方一行，附件与操作按钮固定在下方');
-  assert.match(css, /#composer-input \{[^}]*max-height: 48px/);
-  assert.match(css, /#composer-input \{[^}]*transition: height \.18s/);
-  assert.match(read('../js/ui.js'), /function autoGrow\(\) \{[\s\S]*?shell\?\.classList\.remove\('is-multiline'\)[\s\S]*?shell\?\.classList\.toggle\('is-multiline', multiline\)[\s\S]*?composer\.scrollTop = 0;/s, '按紧凑布局测量，收缩回单行时清掉 textarea 旧滚动偏移');
+  assert.match(css, /\.composer \{[^}]*display: grid[^}]*grid-template-areas: "attach input voice send"/s, '基础网格仍保留附件—文本—语音—发送顺序');
+  assert.match(css, /\.composer\.is-multiline \{[^}]*grid-template-areas: "input input input" "attach voice send"/s, '六行文本独占上方一行，附件与操作按钮固定在下方');
+  assert.match(css, /#composer-input \{[^}]*min-height: 144px; max-height: min\(42vh, 360px\)/, '输入区至少容纳六行并按视口高度限制增长');
+  assert.match(css, /#composer-input \{[^}]*transition: height \.24s/);
+  const composerUi = read('../js/ui.js');
+  const app = read('../app.html');
+  assert.match(app, /<div class="composer is-multiline">[\s\S]*?<textarea id="composer-input" rows="6"/);
+  assert.match(composerUi, /function autoGrow\(\{ follow = false \} = \{\}\) \{[\s\S]*?shell\?\.classList\.add\('is-multiline'\)[\s\S]*?Math\.max\(lineHeight \* 6[\s\S]*?if \(follow\) composer\.scrollTop = composer\.scrollHeight;/s, '输入保持六行下限并在键入后跟随滚动到底部');
   assert.match(css, /\.composer \.attach-menu-wrap \{ grid-area: attach; align-self: center; \}/, '多行时附件按钮留在下方工具行');
   assert.match(css, /\.app:has\(#sandbox-panel:not\(\.collapsed\)\) \.messages \{ padding-inline: clamp\(28px, 3\.5vw, 48px\); \}/, '停靠面板展开时，助手消息与两侧分割线都保持间距');
-  const composerUi = read('../js/ui.js');
   const newlineGuard = read('../js/composer-newline-guard.js');
   assert.match(newlineGuard, /if \(value\.startsWith\(probe\.prefix\)[\s\S]*?\/\^\\n\{2,\}\$\/u\.test\(inserted\)/, 'Shift+Enter 若在单次输入中插入多个换行，只保留一个');
   assert.match(composerUi, /if \(e\.shiftKey\) \{ shiftEnterGuard\.capture\(\); return; \}/, '空输入 Shift+Enter 仍交给浏览器输入一个换行');
@@ -881,7 +883,7 @@ test('文档页首页长描述与独立声明按实际文案精确翻译', () =>
 test('思考强度菜单左侧带浅灰细线，不影响各档位按钮布局', () => {
   const css = read('../css/styles.css');
   assert.match(css, /\.think-menu \{ padding: 4px; max-height: min\(360px, calc\(100dvh - 80px\)\); border-left: 1px solid color-mix\(in srgb, var\(--fg\) 18%, var\(--bg\)\); \}/);
-  assert.match(css, /\.think-item \{[\s\S]*?padding: 6px 10px;[\s\S]*?line-height: 1\.18/s);
+  assert.match(css, /\.think-item \{[\s\S]*?padding: 8px 10px;[\s\S]*?line-height: 1\.22/s, '思考菜单项有更舒展的行间距');
   assert.match(read('../app.html'), /id="think-menu" class="dd-menu think-menu"/);
 });
 

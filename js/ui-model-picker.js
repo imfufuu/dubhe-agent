@@ -165,9 +165,6 @@ export function installModelPicker({ store, agent, toast, getBusy, openKeyModal,
           `目录低价标签阈值：输入≤${formatRate(1, 'zh')}/M、输出≤${formatRate(5, 'zh')}/M（按 ${USD_TO_CNY_RATE_DATE} 中间价折算；非实时账单价）`,
           `Curated cheap-tag threshold: input ≤ ${formatRate(1, 'en')}/M and output ≤ ${formatRate(5, 'en')}/M; not a live bill.`,
         );
-        const localState = store.state.offlineModelAvailable
-          ? localeText('已就绪', 'Ready')
-          : (store.state.offlineModelChecked ? localeText('未选择', 'Not selected') : localeText('检查中', 'Checking'));
         // 本地模型名称、参数量与量化来自用户选择的 GGUF 元数据；未做独立性能评测。
         item.title = local
           ? (hit.available
@@ -183,8 +180,7 @@ export function installModelPicker({ store, agent, toast, getBusy, openKeyModal,
           : (local
             ? `<span class="dd-item-id mono">${esc(localModelName())}</span>
               <span class="dd-item-badges">
-                <span class="badge local-model-badge">${localeText('本地', 'Local')}</span>
-                <span class="badge">${localState}</span>
+                <span class="badge local-model-badge" title="Local inference only"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="2.5" width="10" height="9" rx="1.4"/><path d="M1.5 13.5h13M6 11.5l-.5 2m4-2 .5 2"/></svg><span>LOCAL</span></span>
               </span>`
             : `<span class="dd-item-id mono">${esc(m.id)}</span>
               <span class="dd-item-badges">

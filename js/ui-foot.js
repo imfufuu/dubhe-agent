@@ -8,7 +8,7 @@ export function createAssistantFootPainter(store) {
   return function paintFoot(wrap, message) {
     const foot = wrap?.querySelector('.msg-foot');
     if (!foot) return;
-    if (message.role !== 'assistant' || !message.done) { foot.hidden = true; foot.textContent = ''; return; }
+    if (message.role !== 'assistant' || !message.done || message.toolCalls?.length) { foot.hidden = true; foot.textContent = ''; foot.title = ''; return; }
 
     const messages = store.state.messages || [];
     const at = messages.findIndex((item) => item.id === message.id);

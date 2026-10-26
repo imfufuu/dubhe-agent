@@ -78,6 +78,9 @@ jobs:
       - name: tests/svg-safety.test.mjs · SVG 安全清理与本地文本提取
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/svg-safety.test.mjs
+      - name: tests/ui-adjustments.test.mjs · 本轮 UI 与流式修复回归
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/ui-adjustments.test.mjs
       - name: tests/ui-chunks.test.mjs · 流式 Markdown 尾文本浮现
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/ui-chunks.test.mjs

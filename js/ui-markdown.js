@@ -634,7 +634,33 @@ function protectFallbackEscapes(source, escapedChars) {
   return out;
 }
 
-export function renderMarkdown(src) {
+function isStreamableWidgetDirective(line) {
+  const match = /^[ \t]{0,3}:::(\S+)(?:[ \t]+(.*))?[ \t]*$/.exec(String(line || ''));
+  if (!match) return false;
+  const name = match[1], tail = String(match[2] || '').trim();
+  const key = name.toLowerCase();
+  if (key === 'fold' || key === 'font' || key === 'color') return !!tail;
+  if (key === 'choice') return true;
+  if (key === 'align') return !!tail;
+  if (['center', 'centre', 'right', '居中', '居中对齐', '中', '右对齐', '靠右'].includes(key)) return true;
+  if (key === 'chart') return !!tail;
+  if (key === 'diagram') return !!tail;
+  if (['flow', 'flowchart', 'mind', 'mindmap', 'mind-map', '流程图', '流程', '思维导图', '脑图'].includes(key)) return true;
+  return CHART_DIRECT_ALIASES.some((alias) => alias.toLowerCase() === key);
+}
+
+function closeUnfinishedWidgetFence(source) {
+  const lines = String(source || '').split('\n');
+  let openBlocks = 0;
+  for (const line of lines) {
+    if (isStreamableWidgetDirective(line)) { openBlocks++; continue; }
+    if (openBlocks > 0 && /^[ \t]{0,3}:::[ \t]*(?:>.*)?$/.test(line)) openBlocks--;
+  }
+  return openBlocks ? `${source}\n:::` : source;
+}
+
+export function renderMarkdown(src, options = {}) {
+  const streaming = options === true || options?.streaming === true;
   const codeBlocks = [];
   let t = extractCodeFences(String(src || ''), codeBlocks);
   // 先以转义感知方式剥离成对的行内代码（.18）：其中的 $…$ 不能被当数学定界符——
@@ -697,6 +723,7 @@ export function renderMarkdown(src) {
     .replace(/\$([^\s$](?:[^$\n]*?[^\s$])?)\$/g, (_, x) => mathOk(x) ? pushMath(x, false, false) : _)
     // 行内未闭合 $ 不处理（$ 单独出现太容易误判）——只处理 $$ 和 \[ 开头的块级
 
+  if (streaming) t = closeUnfinishedWidgetFence(t);
   // 沙箱文件小卡片：[[file:相对路径]] 或 [[file:相对路径|显示名]] → 可点击卡片，点开沙箱文件查看器。
   // 放在围栏/行内代码/数学之后提取：代码里的字面量不会被当卡片。
   const fileCards = [];
@@ -807,25 +834,25 @@ export function renderMarkdown(src) {
     const foldAt = (_, i) => {
       const f = folds[+i];
       const innerMd = getMd();
-      const inner = innerMd ? renderMarkdown(f.body) : `<p>${esc(f.body)}</p>`;
+      const inner = innerMd ? renderMarkdown(f.body, options) : `<p>${esc(f.body)}</p>`;
       return `<div class="md-fold" role="button" tabindex="0"><span class="chip-ico">${ICON.chevRight || ''}</span><span class="chip-name">${esc(f.title)}</span><div class="chip-detail"><div class="fold-inner md-fold-body">${inner}</div></div></div>`;
     };
     const fontAt = (_, i) => {
       const f = fonts[+i];
       const innerMd = getMd();
-      const inner = innerMd ? renderMarkdown(f.body) : `<p>${esc(f.body)}</p>`;
+      const inner = innerMd ? renderMarkdown(f.body, options) : `<p>${esc(f.body)}</p>`;
       return `<div class="md-font md-font-${f.cls}">${inner}</div>`;
     };
     const colorAt = (_, i) => {
       const f = colors[+i];
       const innerMd = getMd();
-      const inner = innerMd ? renderMarkdown(f.body) : `<p>${esc(f.body)}</p>`;
+      const inner = innerMd ? renderMarkdown(f.body, options) : `<p>${esc(f.body)}</p>`;
       return `<div class="md-color md-c-${f.cls}">${inner}</div>`;
     };
     const alignAt = (_, i) => {
       const a = aligns[+i];
       const innerMd = getMd();
-      const inner = innerMd ? renderMarkdown(a.body) : `<p>${esc(a.body)}</p>`;
+      const inner = innerMd ? renderMarkdown(a.body, options) : `<p>${esc(a.body)}</p>`;
       return `<div class="md-align md-align-${a.cls}">${inner}</div>`;
     };
     const chartAt = (_, i) => {
@@ -868,7 +895,7 @@ export function renderMarkdown(src) {
   if (md) {
     let html = md.render(t);
     html = restoreWidgets(html);
-    html = mdExtensions.restore(html, (x) => md.renderInline(x), (x) => renderMarkdown(x));
+    html = mdExtensions.restore(html, (x) => md.renderInline(x), (x) => renderMarkdown(x, options));
     html = restoreInlineCodeTokens(html);
     html = restoreCb(html);
     html = restoreMath(html);
@@ -904,6 +931,6 @@ export function renderMarkdown(src) {
   t = t.replace(/\n{2,}/g, '</p><p>').replace(/^(?!<[a-z])/, '<p>').replace(/(?!>)$/, '</p>');
   t = t.replace(/<p>\s*(<(?:h\d|ul|ol|blockquote|pre))/g, '$1').replace(/(<\/(?:h\d|ul|ol|blockquote|pre)>)\s*<\/p>/g, '$1');
   const fallbackInline = (x) => esc(x).replace(/~~([^~]+?)~~/g, '<s>$1</s>').replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>').replace(/\*([^*\n]+)\*/g, '<em>$1</em>');
-  const fallbackHtml = restoreInlineCodeTokens(restoreMath(restoreCb(mdExtensions.restore(restoreWidgets(t), fallbackInline, (x) => renderMarkdown(x)))));
+  const fallbackHtml = restoreInlineCodeTokens(restoreMath(restoreCb(mdExtensions.restore(restoreWidgets(t), fallbackInline, (x) => renderMarkdown(x, options)))));
   return fallbackHtml.replace(/\uE000ESC(\d+)\uE000/g, (_, i) => esc(fallbackEscapes[+i] || ''));
 }

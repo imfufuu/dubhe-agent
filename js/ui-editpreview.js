@@ -142,8 +142,8 @@ export function paintEditFoldContent(node, options) {
     row.item.title = dropped ? localeText('设置中开启了自动清理：因最终回答未引用，本文件已在回合结束时移除。', 'Auto-clean is enabled; this file was removed at turn end because the final answer did not reference it.') : '';
     text(row.tag, dropped ? localeText('自动清理 · 未引用', 'Auto-cleaned · Unreferenced') : ''); row.tag.hidden = !dropped;
     if ((live && !row.wasLive) || (!live && row.wasLive)) row.userToggle = null;
-    // The parent Edited Files fold and each filename are independent: never open file diffs implicitly.
-    setExpanded(row, row.userToggle == null ? false : row.userToggle);
+    // Live Edited Files open their per-file diffs by default; users can still collapse a row.
+    setExpanded(row, row.userToggle == null ? !!live : row.userToggle);
     row.wasLive = !!live;
     paintPreviewCard(row.card, file, live);
   });
