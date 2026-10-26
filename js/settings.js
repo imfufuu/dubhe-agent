@@ -1,7 +1,8 @@
 import { installModerationSetting } from './ui-moderation-setting.js';
 import { updateScriptCache } from './cache-update.js';
-import { syncOfflineModelAvailability, downloadOfflineModel, removeOfflineModel, formatOfflineDownloadProgress } from './offline-model.js';
-import { OFFLINE_MODEL_DISPLAY_NAME, OFFLINE_MODEL_ID, OFFLINE_MODEL_FILE, OFFLINE_MODEL_SIZE_BYTES, OFFLINE_MODEL_SHA256, OFFLINE_MODEL_REPO, OFFLINE_MODEL_REVISION, formatDownloadBytes } from './offline-model-config.js';
+import { syncOfflineModelAvailability, importOfflineModel, getOfflineModelStatus, removeOfflineModel } from './offline-model.js';
+import { MAX_SINGLE_GGUF_BYTES, OFFLINE_MODEL_CONTEXT_SIZE, OFFLINE_MODEL_DISPLAY_NAME, OFFLINE_MODEL_ID, formatByteSize, isOfflineModelId } from './offline-model-config.js';
+import { estimateGGUFMemory, formatGGUFMemoryWarning, formatParameterCount, readDeviceMemoryGB, readGGUFMetadata } from './gguf.js';
 import { isNetworkOffline } from './offline-network.js';
 import { providerIcon } from './icons.js';
 import { sanitizeSvgMarkup, svgDataUrl } from './svg-safety.js';
@@ -9,10 +10,10 @@ import { text as localeText } from './locale.js';
 import { getOrCreateUserSalutation, validateUserSalutation, saveUserSalutation } from './user-salutation.js';
 import { getLanguage, onLanguageChange } from './locale.js';
 // 设置弹窗：API Key / 中继地址 / 主题 / 字号 / 沙箱 / 联网 / 快速 / 思考 / 识图·音视频解析模型 / 清空数据 / 关于
-import { APP_RELEASE, APP_VERSION, STORAGE_KEY, VISION_MODELS, VIDEO_MODELS, IMAGE_MODELS, DEFAULT_IMAGE_MODEL, isImageGenModel, imageModelLabel, resolveVisionModel, resolveVideoModel } from './config.js?v=2026.10.11.1';
-import { DEFAULT_GATEWAY_ID, getGateway, validateGatewayApiKey, validateGatewayBaseUrl, gatewayModelListLabel, defaultModelForGateway } from './gateway-registry.js?v=2026.10.11.1';
+import { APP_RELEASE, APP_VERSION, STORAGE_KEY, VISION_MODELS, VIDEO_MODELS, IMAGE_MODELS, DEFAULT_IMAGE_MODEL, isImageGenModel, imageModelLabel, resolveVisionModel, resolveVideoModel } from './config.js?v=2026.10.25.1';
+import { DEFAULT_GATEWAY_ID, getGateway, validateGatewayApiKey, validateGatewayBaseUrl, gatewayModelListLabel, defaultModelForGateway } from './gateway-registry.js?v=2026.10.25.1';
 import { currentRelay, resetRelayProbe, RELAY_OVERRIDE_KEY } from './net.js';
-import { DEFAULT_TURN_BUDGET } from './execution.js?v=2026.10.11.1';
+import { DEFAULT_TURN_BUDGET } from './execution.js?v=2026.10.25.1';
 import { NEXUS_ARCHITECTURE_SPEC } from './nexus.js';
 import { readLocal, writeLocal, removeLocal } from './legacy-keys.js';
 
@@ -24,10 +25,11 @@ const $ = (sel) => document.querySelector(sel);
 let manualModelEditingId = '';
 let manualModelIconDraft = '';
 let offlineModelStore = null;
-let offlineDownloadController = null;
-let offlineModelDownloadBusy = false;
+let offlineModelController = null;
+let offlineModelBusy = false;
 let offlineModelStatusChecking = false;
-let offlineDownloadProgress = null;
+let offlineModelProgress = null;
+let offlineModelPreviewMetadata = null;
 let salutationCheckTimer = null;
 
 const ADMIN_PREFIX = 'admin-';
@@ -39,7 +41,7 @@ function validateApiKey(s, gatewayId = DEFAULT_GATEWAY_ID) {
 }
 function toast(msg, type = 'info', ms = 2600) {
   try {
-    import('./ui.js?v=2026.10.11.1').then(({ toast: t }) => t && t(msg, type, ms)).catch(() => {
+    import('./ui.js?v=2026.10.25.1').then(({ toast: t }) => t && t(msg, type, ms)).catch(() => {
       const wrap = document.getElementById('toasts');
       if (!wrap) return;
       const d = document.createElement('div');
@@ -53,7 +55,8 @@ function toast(msg, type = 'info', ms = 2600) {
 
 function renderOfflineModelUI(status = null) {
   const statusEl = $('#set-offline-model-status');
-  const downloadBtn = $('#set-offline-model-download');
+  const chooseBtn = $('#set-offline-model-choose');
+  const fileInput = $('#set-offline-model-file-input');
   const cancelBtn = $('#set-offline-model-cancel');
   const removeBtn = $('#set-offline-model-remove');
   const progressWrap = $('#set-offline-model-progress-wrap');
@@ -62,67 +65,79 @@ function renderOfflineModelUI(status = null) {
   const heading = $('#set-offline-model-heading');
   const title = $('#set-offline-model-title');
   const description = $('#set-offline-model-description');
-  const provenance = $('#set-offline-model-provenance');
-  const license = $('#set-offline-model-license');
-  const fileInfo = $('#set-offline-model-file');
-  const hashInfo = $('#set-offline-model-hash');
-  const repoLink = $('#set-offline-model-repo');
+  const metadataEl = $('#set-offline-model-meta');
+  const memoryWarning = $('#set-offline-model-memory-warning');
+  const available = status?.available ?? offlineModelStore?.state.offlineModelAvailable === true;
+  const supported = status?.supported ?? offlineModelStore?.state.offlineModelStorageSupported === true;
+  const metadata = offlineModelPreviewMetadata || status?.metadata || offlineModelStore?.state.offlineModelMetadata || null;
+  const fileSize = Number(metadata?.fileSize ?? status?.size) || 0;
+  const memory = metadata ? estimateGGUFMemory({
+    fileBytes: fileSize,
+    metadata,
+    deviceMemoryGB: readDeviceMemoryGB(),
+    contextSize: OFFLINE_MODEL_CONTEXT_SIZE,
+  }) : null;
+
   if (heading) heading.textContent = localeText('离线本地模型', 'Offline local model');
-  if (title) title.textContent = OFFLINE_MODEL_DISPLAY_NAME;
-  if (description) description.textContent = localeText(`可选 · 约 ${formatDownloadBytes(OFFLINE_MODEL_SIZE_BYTES)} · 本机推理`, `Optional · about ${formatDownloadBytes(OFFLINE_MODEL_SIZE_BYTES)} · runs locally`);
-  if (provenance) provenance.textContent = localeText('仓库的 heretic / uncensored 标签是社区自述，非独立测评。', 'The repository’s “heretic / uncensored” labels are self-descriptions, not independent evaluations.');
-  if (license) license.textContent = localeText('模型仓库元数据声明 Apache-2.0；请查看仓库与上游说明。', 'The model repository metadata declares Apache-2.0; review the repository and upstream notices.');
-  if (fileInfo) fileInfo.textContent = `${OFFLINE_MODEL_FILE} · ${formatDownloadBytes(OFFLINE_MODEL_SIZE_BYTES)} · rev ${OFFLINE_MODEL_REVISION.slice(0, 12)}`;
-  if (hashInfo) { hashInfo.textContent = `SHA-256 ${OFFLINE_MODEL_SHA256.slice(0, 12)}…`; hashInfo.title = OFFLINE_MODEL_SHA256; }
-  if (repoLink) { repoLink.textContent = localeText('查看固定版本仓库', 'View pinned repository revision'); repoLink.href = `https://huggingface.co/${OFFLINE_MODEL_REPO}/tree/${OFFLINE_MODEL_REVISION}`; }
-  if (cancelBtn) cancelBtn.textContent = localeText('取消', 'Cancel');
-  if (removeBtn) removeBtn.textContent = localeText('删除本地模型', 'Remove local model');
-  if (!statusEl || !offlineModelStore) return;
-  const offline = isNetworkOffline();
-  const available = status?.available ?? offlineModelStore.state.offlineModelAvailable === true;
-  const supported = status?.supported ?? offlineModelStore.state.offlineModelStorageSupported === true;
-  const partialBytes = Math.max(0, Number(status?.partialBytes ?? offlineModelStore.state.offlineModelPartialBytes) || 0);
-  if (offlineModelStatusChecking && !offlineModelDownloadBusy) {
-    if (progressWrap) progressWrap.hidden = true;
-    statusEl.textContent = localeText('正在检查已保存的下载进度…', 'Checking saved download progress…');
-  } else if (offlineDownloadProgress && offlineModelDownloadBusy) {
-    const p = formatOfflineDownloadProgress(offlineDownloadProgress);
-    const verifying = offlineDownloadProgress.phase === 'verify';
-    if (progressWrap) progressWrap.hidden = false;
-    if (progress) progress.value = p.percent;
-    if (progressLabel) progressLabel.textContent = `${verifying ? localeText('校验', 'Verify') : localeText('下载', 'Download')} ${p.percent}% · ${p.loadedText} / ${p.totalText}`;
-    statusEl.textContent = verifying
-      ? localeText('下载完成，正在逐块校验模型 SHA-256…', 'Download complete; streaming the model file to verify its SHA-256…')
-      : localeText('正在下载 GGUF 到本机浏览器存储…', 'Downloading the GGUF into this browser’s local storage…');
-  } else {
-    if (progressWrap) progressWrap.hidden = true;
-    if (available) statusEl.textContent = localeText(`已安装 · ${formatDownloadBytes(status?.size || OFFLINE_MODEL_SIZE_BYTES)} · 本地推理不请求网关`, `Installed · ${formatDownloadBytes(status?.size || OFFLINE_MODEL_SIZE_BYTES)} · local inference does not call a gateway`);
-    else if (!offlineModelStore.state.offlineModelChecked) statusEl.textContent = localeText('正在检查本机模型存储…', 'Checking local model storage…');
-    else if (partialBytes >= OFFLINE_MODEL_SIZE_BYTES) statusEl.textContent = localeText('文件已下载 · SHA-256 校验待完成 · 点击继续校验', 'File downloaded · SHA-256 verification is pending · click to verify');
-    else if (partialBytes > 0) {
-      const p = formatOfflineDownloadProgress({ loaded: partialBytes, total: OFFLINE_MODEL_SIZE_BYTES });
-      statusEl.textContent = localeText(`已下载 ${p.loadedText} / ${p.totalText} · 再次点击将从此处续传`, `Downloaded ${p.loadedText} / ${p.totalText} · click again to resume`);
+  if (title) title.textContent = metadata?.displayName || localeText(OFFLINE_MODEL_DISPLAY_NAME, 'Local GGUF');
+  if (description) description.textContent = metadata
+    ? `${metadata.parameterCount ? `${formatParameterCount(metadata.parameterCount, 'en')}${metadata.parameterCountSource === 'gguf-metadata' ? '' : ' ≈'}` : localeText('参数量未知', 'parameter count unknown')} · ${fileSize ? formatByteSize(fileSize) : ''} · ${localeText('本机推理', 'runs locally')}`
+    : localeText('选择一个本地 GGUF 文件；单文件上限约 2 GiB。', 'Choose a local GGUF file; single-file limit is about 2 GiB.');
+  if (statusEl && offlineModelStore) {
+    if (offlineModelBusy) {
+      if (offlineModelProgress?.phase === 'copy') {
+        const pct = Math.max(0, Math.min(100, Number(offlineModelProgress.percent) || 0));
+        statusEl.textContent = localeText('正在把模型文件复制到此浏览器的本地存储…', 'Copying the model file into this browser’s local storage…');
+        if (progressWrap) progressWrap.hidden = false;
+        if (progress) progress.value = pct;
+        if (progressLabel) progressLabel.textContent = `${pct}% · ${formatByteSize(offlineModelProgress.loaded || 0)} / ${formatByteSize(offlineModelProgress.total || 0)}`;
+      } else {
+        if (progressWrap) progressWrap.hidden = true;
+        statusEl.textContent = localeText('正在读取 GGUF 元数据并检查内存风险…', 'Reading GGUF metadata and checking memory risk…');
+      }
+    } else {
+      if (progressWrap) progressWrap.hidden = true;
+      if (offlineModelStatusChecking && !offlineModelStore.state.offlineModelChecked) statusEl.textContent = localeText('正在检查本机模型存储…', 'Checking local model storage…');
+      else if (!supported) statusEl.textContent = localeText('此浏览器或页面环境不支持 OPFS；请使用 HTTPS / localhost 下的现代浏览器。', 'This browser/page does not support OPFS; use a modern browser over HTTPS or localhost.');
+      else if (available) statusEl.textContent = localeText(`已就绪 · ${formatByteSize(status?.size || fileSize)} · 推理不请求网关`, `Ready · ${formatByteSize(status?.size || fileSize)} · inference does not call a gateway`);
+      else if (offlineModelStore.state.offlineModelStatusError) statusEl.textContent = offlineModelStore.state.offlineModelStatusError;
+      else statusEl.textContent = localeText('尚未选择本地 GGUF 文件。', 'No local GGUF file selected.');
     }
-    else if (offline) statusEl.textContent = localeText('当前离线：模型未安装时不会下载或尝试联网。', 'Offline: an uninstalled model will not be downloaded or fetched.');
-    else if (!supported) statusEl.textContent = localeText('此浏览器或页面环境不支持本地 OPFS 模型存储；请用 HTTPS / localhost 的现代浏览器。', 'This browser/page does not support local OPFS model storage; use a modern browser over HTTPS or localhost.');
-    else if (offlineModelStore.state.offlineModelStatusError) statusEl.textContent = offlineModelStore.state.offlineModelStatusError;
-    else statusEl.textContent = localeText(`未安装 · 需约 ${formatDownloadBytes(OFFLINE_MODEL_SIZE_BYTES)} 空间 · 点击后才开始下载`, `Not installed · about ${formatDownloadBytes(OFFLINE_MODEL_SIZE_BYTES)} storage · download starts only after clicking`);
   }
-  if (downloadBtn) {
-    downloadBtn.hidden = available;
-    downloadBtn.disabled = offline || !supported || offlineModelDownloadBusy || offlineModelStatusChecking;
-    downloadBtn.textContent = offlineModelStatusChecking && !offlineModelDownloadBusy
-      ? localeText('检查下载进度…', 'Checking progress…')
-      : offlineModelDownloadBusy
-        ? localeText(offlineDownloadProgress?.phase === 'verify' ? '正在校验…' : '下载中…', offlineDownloadProgress?.phase === 'verify' ? 'Verifying…' : 'Downloading…')
-        : partialBytes >= OFFLINE_MODEL_SIZE_BYTES
-        ? localeText('继续校验模型', 'Continue model verification')
-        : partialBytes > 0
-          ? localeText('继续下载模型', 'Resume model download')
-          : localeText(`下载模型（约 ${formatDownloadBytes(OFFLINE_MODEL_SIZE_BYTES)}）`, `Download model (about ${formatDownloadBytes(OFFLINE_MODEL_SIZE_BYTES)})`);
+  const params = [
+    metadata?.architecture ? `${localeText('架构', 'architecture')} ${metadata.architecture}` : '',
+    metadata?.quantization ? `${localeText('量化', 'quantization')} ${metadata.quantization}` : '',
+    metadata?.contextLength ? `${localeText('模型上下文', 'model context')} ${Number(metadata.contextLength).toLocaleString()}` : '',
+    memory ? `${localeText('工作集粗估', 'estimated working set')} ${formatByteSize(memory.estimatedWorkingSetBytes)}` : '',
+    ['tensor-shapes-estimate', 'filename-estimate'].includes(metadata?.parameterCountSource)
+      ? localeText('参数量为近似值（非 GGUF 参数字段）', 'parameter count is an estimate (not from the GGUF parameter field)') : '',
+  ].filter(Boolean);
+  if (metadataEl) {
+    metadataEl.hidden = !metadata;
+    metadataEl.textContent = params.join(' · ');
   }
-  if (cancelBtn) { cancelBtn.hidden = !offlineModelDownloadBusy; cancelBtn.disabled = !offlineModelDownloadBusy; }
-  if (removeBtn) { removeBtn.hidden = !available && !partialBytes; removeBtn.disabled = offlineModelDownloadBusy; }
+  if (memoryWarning) {
+    const warning = !!memory && memory.risk !== 'ok';
+    memoryWarning.hidden = !warning;
+    memoryWarning.classList.toggle('critical', memory?.risk === 'critical');
+    memoryWarning.classList.toggle('caution', memory?.risk === 'warning' || memory?.risk === 'unknown');
+    memoryWarning.textContent = warning ? formatGGUFMemoryWarning(memory) : '';
+  }
+  if (chooseBtn) {
+    chooseBtn.disabled = !supported || offlineModelBusy || offlineModelStatusChecking;
+    chooseBtn.textContent = offlineModelBusy
+      ? localeText('正在保存…', 'Saving…')
+      : available
+        ? localeText('更换本地 GGUF', 'Replace local GGUF')
+        : localeText('选择 GGUF 文件', 'Choose GGUF file');
+  }
+  if (fileInput) fileInput.disabled = !supported || offlineModelBusy || offlineModelStatusChecking;
+  if (cancelBtn) { cancelBtn.hidden = !offlineModelBusy; cancelBtn.disabled = !offlineModelBusy; cancelBtn.textContent = localeText('取消', 'Cancel'); }
+  if (removeBtn) {
+    removeBtn.hidden = !available;
+    removeBtn.disabled = offlineModelBusy;
+    removeBtn.textContent = localeText('删除本地模型', 'Remove local model');
+  }
 }
 
 async function refreshOfflineModelUI(store = offlineModelStore) {
@@ -406,11 +421,8 @@ export function openSettingsModal({ store } = {}) {
   offlineModelStore = store;
   syncGatewayFields(store);
   syncSalutationField(store);
-  const downloadBtn = $('#set-offline-model-download');
-  if (downloadBtn) {
-    downloadBtn.disabled = true;
-    downloadBtn.textContent = localeText('检查下载进度…', 'Checking progress…');
-  }
+  const chooseBtn = $('#set-offline-model-choose');
+  if (chooseBtn) chooseBtn.disabled = true;
   refreshOfflineModelUI(store).catch((error) => {
     store.state.offlineModelStatusError = error?.message || String(error);
     renderOfflineModelUI();
@@ -537,8 +549,7 @@ export function mountSettings(store, { onRelayChanged, onKeySaved, onSettingChan
     if (offline && $('#set-cache-update-status')) $('#set-cache-update-status').textContent = localeText('离线状态：不检查更新，也不清除离线应用资源。', 'Offline: update checks are disabled and cached app resources are preserved.');
   };
   syncNetworkControls();
-  window.addEventListener('dubhe:network-state', (event) => {
-    if (event.detail?.offline) offlineDownloadController?.abort();
+  window.addEventListener('dubhe:network-state', () => {
     renderOfflineModelUI();
     syncNetworkControls();
   });
@@ -755,58 +766,83 @@ export function mountSettings(store, { onRelayChanged, onKeySaved, onSettingChan
     toast(`已移除模型 ID：${id}`, 'ok');
   });
 
-  const offlineDownloadButton = $('#set-offline-model-download');
-  if (offlineDownloadButton) offlineDownloadButton.addEventListener('click', async () => {
-    if (isNetworkOffline()) {
-      toast(localeText('当前离线，下载已停止。联网后再手动开始。', 'Offline: the download was not started. Reconnect and start it manually.'), 'warn');
+  const offlineChooseButton = $('#set-offline-model-choose');
+  const offlineFileInput = $('#set-offline-model-file-input');
+  if (offlineChooseButton && offlineFileInput) offlineChooseButton.addEventListener('click', () => offlineFileInput.click());
+  if (offlineFileInput) offlineFileInput.addEventListener('change', async () => {
+    const file = offlineFileInput.files?.[0] || null;
+    offlineFileInput.value = '';
+    if (!file || offlineModelBusy) return;
+    if (!/\.gguf$/i.test(String(file.name || ''))) {
+      toast(localeText('请选择扩展名为 .gguf 的模型文件。', 'Choose a model file with the .gguf extension.'), 'warn');
       return;
     }
-    if (offlineModelDownloadBusy) return;
-    offlineDownloadController = new AbortController();
-    offlineModelDownloadBusy = true;
-    offlineDownloadProgress = { loaded: Math.max(0, Number(offlineModelStore?.state.offlineModelPartialBytes) || 0), total: OFFLINE_MODEL_SIZE_BYTES, phase: 'download' };
+    if (file.size > MAX_SINGLE_GGUF_BYTES) {
+      toast(localeText('单文件需小于 2 GiB；当前不支持超大或分片 GGUF。', 'The single file must be under 2 GiB; oversized or sharded GGUF is not supported yet.'), 'warn', 5000);
+      return;
+    }
+    offlineModelController = new AbortController();
+    offlineModelBusy = true;
+    offlineModelProgress = { phase: 'inspect', percent: 0, loaded: 0, total: file.size };
+    offlineModelPreviewMetadata = null;
     renderOfflineModelUI();
     try {
-      await downloadOfflineModel({
-        signal: offlineDownloadController.signal,
-        onProgress: (progress) => {
-          offlineDownloadProgress = progress;
-          if (offlineModelStore?.state) offlineModelStore.state.offlineModelPartialBytes = Math.max(0, Math.min(OFFLINE_MODEL_SIZE_BYTES, Number(progress?.loaded) || 0));
+      const parsedMetadata = await readGGUFMetadata(file, { fileName: file.name });
+      const memoryEstimate = estimateGGUFMemory({
+        fileBytes: file.size,
+        metadata: parsedMetadata,
+        deviceMemoryGB: readDeviceMemoryGB(),
+        contextSize: OFFLINE_MODEL_CONTEXT_SIZE,
+      });
+      offlineModelPreviewMetadata = { ...parsedMetadata, fileSize: file.size };
+      offlineModelProgress = null;
+      renderOfflineModelUI();
+      const riskText = localeText(formatGGUFMemoryWarning(memoryEstimate, 'zh'), formatGGUFMemoryWarning(memoryEstimate, 'en'));
+      if (memoryEstimate.risk !== 'ok' && !window.confirm(`${riskText}\n\n${localeText('是否仍要把此模型复制到本机浏览器存储？', 'Continue copying this model into local browser storage anyway?')}`)) return;
+      const current = await getOfflineModelStatus();
+      if (current.available && !window.confirm(localeText(`将用「${parsedMetadata.displayName}」替换当前本地模型「${current.metadata?.displayName || OFFLINE_MODEL_DISPLAY_NAME}」？原模型会在新文件保存成功后删除。`, `Replace the current local model “${current.metadata?.displayName || 'Local GGUF'}” with “${parsedMetadata.displayName}”? The old model is removed only after the new file is saved.`))) return;
+      await importOfflineModel(file, {
+        signal: offlineModelController.signal,
+        parsedMetadata,
+        memoryEstimate,
+        onProgress: (progressInfo) => {
+          offlineModelProgress = progressInfo;
           renderOfflineModelUI();
         },
       });
       const status = await syncOfflineModelAvailability(offlineModelStore, { notify: true });
       renderOfflineModelUI(status);
-      if (status.available) toast(localeText('本地模型下载完成，可以断网后使用。', 'Model downloaded. You can now use it offline.'), 'ok', 4200);
-      else toast(localeText('下载完成，但本地缓存校验未通过。', 'Download finished, but local cache verification failed.'), 'err', 5000);
+      if (!status.available) throw new Error(localeText('GGUF 文件已复制，但本机状态核验未通过。', 'The GGUF was copied, but the local status check did not pass.'));
+      toast(localeText('本地 GGUF 已保存到此浏览器；文件未上传到服务器。', 'Local GGUF saved in this browser; the file was not uploaded to a server.'), 'ok', 4500);
     } catch (error) {
-      if (error?.name === 'AbortError') toast(localeText('模型下载已暂停；已下载部分已保留，可稍后继续。', 'Model download paused; downloaded data is saved and can be resumed later.'), 'warn');
+      if (error?.name === 'AbortError') toast(localeText('本地模型复制已取消；原模型保持不变。', 'Local model copy cancelled; the previous model is unchanged.'), 'warn');
       else toast(error?.message || String(error), 'err', 6500);
       await refreshOfflineModelUI(offlineModelStore);
     } finally {
-      offlineDownloadController = null;
-      offlineModelDownloadBusy = false;
-      offlineDownloadProgress = null;
+      offlineModelController = null;
+      offlineModelBusy = false;
+      offlineModelProgress = null;
+      offlineModelPreviewMetadata = null;
       renderOfflineModelUI();
     }
   });
   const offlineCancelButton = $('#set-offline-model-cancel');
-  if (offlineCancelButton) offlineCancelButton.addEventListener('click', () => offlineDownloadController?.abort());
+  if (offlineCancelButton) offlineCancelButton.addEventListener('click', () => offlineModelController?.abort());
   const offlineRemoveButton = $('#set-offline-model-remove');
   if (offlineRemoveButton) offlineRemoveButton.addEventListener('click', async () => {
-    if (!offlineModelStore?.state.offlineModelAvailable && !(offlineModelStore?.state.offlineModelPartialBytes > 0)) return;
-    if (!window.confirm(localeText('从此浏览器的本地存储中删除离线模型或未完成的下载？此操作不会联网。', 'Remove the offline model or incomplete download from this browser’s local storage? This will not access the network.'))) return;
+    if (!offlineModelStore?.state.offlineModelAvailable) return;
+    if (!window.confirm(localeText('从此浏览器的 OPFS 本地存储中删除已选择的 GGUF？此操作不会联网。', 'Remove the selected GGUF from this browser’s OPFS storage? This will not access the network.'))) return;
     offlineRemoveButton.disabled = true;
     try {
       await removeOfflineModel();
-      if (!isNetworkOffline() && offlineModelStore.state.model === OFFLINE_MODEL_ID) {
+      if (!isNetworkOffline() && isOfflineModelId(offlineModelStore.state.model)) {
         offlineModelStore.state.model = defaultModelForGateway(offlineModelStore.state.gatewayId || DEFAULT_GATEWAY_ID);
         const active = (offlineModelStore.state.sessions || []).find((session) => session.id === offlineModelStore.state.activeSessionId);
-        if (active && active.model === OFFLINE_MODEL_ID) active.model = offlineModelStore.state.model;
+        if (active && isOfflineModelId(active.model)) active.model = offlineModelStore.state.model;
       }
       await refreshOfflineModelUI(offlineModelStore);
       offlineModelStore.notify();
-      toast(localeText('本地模型已删除。', 'Local model removed.'), 'ok');
+      toast(localeText('本地 GGUF 已删除。', 'Local GGUF removed.'), 'ok');
     } catch (error) { toast(error?.message || String(error), 'err', 5000); }
     finally { renderOfflineModelUI(); }
   });

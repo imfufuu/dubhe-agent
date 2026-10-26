@@ -5,7 +5,7 @@ import {
   createToolCallAccumulator, createThinkingTracker, buildOpenAIMessages, buildAnthropicPayload,
   authHeaders, toOpenAITools, toAnthropicTools,
   thinkingDisabledFor, __resetThinkingFallbackForTests,
-} from '../js/api.js?v=2026.10.11.1';
+} from '../js/api.js?v=2026.10.25.1';
 import { protocolOf, providerOf, supportsFastMode, ENCRYPTED_THINKING_RE } from '../js/config.js';
 import { renderMarkdown } from '../js/ui.js';
 import _fs from 'node:fs';
@@ -29,10 +29,10 @@ const storeNoWeb = (st) => { st.state.settings.webEnabled = false; st.state.sett
 const drainSaves = () => new Promise((r) => setTimeout(r, 350));
 // 命名空间引用：新增用例集中使用，避免与顶部具名 import 冲突
 const cfg = await import('../js/config.js');
-const api = await import('../js/api.js?v=2026.10.11.1');
+const api = await import('../js/api.js?v=2026.10.25.1');
 // V1.7.1：ui.js 已拆出 ui-files-panel.js / ui-lightbox.js / quickviz.js。源码级断言（grep 字符串）
 // 一律读「UI 层整体」，拆分不应改变这些契约；只需精确到某个文件的断言请直接 readFileSync 该文件。
-const UI_SOURCE_PARTS = ['../js/ui.js', '../js/ui-message-scroll.js', '../js/ui-common.js', '../js/ui-language-costs.js', '../js/ui-choices.js', '../js/ui-toolflow.js', '../js/ui-editpreview.js', '../js/ui-markdown.js', '../js/ui-model-picker.js', '../js/ui-popovers.js', '../js/ui-command-palette.js', '../js/ui-system-commands.js', '../js/ui-files-panel.js', '../js/ui-lightbox.js', '../js/ui-attachments.js', '../js/ui-capability.js', '../js/quickviz.js', '../js/ui-rollback-fx.js', '../js/ui-file-viewer.js', '../js/ui-gateway-key.js'];
+const UI_SOURCE_PARTS = ['../js/ui.js', '../js/ui-message-scroll.js', '../js/ui-common.js', '../js/ui-language-costs.js', '../js/ui-choices.js', '../js/ui-toolflow.js', '../js/ui-editpreview.js', '../js/ui-markdown.js', '../js/ui-model-picker.js', '../js/ui-popovers.js', '../js/ui-command-palette.js', '../js/ui-system-commands.js', '../js/ui-files-panel.js', '../js/ui-lightbox.js', '../js/ui-attachments.js', '../js/ui-capability.js', '../js/quickviz.js', '../js/ui-rollback-fx.js', '../js/ui-file-viewer.js', '../js/ui-gateway-key.js', '../js/ui-welcome-motion.js', '../js/ui-reasoning-motion.js'];
 function readUiSource() {
   const fsp = _fs;
   return UI_SOURCE_PARTS.map((rel) => fsp.readFileSync(new URL(rel, import.meta.url), 'utf8')).join('\n');
@@ -98,7 +98,7 @@ test('Gemini 原生模型目录与 OpenAI 兼容聊天走同一 Google 网关、
   } finally { globalThis.fetch = realFetch; }
 });
 test('官方网关目录包含所需厂商、Qwen 区域目录地址与 OpenAI 当前默认模型', async () => {
-  const registry = await import('../js/gateway-registry.js?v=2026.10.11.1');
+  const registry = await import('../js/gateway-registry.js?v=2026.10.25.1');
   const ids = registry.GATEWAYS.map((gateway) => gateway.id);
   for (const id of ['teamorouter', 'anthropic', 'openai', 'gemini', 'deepseek', 'glm', 'grok', 'kimi', 'doubao', 'qwen', 'custom']) {
     assert.ok(ids.includes(id), `缺少网关 ${id}`);
@@ -1290,7 +1290,7 @@ test('save(true) 同步落盘，不依赖 300ms 防抖定时器', async () => {
     assert.equal(mem.get(key), undefined, '防抖版 save() 不应立即写入');
 
     // 使用真实回合完成回调写入时间戳 / 耗时，并同步落盘；界面绘制失败也不能影响持久化。
-    const { persistTurnTiming } = await import('../js/ui-toolflow.js?v=2026.10.11.1');
+    const { persistTurnTiming } = await import('../js/ui-toolflow.js?v=2026.10.25.1');
     const realNow = Date.now;
     Date.now = () => 1780000006400;
     try { persistTurnTiming(store, 6400, new Map(), () => {}, () => {}, () => {}); }
@@ -3580,7 +3580,7 @@ test('网络层错误才换域名：HTTP 4xx/5xx 与主动停止都不换', asyn
 });
 
 test('请求期切换：.com 网络失败 → 自动用 .cn 重放并记住', async () => {
-  const api = await import('../js/api.js?v=2026.10.11.1');
+  const api = await import('../js/api.js?v=2026.10.25.1');
   const ep = await import('../js/endpoint.js');
   const realFetch = globalThis.fetch;
   const savedLS = globalThis.localStorage;
@@ -4823,7 +4823,8 @@ test('气泡脚注耗时与相对时间；Off 不画思考过程', async () => {
   assert.equal(ui.includes('details class="reasoning"'), false, '思考过程不得再用 details');
   assert.match(ui, /classList\.toggle\('expanded'\)/);
   assert.match(ui, /chip-detail reason-detail/);
-  assert.match(ui, /m\.toolCalls && m\.toolCalls\.length\) \{ foot\.hidden = true/);
+  const footPainter = fsp.readFileSync(new URL('../js/ui-foot.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(footPainter, /message\.toolCalls && message\.toolCalls\.length\) \{ foot\.hidden = true/, 'tool-call assistant messages with metadata must keep their own footer');
   assert.match(css, /\.reasoning \{[\s\S]{0,220}width:\s*100%/);
   assert.match(css, /\.tool-chips \{[^}]*gap:\s*0/); // 2026.9.27.16 行距统一：gap 归零由父级节奏控制
   assert.match(css, /\.reasoning \.chip-detail \{[\s\S]{0,280}padding-left:\s*21px/, '思考正文跟标题齐，不要顶到图标左边');
@@ -4845,9 +4846,12 @@ test('气泡脚注耗时与相对时间；Off 不画思考过程', async () => {
   assert.ok(tldrAt >= 0 && tldrAt < apiAt, 'TL;DR 必须出现在协议表之前');
   assert.match(css, /\.msg-user-bar/);
   assert.match(css, /\.tok-pop \{/);
-  assert.match(ui, /function fmtClock/);
-  assert.match(ui, /minutes ago/);
-  assert.match(ui, /\$\{m\}m \$\{s\}s/);
+  const commonUi = fsp.readFileSync(new URL('../js/ui-common.js', import.meta.url), 'utf8');
+  const intlUi = fsp.readFileSync(new URL('../js/i18n.js', import.meta.url), 'utf8');
+  assert.match(commonUi, /export function fmtClock/);
+  assert.match(commonUi, /unit:\s*'minute'/);
+  assert.match(intlUi, /Intl\.RelativeTimeFormat/);
+  assert.match(intlUi, /export function formatRelativeTime/);
   assert.match(ui, /reasoningLevel !== 'off'/);
   assert.match(ui, /think-hidden/);
   assert.match(css, /\.msg-foot \{/);
@@ -8895,7 +8899,7 @@ test('ui.js 拆分：文件面板 / 全屏预览 / 附件 / 图表各自成模�
   // 必须自己 import、自己声明，或经 install*(deps) 注入——否则运行时 ReferenceError（上线前真踩过 ICON / safeImgSrc）。
   // $ / $$ 故意不查：正则字面量里的引号会让简易去字符串器失准；它们缺失时页面根本挂不起来，dom-smoke 必然报
   // （P4 起 ui.js 也从 ui-markdown.js 导入 $ / $$，所以要在这里显式剔除）
-  const uiImported = [...ui.matchAll(/^import\s*\{([^}]*)\}/gm)].flatMap((m) => m[1].split(',').map((x) => x.trim().split(/\s+as\s+/).pop().trim()).filter(Boolean)).filter((n) => n !== '$' && n !== '$$');
+  const uiImported = [...ui.matchAll(/^import\s*\{([^}]*)\}/gm)].flatMap((m) => m[1].split(',').map((x) => x.trim().split(/\s+as\s+/).pop().trim()).filter(Boolean)).filter((n) => n !== '$' && n !== '$$' && n !== 't');
   const uiHelpers = ['el', 'esc', 'fmtSize', 'safeImgSrc', 'safeHref', 'sanitizeSvgRaw', 'highlightCode', 'toast', 'renderMarkdown', 'sandboxPath', 'headingSlug'];
   for (const mod of ['ui-files-panel', 'ui-message-scroll', 'ui-lightbox', 'ui-attachments', 'ui-capability', 'quickviz', 'ui-markdown', 'ui-model-picker', 'ui-popovers', 'ui-command-palette', 'ui-system-commands']) {
     const src = fsp.readFileSync(new URL(`../js/${mod}.js`, import.meta.url), 'utf8');
@@ -8911,6 +8915,11 @@ test('ui.js 拆分：文件面板 / 全屏预览 / 附件 / 图表各自成模�
       if (!name || provided.has(name)) continue;
       const re = new RegExp(`(?<![\\w$.])${escapeRe(name)}(?![\\w$])`);
       assert.ok(!re.test(code), `${mod}.js 使用了 ${name} 但既未 import / 声明，也未经 deps 注入`);
+    }
+    // `t` 是短变量名，不能用上面的全文件词面扫描（会把局部变量或正则转义 `\\t` 当成全局翻译函数）。
+    // 只对真实的 t(...) 调用单独检查，仍保证用到译文的子模块显式提供翻译器。
+    if (/(?<![\w$.\\])t\s*\(/.test(code)) {
+      assert.ok(provided.has('t'), `${mod}.js 调用了 t() 但既未 import / 声明，也未经 deps 注入`);
     }
   }
   assert.match(ui, /const \{ renderFiles, openFileViewer, closeViewer \} = installFilesPanel\(/);
@@ -10044,7 +10053,7 @@ test('UI 接线：状态栏仅显示状态，工具能力表与直达修复操�
 group('P4 修正：巨型单文件 → agent.js 抽出 toolrunner.js / turnfinalizer.js；ui.js 再拆 5 个 install*(deps) 模块；nexus.js 立界不拆');
 
 test('toolrunner.js：createToolRunner(deps) 返回 runToolCalls / toolCtxFor；agent.js 转发的调度导出与 toolrunner 同一引用', async () => {
-  const tr = await import('../js/toolrunner.js?v=2026.10.11.1'); // 与 agent.js 的 import 同一实例（带 ?v=）
+  const tr = await import('../js/toolrunner.js?v=2026.10.25.1'); // 与 agent.js 的 import 同一实例（带 ?v=）
   const ag = await import('../js/agent.js');
   assert.equal(typeof tr.createToolRunner, 'function');
   const runner = tr.createToolRunner({ store: { state: { settings: {} } }, emit: () => {}, getFs: () => null, runSubagent: async () => '' });
@@ -10086,7 +10095,7 @@ test('ui.js 第三刀：ui-markdown / ui-model-picker / ui-popovers / ui-command
     assert.ok(name in md, `ui-markdown.js 应导出 ${name}`);
   }
   const uiMod = await import('../js/ui.js');
-  const mdV = await import('../js/ui-markdown.js?v=2026.10.11.1');
+  const mdV = await import('../js/ui-markdown.js?v=2026.10.25.1');
   assert.strictEqual(uiMod.renderMarkdown, mdV.renderMarkdown, 'ui.js 再导出同一个 renderMarkdown（旧 import 路径不变）');
   assert.strictEqual(uiMod.videoBlobUrl, mdV.videoBlobUrl);
   assert.match(ui, /const \{ inSystem, isSystemIsolated, selectModel, chatModels, updateModelBtn, renderModelMenu, refreshModels, syncGateway \} = installModelPicker\(\{/);
@@ -10969,7 +10978,7 @@ test('界面动效偏好：auto / on / off 三态，on 覆盖系统 reduce，off
   assert.match(main, /applyMotion\(\);/);
   assert.match(main, /browserFeatureReport\(\)[\s\S]*?dubhe-oldbrowser-noted/);
   const css = fsp.readFileSync(new URL('../css/styles.css', import.meta.url), 'utf8');
-  assert.equal((css.match(/@media \(prefers-reduced-motion: reduce\) \{/g) || []).length, 11, '含嵌套编辑预览、语音球体、设置详情与状态抛光的减少动效块（原思维链逐行动画已移除；跨页过渡在 css/page-fx.css）');
+  assert.equal((css.match(/@media \(prefers-reduced-motion: reduce\) \{/g) || []).length, 12, '含欢迎页/思考摘要动效、嵌套编辑预览、语音球体、设置详情与状态抛光的减少动效块（原思维链逐行动画已移除；跨页过渡在 css/page-fx.css）');
   assert.doesNotMatch(css, /thinkLineEnter|think-stream/, '进度摘要不再逐行呈现原始思维链');
   const reduceBlocks = css.split('@media (prefers-reduced-motion: reduce) {').slice(1);
   for (const b of reduceBlocks) {
@@ -11323,7 +11332,7 @@ test('截图回归：扫描入口、顶栏错位、面板宽度、简短思考�
   assert.match(ui, /think-full-text/);
   assert.doesNotMatch(ui, /renderMarkdown\(m\.reasoning\)/);
   assert.match(ui, /configured \? localeText\('已配置', 'Configured'\)/);
-  assert.match(css, /\.mini-btn:is\(\.admin-mode, \.configured-mode\) \{ background: var\(--fg\); color: var\(--bg\); border-color: var\(--fg\); \}/);
+  assert.match(css, /\.mini-btn:is\(\.admin-mode, \.configured-mode\) \{ background: var\(--chat-user-bubble\); color: var\(--chat-user-text\); border-color: var\(--chat-user-bubble\); opacity: \.82; \}/);
   assert.match(prompts, /少用 emoji/);
   assert.match(prompts, /Use emoji sparingly/);
 });

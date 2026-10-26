@@ -1,6 +1,6 @@
 // Stable editing DOM: filenames, headers, existing lines and scroll position survive
 // parameter deltas. Only new/changed lines are patched; no per-delta innerHTML reset.
-import { editPreviewMeta, editPreviewFoot } from './ui-markdown.js?v=2026.10.11.1';
+import { editPreviewMeta, editPreviewFoot } from './ui-markdown.js?v=2026.10.25.1';
 import { text as localeText } from './locale.js';
 
 const make = (tag, cls, text) => {
@@ -160,7 +160,7 @@ export function toggleEditingFold(node) {
   return expanded;
 }
 
-import { presentationCallSettled } from './toolpresentation.js?v=2026.10.11.1';
+import { presentationCallSettled } from './toolpresentation.js?v=2026.10.25.1';
 export function syncEditingFold(node, { messages, resultIds, busy }) {
   if (!node) return false;
   const owner = messages.find((m) => m.id === node.dataset.ownerId);

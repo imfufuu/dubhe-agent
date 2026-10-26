@@ -1,32 +1,13 @@
 import { preserveLanguageViewport } from './language-scroll.js';
-import { motionAllowed, veilFade } from './page-fx.js?v=2026.10.11.1';
-import { getLanguage, languagePreference, setLanguagePreference, onLanguageChange, setLanguageTransition } from './locale.js';
-import { UI_STRINGS } from './ui-strings.js?v=2026.10.11.1';
+import { motionAllowed, veilFade } from './page-fx.js?v=2026.10.25.1';
+import { getLanguage, getIntlLocale, languagePreference, setLanguagePreference, onLanguageChange, setLanguageTransition } from './locale.js';
+import { getCurrencyPreference, setCurrencyPreference, onCurrencyChange } from './currency.js';
+import { translateUI } from './i18n.js?v=2026.10.25.1';
+export { translateUI };
 // Only UI chrome is translated. Message bodies, code, file names, model output and user content retain their exact values.
 const PRIVATE = '.md-body,.chip-detail,.ep-tx,.ep-path,.tree-name,.fp-name,.file-path,.thought-text,.reasoning-text,.files-name,.file-name,.ft-name,.session-title,.sess-title,[data-i18n-ignore],textarea,pre,code,script,style';
-export function translateUI(value, language = getLanguage()) {
-  const raw = String(value ?? ''); if (language !== 'en') return raw;
-  const key = raw.trim(), exact = Object.hasOwn(UI_STRINGS, key) ? UI_STRINGS[key] : null;
-  if (exact) return raw.replace(key, exact);
-  const rules = [
-    [/^(Dubhe Agent) · 构建 (.+)$/, '$1 · Build $2'],
-    [/^(Dubhe Agent V1\.\d+) · 构建 (.+) · 独立项目，与 TeamoRouter 互不隶属$/, '$1 · Build $2 · Independent of TeamoRouter'], [/^(Dubhe Agent V1\.\d+) · 构建 (.+)$/, '$1 · Build $2'],
-    [/^思考 (.+)$/, 'Reasoning $1'], [/^已禁用 (\d+)$/, '$1 disabled'], [/^(\d+) 个会话 · (.+)$/, '$1 conversations · $2'],
-    [/^剩余 (.+)$/, 'Remaining $1'], [/^已用 (.+)$/, 'Used $1'],
-    [/^(\d+) 个文件$/, '$1 files'], [/^已选 (\d+) 条$/, '$1 selected'],
-    [/^思考 ([\d.]+s)$/, 'Thinking $1'], [/^耗时 (.+)$/, 'Duration $1'],
-    [/^已复制 (.+)$/, 'Copied $1'], [/^已删除 (\d+) .+$/, 'Deleted $1 items'],
-    [/^共 (\d+) .+$/, 'Total: $1'], [/^无匹配模型$/, 'No matching models'],
-    [/^未找到 (.+)$/, 'Not found: $1'], [/^加载更早的消息.*$/, 'Load earlier messages'],
-    [/^显示最近 (\d+) 条.*$/, 'Showing the latest $1 messages'],
-    [/^当前沙箱 (.+)$/, 'Workspace: $1'], [/^已连接：(.+)$/, 'Connected: $1'],
-    [/^自定义地址不可用：(.+)$/, 'Custom relay unavailable: $1'],
-    [/^已添加模型 ID：(.+)$/, 'Added model ID: $1'], [/^已移除模型 ID：(.+)$/, 'Removed model ID: $1'],
-    [/^(.+) 官方文档$/, '$1 official docs'],
-  ];
-  for (const [re, replacement] of rules) if (re.test(key)) return raw.replace(key, key.replace(re, replacement));
-  return raw;
-}
+const QUICK_TOGGLE_LANGUAGES = new Set(['zh', 'en']);
+
 export function installLanguage(root = document) {
   const texts = new WeakMap(), attrs = new WeakMap();
   let observer, queued = false;
@@ -44,7 +25,7 @@ export function installLanguage(root = document) {
       if (node.matches('script,style,[data-i18n-ignore]')) return;
       // Localized accessible labels are UI; never touch href, src, values, IDs or tool arguments.
       let record = attrs.get(node); if (!record) { record = {}; attrs.set(node, record); }
-      const privateContent = node.closest(PRIVATE) && !node.matches('button,[role=button],.chip-copy,.cb-copy');
+      const privateContent = node.closest(PRIVATE) && !node.matches('button,[role=button],.chip-copy,.cb-copy,textarea');
       for (const attr of privateContent ? [] : ['title', 'aria-label', 'placeholder']) {
         if (!node.hasAttribute(attr)) continue;
         const current = node.getAttribute(attr), previous = record[attr];
@@ -65,25 +46,44 @@ export function installLanguage(root = document) {
     for (const r of records) { if (r.type === 'childList') for (const n of r.addedNodes) pending.add(n); else pending.add(r.target); }
     if (!queued && pending.size) { queued = true; queueMicrotask(flush); }
   });
-  // 语言切换：整页先渐隐到「主题底色」（浅色渐白、深色渐黑到底）→ 全盖住时执行所有语言回调 → 缓缓渐显。
-  // 遮罩先出现、回调放在全盖住时执行：卡顿发生在看不见的时候，而不是点击后画面冻住。
-  // 定位与配色全部来自 css/page-fx.css：落地页 CSP 是 style-src 'self'，早先用 style 属性写遮罩在首页会被整条丢掉。
+  // The veil reaches the theme background before language callbacks mutate visible UI labels.
   setLanguageTransition((run, changed) => {
     const doc = root.ownerDocument || root;
     if (changed && motionAllowed(doc) && doc.body) {
-      // transition() is intentionally fire-and-forget; veilFade still cleans up if an observer callback throws.
       void veilFade(doc, () => preserveLanguageViewport(doc, run)).catch(() => {});
     } else preserveLanguageViewport(doc, run);
   });
+  const syncCurrencySelect = () => {
+    const doc = root.ownerDocument || root;
+    const select = doc.getElementById('set-currency');
+    if (select) select.value = getCurrencyPreference();
+  };
   const sync = () => {
-    const doc = root.ownerDocument || root; doc.documentElement.lang = getLanguage() === 'en' ? 'en' : 'zh-CN';
-    doc.documentElement.dataset.uiLanguage = getLanguage();
+    const doc = root.ownerDocument || root;
+    const lang = getLanguage();
+    doc.documentElement.lang = getIntlLocale(lang);
+    doc.documentElement.dataset.uiLanguage = lang;
     observer.disconnect(); translate(root); watch();
     const select = doc.getElementById('set-language'); if (select) select.value = languagePreference();
-    doc.querySelectorAll('[data-language-toggle]').forEach((b) => { b.textContent = getLanguage() === 'en' ? '中文' : 'EN'; b.setAttribute('aria-label', getLanguage() === 'en' ? 'Switch to Chinese' : 'Switch to English'); });
+    syncCurrencySelect();
+    doc.querySelectorAll('[data-language-toggle]').forEach((b) => {
+      const visible = QUICK_TOGGLE_LANGUAGES.has(lang);
+      b.hidden = !visible;
+      b.textContent = lang === 'en' ? '中文' : 'EN';
+      b.setAttribute('aria-label', lang === 'en' ? 'Switch to Chinese' : 'Switch to English');
+    });
   };
-  root.addEventListener('click', (e) => { if (e.target.closest?.('[data-language-toggle]')) setLanguagePreference(getLanguage() === 'en' ? 'zh' : 'en'); });
-  root.addEventListener('change', (e) => { if (e.target.id === 'set-language') setLanguagePreference(e.target.value); });
-  onLanguageChange(sync); sync();
+  root.addEventListener('click', (e) => {
+    if (!e.target.closest?.('[data-language-toggle]')) return;
+    const lang = getLanguage();
+    if (lang === 'zh' || lang === 'en') setLanguagePreference(lang === 'en' ? 'zh' : 'en');
+  });
+  root.addEventListener('change', (e) => {
+    if (e.target.id === 'set-language') setLanguagePreference(e.target.value);
+    else if (e.target.id === 'set-currency') setCurrencyPreference(e.target.value);
+  });
+  onLanguageChange(sync);
+  onCurrencyChange(syncCurrencySelect);
+  sync();
   return { sync, translate: (node) => { observer.disconnect(); translate(node); watch(); }, disconnect: () => observer.disconnect() };
 }

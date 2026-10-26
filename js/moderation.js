@@ -6,7 +6,7 @@
 
 import { askJev, noul, choice, score, noulOf, choiceOf, scoreOf, confidenceOf, JEV_MODEL, JEV_TIMEOUT_MS } from './jev.js';
 import { analyzeImage } from './vision.js';
-import { DEFAULT_GATEWAY_ID, getGateway, defaultVisionModelForGateway } from './gateway-registry.js?v=2026.10.11.1';
+import { DEFAULT_GATEWAY_ID, getGateway, defaultVisionModelForGateway } from './gateway-registry.js?v=2026.10.25.1';
 import { BLOCKING_TEXT, policyTextHeuristic } from './local-text-policy.js';
 export { policyTextHeuristic } from './local-text-policy.js';
 

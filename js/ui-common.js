@@ -1,4 +1,6 @@
-import { $, el, esc } from './ui-markdown.js?v=2026.10.11.1';
+import { $, el, esc } from './ui-markdown.js?v=2026.10.25.1';
+import { getIntlLocale } from './locale.js';
+import { formatRelativeTime } from './i18n.js?v=2026.10.25.1';
 // ── Toast（底部最多堆叠 3 条，超出自动隐藏并移除最旧消息）──────────────────
 export const MAX_TOAST_STACK = 3;
 export function toast(msg, type = 'info', ms = 2600) {
@@ -23,26 +25,12 @@ export function toast(msg, type = 'info', ms = 2600) {
 }
 
 export function fmtClock(ms) {
-  const total = Math.max(0, Math.round(Number(ms) / 1000));
-  const m = Math.floor(total / 60);
-  const s = total % 60;
-  if (m <= 0) return `${s}s`;
-  return `${m}m ${s}s`;
+  const total = Math.max(0, Math.round(Number(ms) / 1000) || 0);
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  const locale = getIntlLocale();
+  const minute = new Intl.NumberFormat(locale, { style: 'unit', unit: 'minute', unitDisplay: 'narrow', maximumFractionDigits: 0 });
+  const second = new Intl.NumberFormat(locale, { style: 'unit', unit: 'second', unitDisplay: 'narrow', maximumFractionDigits: 0 });
+  return minutes <= 0 ? second.format(seconds) : `${minute.format(minutes)} ${second.format(seconds)}`;
 }
-export function fmtAgo(ts) {
-  const sec = Math.max(0, Math.round((Date.now() - Number(ts || 0)) / 1000));
-  if (sec < 45) return 'just now';
-  if (sec < 90) return '1 minute ago';
-  if (sec < 3600) {
-    const n = Math.round(sec / 60);
-    return n === 1 ? '1 minute ago' : `${n} minutes ago`;
-  }
-  if (sec < 5400) return '1 hour ago';
-  if (sec < 86400) {
-    const n = Math.round(sec / 3600);
-    return n === 1 ? '1 hour ago' : `${n} hours ago`;
-  }
-  const d = Math.round(sec / 86400);
-  return d === 1 ? '1 day ago' : `${d} days ago`;
-}
-
+export function fmtAgo(ts) { return formatRelativeTime(ts); }

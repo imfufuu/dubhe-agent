@@ -27,7 +27,8 @@ test('reasoning UI parses GPT summary markers only and shows complete non-GPT re
   assert.match(ui, /reasoningSummaryItems\(m\.reasoning, reasoningModel\)/);
   assert.match(ui, /isGptModel\(reasoningModel\)/);
   assert.match(ui, /think-full-text/);
-  assert.match(ui, /full\.textContent !== fullText/);
+  assert.match(ui, /renderReasoningLines\(full, m\.reasoning, \{ animate: thinkRunning \}\)/);
+  assert.match(ui, /renderReasoningLines\(list, summaryItems, \{ summary: true, animate: thinkRunning \}\)/);
   assert.match(css, /\.reasoning \.think-full-text/);
   assert.match(css, /\.reasoning\.expanded > \.chip-detail/);
   assert.match(css, /\.reasoning\.live\s*>\s*\.chip-detail/);

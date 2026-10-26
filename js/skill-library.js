@@ -1,7 +1,7 @@
 // Extension skills are a separate, lazy library. Neither this module nor the
 // system prompt imports skill bodies; the Agent explicitly searches/reads them.
 import { getLanguage } from './locale.js';
-import { knowledgeTokens } from './knowledge.js?v=2026.10.11.1';
+import { knowledgeTokens } from './knowledge.js?v=2026.10.25.1';
 const stored = new Map();
 const BASE = new URL('../assets/skills/', import.meta.url);
 export const SKILL_PAGE_CHARS = 6500;

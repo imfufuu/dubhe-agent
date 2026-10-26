@@ -1,5 +1,5 @@
 // Stable DOM fragments in persisted SSE order plus lightweight UI lifecycle helpers.
-import { displayParts, toolFamily, adjacentToolMessages } from './toolflow.js?v=2026.10.11.1';
+import { displayParts, toolFamily, adjacentToolMessages } from './toolflow.js?v=2026.10.25.1';
 export function syncToolMenuCursor(chips, live) {
   if (!chips) return null;
   let cursor = chips.querySelector(':scope > .tool-menu-cursor');
@@ -77,7 +77,7 @@ export function paintOrderedAssistant(wrap, m, { paintPart, paintMeta, paintFoot
   return false;
 }
 
-import { toolWindowsOf, renderToolWindowsHtml } from './toolwindows.js?v=2026.10.11.1';
+import { toolWindowsOf, renderToolWindowsHtml } from './toolwindows.js?v=2026.10.25.1';
 export function renderToolChipDetail(chip) {
     if (!chip || !chip._detail) return;
     const w = toolWindowsOf(chip);
@@ -98,7 +98,7 @@ export function renderToolChipDetail(chip) {
   }
 
 
-import { $, $$, el, esc } from './ui-markdown.js?v=2026.10.11.1';
+import { $, $$, el, esc } from './ui-markdown.js?v=2026.10.25.1';
 import { ICON } from './icons.js';
 
 // 2026.10.21：知识库检索 = 独立消息块。检索中：英文进行时「Searching library」+ 与命令/文件行

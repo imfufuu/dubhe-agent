@@ -90,7 +90,7 @@ test('更多常见文件预览：音频播放器、旧版 Office 提示、查看
   assert.match(panel, /isLegacyOffice/, '旧版 .doc/.ppt/.xls 给另存为提示');
   assert.match(panel, /officeKind && byteLen <= FV_OFFICE_MAX/, 'Office 预览有体积上限');
   assert.match(panel, /data-office="\$\{officeKind\}"/);
-  assert.match(panel, /await import\('\.\/office-preview\.js\?v=2026\.10\.11\.1'\)/, 'office-preview 按需加载');
+  assert.match(panel, /await import\('\.\/office-preview\.js\?v=2026\.10\.25\.1'\)/, 'office-preview 按需加载');
 });
 
 test('[[file:路径]] 文件小卡片：渲染可点卡片、非法路径保持原文、点击打开查看器、分享文档转下载', async () => {

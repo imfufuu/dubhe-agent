@@ -3,14 +3,15 @@
 //       token 构成与本轮费用弹层（showTokBreak）。能力表只在设置页展开，不复用此弹层。
 // 不拥有：会话统计文字（updateStats 留在 ui.js）。
 // 只读 store，不改状态；本文件绝不 import ui.js。
-import { $, esc } from './ui-markdown.js?v=2026.10.11.1';
-import { providerOf, systemPrompt } from './config.js?v=2026.10.11.1';
+import { $, esc } from './ui-markdown.js?v=2026.10.25.1';
+import { providerOf, systemPrompt } from './config.js?v=2026.10.25.1';
 import { providerIcon } from './icons.js';
 import { estimateTokens } from './context.js';
 import { tokenBreakdown, formatTokBreak } from './commands.js';
 import { priceBadgeFor, formatCcy } from './pricing.js';
-import { modelDisplayName } from './smartrouter.js?v=2026.10.11.1';
+import { modelDisplayName } from './smartrouter.js?v=2026.10.25.1';
 import { onLanguageChange } from './locale.js';
+import { onCurrencyChange } from './currency.js';
 
 export function installPopovers({ store }) {
   function hideTokPop() {
@@ -126,14 +127,16 @@ export function installPopovers({ store }) {
     pop.hidden = false;
     placeTokPop(anchor && anchor.nodeType ? anchor : stats);
   }
-  onLanguageChange(() => {
+  const refreshVisibleTokenPopover = () => {
     const pop = $('#tok-pop');
     if (!pop || pop.hidden || pop.dataset.kind !== 'tokens') return;
     if (pop._turnInfo?.summary) pop._turnInfo.summary.formatted = formatCcy(pop._turnInfo.summary.totalUsd);
     const anchor = pop._anchor || $('#conv-stats');
     pop.hidden = true;
     showTokBreak(anchor, pop._turnInfo);
-  });
+  };
+  onLanguageChange(refreshVisibleTokenPopover);
+  onCurrencyChange(refreshVisibleTokenPopover);
   // 打开期间：Esc 收起（对话框语义，模态优先）；窗口尺寸 / 滚动变了就重新贴回锚点
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;

@@ -1,4 +1,4 @@
-import { APP_VERSION } from './config.js?v=2026.10.11.1';
+import { APP_VERSION } from './config.js?v=2026.10.25.1';
 import { getLanguage } from './locale.js';
 
 export const KNOWLEDGE_MAX_CHARS = 7500;

@@ -1,15 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { createHash } from 'node:crypto';
-import { OFFLINE_MODEL_ID, OFFLINE_MODEL_REPO, OFFLINE_MODEL_REVISION, OFFLINE_MODEL_FILE, OFFLINE_MODEL_URL, OFFLINE_MODEL_SIZE_BYTES, OFFLINE_MODEL_SHA256 } from '../js/offline-model-config.js';
-import { downloadOfflineModel, formatOfflineDownloadProgress, getOfflineModelStatus, removeOfflineModel, sha256Blob, streamOfflineModel, supportsOfflineModelStorage, verifyOfflineModelIntegrity } from '../js/offline-model.js';
+import { OFFLINE_MODEL_CONTEXT_BUDGET, OFFLINE_MODEL_CONTEXT_SIZE, OFFLINE_MODEL_ID, LEGACY_OFFLINE_MODEL_IDS, MAX_SINGLE_GGUF_BYTES, isOfflineModelId } from '../js/offline-model-config.js';
+import { getOfflineModelFile, getOfflineModelStatus, importOfflineModel, removeOfflineModel, streamOfflineModel, supportsOfflineModelStorage, syncOfflineModelAvailability } from '../js/offline-model.js';
 import { OFFLINE_ALLOWED_TOOL_NAMES, isOfflineToolAllowed } from '../js/offline-policy.js';
 import { TOOL_DEFS, executeTool } from '../js/tools.js';
 import { createAgent } from '../js/agent.js';
 import { createStore } from '../js/state.js';
 import { streamChat, fetchModels } from '../js/api.js';
 import { updateScriptCache } from '../js/cache-update.js';
+import { makeGGUF } from './helpers/gguf-fixture.mjs';
 
 const setGlobal = (name, value) => {
   const prior = Object.getOwnPropertyDescriptor(globalThis, name);
@@ -19,239 +19,234 @@ const setGlobal = (name, value) => {
 function offlineGate(value = true) {
   return setGlobal('__dubheOfflineNetworkGate', { offline: value, blockedRequests: [], record(input, kind) { this.blockedRequests.push({ input, kind }); } });
 }
-function fakeModel({ size = OFFLINE_MODEL_SIZE_BYTES, validate = 'valid', metadata = {} } = {}) {
-  return {
-    url: OFFLINE_MODEL_URL,
-    size,
-    files: [{ metadata }],
-    removed: 0,
-    validate() { return validate; },
-    async remove() { this.removed++; },
-    async open() { return [new Blob(['short fake blob'])]; },
-  };
+function notFound(name) {
+  const error = new Error(`${name} not found`);
+  error.name = 'NotFoundError';
+  return error;
 }
-function fakeCacheManager() {
-  const state = { size: 0, metadata: null, deleted: 0 };
-  const cache = {
-    state,
-    async getNameFromURL(url) { assert.equal(url, OFFLINE_MODEL_URL); return 'pinned-model.gguf'; },
-    async getSize(name) { assert.equal(name, 'pinned-model.gguf'); return state.size || -1; },
-    async readMetadata(name) { assert.equal(name, 'pinned-model.gguf'); return state.metadata; },
-    async writeMetadata(name, metadata) { assert.equal(name, 'pinned-model.gguf'); state.metadata = { ...metadata }; },
-    async delete(url) { assert.equal(url, OFFLINE_MODEL_URL); state.size = 0; state.metadata = null; state.deleted++; },
+function fakeOPFS({ quotaBytes = 20 * 1024 ** 3 } = {}) {
+  const files = new Map();
+  const root = {
+    async getFileHandle(name, { create = false } = {}) {
+      if (!files.has(name)) {
+        if (!create) throw notFound(name);
+        files.set(name, new Blob([]));
+      }
+      return {
+        async getFile() { return files.get(name); },
+        async createWritable() {
+          const chunks = [];
+          return new WritableStream({
+            write(chunk) { chunks.push(chunk); },
+            close() { files.set(name, new Blob(chunks)); },
+            abort() { chunks.length = 0; },
+          });
+        },
+      };
+    },
+    async removeEntry(name) {
+      if (!files.has(name)) throw notFound(name);
+      files.delete(name);
+    },
   };
-  return cache;
-}
-function modelFromCache(cache) {
   return {
-    url: OFFLINE_MODEL_URL,
-    size: OFFLINE_MODEL_SIZE_BYTES,
-    get files() { return [{ metadata: cache.state.metadata || {} }]; },
-    validate() { return cache.state.size === OFFLINE_MODEL_SIZE_BYTES ? 'valid' : 'invalid'; },
-    async remove() { await cache.delete(OFFLINE_MODEL_URL); },
-    async open() { return [new Blob(['short fake blob'])]; },
-  };
-}
-function fakeNavigator() {
-  return {
-    hardwareConcurrency: 4,
+    files,
+    root,
     storage: {
-      async getDirectory() { return {}; },
+      async getDirectory() { return root; },
       async persist() { return true; },
-      async estimate() { return { quota: 2_000_000_000, usage: 0 }; },
+      async estimate() { return { quota: quotaBytes, usage: [...files.values()].reduce((sum, file) => sum + file.size, 0) }; },
     },
   };
 }
 
-test('offline model identity is pinned to the expected repository, revision, size and content hash', () => {
-  assert.equal(OFFLINE_MODEL_REPO, 'saidutta69/Qwen2.5-1.5B-Instruct-heretic');
-  assert.equal(OFFLINE_MODEL_REVISION, 'aef80af71c5b26237c31454f1f570e30eb05f9eb');
-  assert.equal(OFFLINE_MODEL_FILE, 'Qwen2.5-1.5B-Instruct-heretic-Q4_K_M.gguf');
-  assert.equal(OFFLINE_MODEL_URL, `https://huggingface.co/${OFFLINE_MODEL_REPO}/resolve/${OFFLINE_MODEL_REVISION}/${OFFLINE_MODEL_FILE}`);
-  assert.equal(OFFLINE_MODEL_SIZE_BYTES, 986_048_736);
-  assert.equal(OFFLINE_MODEL_SHA256, '76d6e62551937fcd4cbcdf9664459cc7c87d08b3570150c6d03161a0233bb0c3');
-  assert.equal(OFFLINE_MODEL_ID, 'local/qwen2.5-1.5b-instruct-heretic-q4_k_m');
+function namedGGUF(fileName = 'sample-1B-Q4_K_M.gguf', overrides = {}) {
+  return makeGGUF({ fileName, ...overrides });
+}
+
+test('offline model identity is a generic GGUF slot and recognizes the former local ID only for migration', () => {
+  assert.equal(OFFLINE_MODEL_ID, 'local/gguf');
+  assert.equal(isOfflineModelId(OFFLINE_MODEL_ID), true);
+  assert.ok(LEGACY_OFFLINE_MODEL_IDS.includes('local/qwen2.5-1.5b-instruct-heretic-q4_k_m'));
+  assert.equal(isOfflineModelId(LEGACY_OFFLINE_MODEL_IDS[0]), true);
+  assert.equal(isOfflineModelId('gpt-5.6-sol'), false);
+  assert.equal(OFFLINE_MODEL_CONTEXT_SIZE, 4096);
+  assert.equal(OFFLINE_MODEL_CONTEXT_BUDGET, 3072);
+  assert.equal(MAX_SINGLE_GGUF_BYTES, (2 * 1024 ** 3) - 1);
 });
 
-test('streaming SHA-256 matches known and Node crypto digests and reports progress', async () => {
-  const small = new Blob(['abc']);
-  const smallProgress = [];
-  assert.equal(await sha256Blob(small, { onProgress: (p) => smallProgress.push(p) }), 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad');
-  assert.ok(smallProgress.length > 0);
-  assert.equal(smallProgress.at(-1).phase, 'verify');
-  const bytes = new Uint8Array(257 * 1024);
-  for (let i = 0; i < bytes.length; i++) bytes[i] = (i * 31 + 7) & 255;
-  const expected = createHash('sha256').update(bytes).digest('hex');
-  assert.equal(await sha256Blob(new Blob([bytes])), expected);
-});
-
-test('streaming SHA-256 honours an already-aborted signal', async () => {
-  const controller = new AbortController(); controller.abort();
-  await assert.rejects(sha256Blob(new Blob(['abc']), { signal: controller.signal }), (error) => error.name === 'AbortError');
-});
-
-test('storage support is gated on OPFS availability and secure-context status', () => {
+test('OPFS support requires a secure context and the browser storage API', () => {
   assert.equal(supportsOfflineModelStorage({ navigatorImpl: { storage: { getDirectory() {} } }, secureContext: true }), true);
   assert.equal(supportsOfflineModelStorage({ navigatorImpl: { storage: {} }, secureContext: true }), false);
   assert.equal(supportsOfflineModelStorage({ navigatorImpl: { storage: { getDirectory() {} } }, secureContext: false }), false);
 });
 
-test('integrity verifier rejects an unexpected cached blob byte length', async () => {
-  const model = fakeModel({ size: OFFLINE_MODEL_SIZE_BYTES - 1 });
-  const result = await verifyOfflineModelIntegrity(model);
-  assert.deepEqual({ ok: result.ok, reason: result.reason, size: result.size }, { ok: false, reason: 'size-mismatch', size: 15 });
+test('status check is local-only and reports an empty OPFS as no selected model', async () => {
+  const opfs = fakeOPFS();
+  const status = await getOfflineModelStatus({ storage: opfs.storage, secureContext: true });
+  assert.deepEqual(status, { supported: true, available: false, size: 0, metadata: null });
+  const store = createStore();
+  const synced = await syncOfflineModelAvailability(store, { storage: opfs.storage, notify: false });
+  assert.equal(synced.available, false);
+  assert.equal(store.state.offlineModelMetadata, null);
+  assert.equal(store.state.offlineModelChecked, true);
 });
 
-test('manual model download resumes through the pinned OPFS file and reports download, verification and ready phases', async () => {
-  const restoreNavigator = setGlobal('navigator', fakeNavigator());
-  const restoreGate = offlineGate(false);
-  const cache = fakeCacheManager();
-  const model = modelFromCache(cache);
-  const engine = { modelManager: {
-    cacheManager: cache,
-    async getModels(options = {}) {
-      const record = modelFromCache(cache);
-      if (options.includeInvalid) return cache.state.metadata?.originalURL === OFFLINE_MODEL_URL ? [record] : [];
-      return record.validate() === 'valid' && !['partial', 'verifying'].includes(record.files[0].metadata.downloadState) ? [record] : [];
-    },
-  } };
+test('local GGUF import parses metadata, copies it into OPFS and reports progress without network access', async () => {
+  const opfs = fakeOPFS();
+  const file = namedGGUF('sample-1.5B-Q4_K_M.gguf', { modelName: 'Sample GGUF 1.5B', parameterCount: 1_500_000_000n });
   const progress = [];
-  let resumeOptions = null;
+  const originalFetch = globalThis.fetch;
+  let fetchCalls = 0;
+  globalThis.fetch = async () => { fetchCalls++; throw new Error('model import must not use fetch'); };
   try {
-    const result = await downloadOfflineModel({
-      engineProvider: async () => engine,
-      onProgress: (p) => progress.push(p),
-      resumeDownload: async (options) => {
-        resumeOptions = options;
-        assert.equal(options.fileName, 'pinned-model.gguf');
-        assert.equal(options.metadata.originalURL, OFFLINE_MODEL_URL);
-        assert.equal(options.metadata.revision, OFFLINE_MODEL_REVISION);
-        assert.equal(options.metadata.sha256, OFFLINE_MODEL_SHA256);
-        options.onProgress({ loaded: 1234, total: OFFLINE_MODEL_SIZE_BYTES });
-        cache.state.size = OFFLINE_MODEL_SIZE_BYTES;
-        return { loaded: OFFLINE_MODEL_SIZE_BYTES, etag: '"test-etag"' };
-      },
-      verifyIntegrity: async (_candidate, { onProgress: report }) => {
-        report({ loaded: OFFLINE_MODEL_SIZE_BYTES, total: OFFLINE_MODEL_SIZE_BYTES, phase: 'verify' });
-        return { ok: true, actual: OFFLINE_MODEL_SHA256 };
-      },
+    const result = await importOfflineModel(file, {
+      storage: opfs.storage,
+      fileNameFactory: () => 'dubhe-local-model-test-1.gguf',
+      onProgress: (event) => progress.push(event),
     });
-    assert.ok(result);
-    assert.ok(resumeOptions);
-    assert.equal(cache.state.metadata.downloadState, 'complete');
-    assert.equal(cache.state.metadata.etag, '"test-etag"');
-    assert.deepEqual(progress.map((p) => p.phase), ['download', 'download', 'verify', 'ready']);
-    assert.equal(cache.state.deleted, 0, 'valid partial bytes are never discarded before resume');
-  } finally { restoreGate(); restoreNavigator(); }
+    assert.equal(result.available, true);
+    assert.equal(result.metadata.displayName, 'Sample GGUF 1.5B');
+    assert.equal(result.metadata.parameterCount, 1_500_000_000);
+    assert.equal(result.metadata.parameterCountSource, 'gguf-metadata');
+    assert.equal(result.metadata.quantization, 'Q4_K_M');
+    assert.equal(result.size, file.size);
+    assert.ok(opfs.files.has(result.metadata.fileName));
+    assert.equal((await opfs.files.get(result.metadata.fileName).arrayBuffer()).byteLength, file.size);
+    assert.equal(progress[0].percent, 0);
+    assert.equal(progress.at(-1).percent, 100);
+    assert.equal(fetchCalls, 0);
+  } finally { globalThis.fetch = originalFetch; }
 });
 
-test('offline state refuses the explicit downloader before creating an engine or fetching', async () => {
-  const restoreGate = offlineGate(true);
-  const originalFetch = globalThis.fetch; let calls = 0, engines = 0;
-  globalThis.fetch = async () => { calls++; throw Error('unexpected network'); };
-  try {
-    await assert.rejects(downloadOfflineModel({ engineProvider: async () => { engines++; return {}; } }), /离线状态/);
-    assert.equal(engines, 0);
-    assert.equal(calls, 0);
-  } finally { globalThis.fetch = originalFetch; restoreGate(); }
+test('replacing a GGUF is commit-safe and deletes the old file only after the new file is indexed', async () => {
+  const opfs = fakeOPFS();
+  const first = namedGGUF('first-1B-Q4_K_M.gguf', { modelName: 'First' });
+  const second = namedGGUF('second-3B-Q5_K_M.gguf', { modelName: 'Second', parameterCount: 3_000_000_000n });
+  await importOfflineModel(first, { storage: opfs.storage, fileNameFactory: () => 'dubhe-local-model-first.gguf' });
+  const replacement = await importOfflineModel(second, { storage: opfs.storage, fileNameFactory: () => 'dubhe-local-model-second.gguf' });
+  assert.equal(replacement.available, true);
+  assert.equal(replacement.metadata.displayName, 'Second');
+  assert.equal(opfs.files.has('dubhe-local-model-first.gguf'), false);
+  assert.equal(opfs.files.has('dubhe-local-model-second.gguf'), true);
+  assert.equal(JSON.parse(await opfs.files.get('dubhe-local-model.json').text()).fileName, 'dubhe-local-model-second.gguf');
 });
 
-test('an interrupted download preserves partial bytes and a later explicit click resumes from them', async () => {
-  const restoreNavigator = setGlobal('navigator', fakeNavigator());
-  const restoreGate = offlineGate(false);
-  const cache = fakeCacheManager();
-  const engine = { modelManager: {
-    cacheManager: cache,
-    async getModels(options = {}) {
-      const record = modelFromCache(cache);
-      if (options.includeInvalid) return cache.state.metadata?.originalURL === OFFLINE_MODEL_URL ? [record] : [];
-      return record.validate() === 'valid' && !['partial', 'verifying'].includes(record.files[0].metadata.downloadState) ? [record] : [];
-    },
-  } };
-  try {
-    await assert.rejects(downloadOfflineModel({
-      engineProvider: async () => engine,
-      resumeDownload: async ({ onProgress }) => {
-        cache.state.size = 123_456;
-        onProgress({ loaded: cache.state.size, total: OFFLINE_MODEL_SIZE_BYTES });
-        const error = new Error('aborted'); error.name = 'AbortError'; throw error;
-      },
-    }), (error) => error.name === 'AbortError');
-    assert.equal(cache.state.size, 123_456);
-    assert.equal(cache.state.metadata.downloadState, 'partial');
-    assert.equal(cache.state.deleted, 0, 'cancellation does not delete the resumable OPFS file');
-    const status = await getOfflineModelStatus({ engineProvider: async () => engine, storage: fakeNavigator().storage });
-    assert.equal(status.available, false);
-    assert.equal(status.partialBytes, 123_456);
-
-    await downloadOfflineModel({
-      engineProvider: async () => engine,
-      resumeDownload: async ({ onProgress }) => {
-        assert.equal(cache.state.size, 123_456, 'the existing partial byte count is kept');
-        onProgress({ loaded: OFFLINE_MODEL_SIZE_BYTES, total: OFFLINE_MODEL_SIZE_BYTES });
-        cache.state.size = OFFLINE_MODEL_SIZE_BYTES;
-        return { loaded: OFFLINE_MODEL_SIZE_BYTES, etag: '"resumed"' };
-      },
-      verifyIntegrity: async () => ({ ok: true, actual: OFFLINE_MODEL_SHA256 }),
-    });
-    assert.equal(cache.state.metadata.downloadState, 'complete');
-    const ready = await getOfflineModelStatus({ engineProvider: async () => engine, storage: fakeNavigator().storage });
-    assert.equal(ready.available, true);
-    assert.equal(ready.partialBytes, 0);
-  } finally { restoreGate(); restoreNavigator(); }
+test('aborting an OPFS copy removes the incomplete new file and leaves the previous model available', async () => {
+  const opfs = fakeOPFS();
+  await importOfflineModel(namedGGUF('original-1B.gguf', { modelName: 'Original' }), {
+    storage: opfs.storage,
+    fileNameFactory: () => 'dubhe-local-model-original.gguf',
+  });
+  const controller = new AbortController();
+  await assert.rejects(importOfflineModel(namedGGUF('replacement-2B.gguf', { modelName: 'Replacement' }), {
+    storage: opfs.storage,
+    signal: controller.signal,
+    fileNameFactory: () => 'dubhe-local-model-partial.gguf',
+    onProgress: (progress) => { if (progress.loaded > 0) controller.abort(); },
+  }), (error) => error.name === 'AbortError');
+  const status = await getOfflineModelStatus({ storage: opfs.storage, secureContext: true });
+  assert.equal(status.available, true);
+  assert.equal(status.metadata.displayName, 'Original');
+  assert.equal(opfs.files.has('dubhe-local-model-original.gguf'), true);
+  assert.equal(opfs.files.has('dubhe-local-model-partial.gguf'), false);
 });
 
-test('remove local model clears an incomplete OPFS download by its pinned URL', async () => {
-  const cache = fakeCacheManager(); cache.state.size = 321; cache.state.metadata = { originalURL: OFFLINE_MODEL_URL, downloadState: 'partial' };
-  const engine = { modelManager: { cacheManager: cache, async getModels() { return []; } } };
-  const result = await removeOfflineModel({ engineProvider: async () => engine });
-  assert.deepEqual(result, { removed: true });
-  assert.equal(cache.state.size, 0);
-  assert.equal(cache.state.deleted, 1);
+test('invalid extensions, oversized files and a clearly insufficient OPFS quota are rejected', async () => {
+  const opfs = fakeOPFS({ quotaBytes: 100 });
+  const wrongExtension = namedGGUF('model.bin');
+  await assert.rejects(importOfflineModel(wrongExtension, { storage: opfs.storage }), /只接受单文件 \.gguf/);
+  const tooLarge = { name: 'huge.gguf', size: MAX_SINGLE_GGUF_BYTES + 1, stream() { throw new Error('should not read an oversized file'); } };
+  await assert.rejects(importOfflineModel(tooLarge, { storage: opfs.storage }), /小于 2 GiB/);
+  await assert.rejects(importOfflineModel(namedGGUF(), { storage: opfs.storage }), /本地存储空间可能不足/);
+  assert.equal(opfs.files.size, 0);
 });
 
-test('local inference passes a cached model object to Wllama and never fetches a model URL', async () => {
-  const restoreGate = offlineGate(true);
-  const originalFetch = globalThis.fetch; let fetchCalls = 0, loaded = null, request = null;
-  globalThis.fetch = async () => { fetchCalls++; throw Error('network must stay unused'); };
-  const model = fakeModel();
+test('a selected file can be re-opened from OPFS and removed without constructing Wllama or accessing a gateway', async () => {
+  const opfs = fakeOPFS();
+  await importOfflineModel(namedGGUF('local-1B.gguf', { modelName: 'Local' }), {
+    storage: opfs.storage,
+    fileNameFactory: () => 'dubhe-local-model-local.gguf',
+  });
+  const local = await getOfflineModelFile({ storage: opfs.storage });
+  assert.equal(local.metadata.displayName, 'Local');
+  assert.equal(local.file.size, local.metadata.fileSize);
+  const removed = await removeOfflineModel({ storage: opfs.storage });
+  assert.deepEqual(removed, { removed: true, supported: true });
+  assert.equal((await getOfflineModelStatus({ storage: opfs.storage, secureContext: true })).available, false);
+});
+
+test('local inference passes the OPFS Blob array to Wllama 3.8.1 and never fetches a model URL', async () => {
+  const originalFetch = globalThis.fetch;
+  let fetchCalls = 0;
+  globalThis.fetch = async () => { fetchCalls++; throw new Error('local inference must not fetch'); };
+  let loaded = [];
+  let loadCalls = 0;
+  let exits = 0;
+  let request = null;
+  let isLoaded = false;
   const chunks = [{ choices: [{ delta: { content: 'Local answer.' } }] }];
   const engine = {
-    loaded: false,
-    isModelLoaded() { return this.loaded; },
-    async loadModel(value, options) { loaded = { value, options }; this.loaded = true; },
+    isModelLoaded() { return isLoaded; },
+    async loadModel(value, options) { loaded.push({ value, options }); loadCalls++; isLoaded = true; },
+    async exit() { exits++; isLoaded = false; },
     async createChatCompletion(options) { request = options; return (async function* () { yield* chunks; })(); },
   };
+  const fileA = new Blob(['model-a']);
+  const fileB = new Blob(['model-b']);
   const seen = [];
   try {
-    await streamOfflineModel({ messages: [{ role: 'user', content: 'hello' }], signal: new AbortController().signal, onChunk: (chunk) => seen.push(chunk) }, {
+    await streamOfflineModel({ messages: [{ role: 'user', content: 'hello' }], onChunk: (chunk) => seen.push(chunk) }, {
       engineProvider: async () => engine,
-      cachedModelProvider: async () => model,
+      modelFileProvider: async () => ({ file: fileA, metadata: { fileName: 'model-a.gguf' } }),
     });
-    assert.equal(loaded.value, model, 'loadModel receives the validated local cache object, not a remote URL');
-    assert.equal(loaded.options.n_ctx, 4096);
+    assert.deepEqual(loaded[0].value, [fileA], 'loadModel receives a local Blob array, not a Model URL');
+    assert.equal(loaded[0].options.n_ctx, 4096);
     assert.equal(request.model, OFFLINE_MODEL_ID);
     assert.equal(request.stream, true);
     assert.ok(request.max_tokens <= 768);
-    assert.equal(request.abortSignal.aborted, false);
     assert.deepEqual(seen, chunks);
+    await streamOfflineModel({ messages: [] }, {
+      engineProvider: async () => engine,
+      modelFileProvider: async () => ({ file: fileA, metadata: { fileName: 'model-a.gguf' } }),
+    });
+    assert.equal(loadCalls, 1, 'the same stored file is loaded only once');
+    await streamOfflineModel({ messages: [] }, {
+      engineProvider: async () => engine,
+      modelFileProvider: async () => ({ file: fileB, metadata: { fileName: 'model-b.gguf' } }),
+    });
+    assert.equal(exits, 1);
+    assert.equal(loadCalls, 2);
+    assert.deepEqual(loaded[1].value, [fileB]);
     assert.equal(fetchCalls, 0);
-  } finally { globalThis.fetch = originalFetch; restoreGate(); }
+  } finally { globalThis.fetch = originalFetch; }
 });
 
-test('model and network offline gates reject remote chat and model-catalog requests before fetch', async () => {
+test('missing local GGUF fails before Wllama engine initialization and states that no network was attempted', async () => {
+  let engineCalls = 0;
+  await assert.rejects(streamOfflineModel({}, {
+    engineProvider: async () => { engineCalls++; return {}; },
+    modelFileProvider: async () => { throw new Error('尚未选择本地 GGUF。'); },
+  }), /尚未选择本地 GGUF/);
+  assert.equal(engineCalls, 0);
+});
+
+test('offline state rejects remote chat and model-catalog requests before fetch', async () => {
   const restoreGate = offlineGate(true);
-  const originalFetch = globalThis.fetch; let calls = 0;
-  globalThis.fetch = async () => { calls++; throw Error('unexpected network'); };
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => { calls++; throw new Error('unexpected network'); };
   try {
     await assert.rejects(streamChat({ model: 'gpt-5.6-sol', apiKey: 'test-key', messages: [] }), /离线模式只允许/);
     await assert.rejects(fetchModels('test-key'), /离线模式/);
+    await assert.rejects(streamChat({ model: OFFLINE_MODEL_ID, messages: [{ role: 'user', content: 'hello' }] }), /尚未选择本地 GGUF/);
     assert.equal(calls, 0);
   } finally { globalThis.fetch = originalFetch; restoreGate(); }
 });
 
 test('offline update check stops before build-manifest fetch', async () => {
-  const restoreGate = offlineGate(true); let calls = 0;
+  const restoreGate = offlineGate(true);
+  let calls = 0;
   try {
     await assert.rejects(updateScriptCache({ currentVersion: '2026.10.22.1', fetchImpl: async () => { calls++; return Response.json({}); } }), (error) => error.code === 'offline');
     assert.equal(calls, 0);
@@ -266,7 +261,7 @@ test('offline tool allowlist is immutable, exists in TOOL_DEFS and contains no r
   for (const name of ['fetch_url', 'search_web', 'crawl_site', 'generate_image', 'analyze_image', 'dispatch_subagent', 'execute_cpp']) assert.equal(isOfflineToolAllowed(name), false);
 });
 
-test('preview tool table matches the local-only allowlist for an installed local model', () => {
+test('preview tool table matches the local-only allowlist for a local GGUF model', () => {
   const store = createStore();
   store.state.model = OFFLINE_MODEL_ID;
   store.state.relayOk = true;
@@ -280,9 +275,10 @@ test('preview tool table matches the local-only allowlist for an installed local
 });
 
 test('tool execution provides a final fail-closed guard before a remote tool can run', async () => {
-  const restoreGate = offlineGate(true); let calls = 0;
+  const restoreGate = offlineGate(true);
+  let calls = 0;
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = async () => { calls++; throw Error('unexpected network'); };
+  globalThis.fetch = async () => { calls++; throw new Error('unexpected network'); };
   try {
     const result = await executeTool('fetch_url', { url: 'https://example.com' }, { model: 'gpt-5.6-sol', fs: {}, onUi() {} });
     assert.match(result, /已阻止 fetch_url/);
@@ -301,10 +297,25 @@ test('local-only sends skip remote API Key prompts without relaxing the gateway-
   assert.match(choices, /if \(!store\.state\.apiKey && !isOfflineModelId\(store\.state\.model\)\) \{ openKeyModal\(\); toast\('请先配置 TeamoRouter API Key', 'warn'\); setChoiceStep\(box, idx\); return true; \}/);
 });
 
+test('settings expose a local GGUF chooser and no fixed remote model downloader', () => {
+  const app = fs.readFileSync(new URL('../app.html', import.meta.url), 'utf8');
+  const model = fs.readFileSync(new URL('../js/offline-model.js', import.meta.url), 'utf8');
+  const config = fs.readFileSync(new URL('../js/offline-model-config.js', import.meta.url), 'utf8');
+  assert.match(app, /id="set-offline-model-file-input" type="file" accept="\.gguf/);
+  assert.match(app, /id="set-offline-model-choose"/);
+  assert.doesNotMatch(app, /set-offline-model-download|huggingface\.co\/saidutta69/);
+  assert.doesNotMatch(model, /downloadOfflineModel|loadModelFromUrl|fetch\(/);
+  assert.doesNotMatch(config, /https:\/\/huggingface\.co|OFFLINE_MODEL_URL|OFFLINE_MODEL_SHA256/);
+  assert.ok(!fs.existsSync(new URL('../js/offline-model-download-worker.js', import.meta.url)));
+  assert.ok(!fs.existsSync(new URL('../js/offline-model-download-core.js', import.meta.url)));
+});
+
 test('offline bootstrap is installed on all cached entry pages and blocks offsite navigation/resources', () => {
   for (const file of ['index.html', 'docs.html', 'app.html']) {
     const source = fs.readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
-    assert.match(source, /<script src="js\/offline-bootstrap\.js\?v=2026\.10\.22\.1"><\/script>/, `${file} must load the synchronous network fence`);
+    const version = source.match(/<meta name="app-version" content="([^"]+)"\s*\/>/)?.[1];
+    assert.ok(version, `${file} declares its active app version`);
+    assert.ok(source.includes(`<script src="js/offline-bootstrap.js?v=${version}"></script>`), `${file} loads the synchronous network fence at the active version`);
     assert.ok(source.indexOf('offline-bootstrap.js') < source.indexOf('theme-boot.js'), `${file} installs the fence before other entry scripts`);
   }
   const bootstrap = fs.readFileSync(new URL('../js/offline-bootstrap.js', import.meta.url), 'utf8');
@@ -314,11 +325,4 @@ test('offline bootstrap is installed on all cached entry pages and blocks offsit
   assert.match(bootstrap, /offlineGuardedOpen/);
   assert.match(bootstrap, /gate\.record\(anchor\.href, 'navigation'\)/);
   assert.match(bootstrap, /abort\(\)/);
-});
-
-test('offline progress formatting clamps invalid and over-complete values', () => {
-  assert.deepEqual(formatOfflineDownloadProgress({ loaded: 110, total: 100 }), {
-    loaded: 100, total: 100, percent: 100, loadedText: '0 KiB', totalText: '0 KiB',
-  });
-  assert.equal(formatOfflineDownloadProgress({ loaded: -5, total: 100 }).percent, 0);
 });

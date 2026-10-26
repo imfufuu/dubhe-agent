@@ -1,11 +1,11 @@
 import { AUDIO_EXT_RE, AUDIO_MIME_RE, AUDIO_MAX_BYTES, audioMimeOf } from './audio-format.js';
-import { animatedPopover } from './ui-motion.js?v=2026.10.11.1';
+import { animatedPopover } from './ui-motion.js?v=2026.10.25.1';
 // Dubhe Agent · 附件（从 ui.js 的 mountUI 拆出，V1.7.1）
 // 按钮 / 相机 / 拖拽 / 粘贴 四个入口 → 统一 addFiles：图片缩放与 MIME 白名单、文本 / PDF（原样入沙箱，交给 analyze_pdf）/ ZIP（解包进沙箱）、
 // 大小上限与芯片渲染。对外只暴露 { hasPending, takePending, addFiles }，发送逻辑取走后自动清空。
 import { text as localeText } from './locale.js';
 import { ICON } from './icons.js';
-import { openPhotoEditor } from './photo-editor.js?v=2026.10.11.1';
+import { openPhotoEditor } from './photo-editor.js?v=2026.10.25.1';
 import { relayDownload, relaySupports, relayAvailable, RELAY_FILE_MAX_BYTES } from './net.js';
 import { svgDataUrl } from './svg-safety.js';
 

@@ -1,21 +1,21 @@
 import { registerOfflineCache } from './register-cache.js';
 import { installDeviceControls } from './ui-devices.js';
 import { effectiveModeration } from './ui-moderation-setting.js';
-import { installLanguage } from './ui-language.js?v=2026.10.11.1';
+import { installLanguage } from './ui-language.js?v=2026.10.25.1';
 import { installTaskNotifications } from './notifications.js';
-import { probeLocalBrowser } from './localbrowser.js?v=2026.10.11.1';
+import { probeLocalBrowser } from './localbrowser.js?v=2026.10.25.1';
 // ─── 启动引导 ──────────────────────────────────────────────────────────
-import { createStore } from './state.js?v=2026.10.11.1';
-import { createAgent } from './agent.js?v=2026.10.11.1';
-import { mountUI, toast } from './ui.js?v=2026.10.11.1';
+import { createStore } from './state.js?v=2026.10.25.1';
+import { createAgent } from './agent.js?v=2026.10.25.1';
+import { mountUI, toast } from './ui.js?v=2026.10.25.1';
 import { relayAvailable } from './net.js';
 import { text as localeText } from './locale.js';
 import { probeGatewayHosts } from './endpoint.js';
-import { mountDebugWindow, toggleDebug, debugActive, setDebug } from './debugwindow.js?v=2026.10.11.1';
-import { mountSettings, applyFontSize, applyMotion, browserFeatureReport } from './settings.js?v=2026.10.11.1';
-import { APP_RELEASE } from './config.js?v=2026.10.11.1';
+import { mountDebugWindow, toggleDebug, debugActive, setDebug } from './debugwindow.js?v=2026.10.25.1';
+import { mountSettings, applyFontSize, applyMotion, browserFeatureReport } from './settings.js?v=2026.10.25.1';
+import { APP_RELEASE } from './config.js?v=2026.10.25.1';
 import { installOfflineNetworkFence, isNetworkOffline, announceNetworkState } from './offline-network.js';
-import { OFFLINE_MODEL_ID } from './offline-model-config.js';
+import { OFFLINE_MODEL_ID, isOfflineModelId } from './offline-model-config.js';
 import { syncOfflineModelAvailability } from './offline-model.js';
 
 installOfflineNetworkFence();
@@ -25,6 +25,11 @@ const bootStage = (name) => { try { const g = window.__dubheBootGuard; g && type
 bootStage('modules');
 
 const store = createStore();
+// Migrate the former fixed-Qwen selector ID to the generic user-selected GGUF slot.
+if (isOfflineModelId(store.state.model)) store.state.model = OFFLINE_MODEL_ID;
+for (const session of store.state.sessions || []) {
+  if (isOfflineModelId(session.model)) session.model = OFFLINE_MODEL_ID;
+}
 const offlineAtBoot = isNetworkOffline();
 if (offlineAtBoot) {
   store.state.model = OFFLINE_MODEL_ID;

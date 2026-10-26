@@ -1,6 +1,6 @@
 import { registerOfflineCache } from './register-cache.js';
-import { installSmoothDetails } from './ui-motion.js?v=2026.10.11.1';
-import { installLanguage } from './ui-language.js?v=2026.10.11.1';
+import { installSmoothDetails } from './ui-motion.js?v=2026.10.25.1';
+import { installLanguage } from './ui-language.js?v=2026.10.25.1';
 installLanguage();
 import { readThemePreference, writeThemePreference, THEME_STORAGE_KEY, LEGACY_HOME_THEME_KEY } from './theme.js';
 import { TRACK } from './home-beats.js';

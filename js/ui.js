@@ -1,28 +1,29 @@
-import { syncMessageRhythm } from './ui-message-rhythm.js?v=2026.10.11.1';
-import { animateMessageSend } from './ui-send-animation.js?v=2026.10.11.1';
+import { syncMessageRhythm } from './ui-message-rhythm.js?v=2026.10.25.1';
+import { animateMessageSend } from './ui-send-animation.js?v=2026.10.25.1';
 import { installCaretEffect } from './ui-caret.js';
 import { publicPlanHtml } from './ui-publicplan.js';
-import { installChoiceHandler } from './ui-choices.js?v=2026.10.11.1';
-import { installSharing } from './ui-share.js?v=2026.10.11.1';
+import { installChoiceHandler } from './ui-choices.js?v=2026.10.25.1';
+import { installSharing } from './ui-share.js?v=2026.10.25.1';
 import { text as localeText, getLanguage, onLanguageChange } from './locale.js';
+import { formatDate, formatDateTime, formatNumber, formatTime, pluralize, t } from './i18n.js?v=2026.10.25.1';
 import { installFeedback } from './ui-feedback.js';
 import { installSpeechInput } from './ui-speech.js';
-import { createToolPresentation, presentationCallSettled, turnToolResults } from './toolpresentation.js?v=2026.10.11.1';
-import { paintEditFoldContent, syncEditingFold, toggleEditingFold } from './ui-editpreview.js?v=2026.10.11.1';
-import { paintOrderedAssistant, renderToolChipDetail, paintCommandRows, paintKnowledgeFold, syncToolMenuCursor, ownerOfTool, paintVisibleTurn, activeToolOwner, persistTurnTiming } from './ui-toolflow.js?v=2026.10.11.1';
-import { classifyToolResult, toolResultFailed } from './toolwindows.js?v=2026.10.11.1';
-import { adjacentToolMessages, appendToolStream, toolFamily, commandRunFor } from './toolflow.js?v=2026.10.11.1';
-import { createRollbackFx } from './ui-rollback-fx.js?v=2026.10.11.1';
-import { motionAllowed } from './page-fx.js?v=2026.10.11.1';
+import { createToolPresentation, presentationCallSettled, turnToolResults } from './toolpresentation.js?v=2026.10.25.1';
+import { paintEditFoldContent, syncEditingFold, toggleEditingFold } from './ui-editpreview.js?v=2026.10.25.1';
+import { paintOrderedAssistant, renderToolChipDetail, paintCommandRows, paintKnowledgeFold, syncToolMenuCursor, ownerOfTool, paintVisibleTurn, activeToolOwner, persistTurnTiming } from './ui-toolflow.js?v=2026.10.25.1';
+import { classifyToolResult, toolResultFailed } from './toolwindows.js?v=2026.10.25.1';
+import { adjacentToolMessages, appendToolStream, toolFamily, commandRunFor } from './toolflow.js?v=2026.10.25.1';
+import { createRollbackFx } from './ui-rollback-fx.js?v=2026.10.25.1';
+import { motionAllowed } from './page-fx.js?v=2026.10.25.1';
 // ─── UI 层：渲染 / 交互 / 动画 ─────────────────────────────────────────
-import { providerOf, supportsFastMode, DEFAULT_IMAGE_MODEL, APP_VERSION, APP_RELEASE } from './config.js?v=2026.10.11.1';
-import { DEFAULT_GATEWAY_ID, getGateway } from './gateway-registry.js?v=2026.10.11.1';
-import { syncGatewayKeyModal, validateGatewayKey } from './ui-gateway-key.js?v=2026.10.11.1';
-import { isSmartRouter, ROUTER_ICON_SVG, SMART_ROUTER_LABEL, modelDisplayName } from './smartrouter.js?v=2026.10.11.1';
-import { REASONING_LEVELS, normalizeReasoningLevel, reasoningLevelLabel, reasoningLevelHint } from './reasoning.js?v=2026.10.11.1';
+import { providerOf, supportsFastMode, DEFAULT_IMAGE_MODEL, APP_VERSION, APP_RELEASE } from './config.js?v=2026.10.25.1';
+import { DEFAULT_GATEWAY_ID, getGateway } from './gateway-registry.js?v=2026.10.25.1';
+import { syncGatewayKeyModal, validateGatewayKey } from './ui-gateway-key.js?v=2026.10.25.1';
+import { isSmartRouter, ROUTER_ICON_SVG, SMART_ROUTER_LABEL, modelDisplayName } from './smartrouter.js?v=2026.10.25.1';
+import { REASONING_LEVELS, normalizeReasoningLevel, reasoningLevelLabel, reasoningLevelHint } from './reasoning.js?v=2026.10.25.1';
 import { isGptModel, reasoningSummaryItems } from './reasoning-summary.js';
 import { fileBytesFromValue, withExtension, mimeFromPath } from './zip.js';
-import { getTransport } from './api.js?v=2026.10.11.1';
+import { getTransport } from './api.js?v=2026.10.25.1';
 import { isOfflineModelId } from './offline-model-config.js';
 import { gatewayBase, gatewayChosenBy, setGatewayBase, otherGatewayBase } from './endpoint.js';
 import { estimateTokens } from './context.js';
@@ -30,27 +31,31 @@ import { providerIcon, APP_LOGO, ICON } from './icons.js';
 import { readThemePreference, writeThemePreference, THEME_STORAGE_KEY } from './theme.js';
 import { autoTitle } from './titler.js';
 import { pickSuggestionCards } from './suggestions.js';
-import { revealChunks } from './ui-chunks.js?v=2026.10.11.1';
+import { revealChunks } from './ui-chunks.js?v=2026.10.25.1';
 import { unlockAdminKey, adminUnlocked, isAdminAlias, adminExpiresAt } from './adminkey.js';
 import { shortSuggest } from './commands.js';
 import { getOrCreateUserSalutation, buildWelcomeGreeting } from './user-salutation.js';
 import { installShiftEnterGuard } from './composer-newline-guard.js';
+import { installWelcomeMotion } from './ui-welcome-motion.js?v=2026.10.25.1';
+import { renderReasoningLines } from './ui-reasoning-motion.js?v=2026.10.25.1';
 import { summarizeTurnCost, formatCcy } from './pricing.js';
 import { installLanguageCostRefresh } from './ui-language-costs.js';
+import { createAssistantFootPainter } from './ui-foot.js?v=2026.10.25.1';
+import { settleTurnToolbars } from './ui-turn-toolbar.js?v=2026.10.25.1';
 import { relayAvailable, relaySupports, currentRelay, resetRelayProbe, relayState } from './net.js';
 // P3：编辑直播预览模块单独版本化；缺失时不影响核心对话。
-import { buildEditPreview, editFoldLabel, pathsOfEdits, PREVIEW_REFRESH_MS, findTurnTempCommit, discardedForFold, discardedFoldLabel, turnRange } from './editpreview.js?v=2026.10.11.1';
-import { historyWindowStart, previousHistoryWindowStart, HISTORY_WINDOW_MAX_MESSAGES, HISTORY_WINDOW_MAX_CHARS } from './history.js?v=2026.10.11.1';
-import { installLightbox } from './ui-lightbox.js?v=2026.10.11.1';
-import { installFilesPanel } from './ui-files-panel.js?v=2026.10.11.1';
-import { createMessageScrollManager } from './ui-message-scroll.js?v=2026.10.11.1';
-import { installAttachments } from './ui-attachments.js?v=2026.10.11.1';
-import { installCapabilityPanel } from './ui-capability.js?v=2026.10.11.1';
-import { installModelPicker } from './ui-model-picker.js?v=2026.10.11.1';
-import { installPopovers } from './ui-popovers.js?v=2026.10.11.1';
-import { installCommandPalette } from './ui-command-palette.js?v=2026.10.11.1';
-import { installSystemCommands } from './ui-system-commands.js?v=2026.10.11.1';
-import { decorateGeoMap, installMapInteractions } from './quickmap.js?v=2026.10.11.1';
+import { buildEditPreview, editFoldLabel, pathsOfEdits, PREVIEW_REFRESH_MS, findTurnTempCommit, discardedForFold, discardedFoldLabel, turnRange } from './editpreview.js?v=2026.10.25.1';
+import { historyWindowStart, previousHistoryWindowStart, HISTORY_WINDOW_MAX_MESSAGES, HISTORY_WINDOW_MAX_CHARS } from './history.js?v=2026.10.25.1';
+import { installLightbox } from './ui-lightbox.js?v=2026.10.25.1';
+import { installFilesPanel } from './ui-files-panel.js?v=2026.10.25.1';
+import { createMessageScrollManager } from './ui-message-scroll.js?v=2026.10.25.1';
+import { installAttachments } from './ui-attachments.js?v=2026.10.25.1';
+import { installCapabilityPanel } from './ui-capability.js?v=2026.10.25.1';
+import { installModelPicker } from './ui-model-picker.js?v=2026.10.25.1';
+import { installPopovers } from './ui-popovers.js?v=2026.10.25.1';
+import { installCommandPalette } from './ui-command-palette.js?v=2026.10.25.1';
+import { installSystemCommands } from './ui-system-commands.js?v=2026.10.25.1';
+import { decorateGeoMap, installMapInteractions } from './quickmap.js?v=2026.10.25.1';
 
 // 预览窗刷新节流：直播时每 ~50ms 合并更新（换文件/收尾立即刷）
 const EDIT_PREVIEW_REFRESH_MS = PREVIEW_REFRESH_MS;
@@ -59,20 +64,30 @@ const EDIT_PREVIEW_REFRESH_MS = PREVIEW_REFRESH_MS;
 import {
   $, $$, el, esc, safeImgSrc, sanitizeSvgRaw, hydrateSandboxMedia, bindFoldRows,
   fmtSize, fmtSpan, contextBudgetLabel, videoBlobUrl, renderAttachments, highlightCode, sysReplyHtml, renderMarkdown,
-} from './ui-markdown.js?v=2026.10.11.1';
+} from './ui-markdown.js?v=2026.10.25.1';
 export { renderMarkdown, videoBlobUrl }; // 兼容旧导入路径（tests / 外部调用方）
-import { renderGeoMapSvg } from './quickviz.js?v=2026.10.11.1';
+import { renderGeoMapSvg } from './quickviz.js?v=2026.10.25.1';
 
-import { toast, MAX_TOAST_STACK, fmtClock, fmtAgo } from './ui-common.js?v=2026.10.11.1';
+import { toast, MAX_TOAST_STACK } from './ui-common.js?v=2026.10.25.1';
 export { toast, MAX_TOAST_STACK };
 
 // 这些工具不进 Ran Commands，而是各自的文件折叠（Explored / Edited File(s)）
 const FILE_FOLD_TOOLS = new Set(['write_file', 'read_file', 'analyze_image', 'analyze_pdf', 'analyze_svg', 'analyze_video', 'analyze_audio', 'knowledge_search']);
+const SESSION_TURN_FORMS = {
+  zh: '{count} 轮', en: { one: '{count} turn', other: '{count} turns' }, ja: '{count} 回',
+  es: { one: '{count} turno', other: '{count} turnos' }, fr: { one: '{count} tour', other: '{count} tours' },
+  de: { one: '{count} Runde', other: '{count} Runden' }, ko: '{count}회',
+  ru: { one: '{count} раунд', few: '{count} раунда', many: '{count} раундов', other: '{count} раунда' },
+  ar: { zero: '{count} جولة', one: '{count} جولة', two: '{count} جولتان', few: '{count} جولات', many: '{count} جولة', other: '{count} جولة' },
+};
 
 export function mountUI(store, agent) {
   let feedbackUI, sharingUI;
   const msgList = $('#messages');
+  const paintAssistantFoot = createAssistantFootPainter(store);
+  function paintFoot(wrap, m) { return paintAssistantFoot(wrap, m); }
   const composer = $('#composer-input');
+  const welcomeMotion = installWelcomeMotion({ main: $('.main'), messages: msgList, composerWrap: $('.composer-wrap'), composer, isEmptyChat: () => !store.state.messages.length });
   let pendingSendOrigin = null, sendAnimation = null;
   const jumpBtn = $('#jump-bottom');
   const { captureMessageScroll, restoreMessageScroll, jumpToBottom, scrollToBottom } = createMessageScrollManager({
@@ -554,20 +569,19 @@ const fmtAdminExp = (ms) => {
   }
   function sessionSpanLabel(ts) {
     const days = Math.floor((startOfDay(Date.now()) - startOfDay(ts)) / 86400000);
-    if (days <= 0) return localeText('今天', 'Today');
-    if (days === 1) return localeText('昨天', 'Yesterday');
-    if (days === 2) return localeText('前天', '2 days ago');
-    if (days <= 6) return localeText('7天内', 'Past 7 days');
-    if (days <= 29) return localeText('30天内', 'Past 30 days');
-    return localeText('更早', 'Earlier');
+    if (days <= 0) return t('今天');
+    if (days === 1) return t('昨天');
+    if (days === 2) return t('前天');
+    if (days <= 6) return t('7天内');
+    if (days <= 29) return t('30天内');
+    return t('更早');
   }
   function sessionMeta(s) {
     const n = (s.messages || []).filter((m) => m.role === 'user').length;
-    const t = new Date(sessionActivityAt(s));
-    const time = t.toDateString() === new Date().toDateString()
-      ? t.toLocaleTimeString(localeText('zh-CN', 'en-US'), { hour: '2-digit', minute: '2-digit' })
-      : `${t.getMonth() + 1}/${t.getDate()}`;
-    return localeText(`${n} 轮 · ${time}`, `${n} turn${n === 1 ? '' : 's'} · ${time}`);
+    const activity = new Date(sessionActivityAt(s));
+    const sameDay = activity.toDateString() === new Date().toDateString();
+    const time = sameDay ? formatTime(activity) : formatDate(activity);
+    return `${pluralize(n, SESSION_TURN_FORMS)} · ${time}`;
   }
   let memSelected = new Set();
   function syncMemDelBtn() {
@@ -972,18 +986,17 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
   function bindSuggestCards(root) {
     $$('.suggest', root).forEach((b) => b.addEventListener('click', () => {
       composer.value = b.dataset.prompt || b.textContent;
-      composer.focus(); autoGrow();
+      composer.focus(); autoGrow(); welcomeMotion.sync();
     }));
   }
   function paintWelcomeGreeting() {
-    const heading = $('#welcome-greeting', msgList), prompt = $('#welcome-prompt', msgList);
+    const heading = $('#welcome-greeting', msgList);
     if (!heading) return;
     const settings = store.state.settings || (store.state.settings = {});
     const salutation = getOrCreateUserSalutation(settings.userSalutation, { language: getLanguage() });
     settings.userSalutation = salutation;
     const copy = buildWelcomeGreeting(salutation, getLanguage());
-    heading.textContent = copy.title;
-    if (prompt) prompt.textContent = copy.prompt;
+    welcomeMotion.setGreeting(copy.title, copy.prompt);
   }
   function renderWelcomePrompts(picks) {
     const box = $('#welcome-quick-prompts');
@@ -1001,16 +1014,17 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     if (store.state.messages.length) return;
     const jb = $('#jump-bottom');
     if (jb) jb.classList.remove('show');
-    msgList.appendChild(el('div', 'empty-state', `<div class="welcome-heading"><span class="welcome-mark">${APP_LOGO}</span><h2 id="welcome-greeting"></h2><button class="welcome-refresh" type="button" title="${esc(localeText('换个问候', 'New greeting'))}" aria-label="${esc(localeText('换个问候', 'New greeting'))}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M5.5 9a7 7 0 0 1 11.7-2L20 12M4 12l2.8 5a7 7 0 0 0 11.7-2"/></svg></button></div><p id="welcome-prompt"></p>`));
+    msgList.appendChild(el('div', 'empty-state', `<div class="welcome-heading"><span class="welcome-mark">${APP_LOGO}</span><h2 id="welcome-greeting"></h2></div><p id="welcome-prompt"></p>`));
     paintWelcomeGreeting();
-    $('.welcome-refresh', msgList)?.addEventListener('click', paintWelcomeGreeting);
     renderWelcomePrompts(pickEmptyPicks());
+    welcomeMotion.sync({ empty: true });
   }
 
   function clearEmpty() {
     const e = $('.empty-state', msgList); if (e) e.remove();
     const quick = $('#welcome-quick-prompts');
     if (quick) { quick.hidden = true; quick.replaceChildren(); }
+    welcomeMotion.sync({ empty: false });
   }
   window.addEventListener('dubhe:user-salutation-changed', () => { if (!store.state.messages.length) paintWelcomeGreeting(); });
 
@@ -1115,28 +1129,6 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     agent.regenerate();
   }
 
-  function paintFoot(wrap, m) {
-    const foot = $('.msg-foot', wrap);
-    if (!foot) return;
-    if (m.role !== 'assistant' || !m.done) { foot.hidden = true; foot.textContent = ''; return; }
-    if (m.toolCalls && m.toolCalls.length) { foot.hidden = true; foot.textContent = ''; return; }
-    const bits = [];
-    if (m.reasoningLevel && m.reasoningLevel !== 'off') bits.push(reasoningLevelLabel(m.reasoningLevel));
-    // 发了思考参数、整轮却没有任何思考产出（DeepSeek V4 等会对简单任务自主跳过）：如实标注，不让人以为参数没发
-    const all = store.state.messages, at = all.findIndex((x) => x.id === m.id), [lo] = turnRange(all, at < 0 ? all.length - 1 : at);
-    const noThought = bits.length && !all.slice(lo, at + 1).some((x) => x.role === 'assistant' && (x.reasoning || x.thoughtHidden || x.usage?.reasoning || x.thinkingBlocks?.length));
-    if (noThought) bits.push('未思考');
-    const clock = m.durationMs != null ? fmtClock(m.durationMs) : '';
-    const ago = m.ts ? fmtAgo(m.ts) : '';
-    const time = [clock, ago].filter(Boolean).join(' | ');
-    const head = bits.join(' · ');
-    const line = head && time ? `${head} · ${time}` : (head || time);
-    // 回合脚注只显示思考档位与耗时（工具 / 外部副作用的预算用量不在消息下方显示）
-    if (!line) { foot.hidden = true; foot.textContent = ''; return; }
-    foot.hidden = false;
-    foot.textContent = line;
-    foot.title = m.reasoningLevel === 'off' ? '本轮思考 Off' : (noThought ? '已发送思考参数，模型本轮自主判定无需思考' : (m.ts ? new Date(m.ts).toLocaleString() : ''));
-  }
   const BUDGET_CHANNEL_LABEL = { toolCalls: '工具调用', retries: '重试次数', durationMs: '墙钟时长', parallelTasks: '并发任务', memoryWrites: '记忆写入', externalSideEffects: '外部副作用', tokens: 'Token 消耗' };
 
   function toolIds(chip) {
@@ -1261,14 +1253,14 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     if (!m._displayFragment) {
       syncPresentationScope();
       // 未决（deferred）时这条不重画，但已经在屏上的节点仍要归位：停止后动作条常常就卡在中间
-      if (toolPresentation.deferred(m, store.state.messages)) { syncCancelledTail(wrap, m); settleTurnToolbars(); return; }
+      if (toolPresentation.deferred(m, store.state.messages)) { syncCancelledTail(wrap, m); settleTurnToolbars(msgList, store.state.messages); return; }
       m = toolPresentation.project(m);
     }
     if (paintOrderedAssistant(wrap, m, {
       paintPart: paintAssistant, paintMeta: paintTurnMeta, paintFoot, syncShell: syncAssistantShell,
       syncFolds: syncCompletedToolFolds,
       refreshActions: refreshActionVisibility,
-    })) { syncCancelledTail(wrap, m); syncAssistantShell(wrap); refreshActionVisibility(); settleTurnToolbars(); return; }
+    })) { syncCancelledTail(wrap, m); syncAssistantShell(wrap); refreshActionVisibility(); settleTurnToolbars(msgList, store.state.messages); return; }
     wrap.classList.toggle('cancelled', !!m.cancelled);
     const body = $('.md-body', wrap);
     let html = publicPlanHtml(m.publicPlan);
@@ -1358,23 +1350,26 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       if (nameEl) nameEl.textContent = title;
       if (stateEl) stateEl.textContent = bits.join(' · ');
       const inner = $('.fold-inner', reason);
-      const summaryMarkup = summaryItems.length
-        ? `<div class="think-summary-list" aria-live="polite">${summaryItems.map((item) => `<div class="think-summary-item">${esc(item)}</div>`).join('')}</div>`
-        : `<div class="think-hidden">${esc(localeText('等待 GPT 返回摘要标记…', 'Waiting for GPT summary markers…'))}</div>`;
+      const summaryMarkup = `<div class="think-summary-list" aria-live="polite"></div><div class="think-hidden think-summary-empty">${esc(localeText('等待 GPT 返回摘要标记…', 'Waiting for GPT summary markers…'))}</div>`;
       const detail = showThink
         ? (gptSummaryOnly ? summaryMarkup : '<pre class="think-full-text"></pre>')
         : (hiddenThink
           ? `<div class="think-hidden">${esc(localeText('模型未返回可展示的思考内容；仅显示推理用量。', 'No reasoning text is available to display; only reasoning usage is shown.'))}</div>`
           : `<div class="think-hidden">${esc(localeText('正在等待思考过程…', 'Waiting for reasoning…'))}</div>`);
-      const sig = `${thinkRunning ? 'live' : 'done'}:${hiddenThink ? 'hidden' : (showThink ? 'visible' : 'pending')}:${gptSummaryOnly ? summaryItems.join('\u241f') : ''}`;
+      const sig = `${thinkRunning ? 'live' : 'done'}:${hiddenThink ? 'hidden' : (showThink ? 'visible' : 'pending')}:${gptSummaryOnly ? 'gpt' : 'full'}`;
       if (inner && inner.dataset.sig !== sig) {
         inner.dataset.sig = sig;
         inner.innerHTML = detail;
       }
+      if (inner && showThink && gptSummaryOnly) {
+        const list = $('.think-summary-list', inner);
+        const empty = $('.think-summary-empty', inner);
+        const count = renderReasoningLines(list, summaryItems, { summary: true, animate: thinkRunning });
+        if (empty) empty.hidden = count > 0;
+      }
       if (inner && showThink && !gptSummaryOnly) {
         const full = $('.think-full-text', inner);
-        const fullText = String(m.reasoning || '');
-        if (full && full.textContent !== fullText) full.textContent = fullText;
+        if (full) renderReasoningLines(full, m.reasoning, { animate: thinkRunning });
       }
       const thinkLive = thinkRunning && (thinkPending || !!m.reasoning) && !m.text && !(m.toolCalls && m.toolCalls.length);
       const expanded = reason._user == null ? thinkLive : !!reason._user;
@@ -1706,7 +1701,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     paintFoot(wrap, m);
     syncAssistantShell(wrap);
     // 复制/回滚/重新生成的显隐统一交给 refreshActionVisibility（回合结束才显示）
-    refreshActionVisibility(); settleTurnToolbars();
+    refreshActionVisibility(); settleTurnToolbars(msgList, store.state.messages);
   }
 
   function syncAssistantShell(w) {
@@ -1875,12 +1870,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     return box;
   }
 
-  // ── 回合动作条（复制/回滚/重新生成/分享）永远排在「这一轮最后一个节点」之后 ──────────
-  // 停止、工具穿插、正文分段时，动作条原本留在首个 assistant 节点里，看起来就是
-  // 「正文 → 按钮 → 正文 / 工具」的错位（用户截图里的暂停后按钮错位）。这里在每次绘制后
-  // 把这一轮唯一的 .msg-toolbar 移到该轮最后一个消息节点末尾（有「已停止」标记则排在标记前）。
-  // 「已停止」标记：流式（fragment）与整体两种画法都要有，且永远贴在动作条上方，
-  // 不能像以前那样停在中间（第 13 条：暂停后按钮/标记错位）。
+  // Keep the stopped marker above the per-turn toolbar; toolbar placement is delegated to ui-turn-toolbar.js.
   function syncCancelledTail(wrap, m) {
     // 片段行（.assistant-fragment）不画标记：整轮的「已停止」挂在消息底部，避免同一条回答出现两个
     if (wrap.classList.contains('assistant-fragment')) return;
@@ -1890,43 +1880,6 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     if (tail.innerHTML !== '<span class="cancelled-tag">已停止</span>') tail.innerHTML = '<span class="cancelled-tag">已停止</span>';
     const bar = wrap.querySelector(':scope > .msg-toolbar');
     if (bar) wrap.insertBefore(tail, bar); else wrap.append(tail);
-  }
-
-  function settleTurnToolbars() {
-    // ① 单条消息内部：动作条（复制/回滚/重新生成/分享）必须排在整条消息的最后。
-    //    正文分段 + 工具穿插时，后画的片段会追加在动作条下面，看起来就是「正文 → 按钮 → 正文 / 工具」的错位。
-    //    「已停止」标记排在动作条之前（先说明发生了什么，再给操作）。
-    for (const wrap of $$('.msg[data-id]', msgList)) {
-      const bar = wrap.querySelector(':scope > .msg-toolbar');
-      if (!bar) continue;
-      const tail = wrap.querySelector(':scope > .message-tail');
-      if (tail) { if (bar.previousElementSibling !== tail) wrap.insertBefore(tail, bar); if (wrap.lastElementChild !== bar) wrap.append(bar); }
-      else if (wrap.lastElementChild !== bar) wrap.append(bar);
-    }
-    // ② 一轮之内：动作条只保留一个，归到该轮最后一个消息节点（多段回答属于同一条消息，命中 ①）。
-    const nodes = $$('.msg[data-id]', msgList);
-    if (!nodes.length) return;
-    const byId = new Map(nodes.map((n) => [String(n.dataset.id), n]));
-    const msgs = store.state.messages || [];
-    const turns = [];
-    for (let i = 0; i < msgs.length; i++) {
-      if (msgs[i].role !== 'user') continue;
-      const members = [];
-      for (let k = i; k < msgs.length && (k === i || msgs[k].role !== 'user'); k++) members.push(String(msgs[k].id));
-      turns.push(members);
-    }
-    for (const members of turns) {
-      const els = members.map((id) => byId.get(id)).filter(Boolean);
-      if (els.length < 2) continue;
-      const bars = els.map((n) => n.querySelector(':scope > .msg-toolbar')).filter(Boolean);
-      if (bars.length < 2) continue;
-      const last = els[els.length - 1], bar = bars[0];
-      for (const extra of bars.slice(1)) extra.remove();
-      if (bar.parentElement !== last) last.append(bar);
-      else if (last.lastElementChild !== bar) last.append(bar);
-      const tail = last.querySelector(':scope > .message-tail');
-      if (tail) last.insertBefore(tail, bar);
-    }
   }
 
   function refreshActionVisibility() {
@@ -1987,7 +1940,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       paintAssistant(wrap, m);
     }
     msgList.appendChild(wrap);
-    if (m.role === 'assistant') { refreshActionVisibility(); settleTurnToolbars(); }
+    if (m.role === 'assistant') { refreshActionVisibility(); settleTurnToolbars(msgList, store.state.messages); }
     if (scroll) scrollToBottom();
   }
 
@@ -1997,7 +1950,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
   function renderLazySeam(skipped) {
     const btn = el('button', 'lazy-load-more', `${ICON.chevRight || ''}<span>更早的消息</span>`);
     btn.type = 'button';
-    btn.title = `加载更早的完整轮次（每段最多 ${LAZY_WINDOW} 条可见消息 / ${LAZY_MAX_CHARS.toLocaleString()} 字）`;
+    btn.title = `加载更早的完整轮次（每段最多 ${formatNumber(LAZY_WINDOW)} 条可见消息 / ${formatNumber(LAZY_MAX_CHARS)} 字）`;
     const badge = el('span', 'lazy-load-count', skipped > 99 ? '99+' : String(skipped));
     badge.setAttribute('aria-hidden', 'true');
     btn.appendChild(badge);
@@ -2073,7 +2026,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     for (const n of $$('.msg', msgList)) n.classList.remove('enter');
     // 把 tool 结果回填到芯片（需要在可见范围内查找）
     for (const m of store.state.messages) if (m.role === 'tool') attachToolResult(m);
-    settleTurnToolbars();
+    settleTurnToolbars(msgList, store.state.messages);
     refreshActionVisibility();
     if (scroll === 'bottom') jumpToBottom();
     else restoreMessageScroll(scrollSnapshot);
@@ -2234,8 +2187,9 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       checkpoints: store.state.checkpoints,
       messages: store.state.messages.map((m) => ({
         role: m.role, text: m.text, content: m.content, toolCalls: m.toolCalls,
-        toolCallId: m.toolCallId, name: m.name, usage: m.usage, ts: m.ts, model: m.model,
-        done: m.done !== false, cancelled: !!m.cancelled,
+        toolCallId: m.toolCallId, name: m.name, usage: m.usage, ts: m.ts, tsEstimated: !!m.tsEstimated, model: m.model,
+        userModel: m.userModel, router: m.router, transport: m.transport, fastMode: m.fastMode, jevUsage: m.jevUsage,
+        done: m.done !== false, cancelled: !!m.cancelled, interrupted: !!m.interrupted,
         reasoning: m.reasoning, reasoningMs: m.reasoningMs, reasoningLevel: m.reasoningLevel,
         durationMs: m.durationMs, thinkingBlocks: m.thinkingBlocks, thoughtHidden: m.thoughtHidden,
         attachments: (m.attachments || []).map((a) => ({ kind: a.kind, name: a.name, size: a.size, stripped: !!a.stripped })),
@@ -2299,7 +2253,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     composer.style.overflowY = clipped ? 'auto' : 'hidden';
     if (!clipped) composer.scrollTop = 0;
   }
-  const shiftEnterGuard = installShiftEnterGuard(composer, autoGrow);
+  const shiftEnterGuard = installShiftEnterGuard(composer, () => { autoGrow(); welcomeMotion.sync(); });
   const composerShell = composer.closest('.composer');
   if (typeof ResizeObserver === 'function' && composerShell) {
     let previousWidth = 0;
@@ -2329,6 +2283,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       if (getBusy()) return;
       composer.value = ''; autoGrow();
       handleSystemCommand(text);
+      welcomeMotion.sync();
       return;
     }
     if (!store.state.apiKey && !isOfflineModelId(store.state.model)) { openKeyModal(); toast('请先配置 TeamoRouter API Key', 'warn'); return; }
@@ -2661,7 +2616,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
   }
   sharingUI = installSharing({ store, agent, getBusy, root: msgList, toast });
   feedbackUI = installFeedback({ store, agent, getBusy, root: msgList, toast });
-  installSpeechInput({ composer, toast, onInput: autoGrow });
+  installSpeechInput({ composer, toast, onInput: () => { autoGrow(); welcomeMotion.sync(); } });
   const ui = {
     setStatus,
     syncToolbar,
@@ -2831,7 +2786,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       refreshActionVisibility();
       scrollToBottom();
       // 停止后的画面是最终态（不再重绘），这里必须把动作条与「已停止」标记一次性归位
-      settleTurnToolbars();
+      settleTurnToolbars(msgList, store.state.messages);
     },
 
     // 沙箱执行进度 → 回写到对应工具芯片的状态位（Pyodide 首次加载 10~30s、

@@ -27,15 +27,9 @@ Dubhe Agent 本体以 MIT 许可发布（见 [LICENSE](./LICENSE)）。
 Subresource Integrity 校验。项目通过固定到精确版本（`v0.26.4`）缓解版本漂移风险；
 且该脚本运行在无 DOM、不接触 API Key 的独立 Worker 中。
 
-## 用户主动下载的模型（不随仓库发行）
+## 用户自选模型文件（不随仓库发行）
 
-| 来源 / 固定 revision | 文件 | 完整性标识 | 上游许可信息 |
-|---|---|---|---|
-| [saidutta69/Qwen2.5-1.5B-Instruct-heretic](https://huggingface.co/saidutta69/Qwen2.5-1.5B-Instruct-heretic/tree/aef80af71c5b26237c31454f1f570e30eb05f9eb) · `aef80af71c5b26237c31454f1f570e30eb05f9eb` | `Qwen2.5-1.5B-Instruct-heretic-Q4_K_M.gguf` · 986,048,736 字节 | SHA-256 `76d6e62551937fcd4cbcdf9664459cc7c87d08b3570150c6d03161a0233bb0c3` | Hugging Face 仓库元数据声明 `Apache-2.0`；这是上游声明，Dubhe Agent 未独立审查权利链或再分发许可。 |
-
-只有用户在设置中明确点击下载时，浏览器才从固定 revision 获取该模型；应用对下载内容逐块核对大小与 SHA-256，随后存入本机 OPFS。模型不会包含在本仓库或本站静态资源发行包中。
-
-仓库使用的 `heretic`、`uncensored` 等标签是作者/社区的描述，不是独立拒答率、能力、偏见或安全评估，也不代表模型在所有提示下都会拒答更少。请在使用或再分发前阅读固定 revision 的模型卡、上游来源与许可条款。
+设置页可让用户选择本机 GGUF 文件并复制到浏览器 OPFS。项目不捆绑、不托管、也不从固定仓库下载任何权重；所选模型文件不会上传到网关。模型架构、量化、参数规模、许可、能力与安全特性取决于用户选择的上游文件，Dubhe Agent 不对其作独立权利审查或基准测评。使用或再分发前，请自行阅读对应模型卡、来源与许可条款。
 
 ## 商标与图标
 

@@ -1,4 +1,4 @@
-import { changedLines } from './editdiff.js?v=2026.10.11.1';
+import { changedLines } from './editdiff.js?v=2026.10.25.1';
 
 // Editing previews decode partial JSON without touching the filesystem. Full source
 // (including long lines) is available; the DOM renderer patches it at most every 50ms.

@@ -1,4 +1,5 @@
 import { text as localeText } from './locale.js';
+import { formatNumber } from './i18n.js?v=2026.10.25.1';
 // Local-only canvas editor used by the explicit camera capture entry.
 export function fitPhotoSize(width, height, maxEdge = 4096) {
   const w = Math.max(1, Number(width) || 1);
@@ -377,7 +378,7 @@ export function openPhotoEditor(file, options = {}) {
       if (overlayCtx) overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
       if (stage) stage.setAttribute('data-size', `${canvas.width}×${canvas.height}`);
       const dimensions = modal.querySelector('.photo-dimensions');
-      if (dimensions) dimensions.textContent = `${canvas.width.toLocaleString()} × ${canvas.height.toLocaleString()} px`;
+      if (dimensions) dimensions.textContent = `${formatNumber(canvas.width)} × ${formatNumber(canvas.height)} px`;
     };
     onStageResize = () => {
       if (fitCanvasToStage() && state.crop) drawSelection();

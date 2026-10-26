@@ -1,13 +1,14 @@
-import { syncMessageRhythm } from './ui-message-rhythm.js?v=2026.10.11.1';
+import { syncMessageRhythm } from './ui-message-rhythm.js?v=2026.10.25.1';
 // The homepage is an explicitly simulated, replayable turn, not a second agent.
 // Use the conversation's diff model and stable renderer to keep both views aligned.
-import { buildFileEditPreview } from './editpreview.js?v=2026.10.11.1';
-import { paintEditFoldContent } from './ui-editpreview.js?v=2026.10.11.1';
+import { buildFileEditPreview } from './editpreview.js?v=2026.10.25.1';
+import { paintEditFoldContent } from './ui-editpreview.js?v=2026.10.25.1';
 import { ICON } from './icons.js';
-import { animateMessageSend } from './ui-send-animation.js?v=2026.10.11.1';
-import { revealChunks } from './ui-chunks.js?v=2026.10.11.1';
+import { animateMessageSend } from './ui-send-animation.js?v=2026.10.25.1';
+import { revealChunks } from './ui-chunks.js?v=2026.10.25.1';
 import { readThemePreference } from './theme.js';
 import { getLanguage, LANGUAGE_KEY, onLanguageChange } from './locale.js';
+import { formatNumber } from './i18n.js?v=2026.10.25.1';
 
 // 演示是「模拟的一轮对话」，内容语言跟随界面语言：脚本按 zh / en 各写一份，
 // 切语言时清空并按新语言重播（见 mountHomeDemo 底部的语言订阅），不做逐句机翻。
@@ -60,6 +61,7 @@ const DEMO_SCRIPTS = {
   },
 };
 const demoScript = () => DEMO_SCRIPTS[getLanguage()] ?? DEMO_SCRIPTS.zh;
+const demoSeconds = (milliseconds) => formatNumber(milliseconds / 1000, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 const BEFORE = 'from datetime import datetime\n\ndef to_timezone(value):\n    return value.astimezone()\n';
 const AFTER = 'from datetime import datetime\nfrom zoneinfo import ZoneInfo\n\ndef to_timezone(value, target="Asia/Shanghai"):\n    if value.tzinfo is None:\n        value = value.replace(tzinfo=ZoneInfo(target))\n    return value.astimezone(ZoneInfo(target))\n';
 const TESTS = 'def test_shanghai():\n    assert to_timezone(naive).utcoffset().total_seconds() == 28800\n\ndef test_dst_gap():\n    assert normalize_gap(nonexistent).hour == 3\n';
@@ -199,8 +201,9 @@ export function mountHomeDemo(root, { autoStart = true, delay = (ms) => new Prom
       totalCommandMs += durationMs;
       activity(n, false); n.querySelector('.chip-name').textContent = 'Ran command';
       const state = n.querySelector('.chip-state'); state.replaceChildren();
-      state.append(make('span', failed ? 'chip-fail' : 'chip-ok', failed ? '✗' : '✓'), make('span', 'chip-time', `${(durationMs / 1000).toFixed(1)}s`));
-      state.title = S.commandTooltip((durationMs / 1000).toFixed(1));
+      const elapsed = demoSeconds(durationMs);
+      state.append(make('span', failed ? 'chip-fail' : 'chip-ok', failed ? '✗' : '✓'), make('span', 'chip-time', `${elapsed}s`));
+      state.title = S.commandTooltip(elapsed);
       n.classList.toggle('fail', failed); scroll(); await settleFold(n);
     };
     try {
@@ -239,7 +242,7 @@ export function mountHomeDemo(root, { autoStart = true, delay = (ms) => new Prom
         button.type = 'button'; button.dataset.act = action; button.title = label;
         button.setAttribute('aria-label', label); button.innerHTML = icon; actions.append(button);
       }
-      const foot = make('div', 'msg-foot mono', S.footer((totalCommandMs / 1000).toFixed(1)));
+      const foot = make('div', 'msg-foot mono', S.footer(demoSeconds(totalCommandMs)));
       toolbar.append(actions, foot); final.append(toolbar); root.dataset.phase = 'complete';
       status.textContent = S.statusDone; scroll();
     } catch (error) {

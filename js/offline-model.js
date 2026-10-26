@@ -1,18 +1,21 @@
 import {
+  MAX_SINGLE_GGUF_BYTES,
   OFFLINE_MODEL_CONTEXT_SIZE,
-  OFFLINE_MODEL_MAX_OUTPUT_TOKENS,
-  OFFLINE_MODEL_SHA256,
-  OFFLINE_MODEL_SIZE_BYTES,
-  OFFLINE_MODEL_URL,
-  OFFLINE_MODEL_REVISION,
   OFFLINE_MODEL_ID,
+  OFFLINE_MODEL_MAX_OUTPUT_TOKENS,
   WLLAMA_VERSION,
-  formatDownloadBytes,
 } from './offline-model-config.js';
-import { isNetworkOffline } from './offline-network.js';
+import { estimateGGUFMemory, readDeviceMemoryGB, readGGUFMetadata } from './gguf.js';
+
+const MODEL_METADATA_FILE = 'dubhe-local-model.json';
+const MODEL_FILE_PREFIX = 'dubhe-local-model-';
+const MODEL_SCHEMA_VERSION = 1;
+const STORAGE_MARGIN_BYTES = 64 * 1024 ** 2;
+const GGUF_MAGIC = [0x47, 0x47, 0x55, 0x46];
 
 let enginePromise = null;
 let engineInstance = null;
+let loadedModelKey = '';
 let activeOfflineRuns = 0;
 
 function abortError() {
@@ -26,8 +29,265 @@ function throwIfAborted(signal) {
   if (signal?.aborted) throw abortError();
 }
 
+function isNotFoundError(error) {
+  return error?.name === 'NotFoundError' || /not found|does not exist/i.test(String(error?.message || ''));
+}
+
+function safeFileName(value) {
+  const name = String(value || '');
+  return name.startsWith(MODEL_FILE_PREFIX) && name.endsWith('.gguf') && !name.includes('/') && !name.includes('\\')
+    ? name
+    : '';
+}
+
+function createStoredFileName() {
+  const id = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
+  return `${MODEL_FILE_PREFIX}${id}.gguf`;
+}
+
+function notifyProgress(onProgress, loaded, total) {
+  try {
+    const safeTotal = Math.max(1, Number(total) || 1);
+    const safeLoaded = Math.max(0, Math.min(safeTotal, Number(loaded) || 0));
+    onProgress({ loaded: safeLoaded, total: safeTotal, percent: Math.round(safeLoaded / safeTotal * 100), phase: 'copy' });
+  } catch { /* Progress UI must not interrupt local file import. */ }
+}
+
 export function supportsOfflineModelStorage({ navigatorImpl = globalThis.navigator, secureContext = globalThis.isSecureContext } = {}) {
   return secureContext !== false && typeof navigatorImpl?.storage?.getDirectory === 'function';
+}
+
+async function getRootDirectory(storage = globalThis.navigator?.storage) {
+  if (!supportsOfflineModelStorage({ navigatorImpl: { storage }, secureContext: globalThis.isSecureContext })) {
+    throw new Error('本地 GGUF 需要支持 OPFS 的安全浏览器环境（HTTPS 或 localhost）。');
+  }
+  return storage.getDirectory();
+}
+
+async function readStoredMetadata(root) {
+  const handle = await root.getFileHandle(MODEL_METADATA_FILE);
+  const file = await handle.getFile();
+  const parsed = JSON.parse(await file.text());
+  if (!parsed || parsed.schemaVersion !== MODEL_SCHEMA_VERSION || !safeFileName(parsed.fileName)) {
+    throw new Error('本地 GGUF 索引损坏；请重新选择模型文件。');
+  }
+  const fileSize = Number(parsed.fileSize);
+  if (!Number.isSafeInteger(fileSize) || fileSize <= 0 || fileSize > MAX_SINGLE_GGUF_BYTES) {
+    throw new Error('本地 GGUF 索引中的文件大小无效。');
+  }
+  return parsed;
+}
+
+async function hasGGUFMagic(file) {
+  if (!file || file.size < 4) return false;
+  const bytes = new Uint8Array(await file.slice(0, 4).arrayBuffer());
+  return GGUF_MAGIC.every((value, index) => bytes[index] === value);
+}
+
+export async function getOfflineModelStatus({ storage = globalThis.navigator?.storage, secureContext = globalThis.isSecureContext } = {}) {
+  const supported = supportsOfflineModelStorage({ navigatorImpl: { storage }, secureContext });
+  if (!supported) return { supported: false, available: false, size: 0, metadata: null, reason: 'storage-unavailable' };
+  try {
+    const root = await storage.getDirectory();
+    const metadata = await readStoredMetadata(root);
+    const handle = await root.getFileHandle(metadata.fileName);
+    const file = await handle.getFile();
+    if (file.size !== metadata.fileSize) throw new Error('本地 GGUF 文件大小与索引不符；请重新选择模型文件。');
+    if (!await hasGGUFMagic(file)) throw new Error('本地模型文件头无效；请重新选择 GGUF 文件。');
+    return { supported: true, available: true, size: file.size, metadata };
+  } catch (error) {
+    if (isNotFoundError(error)) return { supported: true, available: false, size: 0, metadata: null };
+    return { supported: true, available: false, size: 0, metadata: null, error };
+  }
+}
+
+export async function syncOfflineModelAvailability(store, { notify = true, storage = globalThis.navigator?.storage } = {}) {
+  const status = await getOfflineModelStatus({ storage });
+  if (store?.state) {
+    store.state.offlineModelChecked = true;
+    store.state.offlineModelAvailable = status.available === true;
+    store.state.offlineModelStorageSupported = status.supported === true;
+    store.state.offlineModelMetadata = status.available ? status.metadata : null;
+    store.state.offlineModelStatusError = status.error ? String(status.error.message || status.error).slice(0, 180) : '';
+    if (notify && typeof store.notify === 'function') store.notify();
+  }
+  try { globalThis.dispatchEvent?.(new CustomEvent('dubhe:offline-model-status', { detail: status })); } catch { /* non-browser tests */ }
+  return status;
+}
+
+async function checkStorageSpace(storage, requiredBytes) {
+  try { await storage.persist?.(); } catch { /* Browser may decline persistent storage without affecting import. */ }
+  try {
+    const estimate = await storage.estimate?.();
+    const quota = Number(estimate?.quota) || 0;
+    const usage = Number(estimate?.usage) || 0;
+    if (quota > 0 && quota - usage < requiredBytes + STORAGE_MARGIN_BYTES) {
+      const free = Math.max(0, quota - usage);
+      throw new Error(`浏览器本地存储空间可能不足：本次导入需要约 ${(requiredBytes / 1024 ** 3).toFixed(2)} GiB，估算剩余 ${(free / 1024 ** 3).toFixed(2)} GiB。请释放空间后重试。`);
+    }
+  } catch (error) {
+    if (error instanceof Error && /本地存储空间可能不足/.test(error.message)) throw error;
+    // Some browsers do not expose quota estimates; the OPFS write will report a quota error if needed.
+  }
+}
+
+async function writeBlobToOPFS(root, targetName, blob, { signal, onProgress = () => {} } = {}) {
+  const handle = await root.getFileHandle(targetName, { create: true });
+  const writable = await handle.createWritable({ keepExistingData: false });
+  const writer = writable.getWriter();
+  const reader = blob.stream().getReader();
+  let loaded = 0;
+  notifyProgress(onProgress, 0, blob.size);
+  try {
+    while (true) {
+      throwIfAborted(signal);
+      const { done, value } = await reader.read();
+      if (done) break;
+      await writer.write(value);
+      loaded += value.byteLength;
+      notifyProgress(onProgress, loaded, blob.size);
+    }
+    throwIfAborted(signal);
+    if (loaded !== blob.size) throw new Error(`GGUF 文件复制不完整：${loaded} / ${blob.size} 字节。`);
+    await writer.close();
+    return await handle.getFile();
+  } catch (error) {
+    try { await reader.cancel(error); } catch { /* The stream may already be closed. */ }
+    try { await writer.abort(error); } catch { /* Best-effort rollback of the OPFS temporary write. */ }
+    try { await root.removeEntry(targetName); } catch { /* Keep the original model/index intact. */ }
+    throw error;
+  } finally {
+    try { reader.releaseLock(); } catch { /* Ignore a released reader. */ }
+    try { writer.releaseLock(); } catch { /* Ignore a released writer. */ }
+  }
+}
+
+async function writeJsonToOPFS(root, fileName, value) {
+  const handle = await root.getFileHandle(fileName, { create: true });
+  const writable = await handle.createWritable({ keepExistingData: false });
+  const writer = writable.getWriter();
+  try {
+    await writer.write(JSON.stringify(value));
+    await writer.close();
+  } catch (error) {
+    try { await writer.abort(error); } catch { /* Best-effort discard. */ }
+    throw error;
+  } finally {
+    try { writer.releaseLock(); } catch { /* Ignore a released writer. */ }
+  }
+}
+
+function nullableFiniteNumber(value) {
+  if (value == null || value === '') return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function serializableMetadata(parsed, file, storedFileName, memoryEstimate) {
+  return {
+    schemaVersion: MODEL_SCHEMA_VERSION,
+    fileName: storedFileName,
+    sourceName: String(file.name || parsed.fileName || 'model.gguf').replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 240),
+    displayName: String(parsed.displayName || file.name || '本地 GGUF').replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 160),
+    architecture: String(parsed.architecture || '').slice(0, 80),
+    parameterCount: Number.isSafeInteger(parsed.parameterCount) && parsed.parameterCount > 0 ? parsed.parameterCount : null,
+    parameterCountSource: String(parsed.parameterCountSource || 'unknown').slice(0, 40),
+    quantization: String(parsed.quantization || '').slice(0, 40),
+    contextLength: nullableFiniteNumber(parsed.contextLength),
+    blockCount: nullableFiniteNumber(parsed.blockCount),
+    embeddingLength: nullableFiniteNumber(parsed.embeddingLength),
+    attentionHeads: nullableFiniteNumber(parsed.attentionHeads),
+    kvAttentionHeads: nullableFiniteNumber(parsed.kvAttentionHeads),
+    keyLength: nullableFiniteNumber(parsed.keyLength),
+    valueLength: nullableFiniteNumber(parsed.valueLength),
+    fileSize: Number(file.size),
+    importedAt: Date.now(),
+    memoryEstimate: {
+      risk: memoryEstimate?.risk || 'unknown',
+      estimatedWorkingSetBytes: Number(memoryEstimate?.estimatedWorkingSetBytes) || null,
+      systemMemoryGB: Number(memoryEstimate?.systemMemoryGB) || null,
+    },
+  };
+}
+
+export async function importOfflineModel(file, {
+  signal,
+  onProgress = () => {},
+  storage = globalThis.navigator?.storage,
+  parsedMetadata = null,
+  memoryEstimate = null,
+  fileNameFactory = createStoredFileName,
+  metadataReader = readGGUFMetadata,
+} = {}) {
+  throwIfAborted(signal);
+  if (!file || typeof file.stream !== 'function' || !Number.isSafeInteger(Number(file.size)) || file.size <= 0) {
+    throw new Error('请选择有效的本地 GGUF 文件。');
+  }
+  if (!/\.gguf$/i.test(String(file.name || ''))) throw new Error('当前只接受单文件 .gguf；分片模型暂不支持。');
+  if (file.size > MAX_SINGLE_GGUF_BYTES) throw new Error('单个 GGUF 文件需小于 2 GiB；超大或分片模型当前不支持。');
+  const parsed = parsedMetadata || await metadataReader(file, { fileName: file.name || '' });
+  if (parsed?.format !== 'gguf') throw new Error('没有识别到有效的 GGUF 元数据。');
+  if (Number(parsed.fileSize) !== Number(file.size)) throw new Error('GGUF 元数据与所选文件大小不一致；请重新选择文件。');
+  const estimate = memoryEstimate || estimateGGUFMemory({
+    fileBytes: file.size,
+    metadata: parsed,
+    deviceMemoryGB: readDeviceMemoryGB(),
+    contextSize: OFFLINE_MODEL_CONTEXT_SIZE,
+  });
+  const root = await getRootDirectory(storage);
+  await checkStorageSpace(storage, file.size);
+  throwIfAborted(signal);
+
+  const oldStatus = await getOfflineModelStatus({ storage });
+  const storedFileName = String(fileNameFactory());
+  if (!safeFileName(storedFileName)) throw new Error('生成的本地模型文件名无效。');
+  let committed = false;
+  try {
+    const storedFile = await writeBlobToOPFS(root, storedFileName, file, { signal, onProgress });
+    throwIfAborted(signal);
+    if (storedFile.size !== file.size || !await hasGGUFMagic(storedFile)) throw new Error('保存后的 GGUF 校验失败；原有模型未更改。');
+    const metadata = serializableMetadata(parsed, file, storedFileName, estimate);
+    await writeJsonToOPFS(root, MODEL_METADATA_FILE, metadata);
+    committed = true;
+    if (oldStatus.metadata?.fileName && oldStatus.metadata.fileName !== storedFileName) {
+      try { await root.removeEntry(oldStatus.metadata.fileName); } catch { /* New metadata is already committed; stale-file cleanup is best effort. */ }
+    }
+    return await getOfflineModelStatus({ storage });
+  } catch (error) {
+    if (!committed) {
+      try { await root.removeEntry(storedFileName); } catch { /* Keep previous index/model intact. */ }
+    }
+    throw error;
+  }
+}
+
+export async function getOfflineModelFile({ storage = globalThis.navigator?.storage } = {}) {
+  const status = await getOfflineModelStatus({ storage });
+  if (!status.available) {
+    if (status.error) throw status.error;
+    throw new Error('尚未选择本地 GGUF。请前往“设置 → 离线本地模型”选择文件；本次推理没有尝试联网。');
+  }
+  const root = await storage.getDirectory();
+  const handle = await root.getFileHandle(status.metadata.fileName);
+  return { file: await handle.getFile(), metadata: status.metadata };
+}
+
+export async function removeOfflineModel({ storage = globalThis.navigator?.storage } = {}) {
+  if (activeOfflineRuns > 0) throw new Error('本地模型正在推理；请等待当前回合结束后再移除。');
+  if (engineInstance?.isModelLoaded?.()) await engineInstance.exit?.();
+  loadedModelKey = '';
+  if (!supportsOfflineModelStorage({ navigatorImpl: { storage }, secureContext: globalThis.isSecureContext })) {
+    return { removed: false, supported: false };
+  }
+  const root = await storage.getDirectory();
+  let metadata = null;
+  try { metadata = await readStoredMetadata(root); } catch (error) { if (!isNotFoundError(error)) throw error; }
+  let removed = false;
+  if (metadata?.fileName && safeFileName(metadata.fileName)) {
+    try { await root.removeEntry(metadata.fileName); removed = true; } catch (error) { if (!isNotFoundError(error)) throw error; }
+  }
+  try { await root.removeEntry(MODEL_METADATA_FILE); removed = true; } catch (error) { if (!isNotFoundError(error)) throw error; }
+  return { removed, supported: true };
 }
 
 async function createOfflineEngine() {
@@ -40,8 +300,7 @@ async function createOfflineEngine() {
     parallelDownloads: 1,
     logger: LoggerWithoutDebug,
   });
-  // Wllama 3.8.1 otherwise points its compatibility worker/WASM files at jsDelivr.
-  // No model lookup, load, or inference may use the default remote compatibility path.
+  // Wllama's compatibility worker can default to a CDN; this app keeps the runtime assets local.
   runtime.setCompat(null);
   return runtime;
 }
@@ -58,316 +317,6 @@ export async function getOfflineModelEngine() {
   return enginePromise;
 }
 
-const WLLAMA_METADATA_PREFIX = '__metadata__';
-function modelHasIncompleteDownload(model) {
-  return (model?.files || []).some((file) => ['partial', 'verifying'].includes(file?.metadata?.downloadState));
-}
-
-async function offlineCacheInfo(engine) {
-  const cache = engine?.modelManager?.cacheManager;
-  if (typeof cache?.getNameFromURL !== 'function' || typeof cache?.getSize !== 'function') return null;
-  const fileName = await cache.getNameFromURL(OFFLINE_MODEL_URL);
-  const size = Math.max(0, Number(await cache.getSize(fileName)) || 0);
-  const metadata = typeof cache.readMetadata === 'function' ? await cache.readMetadata(fileName) : null;
-  return { cache, fileName, size, metadata: metadata || {} };
-}
-
-export async function findCachedOfflineModel(engine) {
-  if (!engine?.modelManager || typeof engine.modelManager.getModels !== 'function') return null;
-  // getModels() inspects OPFS only. It does not query Hugging Face or download anything.
-  const models = await engine.modelManager.getModels();
-  return models.find((model) => model && model.url === OFFLINE_MODEL_URL
-    && model.validate?.() === 'valid' && !modelHasIncompleteDownload(model)) || null;
-}
-
-async function findOfflineModelRecord(engine) {
-  if (!engine?.modelManager || typeof engine.modelManager.getModels !== 'function') return null;
-  const models = await engine.modelManager.getModels({ includeInvalid: true });
-  return models.find((model) => model && model.url === OFFLINE_MODEL_URL) || null;
-}
-
-export async function getOfflineModelStatus({ engineProvider = getOfflineModelEngine, storage = globalThis.navigator?.storage } = {}) {
-  if (!supportsOfflineModelStorage({ navigatorImpl: { storage }, secureContext: globalThis.isSecureContext })) {
-    return { supported: false, available: false, size: 0, partialBytes: 0, reason: 'storage-unavailable' };
-  }
-  try {
-    const engine = await engineProvider();
-    const model = await findCachedOfflineModel(engine);
-    const cacheInfo = await offlineCacheInfo(engine);
-    const available = !!model;
-    return {
-      supported: true, available,
-      size: available ? Math.max(0, Number(model.size) || 0) : 0,
-      partialBytes: available ? 0 : Math.min(OFFLINE_MODEL_SIZE_BYTES, cacheInfo?.size || 0),
-      model: model || null,
-    };
-  } catch (error) {
-    return { supported: true, available: false, size: 0, partialBytes: 0, error };
-  }
-}
-
-export async function syncOfflineModelAvailability(store, { notify = true } = {}) {
-  const status = await getOfflineModelStatus();
-  if (store?.state) {
-    store.state.offlineModelChecked = true;
-    store.state.offlineModelAvailable = status.available;
-    store.state.offlineModelStorageSupported = status.supported;
-    store.state.offlineModelPartialBytes = status.partialBytes || 0;
-    store.state.offlineModelStatusError = status.error ? String(status.error.message || status.error).slice(0, 180) : '';
-    if (notify && typeof store.notify === 'function') store.notify();
-  }
-  try { globalThis.dispatchEvent?.(new CustomEvent('dubhe:offline-model-status', { detail: status })); } catch { /* non-browser tests */ }
-  return status;
-}
-
-async function discardUnverifiedOfflineModel(engine) {
-  try { await engine?.modelManager?.cacheManager?.delete?.(OFFLINE_MODEL_URL); } catch { /* best-effort removal of partial or invalid cache */ }
-}
-
-async function checkStorageSpace(storage, remainingBytes = OFFLINE_MODEL_SIZE_BYTES) {
-  const needed = Math.max(0, Number(remainingBytes) || 0);
-  if (!needed) return;
-  try { await storage.persist?.(); } catch { /* browser may deny persistent storage without a prompt */ }
-  try {
-    const estimate = await storage.estimate?.();
-    const quota = Number(estimate?.quota) || 0;
-    const usage = Number(estimate?.usage) || 0;
-    const free = quota - usage;
-    // Resumes append to the existing OPFS file; reserve only a small margin for the remaining bytes.
-    const margin = Math.min(16 * 1024 ** 2, needed * (needed >= OFFLINE_MODEL_SIZE_BYTES ? 0.08 : 0.02));
-    if (quota > 0 && free < needed + margin) {
-      throw new Error(`可用浏览器存储不足：还需约 ${formatDownloadBytes(needed)}，当前估算剩余 ${formatDownloadBytes(Math.max(0, free))}。`);
-    }
-  } catch (error) {
-    if (error instanceof Error && /存储不足/.test(error.message)) throw error;
-    // Some browsers do not expose an estimate; OPFS will report quota failures itself.
-  }
-}
-
-const SHA256_K = new Uint32Array([
-  0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
-  0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
-  0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
-  0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
-  0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
-  0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
-  0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
-  0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2,
-]);
-const rotr = (x, n) => (x >>> n) | (x << (32 - n));
-class StreamingSha256 {
-  constructor() {
-    this.h = new Uint32Array([0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19]);
-    this.block = new Uint8Array(64);
-    this.blockLength = 0;
-    this.totalBytes = 0n;
-    this.words = new Uint32Array(64);
-  }
-  update(input) {
-    const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
-    this.totalBytes += BigInt(bytes.byteLength);
-    let offset = 0;
-    if (this.blockLength) {
-      const take = Math.min(64 - this.blockLength, bytes.length);
-      this.block.set(bytes.subarray(0, take), this.blockLength);
-      this.blockLength += take; offset += take;
-      if (this.blockLength === 64) { this.compress(this.block); this.blockLength = 0; }
-    }
-    while (offset + 64 <= bytes.length) { this.compress(bytes.subarray(offset, offset + 64)); offset += 64; }
-    if (offset < bytes.length) {
-      this.block.set(bytes.subarray(offset), 0);
-      this.blockLength = bytes.length - offset;
-    }
-  }
-  compress(bytes) {
-    const view = new DataView(bytes.buffer, bytes.byteOffset, 64);
-    const w = this.words;
-    for (let i = 0; i < 16; i++) w[i] = view.getUint32(i * 4, false);
-    for (let i = 16; i < 64; i++) {
-      const x = w[i - 15], y = w[i - 2];
-      const s0 = rotr(x, 7) ^ rotr(x, 18) ^ (x >>> 3);
-      const s1 = rotr(y, 17) ^ rotr(y, 19) ^ (y >>> 10);
-      w[i] = (w[i - 16] + s0 + w[i - 7] + s1) >>> 0;
-    }
-    let [a,b,c,d,e,f,g,h] = this.h;
-    for (let i = 0; i < 64; i++) {
-      const s1 = rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25);
-      const ch = (e & f) ^ (~e & g);
-      const t1 = (h + s1 + ch + SHA256_K[i] + w[i]) >>> 0;
-      const s0 = rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22);
-      const maj = (a & b) ^ (a & c) ^ (b & c);
-      const t2 = (s0 + maj) >>> 0;
-      h=g; g=f; f=e; e=(d+t1)>>>0; d=c; c=b; b=a; a=(t1+t2)>>>0;
-    }
-    const v = [a,b,c,d,e,f,g,h];
-    for (let i = 0; i < 8; i++) this.h[i] = (this.h[i] + v[i]) >>> 0;
-  }
-  digestHex() {
-    const bitLength = this.totalBytes * 8n;
-    const paddedLength = this.blockLength < 56 ? 64 : 128;
-    const tail = new Uint8Array(paddedLength);
-    tail.set(this.block.subarray(0, this.blockLength));
-    tail[this.blockLength] = 0x80;
-    new DataView(tail.buffer).setBigUint64(paddedLength - 8, bitLength, false);
-    for (let offset = 0; offset < paddedLength; offset += 64) this.compress(tail.subarray(offset, offset + 64));
-    return [...this.h].map((value) => value.toString(16).padStart(8, '0')).join('');
-  }
-}
-
-export async function sha256Blob(blob, { signal, onProgress = () => {}, chunkBytes = 1024 * 1024 } = {}) {
-  if (!blob || typeof blob.stream !== 'function') throw new Error('本地模型 Blob 不支持流式读取。');
-  const hash = new StreamingSha256();
-  const total = Math.max(0, Number(blob.size) || 0);
-  let loaded = 0;
-  const reader = blob.stream().getReader();
-  try {
-    while (true) {
-      throwIfAborted(signal);
-      const { done, value } = await reader.read();
-      if (done) break;
-      hash.update(value);
-      loaded += value.byteLength;
-      onProgress({ loaded, total, phase: 'verify' });
-    }
-  } finally { try { await reader.cancel(); } catch { /* stream already closed */ } }
-  if (loaded !== total) throw new Error(`本地文件长度不匹配：读取 ${loaded} / ${total} 字节。`);
-  return hash.digestHex();
-}
-
-export async function verifyOfflineModelIntegrity(model, { signal, onProgress = () => {} } = {}) {
-  if (!model || model.url !== OFFLINE_MODEL_URL || model.validate?.() !== 'valid') return { ok: false, reason: 'invalid-model' };
-  const blobs = await model.open();
-  const size = blobs.reduce((sum, blob) => sum + (Number(blob.size) || 0), 0);
-  if (size !== OFFLINE_MODEL_SIZE_BYTES) return { ok: false, reason: 'size-mismatch', size };
-  let loaded = 0;
-  const hash = new StreamingSha256();
-  for (const blob of blobs) {
-    if (!blob || typeof blob.stream !== 'function') return { ok: false, reason: 'stream-unavailable', size };
-    const reader = blob.stream().getReader();
-    try {
-      while (true) {
-        throwIfAborted(signal);
-        const { done, value } = await reader.read();
-        if (done) break;
-        hash.update(value);
-        loaded += value.byteLength;
-        onProgress({ loaded, total: size, phase: 'verify' });
-      }
-    } finally { try { await reader.cancel(); } catch { /* stream already closed */ } }
-  }
-  if (loaded !== size) return { ok: false, reason: 'size-mismatch', size: loaded };
-  const actual = hash.digestHex();
-  return { ok: actual === OFFLINE_MODEL_SHA256, actual, expected: OFFLINE_MODEL_SHA256, size };
-}
-
-export function downloadOfflineModelResumable({ fileName, metadata, signal, onProgress = () => {}, WorkerImpl = globalThis.Worker } = {}) {
-  if (typeof WorkerImpl !== 'function') return Promise.reject(new Error('此浏览器不支持后台 OPFS 下载。'));
-  const worker = new WorkerImpl(new URL('./offline-model-download-worker.js', import.meta.url), { type: 'module' });
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    const cleanup = () => {
-      signal?.removeEventListener?.('abort', abort);
-      worker.terminate?.();
-    };
-    const finish = (fn, value) => { if (settled) return; settled = true; cleanup(); fn(value); };
-    const abort = () => { try { worker.postMessage({ type: 'abort' }); } catch { /* worker may already exit */ } };
-    worker.onmessage = ({ data = {} }) => {
-      if (data.type === 'progress') { try { onProgress(data); } catch { /* UI callbacks cannot stop a download */ } return; }
-      if (data.type === 'done') { finish(resolve, data); return; }
-      if (data.type === 'aborted') { finish(reject, abortError()); return; }
-      if (data.type === 'error') { const error = new Error(data.message || '模型下载失败。'); error.name = data.name || 'Error'; finish(reject, error); }
-    };
-    worker.onerror = (event) => finish(reject, new Error(event?.message || '模型下载 Worker 出错。'));
-    signal?.addEventListener?.('abort', abort, { once: true });
-    worker.postMessage({
-      type: 'download', url: OFFLINE_MODEL_URL, fileName,
-      metadataFileName: `${WLLAMA_METADATA_PREFIX}${fileName}`,
-      totalBytes: OFFLINE_MODEL_SIZE_BYTES, etag: metadata?.etag || '', metadata,
-    });
-    if (signal?.aborted) abort();
-  });
-}
-
-export async function downloadOfflineModel({
-  signal, onProgress = () => {}, engineProvider = getOfflineModelEngine,
-  verifyIntegrity = verifyOfflineModelIntegrity, resumeDownload = downloadOfflineModelResumable,
-} = {}) {
-  if (isNetworkOffline()) throw new Error('当前处于离线状态；模型不会自动下载。恢复网络后再手动点击“下载模型”。');
-  throwIfAborted(signal);
-  if (!supportsOfflineModelStorage()) throw new Error('当前浏览器不支持本地模型存储（OPFS），请使用 HTTPS / localhost 下的现代浏览器。');
-  const engine = await engineProvider();
-  const cached = await findCachedOfflineModel(engine);
-  if (cached) {
-    onProgress({ loaded: cached.size, total: cached.size, phase: 'ready' });
-    return cached;
-  }
-  if (isNetworkOffline()) throw new Error('当前处于离线状态；模型不会自动下载。恢复网络后再手动点击“下载模型”。');
-  const cacheInfo = await offlineCacheInfo(engine);
-  if (!cacheInfo || typeof cacheInfo.cache.writeMetadata !== 'function') throw new Error('本地模型缓存不支持断点续传；请刷新后重试。');
-  const partialBytes = Math.min(OFFLINE_MODEL_SIZE_BYTES, cacheInfo.size);
-  const metadata = {
-    ...cacheInfo.metadata,
-    originalURL: OFFLINE_MODEL_URL,
-    originalSize: OFFLINE_MODEL_SIZE_BYTES,
-    revision: OFFLINE_MODEL_REVISION,
-    sha256: OFFLINE_MODEL_SHA256,
-    downloadState: 'partial',
-  };
-  await checkStorageSpace(globalThis.navigator.storage, OFFLINE_MODEL_SIZE_BYTES - partialBytes);
-  throwIfAborted(signal);
-  await cacheInfo.cache.writeMetadata(cacheInfo.fileName, metadata);
-  onProgress({ loaded: partialBytes, total: OFFLINE_MODEL_SIZE_BYTES, phase: 'download' });
-
-  // The file key is Wllama's pinned-URL cache key. A dedicated worker uses OPFS sync writes,
-  // flushing checkpoints so a refresh/reopen can continue with an HTTP Range request.
-  const download = await resumeDownload({
-    fileName: cacheInfo.fileName, metadata, signal,
-    onProgress: (progress = {}) => onProgress({
-      loaded: Math.max(0, Number(progress.loaded) || 0),
-      total: OFFLINE_MODEL_SIZE_BYTES, phase: 'download',
-    }),
-  });
-  if (Number(download?.loaded) !== OFFLINE_MODEL_SIZE_BYTES) {
-    throw new Error('模型下载尚未完成；已保留已下载数据，再次点击即可继续。');
-  }
-
-  const verifyingMetadata = { ...metadata, etag: download.etag || metadata.etag || '', downloadState: 'verifying' };
-  await cacheInfo.cache.writeMetadata(cacheInfo.fileName, verifyingMetadata);
-  const candidate = await findOfflineModelRecord(engine);
-  if (!candidate || candidate.validate?.() !== 'valid' || candidate.size !== OFFLINE_MODEL_SIZE_BYTES) {
-    throw new Error('本地模型文件尚未通过完整性检查；已保留下载数据，可再次尝试校验。');
-  }
-  let integrity;
-  try { integrity = await verifyIntegrity(candidate, { signal, onProgress }); }
-  catch (error) { throw error; } // Keep the completed bytes so an interrupted hash check does not restart the download.
-  if (!integrity.ok) {
-    await discardUnverifiedOfflineModel(engine);
-    throw new Error(integrity.reason === 'size-mismatch'
-      ? '模型下载后文件大小不匹配，已清除损坏缓存；请重新下载。'
-      : `模型 SHA-256 校验失败，已清除损坏缓存。期望 ${OFFLINE_MODEL_SHA256.slice(0, 12)}…，实际 ${(integrity.actual || '不可用').slice(0, 12)}…`);
-  }
-  await cacheInfo.cache.writeMetadata(cacheInfo.fileName, { ...verifyingMetadata, downloadState: 'complete' });
-  const verified = await findCachedOfflineModel(engine);
-  if (!verified) throw new Error('模型校验通过但未能登记为可用缓存；请再次检查本地存储。');
-  onProgress({ loaded: verified.size, total: verified.size, phase: 'ready' });
-  return verified;
-}
-
-export async function removeOfflineModel({ engineProvider = getOfflineModelEngine } = {}) {
-  if (activeOfflineRuns > 0) throw new Error('本地模型正在推理；请等待当前回合结束后再移除。');
-  const engine = await engineProvider();
-  if (typeof engine.isModelLoaded === 'function' && engine.isModelLoaded()) await engine.exit?.();
-  const cacheInfo = await offlineCacheInfo(engine);
-  const models = await engine.modelManager.getModels({ includeInvalid: true });
-  const model = models.find((entry) => entry && entry.url === OFFLINE_MODEL_URL);
-  // Delete by the pinned URL through Wllama's cache manager so even metadata-only/partial files go away.
-  if (typeof cacheInfo?.cache?.delete === 'function') await cacheInfo.cache.delete(OFFLINE_MODEL_URL);
-  else if (model) await model.remove();
-  engineInstance = null;
-  enginePromise = null;
-  return { removed: !!model || !!cacheInfo?.size };
-}
-
 export async function streamOfflineModel({
   messages,
   tools = [],
@@ -375,22 +324,28 @@ export async function streamOfflineModel({
   temperature = 0.7,
   maxTokens = OFFLINE_MODEL_MAX_OUTPUT_TOKENS,
   onChunk = () => {},
-} = {}, { engineProvider = getOfflineModelEngine, cachedModelProvider = findCachedOfflineModel } = {}) {
+} = {}, { engineProvider = getOfflineModelEngine, modelFileProvider = getOfflineModelFile } = {}) {
   activeOfflineRuns++;
   try {
     throwIfAborted(signal);
-    const engine = await engineProvider();
-    const model = await cachedModelProvider(engine);
-    if (!model) throw new Error('本地模型尚未安装。请联网后在“设置 → 离线本地模型”中手动下载；本次推理没有尝试联网。');
+    const localModel = await modelFileProvider();
+    if (!localModel?.file || typeof localModel.file.slice !== 'function') {
+      throw new Error('尚未选择本地 GGUF。请前往“设置 → 离线本地模型”选择文件；本次推理没有尝试联网。');
+    }
     throwIfAborted(signal);
-    if (typeof engine.isModelLoaded !== 'function' || !engine.isModelLoaded()) {
-      // Pass the cached Model object, never a URL: Wllama's URL loader may download on a cache miss.
-      await engine.loadModel(model, {
+    const engine = await engineProvider();
+    const modelKey = String(localModel.metadata?.fileName || localModel.file.name || `${localModel.file.size}:${localModel.metadata?.importedAt || ''}`);
+    const isLoaded = typeof engine.isModelLoaded === 'function' && engine.isModelLoaded();
+    if (!isLoaded || loadedModelKey !== modelKey) {
+      if (isLoaded) await engine.exit?.();
+      // Wllama 3.8.1 accepts Blob[] directly; the OPFS File is passed locally, never as a URL.
+      await engine.loadModel([localModel.file], {
         n_ctx: OFFLINE_MODEL_CONTEXT_SIZE,
         n_batch: 512,
         n_threads: Math.max(1, Math.min(4, Math.floor(Number(globalThis.navigator?.hardwareConcurrency) / 2) || 2)),
         warmup: false,
       });
+      loadedModelKey = modelKey;
     }
     throwIfAborted(signal);
     const availableTools = Array.isArray(tools) && tools.length ? tools : undefined;
@@ -412,16 +367,4 @@ export async function streamOfflineModel({
   } finally {
     activeOfflineRuns = Math.max(0, activeOfflineRuns - 1);
   }
-}
-
-export function formatOfflineDownloadProgress({ loaded = 0, total = OFFLINE_MODEL_SIZE_BYTES } = {}) {
-  const safeTotal = Math.max(1, Number(total) || OFFLINE_MODEL_SIZE_BYTES);
-  const safeLoaded = Math.max(0, Math.min(safeTotal, Number(loaded) || 0));
-  return {
-    loaded: safeLoaded,
-    total: safeTotal,
-    percent: Math.max(0, Math.min(100, Math.round((safeLoaded / safeTotal) * 100))),
-    loadedText: formatDownloadBytes(safeLoaded),
-    totalText: formatDownloadBytes(safeTotal),
-  };
 }

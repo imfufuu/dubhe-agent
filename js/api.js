@@ -3,8 +3,8 @@
 // 纯函数导出，便于 node 单测（tests/agent.test.mjs）
 
 import { text as localeText } from './locale.js';
-import { ANTHROPIC_VERSION, MAX_TOKENS, REQUEST_TIMEOUT_MS, protocolOf, thinkingParamsFor, resolveModelAlias } from './config.js?v=2026.10.11.1';
-import { claudeThinkingBudget, normalizeReasoningLevel, reasoningEffortFor, withReasoningStrategy } from './reasoning.js?v=2026.10.11.1';
+import { ANTHROPIC_VERSION, MAX_TOKENS, REQUEST_TIMEOUT_MS, protocolOf, thinkingParamsFor, resolveModelAlias } from './config.js?v=2026.10.25.1';
+import { claudeThinkingBudget, normalizeReasoningLevel, reasoningEffortFor, withReasoningStrategy } from './reasoning.js?v=2026.10.25.1';
 import { gatewayBase, setGatewayBase, otherGatewayBase, isNetworkError } from './endpoint.js';
 import { webCapFor, injectWeb, buildResponsesInput, createResponsesStream } from './websearch.js';
 import { resolveTemperature, canSendTemperature } from './temperature.js';
@@ -15,7 +15,7 @@ import { streamOfflineModel } from './offline-model.js';
 import {
   DEFAULT_GATEWAY_ID, getGateway, gatewayPath, gatewayBaseUrl as configuredGatewayBaseUrl,
   gatewayNativeBaseUrl, joinGatewayUrl, gatewayModelListUrl, gatewayModelIdsFromResponse, filterGatewayChatModels,
-} from './gateway-registry.js?v=2026.10.11.1';
+} from './gateway-registry.js?v=2026.10.25.1';
 
 // 实测不支持思考参数的模型（400 降级后记录，会话内不再尝试）
 const thinkingUnsupported = new Set();
@@ -586,12 +586,12 @@ export async function streamChat({ model, apiKey, messages, tools, fastMode = fa
   // 废弃/改名模型别名解析（agent 层已做，但子智能体直传时再保底一次）
   model = resolveModelAlias(model);
   if (isNetworkOffline() && !isOfflineModelId(model)) {
-    throw new Error(localeText('离线模式只允许使用已下载的本地模型；没有发送网关请求。', 'Offline mode only permits the installed local model; no gateway request was sent.'));
+    throw new Error(localeText('离线模式只允许使用已保存的本地 GGUF；没有发送网关请求。', 'Offline mode only permits the saved local GGUF; no gateway request was sent.'));
   }
   if (isOfflineModelId(model)) {
     const localMessages = buildOpenAIMessages(stripEmptyAssistantMessages(messages), { includeReasoning: false });
     if (localMessages.some((message) => Array.isArray(message.content))) {
-      throw new Error(localeText('此本地 Qwen 模型仅支持文本；离线模式暂不处理图片/视频附件。', 'This local Qwen model is text-only; image/video attachments are not supported offline.'));
+      throw new Error(localeText('本地 GGUF 目前仅支持文本；离线模式暂不处理图片/视频附件。', 'Local GGUF currently supports text only; image/video attachments are not supported offline.'));
     }
     await streamOfflineModel({
       messages: localMessages,

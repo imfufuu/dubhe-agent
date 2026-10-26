@@ -1,9 +1,9 @@
-import { isRetiredModel } from './model-catalog.js?v=2026.10.11.1';
-import { defaultModelForGateway, isModelForGateway } from './gateway-registry.js?v=2026.10.11.1';
+import { isRetiredModel } from './model-catalog.js?v=2026.10.25.1';
+import { defaultModelForGateway, isModelForGateway } from './gateway-registry.js?v=2026.10.25.1';
 import { normalizeFeedback } from './feedback.js';
 // ─── 会话状态：多会话记录、消息、检查点（回滚）、持久化 ────────────────
 // 侧栏展示「会话记录」；回滚操作全部发生在对话区（消息级按钮 + 撤销浮条）
-import { STORAGE_KEY, DEFAULT_IMAGE_MODEL, DEFAULT_CHAT_MODEL, isImageModel, isImageGenModel } from './config.js?v=2026.10.11.1';
+import { STORAGE_KEY, DEFAULT_IMAGE_MODEL, DEFAULT_CHAT_MODEL, isImageModel, isImageGenModel } from './config.js?v=2026.10.25.1';
 import { readLocal } from './legacy-keys.js';
 import { isJevModel } from './jev.js';
 import { blobsSupported, blobPut, blobGet, blobPrune } from './blobstore.js';
@@ -11,6 +11,55 @@ import { pruneMemoryFacts } from './memory.js';
 import { pruneLearnedSkills } from './skills.js';
 
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2));
+
+function timestampValue(value) {
+  const numeric = Number(value);
+  if (Number.isFinite(numeric) && numeric > 0) return numeric;
+  if (typeof value === 'string') {
+    const parsed = Date.parse(value);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  }
+  return 0;
+}
+
+/** Backfill presentation metadata only; never change text, tool arguments, or reasoning content. */
+export function normalizeMessageMetadata(messages, { createdAt = 0, updatedAt = 0, fallbackTimestamp = 0, recoverInterrupted = false, now = Date.now() } = {}) {
+  if (!Array.isArray(messages)) return [];
+  const initial = timestampValue(createdAt) || timestampValue(updatedAt) || timestampValue(fallbackTimestamp) || timestampValue(now) || Date.now();
+  let previous = initial;
+  for (const message of messages) {
+    if (!message || typeof message !== 'object') continue;
+    const actual = timestampValue(message.ts);
+    if (actual) {
+      message.ts = actual;
+      previous = actual;
+    } else {
+      message.ts = previous;
+      message.tsEstimated = true;
+    }
+    if (message.role === 'assistant' && message.done == null) message.done = true;
+    else if (recoverInterrupted && message.role === 'assistant' && message.done === false) {
+      // A reload cannot resume the in-memory stream; preserve its partial text as a stopped, inspectable reply.
+      message.done = true;
+      message.cancelled = true;
+      message.interrupted = true;
+    }
+  }
+  // A final answer can be a separate assistant message after tool calls. Preserve a known turn effort
+  // level on the final message when older/imported data omitted that copy.
+  let turnAssistants = [];
+  const flushTurn = () => {
+    const level = turnAssistants.find((message) => typeof message.reasoningLevel === 'string')?.reasoningLevel;
+    if (level) for (const message of turnAssistants) if (typeof message.reasoningLevel !== 'string') message.reasoningLevel = level;
+    turnAssistants = [];
+  };
+  for (const message of messages) {
+    if (message?.role === 'user') flushTurn();
+    else if (message?.role === 'assistant') turnAssistants.push(message);
+  }
+  flushTurn();
+  return messages;
+}
 
 function newSession(title = '', model = '', imageModel = '', gatewayId = 'teamorouter') {
   return { id: uid(), title, model, imageModel, gatewayId, createdAt: Date.now(), updatedAt: Date.now(), messages: [], checkpoints: [], undoBranch: null, files: {}, stats: { lastMs: 0, totalMs: 0 } };
@@ -225,7 +274,7 @@ export function createStore(onChange) {
     offlineModelChecked: false,
     offlineModelAvailable: false,
     offlineModelStorageSupported: false,
-    offlineModelPartialBytes: 0,
+    offlineModelMetadata: null,
     offlineModelStatusError: '',
     model: DEFAULT_CHAT_MODEL,
     imageModel: DEFAULT_IMAGE_MODEL, // 生图模型（由 generate_image 工具使用，与会话绑定）
@@ -294,6 +343,8 @@ export function createStore(onChange) {
   const sess = () => state.sessions.find((s) => s.id === state.activeSessionId) || state.sessions[0];
   const hydrate = () => {
     const s = sess();
+    if (!Array.isArray(s.messages)) s.messages = [];
+    normalizeMessageMetadata(s.messages, { createdAt: s.createdAt, updatedAt: s.updatedAt });
     state.messages = s.messages;
     state.checkpoints = s.checkpoints;
     state.files = s.files;
@@ -557,7 +608,8 @@ export function createStore(onChange) {
   state.offlineModelChecked = false;
   state.offlineModelAvailable = false;
   state.offlineModelStorageSupported = false;
-  state.offlineModelPartialBytes = 0;
+  state.offlineModelMetadata = null;
+  delete state.offlineModelPartialBytes; // retired downloader progress from older snapshots
   state.offlineModelStatusError = '';
   state.apiKey = String(state.gatewayKeys[state.gatewayId] || (state.gatewayId === 'teamorouter' ? state.apiKey : '') || '');
   state.models = state.modelsByGateway[state.gatewayId] || [];
@@ -565,7 +617,11 @@ export function createStore(onChange) {
   // Drop retired auto-prune metadata from all old snapshot formats; never scan or delete user files.
   for (const key of ['cleanupArtifacts', 'lastCleanupReport', 'cleanupHistory', 'cleanupTotals']) delete state[key];
   delete state.settings.cleanupPolicy;
-  for (const session of state.sessions || []) for (const message of session.messages || []) delete message.cleanup;
+  for (const session of state.sessions || []) {
+    if (!Array.isArray(session.messages)) session.messages = [];
+    normalizeMessageMetadata(session.messages, { createdAt: session.createdAt, updatedAt: session.updatedAt, recoverInterrupted: true });
+    for (const message of session.messages) delete message.cleanup;
+  }
   for (const message of state.messages || []) delete message.cleanup;
   hydrate();
 
@@ -751,10 +807,14 @@ export function createStore(onChange) {
             id: uid(), role: m.role, text: m.text || '',
             content: typeof m.content === 'string' ? m.content : (m.content || ''),
             model: m.model, // 保留每条消息实际使用的模型（会话头展示用）
+            userModel: m.userModel, router: m.router, transport: m.transport, fastMode: m.fastMode,
+            jevUsage: m.jevUsage, budget: m.budget, webSearch: m.webSearch,
             toolCalls: m.toolCalls, toolCallId: m.toolCallId, name: m.name, usage: m.usage, ts: m.ts,
-            // 导出 JSON 经常不带 done。缺省当成已经结束，否则 paintAssistant 会给每条回复画一个去不掉的光标。
-            done: m.done !== false,
-            cancelled: !!m.cancelled,
+            tsEstimated: !!m.tsEstimated,
+            // An imported stream cannot resume; show its partial reply as stopped rather than leaving a permanent cursor/footer gap.
+            done: true,
+            cancelled: !!m.cancelled || m.done === false,
+            interrupted: !!m.interrupted || m.done === false,
             error: typeof m.error === 'string' ? m.error : undefined,
             finishReason: m.finishReason, execution: m.execution, publicPlan: m.publicPlan, feedback: normalizeFeedback(m.feedback),
             reasoning: m.reasoning,
@@ -763,7 +823,6 @@ export function createStore(onChange) {
             durationMs: m.durationMs,
             thinkingBlocks: m.thinkingBlocks,
             thoughtHidden: m.thoughtHidden,
-            webSearch: m.webSearch,
             ...(atts.length ? { attachments: atts } : {}),
           };
         });
@@ -774,6 +833,11 @@ export function createStore(onChange) {
       if (data.imageModel) s.imageModel = String(data.imageModel);
       s.createdAt = Date.now();
       s.updatedAt = Date.now();
+      normalizeMessageMetadata(s.messages, {
+        createdAt: s.createdAt,
+        updatedAt: s.updatedAt,
+        fallbackTimestamp: timestampValue(data.exportedAt),
+      });
       state.sessions.unshift(s);
       state.activeSessionId = s.id;
       hydrate();
