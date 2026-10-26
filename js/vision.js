@@ -2,11 +2,11 @@ import { normalizeAudioData } from './audio-format.js';
 // 识图 / 视频识别工具专用通道：对话模型全部按纯文本发送，图片与视频只走这里。
 // 模型由设置页「多模态模型」决定（config.js VISION_MODELS / VIDEO_MODELS），默认仍是 deepseek-v4-flash-vision-exp。
 // 独立文件，避免给 api.js 新增具名导出（Pages 混版缓存会白屏）。
-import { authHeaders, gatewayRequest } from './api.js?v=2026.10.11.1';
+import { authHeaders, gatewayRequest } from './api.js?v=2026.10.25.1';
 import { svgDataUrl } from './svg-safety.js';
-import { DEFAULT_VISION_MODEL, DEFAULT_VIDEO_MODEL, resolveVisionModel, resolveVideoModel, DEFAULT_AUDIO_MODEL, resolveAudioModel } from './config.js?v=2026.10.11.1';
-import { protocolOf } from './config.js?v=2026.10.11.1';
-import { DEFAULT_GATEWAY_ID, getGateway, gatewayPath, defaultVisionModelForGateway } from './gateway-registry.js?v=2026.10.11.1';
+import { DEFAULT_VISION_MODEL, DEFAULT_VIDEO_MODEL, resolveVisionModel, resolveVideoModel, DEFAULT_AUDIO_MODEL, resolveAudioModel } from './config.js?v=2026.10.25.1';
+import { protocolOf } from './config.js?v=2026.10.25.1';
+import { DEFAULT_GATEWAY_ID, getGateway, gatewayPath, defaultVisionModelForGateway } from './gateway-registry.js?v=2026.10.25.1';
 
 export const VISION_TOOL_MODEL = DEFAULT_VISION_MODEL;
 export const VIDEO_TOOL_MODEL = DEFAULT_VIDEO_MODEL;

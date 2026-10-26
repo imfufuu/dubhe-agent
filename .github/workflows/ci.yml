@@ -60,15 +60,18 @@ jobs:
       - name: tests/gateway-models.test.mjs · 网关模型目录与手动 ID 规则
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/gateway-models.test.mjs
+      - name: tests/gguf.test.mjs · GGUF 元数据与内存估算
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/gguf.test.mjs
       - name: tests/github-project.test.mjs · GitHub 项目 ZIP 导入与 Worker 路由
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/github-project.test.mjs
+      - name: tests/i18n.test.mjs · 多语言基础与 Intl 格式
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/i18n.test.mjs
       - name: tests/offline-model.test.mjs · 离线模型、工具白名单与网络围栏
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/offline-model.test.mjs
-      - name: tests/offline-model-download.test.mjs · OPFS 分块下载续传
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/offline-model-download.test.mjs
       - name: tests/page-fx.test.mjs · 页面动效安全与减少动效
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/page-fx.test.mjs
@@ -78,9 +81,18 @@ jobs:
       - name: tests/ui-chunks.test.mjs · 流式 Markdown 尾文本浮现
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/ui-chunks.test.mjs
+      - name: tests/ui-foot.test.mjs · Assistant 脚注与元信息
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/ui-foot.test.mjs
+      - name: tests/ui-motion-new.test.mjs · 新版 UI 动效回归
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/ui-motion-new.test.mjs
       - name: tests/ui-runtime.test.mjs · 演示动效与 Python 按需依赖
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/ui-runtime.test.mjs
+      - name: tests/ui-turn-toolbar.test.mjs · 单轮工具栏
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/ui-turn-toolbar.test.mjs
       - name: tests/reasoning-rhythm.test.mjs · 模型努力映射与消息间距
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/reasoning-rhythm.test.mjs

@@ -1,4 +1,4 @@
-import { DEFAULT_GATEWAY_ID, getGateway, validateGatewayApiKey } from './gateway-registry.js?v=2026.10.11.1';
+import { DEFAULT_GATEWAY_ID, getGateway, validateGatewayApiKey } from './gateway-registry.js?v=2026.10.25.1';
 
 export function syncGatewayKeyModal(gatewayId, input, title, description) {
   const spec = getGateway(gatewayId || DEFAULT_GATEWAY_ID);

@@ -1,4 +1,4 @@
-import { $, $$, esc } from './ui-markdown.js?v=2026.10.11.1';
+import { $, $$, esc } from './ui-markdown.js?v=2026.10.25.1';
 import { isOfflineModelId } from './offline-model-config.js';
 export function installChoiceHandler({ root, store, agent, getBusy, openKeyModal, toast }) {
   function readChoiceAnswers(box) {

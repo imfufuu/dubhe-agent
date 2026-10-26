@@ -8,8 +8,8 @@ import { text as messageLocaleText } from './locale.js';
 import { contextBudgetFor } from './context.js';
 import { ICON } from './icons.js';
 import { sanitizeSvgMarkup, svgSourceFromValue } from './svg-safety.js';
-import { prepareMarkdownExtensions, parsePandocAttributes, pandocAttributesHtml } from './markdown-extensions.js?v=2026.10.11.1';
-import { CHART_ALIAS, parseChartInfo, parseDiagramInfo, renderQuickChart, renderQuickDiagram, CHART_DIRECT_ALIASES } from './quickviz.js?v=2026.10.11.1';
+import { prepareMarkdownExtensions, parsePandocAttributes, pandocAttributesHtml } from './markdown-extensions.js?v=2026.10.25.1';
+import { CHART_ALIAS, parseChartInfo, parseDiagramInfo, renderQuickChart, renderQuickDiagram, CHART_DIRECT_ALIASES } from './quickviz.js?v=2026.10.25.1';
 
 export const $ = (sel, el = document) => el.querySelector(sel);
 export const $$ = (sel, el = document) => [...el.querySelectorAll(sel)];

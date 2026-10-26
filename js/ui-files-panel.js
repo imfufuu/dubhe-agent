@@ -1,5 +1,5 @@
-import { staticPreviewDocument } from './file-preview.js?v=2026.10.11.1';
-import { sandboxProject, sandboxBrowserRequest, probeLocalBrowser } from './localbrowser.js?v=2026.10.11.1';
+import { staticPreviewDocument } from './file-preview.js?v=2026.10.25.1';
+import { sandboxProject, sandboxBrowserRequest, probeLocalBrowser } from './localbrowser.js?v=2026.10.25.1';
 // Dubhe Agent · 侧栏沙箱文件面板（从 ui.js 的 mountUI 拆出，V1.7.1）
 // 职责：文件树渲染（容量条 / 折叠目录 / 行内操作）、单文件与整包 ZIP 下载、文件预览窗。
 // 只依赖 store.state.files 与少量渲染工具；通过 installFilesPanel(deps) 注入，返回 { renderFiles, openFileViewer, downloadFile }。
@@ -10,10 +10,10 @@ import { SANDBOX_STORAGE_CAP, sandboxQuotaLabel } from './storagefmt.js';
 import { pdfToImages } from './pdfpages.js';
 import { contentByteSize } from './sandbox.js';
 import { text as localeText } from './locale.js';
-import { renderMarkdown } from './ui-markdown.js?v=2026.10.11.1';
+import { renderMarkdown } from './ui-markdown.js?v=2026.10.25.1';
 import { readableFileText } from './file-text.js';
 import { fvNoticeHtml, csvTableHtml, dualViewKind, DUAL_VIEW_MAX, viewModesHtml, applyViewMode, openFileSwitcher } from './ui-file-viewer.js';
-import { motionAllowed } from './page-fx.js?v=2026.10.11.1';
+import { motionAllowed } from './page-fx.js?v=2026.10.25.1';
 
 // data:video/…、data:audio/… → blob URL（与 ui.js 气泡播放同一做法；独立实现以免 split 模块反向 import ui.js）
 function mediaBlobUrl(dataUrl) {
@@ -480,7 +480,7 @@ export function installFilesPanel({ store, agent, toast, fmtSize, highlightCode,
   async function renderOfficePreview(box, kind, rawStr) {
     const generation = viewerGeneration;
     try {
-      const mod = await import('./office-preview.js?v=2026.10.11.1');
+      const mod = await import('./office-preview.js?v=2026.10.25.1');
       const html = kind === 'xlsx' ? await mod.xlsxPreviewHtml(rawStr)
         : kind === 'docx' ? await mod.docxPreviewHtml(rawStr)
           : kind === 'pptx' ? await mod.pptxPreviewHtml(rawStr)

@@ -2,7 +2,7 @@ import { text as localizedText } from './locale.js';
 // ─── 工具详情窗口：按实际输出显示 COMMAND / STDOUT / STDERR ───────────────────
 // 有 stdout 才显示 STDOUT；有错误才显示 STDERR；无输出且无错误时在 COMMAND 下提示 No output。
 // 每个窗口右上角各一枚复制按钮，复制本窗口原文。
-import { esc } from './ui-markdown.js?v=2026.10.11.1';
+import { esc } from './ui-markdown.js?v=2026.10.25.1';
 
 /** execute_* 的结果正文里，错误段落的分隔标记（见 tools.js formatExecResult）。 */
 export const WINDOW_ERROR_MARK = '── 错误 ──';

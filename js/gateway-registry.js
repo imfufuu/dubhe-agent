@@ -1,7 +1,7 @@
 // Gateway registry for first-party and OpenAI-compatible endpoints.
 // Default model IDs are curated fallback suggestions only; a successful live model-list
 // response is authoritative. Provider keys are never retried against another gateway.
-import { MODEL_CATALOG, isRetiredModel } from './model-catalog.js?v=2026.10.11.1';
+import { MODEL_CATALOG, isRetiredModel } from './model-catalog.js?v=2026.10.25.1';
 import { text as localeText } from './locale.js';
 
 export const DEFAULT_GATEWAY_ID = 'teamorouter';

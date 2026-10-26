@@ -581,7 +581,12 @@ console.log('\n⑯ 移动端布局：根因修复 + 密度重排（源码级护�
   ok('存在 ≤720px 的移动端排布层', m720.length > 400, `${m720.length} 字节`);
   ok('顶栏胶囊右对齐换行，面板入口保持可见', /\.topbar-right\s*\{[^}]*flex-wrap: wrap/.test(m720) && /\.topbar-right\s*\{[^}]*justify-content: flex-end/.test(m720));
   ok('输入框字号 16px（低于它 iOS 会放大整页）', /#composer-input\s*\{[^}]*font-size: 16px/.test(m720));
-  ok('消息区左右留白收窄，操作条保持紧凑并可横向滚动', /\.msg\s*\{[^}]*padding: 0 14px/.test(m720) && /\.msg-actions\s*\{[^}]*flex-wrap: nowrap/.test(m720) && /\.msg-actions\s*\{[^}]*overflow-x: auto/.test(m720));
+  const narrow380 = /@media \(max-width: 380px\) \{([\s\S]*?)^\}/m.exec(css)?.[1] || '';
+  ok('移动端消息保留安全边距且不限制用户气泡宽度', /\.msg\s*\{[^}]*padding: 0 20px;[^}]*max-width: 100%/.test(m720)
+    && /\.msg-user \.bubble\s*\{[^}]*max-width: 100%/.test(css) && /\.msg\s*\{[^}]*padding: 0 18px/.test(narrow380)
+    && !/\.msg-user \.bubble\s*\{[^}]*max-width: 82%/.test(css));
+  ok('窄屏消息操作与元信息分行，避免多轮工具栏重叠', /\.msg-actions\s*\{[^}]*flex: 1 1 100%;[^}]*flex-wrap: wrap;[^}]*overflow: visible/.test(m720)
+    && /\.msg-foot\s*\{[^}]*flex: 1 1 100%/.test(m720));
   ok('长链接/代码块各自滚动不撑宽页面', /\.md-body pre\s*\{[^}]*font-size/.test(m720) && /\.md-body a\s*\{[^}]*overflow-wrap: anywhere/.test(m720));
   ok('输入区贴安全区（刘海屏不被遮挡）', /\.composer-wrap\s*\{[^}]*env\(safe-area-inset-bottom\)/.test(m720));
   const touch = /@media \(hover: none\), \(max-width: 720px\) \{([\s\S]*?)\n\}/.exec(css)?.[1] || '';

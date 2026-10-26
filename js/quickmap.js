@@ -7,7 +7,8 @@
 //   · 底部「前五名」排行条（按数值降序，带相对占比条）。
 // 视图状态只存在 DOM 节点的 _mapView 上，不写回消息；重新渲染地图即回到 100%。
 // 纯函数（视图夹取 / 缩放 / 排行）与事件委托分开：前者可单测，后者挂在消息列表上（一次性）。
-import { esc } from './ui-markdown.js?v=2026.10.11.1';
+import { esc } from './ui-markdown.js?v=2026.10.25.1';
+import { formatNumber } from './i18n.js?v=2026.10.25.1';
 
 export const MAP_VIEW_W = 720;
 export const MAP_VIEW_H = 392;
@@ -64,7 +65,7 @@ export function rankMapRows(rows, limit = 5) {
   };
 }
 
-const fmtNum = (v) => (Math.abs(v) >= 1000 ? Number(v).toLocaleString('zh-CN', { maximumFractionDigits: 1 }) : String(Math.round(v * 100) / 100));
+const fmtNum = (v) => formatNumber(Math.abs(v) >= 1000 ? Number(v) : Math.round(v * 100) / 100, { maximumFractionDigits: Math.abs(v) >= 1000 ? 1 : 2 });
 
 /** 前五名排行条 HTML（rows 为 [地区, 数值] 数组；没有可用数据时返回空串） */
 export function mapRankingHtml(rows, limit = 5) {

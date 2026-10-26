@@ -1,8 +1,8 @@
 import { registerOfflineCache } from './register-cache.js';
 registerOfflineCache();
-import { installSmoothDetails } from './ui-motion.js?v=2026.10.11.1';
-import { releaseNotes } from './release-notes.js?v=2026.10.11.1';
-import { installLanguage } from './ui-language.js?v=2026.10.11.1';
+import { installSmoothDetails } from './ui-motion.js?v=2026.10.25.1';
+import { releaseNotes } from './release-notes.js?v=2026.10.25.1';
+import { installLanguage } from './ui-language.js?v=2026.10.25.1';
 import { onLanguageChange } from './locale.js';
 const card = (parts) => '<div class="legal-card">' + parts.map(([title, lines], i) => `<h3><span class="no">${String(i + 1).padStart(2, '0')}</span>${title}</h3><ul>${lines.map(x => `<li>${x}</li>`).join('')}</ul>`).join('') + '</div>';
 const agreement = card([

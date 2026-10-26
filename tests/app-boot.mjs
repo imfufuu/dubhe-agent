@@ -186,6 +186,14 @@ ok('入口样式/脚本带 ?v=（穿透 Pages 静态资源缓存）', htmlSrc.in
 
 console.log('\n空状态：Claude 风格的问候与紧凑快捷提示');
 ok('欢迎页显示个性化问候与简短引导', !!$('#welcome-greeting') && !!$('#welcome-prompt') && $('#welcome-greeting').textContent.trim() && $('#welcome-prompt').textContent.trim());
+ok('随机问候不再提供刷新按钮，示例任务 Shuffle 保留', !$('#welcome-refresh') && !/welcome-refresh/.test(htmlSrc) && !!$('#welcome-quick-prompts .suggest-shuffle'));
+ok('空输入时 composer 紧贴副欢迎语下方', $('.main').classList.contains('welcome-docked'));
+$('#composer-input').value = 'draft';
+$('#composer-input').dispatchEvent(new window.Event('input', { bubbles: true }));
+ok('输入文本时欢迎区隐藏、输入框回到底部', $('.main').classList.contains('welcome-draft') && !$('.main').classList.contains('welcome-docked'));
+$('#composer-input').value = '';
+$('#composer-input').dispatchEvent(new window.Event('input', { bubbles: true }));
+ok('清空草稿后欢迎状态恢复', $('.main').classList.contains('welcome-docked'));
 ok('随机默认称谓保存在本机', !!localStorage.getItem('dubhe.user-salutation.v1'));
 const cards = $$('#welcome-quick-prompts .suggest');
 ok('展示 3 条示例卡片', cards.length === 3, `${cards.length} 张`);
@@ -208,6 +216,7 @@ ok('点卡片把完整提示词填进输入框', $('#composer-input').value === 
   && $('#composer-input').value !== clicked.textContent.trim() && $('#composer-input').value.length > 8,
   JSON.stringify($('#composer-input').value).slice(0, 50));
 $('#composer-input').value = '';
+$('#composer-input').dispatchEvent(new window.Event('input', { bubbles: true }));
 
 console.log('\n发送一整轮（含工具调用）');
 // 通过真实的 Key 弹窗写入 key（而不是直接改 state），顺带验证弹窗这条链路

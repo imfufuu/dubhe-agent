@@ -4,8 +4,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {
   buildOpenAIMessages, buildAnthropicPayload, isEmptyAssistantMessage, stripEmptyAssistantMessages,
-} from '../js/api.js?v=2026.10.11.1';
-import { commandRunFor } from '../js/toolflow.js?v=2026.10.11.1';
+} from '../js/api.js?v=2026.10.25.1';
+import { commandRunFor } from '../js/toolflow.js?v=2026.10.25.1';
 import { createStore } from '../js/state.js';
 import { createAgent } from '../js/agent.js';
 import { translateUI } from '../js/ui-language.js';
@@ -126,9 +126,9 @@ test('思考：Anthropic 协议请求同样不以空 assistant（prefill）结�
 });
 
 test('思考：回合脚注在「请求了思考但模型未思考」时如实标注', () => {
-  const ui = read('../js/ui.js');
-  assert.match(ui, /未思考/);
-  assert.match(ui, /模型本轮自主判定无需思考/);
+  const foot = read('../js/ui-foot.js');
+  assert.match(foot, /未思考/);
+  assert.match(foot, /模型本轮自主判定无需思考/);
 });
 
 // ── 第 2 条：分开但连续的 Ran command 合并 ─────────────────────────────────────────────
@@ -394,7 +394,7 @@ test('read_file：data URL 存放的 SVG / 文本解码成原文；二进制只�
 });
 
 // ── V1.8.1 收尾：失败归类不显示、日常对话免回执、重建落底、连接呼吸点、弹层收起动画、光标与查看器 ──
-import { stripFailureClassNote, splitToolStreams, hasSubstantiveToolOutput, classifyToolResult, toolWindowsOf } from '../js/toolwindows.js?v=2026.10.11.1';
+import { stripFailureClassNote, splitToolStreams, hasSubstantiveToolOutput, classifyToolResult, toolWindowsOf } from '../js/toolwindows.js?v=2026.10.25.1';
 import { publicTaskPlan, publicPlanMarkdown } from '../js/publicplan.js';
 import { CARET_EM, CARET_NUDGE } from '../js/ui-caret.js';
 let panel0 = '';
@@ -436,11 +436,13 @@ test('失败归类：窗口/回答都不显示，模型上下文仍保留；sile
 test('助手气泡的整轮耗时与完成时间会写回并经刷新持久恢复', () => {
   const ui = read('../js/ui.js');
   const timing = read('../js/ui-toolflow.js');
+  const foot = read('../js/ui-foot.js');
   const state = read('../js/state.js');
   assert.match(ui, /persistTurnTiming\(store, ms, msgNodes, paintFoot, syncAssistantShell, renderTimeStats\)/);
   assert.match(timing, /last\.durationMs = ms; last\.ts = Date\.now\(\);/);
   assert.match(timing, /store\.save\?\.\(true\)/);
-  assert.match(ui, /const clock = m\.durationMs != null \? fmtClock\(m\.durationMs\) : '';/);
+  assert.match(foot, /const clock = message\.durationMs != null \? fmtClock\(message\.durationMs\) : '';/);
+  assert.doesNotMatch(foot, /toolCalls && message\.toolCalls\.length/);
   assert.match(ui, /durationMs: m\.durationMs, thinkingBlocks: m\.thinkingBlocks/);
   assert.match(state, /durationMs: m\.durationMs/);
   assert.match(state, /ts: m\.ts/);
@@ -592,7 +594,7 @@ test('convert_file：三条通路计划、ffmpeg 参数、注册表/契约/挂�
   const caps = await import('../js/capabilities.js');
   assert.ok(caps.CAPABILITY_REGISTRY.convert_file, '能力登记');
   assert.ok(caps.TOOL_MOUNT_RULES.convert_file, '按需挂载规则（no-rule 会全量下发）');
-  const ex = await import('../js/execution.js?v=2026.10.11.1');
+  const ex = await import('../js/execution.js?v=2026.10.25.1');
   assert.equal(ex.TOOL_CONTRACTS.convert_file.sideEffect, 'filesystem');
   const mountSrc = read('../js/capabilities-mount.js');
   assert.match(mountSrc, /convert_file: \{ text: /);
@@ -879,7 +881,7 @@ test('文档页首页长描述与独立声明按实际文案精确翻译', () =>
 test('思考强度菜单左侧带浅灰细线，不影响各档位按钮布局', () => {
   const css = read('../css/styles.css');
   assert.match(css, /\.think-menu \{ padding: 4px; max-height: min\(360px, calc\(100dvh - 80px\)\); border-left: 1px solid color-mix\(in srgb, var\(--fg\) 18%, var\(--bg\)\); \}/);
-  assert.match(css, /\.think-item \{[\s\S]*?padding: 5px 10px;[\s\S]*?line-height: 1\.18/s);
+  assert.match(css, /\.think-item \{[\s\S]*?padding: 6px 10px;[\s\S]*?line-height: 1\.18/s);
   assert.match(read('../app.html'), /id="think-menu" class="dd-menu think-menu"/);
 });
 

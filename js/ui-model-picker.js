@@ -1,4 +1,4 @@
-import { mergeAvailableModels, MODEL_CATALOG_DATE } from './model-catalog.js?v=2026.10.11.1';
+import { mergeAvailableModels, MODEL_CATALOG_DATE } from './model-catalog.js?v=2026.10.25.1';
 // ─── UI · 模型选择器（P4 拆分：从 mountUI 抽出）────────────────────────────────
 // 拥有：模型下拉菜单（合并网关列表与本地兜底表、隐藏已下线/生图模型、搜索/清空）、selectModel 与按钮态同步、
 //       /system 隐藏通道的进入/退出与现场隔离（preSystem）、生图模型 <select>、「刷新模型」按钮。
@@ -6,18 +6,20 @@ import { mergeAvailableModels, MODEL_CATALOG_DATE } from './model-catalog.js?v=2
 //       syncCapLine / syncWeb / getBusy / openKeyModal），本文件绝不 import ui.js。
 // deps 里 renderFiles / syncWeb 在 mountUI 中定义得比本模块晚：调用方必须以惰性箭头函数传入。
 import { text as localeText, onLanguageChange } from './locale.js';
-import { $, el, esc } from './ui-markdown.js?v=2026.10.11.1';
-import { FALLBACK_MODELS, isImageModel, providerOf, SMART_ROUTER_ID, PROVIDER_ORDER, SMART_ROUTER_PROVIDER, sortModelsInFamily, isFreeModel, supportsVision, supportsFastMode, IMAGE_MODELS, DEFAULT_IMAGE_MODEL, imageModelLabel } from './config.js?v=2026.10.11.1';
+import { onCurrencyChange } from './currency.js';
+import { $, el, esc } from './ui-markdown.js?v=2026.10.25.1';
+import { FALLBACK_MODELS, isImageModel, providerOf, SMART_ROUTER_ID, PROVIDER_ORDER, SMART_ROUTER_PROVIDER, sortModelsInFamily, isFreeModel, supportsVision, supportsFastMode, IMAGE_MODELS, DEFAULT_IMAGE_MODEL, imageModelLabel } from './config.js?v=2026.10.25.1';
 import { isJevModel } from './jev.js';
 import { ICON, providerIcon } from './icons.js';
-import { ROUTER_ICON_SVG, isSmartRouter, SMART_ROUTER_LABEL, SMART_ROUTER_PROVIDER_LABEL } from './smartrouter.js?v=2026.10.11.1';
-import { fetchModels } from './api.js?v=2026.10.11.1';
+import { ROUTER_ICON_SVG, isSmartRouter, SMART_ROUTER_LABEL, SMART_ROUTER_PROVIDER_LABEL } from './smartrouter.js?v=2026.10.25.1';
+import { fetchModels } from './api.js?v=2026.10.25.1';
 import { effectiveApiKey } from './adminkey.js';
 import { formatRate } from './pricing.js';
 import { USD_TO_CNY_RATE, USD_TO_CNY_RATE_DATE } from './currency.js';
 import { isNetworkOffline } from './offline-network.js';
 import { OFFLINE_MODEL_DISPLAY_NAME, OFFLINE_MODEL_ID, OFFLINE_MODEL_PROVIDER_EN, OFFLINE_MODEL_PROVIDER_ZH, isOfflineModelId } from './offline-model-config.js';
-import { DEFAULT_GATEWAY_ID, gatewayFallbackModels, defaultModelForGateway, gatewayModelListLabel, isModelForGateway } from './gateway-registry.js?v=2026.10.11.1';
+import { formatParameterCount } from './gguf.js';
+import { DEFAULT_GATEWAY_ID, gatewayFallbackModels, defaultModelForGateway, gatewayModelListLabel, isModelForGateway } from './gateway-registry.js?v=2026.10.25.1';
 
 export function installModelPicker({ store, agent, toast, getBusy, openKeyModal, rebuildMessages, renderSessions, renderFiles, updateStats, syncCapLine, syncWeb }) {
   // ── 模型下拉 ──
@@ -28,14 +30,31 @@ export function installModelPicker({ store, agent, toast, getBusy, openKeyModal,
   const HIDDEN_MODELS = new Set(['glm-5.3-flash-free', 'deepseek-v4-flash-free', 'deepseek-flash-free']); // 后两者已从 FALLBACK_MODELS 删除，这里兜底防网关 /v1/models 再塞回来
   // 对话模型列表：过滤掉生图模型（只能由主智能体通过 generate_image 工具调用，
   // 直接选中会绕过工具循环、破坏 Agent 特性；网关 /v1/models 里带它们时也照样隐藏）
+  function localModelMetadata() {
+    return store.state.offlineModelMetadata && typeof store.state.offlineModelMetadata === 'object'
+      ? store.state.offlineModelMetadata
+      : null;
+  }
+  function localModelName() {
+    const metadata = localModelMetadata();
+    return String(metadata?.displayName || localeText(OFFLINE_MODEL_DISPLAY_NAME, 'Local GGUF')).slice(0, 160);
+  }
+  function localModelDetails() {
+    const metadata = localModelMetadata();
+    const parts = [];
+    if (metadata?.parameterCount) parts.push(formatParameterCount(metadata.parameterCount, 'en'));
+    if (metadata?.quantization) parts.push(String(metadata.quantization).slice(0, 32));
+    return parts.join(' · ');
+  }
   function localModelRecord() {
     return {
       id: OFFLINE_MODEL_ID,
       provider: localeText(OFFLINE_MODEL_PROVIDER_ZH, OFFLINE_MODEL_PROVIDER_EN),
-      displayName: OFFLINE_MODEL_DISPLAY_NAME,
+      displayName: localModelName(),
       localModel: true,
       available: store.state.offlineModelAvailable === true,
       contextWindow: 4096,
+      localDetails: localModelDetails(),
     };
   }
   function modelPriceTitle(hit) {
@@ -136,7 +155,7 @@ export function installModelPicker({ store, agent, toast, getBusy, openKeyModal,
         const hit = m;
         if (hit.localModel && !hit.available) {
           item.disabled = true;
-          item.title = localeText('本地模型尚未下载；请先在设置 → 离线本地模型中手动下载。', 'Local model is not installed. Download it manually in Settings → Offline local model first.');
+          item.title = localeText('尚未选择本地 GGUF；请先在设置 → 离线本地模型中选择文件。', 'No local GGUF is selected. Choose a file in Settings → Offline local model first.');
         }
         const local = !!hit.localModel;
         const free = !local && isFreeModel(m.id);
@@ -147,13 +166,13 @@ export function installModelPicker({ store, agent, toast, getBusy, openKeyModal,
           `Curated cheap-tag threshold: input ≤ ${formatRate(1, 'en')}/M and output ≤ ${formatRate(5, 'en')}/M; not a live bill.`,
         );
         const localState = store.state.offlineModelAvailable
-          ? localeText('已安装', 'Installed')
-          : (store.state.offlineModelChecked ? localeText('未下载', 'Not downloaded') : localeText('检查中', 'Checking'));
-        // 预览档不再单独挂 Preview/Experimental badge；只显示有实际意义的标签。
+          ? localeText('已就绪', 'Ready')
+          : (store.state.offlineModelChecked ? localeText('未选择', 'Not selected') : localeText('检查中', 'Checking'));
+        // 本地模型名称、参数量与量化来自用户选择的 GGUF 元数据；未做独立性能评测。
         item.title = local
           ? (hit.available
-            ? localeText('本地 GGUF · Q4_K_M · 约 986 MB。低拒答/uncensored 是仓库自述标签，未经独立测评。', 'Local GGUF · Q4_K_M · about 986 MB. Low-refusal/uncensored are repository self-descriptions, not independently benchmarked.')
-            : localeText('本地模型尚未下载；请先在设置 → 离线本地模型中手动下载。', 'Local model is not installed. Download it manually in Settings → Offline local model first.'))
+            ? localeText(`本机 GGUF · ${localModelDetails() || '参数量未知'} · 仅本机推理，不请求网关。`, `Local GGUF · ${localModelDetails() || 'parameter count unknown'} · local inference; no gateway request.`)
+            : localeText('尚未选择本地 GGUF；请先在设置 → 离线本地模型中选择文件。', 'No local GGUF is selected. Choose a file in Settings → Offline local model first.'))
           : modelPriceTitle(hit);
         const isRouter = isSmartRouter(m.id);
         item.innerHTML = isRouter
@@ -162,11 +181,10 @@ export function installModelPicker({ store, agent, toast, getBusy, openKeyModal,
               <span class="badge hot" title="${localeText('按任务类型 / 难度自动选模型', 'Auto-selects a model by task type and difficulty')}">${localeText('自动', 'Auto')}</span>
             </span>`
           : (local
-            ? `<span class="dd-item-id mono">${esc(OFFLINE_MODEL_DISPLAY_NAME)}</span>
+            ? `<span class="dd-item-id mono">${esc(localModelName())}</span>
               <span class="dd-item-badges">
                 <span class="badge local-model-badge">${localeText('本地', 'Local')}</span>
                 <span class="badge">${localState}</span>
-                <span class="badge low-refusal-badge" title="${localeText('仓库自述标签；不是独立低拒答或安全评测。', 'Repository self-description; not an independent low-refusal or safety benchmark.')}">${localeText('社区标注', 'Community tag')}</span>
               </span>`
             : `<span class="dd-item-id mono">${esc(m.id)}</span>
               <span class="dd-item-badges">
@@ -273,8 +291,8 @@ export function installModelPicker({ store, agent, toast, getBusy, openKeyModal,
     } else if (isOfflineModelId(displayedId)) {
       const localProvider = localeText(OFFLINE_MODEL_PROVIDER_ZH, OFFLINE_MODEL_PROVIDER_EN);
       icon = providerIcon(localProvider, { custom: true });
-      name = OFFLINE_MODEL_DISPLAY_NAME;
-      if (!store.state.offlineModelAvailable) name += ` · ${localeText('未下载', 'not downloaded')}`;
+      name = localModelName();
+      if (!store.state.offlineModelAvailable) name += ` · ${localeText('未选择', 'not selected')}`;
       prov = isNetworkOffline() ? localeText('离线 · 本地', 'Offline · local') : localProvider;
     } else if (selected?.customProvider) {
       icon = providerIcon(selected.provider, { custom: true, iconDataUrl: selected.providerIconDataUrl });
@@ -314,6 +332,7 @@ export function installModelPicker({ store, agent, toast, getBusy, openKeyModal,
   ddBtn.addEventListener('click', () => ddMenu.classList.contains('open') ? closeMenu() : openMenu());
   ddSearch.addEventListener('input', renderModelMenu);
   onLanguageChange(() => { if (!ddMenu.hidden) renderModelMenu(); });
+  onCurrencyChange(() => { if (!ddMenu.hidden) renderModelMenu(); });
   // 搜索框一键清空（.18）
   const ddClear = $('#model-search-clear');
   if (ddClear) {
@@ -328,7 +347,7 @@ export function installModelPicker({ store, agent, toast, getBusy, openKeyModal,
 
   async function refreshModels({ silent = false, requireKey = true } = {}) {
     if (isNetworkOffline()) {
-      if (!silent) toast(localeText('离线时不检查网关模型列表；可在设置中使用已下载的本地模型。', 'Gateway model lists are not checked offline; use the installed local model in settings.'), 'warn');
+      if (!silent) toast(localeText('离线时不检查网关模型列表；可在设置中选择本地 GGUF 文件。', 'Gateway model lists are not checked offline; choose a local GGUF file in settings.'), 'warn');
       return false;
     }
     const gatewayId = store.state.gatewayId || DEFAULT_GATEWAY_ID;
