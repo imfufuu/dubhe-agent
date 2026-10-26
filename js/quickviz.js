@@ -235,7 +235,7 @@ const hitDot = (px, py, label, val, color, dotClass, r = 4.5, fill = '') => {
   return `<circle cx="${px}" cy="${py}" r="7" fill="transparent" stroke="transparent" stroke-width="28" vector-effect="non-scaling-stroke" pointer-events="stroke" ${datumAttrs(label, val, color, ` role="button" aria-label="${esc(title)}"`)} class="md-chart-hit-area"><title>${esc(title)}</title></circle>`
     + `<circle cx="${px}" cy="${py}" r="${r}"${fill} class="${dotClass}" pointer-events="none" aria-hidden="true"/>`;
 };
-const wrap = (kind, label, w, h, inner, extraAttrs = '') => `<div class="md-chart md-chart-${kind}"${extraAttrs}><button type="button" class="md-chart-expand" title="全屏查看图表" aria-label="全屏查看图表"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5M16 3h5v5M3 16v5h5M21 16v5h-5"/></svg></button><svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" role="img" aria-label="${esc(label)}" class="md-chart-svg">${inner}</svg><div class="md-chart-tooltip" hidden></div></div>`;
+const wrap = (kind, label, w, h, inner, extraAttrs = '') => `<div class="md-chart md-chart-${kind}"${extraAttrs}><button type="button" class="md-chart-expand" title="全屏查看图表" aria-label="全屏查看图表"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5M16 3h5v5M3 16v5h5M21 16v5h-5"/></svg></button><div class="md-chart-viewport"><svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" role="img" aria-label="${esc(label)}" class="md-chart-svg">${inner}</svg></div><div class="md-chart-tooltip" hidden></div></div>`;
 const emptyChart = (sample) => `<div class="md-chart-error">图表数据为空。示例：${sample}</div>`;
 const CHART_SAMPLE = {
   bar: '<code>一月, 12</code>', barh: '<code>华东, 120</code>', line: '<code>一月, 12</code>', area: '<code>一月, 12</code>', pie: '<code>A 类, 40</code>', donut: '<code>A 类, 40</code>',
@@ -876,7 +876,7 @@ function renderFlowDiagram(body, title = '') {
     const fill = `md-diagram-node-${i % 6}`;
     inner += `<g class="md-diagram-node ${fill}"><rect x="${p.x.toFixed(1)}" y="${p.y.toFixed(1)}" width="${p.w.toFixed(1)}" height="${p.h}" rx="14"/><text x="${(p.x + p.w / 2).toFixed(1)}" y="${(p.y + p.h / 2 + 5).toFixed(1)}" text-anchor="middle">${esc(nodeMeta[n].disp)}</text></g>`;
   });
-  return `<div class="md-diagram md-diagram-flow"><button type="button" class="md-chart-expand" title="全屏查看图表" aria-label="全屏查看图表"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5M16 3h5v5M3 16v5h5M21 16v5h-5"/></svg></button><svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" role="img" aria-label="${esc(label)}" class="md-chart-svg md-diagram-svg">${inner}</svg></div>`;
+  return `<div class="md-diagram md-diagram-flow"><button type="button" class="md-chart-expand" title="全屏查看图表" aria-label="全屏查看图表"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5M16 3h5v5M3 16v5h5M21 16v5h-5"/></svg></button><div class="md-diagram-viewport"><svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" role="img" aria-label="${esc(label)}" class="md-chart-svg md-diagram-svg">${inner}</svg></div></div>`;
 }
 function parseMindTree(body, title = '') {
   const lines = String(body || '').split('\n').filter((x) => x.trim() && !x.trim().startsWith('#'));
@@ -983,7 +983,7 @@ function renderMindDiagram(body, title = '') {
     const cy = it.y + shiftY;
     inner += `<g class="md-mind-node ${it.cls}"><rect x="${(cx - it.w / 2).toFixed(1)}" y="${(cy - it.h / 2).toFixed(1)}" width="${it.w.toFixed(1)}" height="${it.h}" rx="${Math.min(22, it.h / 2)}"/><text x="${cx.toFixed(1)}" y="${(cy + 4.5).toFixed(1)}" text-anchor="middle">${esc(it.disp)}</text></g>`;
   }
-  return `<div class="md-diagram md-diagram-mind"><button type="button" class="md-chart-expand" title="全屏查看图表" aria-label="全屏查看图表"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5M16 3h5v5M3 16v5h5M21 16v5h-5"/></svg></button><svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" role="img" aria-label="${esc(title || tree.label || '思维导图')}" class="md-chart-svg md-diagram-svg">${inner}</svg></div>`;
+  return `<div class="md-diagram md-diagram-mind"><button type="button" class="md-chart-expand" title="全屏查看图表" aria-label="全屏查看图表"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5M16 3h5v5M3 16v5h5M21 16v5h-5"/></svg></button><div class="md-diagram-viewport"><svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" role="img" aria-label="${esc(title || tree.label || '思维导图')}" class="md-chart-svg md-diagram-svg">${inner}</svg></div></div>`;
 }
 export function renderQuickDiagram(kind, body, title = '') {
   return kind === 'mind' ? renderMindDiagram(body, title) : renderFlowDiagram(body, title);

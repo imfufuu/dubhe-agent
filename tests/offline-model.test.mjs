@@ -305,8 +305,8 @@ test('offline tool allowlist is immutable, exists in TOOL_DEFS and contains no r
   const actual = new Set(TOOL_DEFS.map((tool) => tool.name));
   assert.ok(Object.isFrozen(OFFLINE_ALLOWED_TOOL_NAMES));
   assert.deepEqual(OFFLINE_ALLOWED_TOOL_NAMES.filter((name) => !actual.has(name)), []);
-  for (const name of ['read_file', 'write_file', 'document_tool', 'xlsx_tool', 'knowledge_search', 'execute_javascript']) assert.equal(isOfflineToolAllowed(name), true);
-  for (const name of ['fetch_url', 'search_web', 'crawl_site', 'generate_image', 'analyze_image', 'dispatch_subagent', 'execute_cpp']) assert.equal(isOfflineToolAllowed(name), false);
+  for (const name of ['read_file', 'write_file', 'document_tool', 'xlsx_tool', 'knowledge_search', 'execute_javascript', 'execute_cpp']) assert.equal(isOfflineToolAllowed(name), true);
+  for (const name of ['fetch_url', 'search_web', 'crawl_site', 'generate_image', 'analyze_image', 'dispatch_subagent']) assert.equal(isOfflineToolAllowed(name), false);
 });
 
 test('preview tool table matches the local-only allowlist for a local GGUF model', () => {
@@ -317,7 +317,8 @@ test('preview tool table matches the local-only allowlist for a local GGUF model
   const preview = agent.previewToolTable({ text: 'create a local file' });
   assert.ok(preview.allowed.length > 0);
   assert.ok(preview.allowed.every(isOfflineToolAllowed));
-  assert.ok(!preview.allowed.some((name) => ['fetch_url', 'search_web', 'crawl_site', 'generate_image', 'execute_cpp', 'dispatch_subagent'].includes(name)));
+  assert.ok(preview.allowed.includes('execute_cpp'), 'the local C++ Worker remains available offline');
+  assert.ok(!preview.allowed.some((name) => ['fetch_url', 'search_web', 'crawl_site', 'generate_image', 'dispatch_subagent'].includes(name)));
   assert.equal(preview.tier.canDispatch, false);
   assert.ok(preview.dropped.some((entry) => entry.reason === 'offline-local-only'));
 });

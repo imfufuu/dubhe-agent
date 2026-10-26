@@ -2223,15 +2223,20 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
   const attachments = installAttachments({ composer, toast, safeImgSrc, fmtSize });
 
   // ── 输入区 ────────────────────────────────────────────────────────────
+  let composerFollowFrame = 0;
   function autoGrow({ follow = false } = {}) {
     const shell = composer.closest('.composer');
-    // The composer is intentionally a six-line input: keep controls below it and
-    // grow with content until the viewport-based cap, then scroll inside the field.
-    shell?.classList.add('is-multiline');
+    const previousScroll = composer.scrollTop;
+    composer.style.height = 'auto';
+    const compactStyle = getComputedStyle(composer);
+    const compactLineHeight = Number.parseFloat(compactStyle.lineHeight) || 24;
+    const compactContentHeight = Math.max(compactLineHeight, composer.scrollHeight || compactLineHeight);
+    const multiline = /[\r\n]/u.test(composer.value) || compactContentHeight > compactLineHeight + 1;
+    shell?.classList.toggle('is-multiline', multiline);
     composer.style.height = 'auto';
     const style = getComputedStyle(composer);
-    const lineHeight = Number.parseFloat(style.lineHeight) || 24;
-    const minHeight = Math.max(lineHeight * 6, Number.parseFloat(style.minHeight) || 0);
+    const lineHeight = Number.parseFloat(style.lineHeight) || compactLineHeight;
+    const minHeight = Math.max(lineHeight, Number.parseFloat(style.minHeight) || 0);
     const contentHeight = Math.max(minHeight, composer.scrollHeight || minHeight);
     const maxHeightValue = String(style.maxHeight || '');
     const viewportLimit = /([\d.]+)\s*d?vh\b/i.exec(maxHeightValue);
@@ -2246,8 +2251,16 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     const clipped = contentHeight > maxHeight + 1;
     composer.style.height = Math.min(contentHeight, maxHeight) + 'px';
     composer.style.overflowY = clipped ? 'auto' : 'hidden';
-    if (follow) composer.scrollTop = composer.scrollHeight;
-    else if (!clipped) composer.scrollTop = 0;
+    if (composerFollowFrame) window.cancelAnimationFrame?.(composerFollowFrame);
+    composerFollowFrame = 0;
+    if (follow) {
+      const scrollToBottom = () => { if (composer.isConnected) composer.scrollTop = composer.scrollHeight; };
+      scrollToBottom();
+      if (typeof window.requestAnimationFrame === 'function') {
+        composerFollowFrame = window.requestAnimationFrame(() => { composerFollowFrame = 0; scrollToBottom(); });
+      }
+    } else if (!clipped) composer.scrollTop = 0;
+    else composer.scrollTop = Math.min(previousScroll, composer.scrollHeight);
   }
   const shiftEnterGuard = installShiftEnterGuard(composer, () => { autoGrow({ follow: true }); welcomeMotion.sync(); });
   autoGrow();

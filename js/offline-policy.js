@@ -7,6 +7,7 @@ export const OFFLINE_ALLOWED_TOOL_NAMES = Object.freeze([
   'xlsx_tool',
   'knowledge_search',
   'execute_javascript',
+  'execute_cpp',
   'write_file',
   'read_file',
   'list_files',

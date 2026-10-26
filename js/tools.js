@@ -103,7 +103,7 @@ export const TOOL_DEFS = [
   },
   {
     name: 'execute_cpp',
-    description: '编译并执行 C++ 代码（通过 Compiler Explorer 公共服务远程执行：g++ -O2 -std=c++20）。⚠️ 这是唯一会把代码送出浏览器的执行路径：源码、附带文件与 stdin 会发送到 godbolt.org；用户可在设置里关闭「远程 C++」。代码需包含 main 函数；stdout/stderr 与退出码会被捕获。注意：远程服务，需数秒网络往返。可用 path 读沙箱主文件，files/dir 附带头文件与其它源码（#include "…" 也会自动从沙箱查找），stdin / args 传给程序。适合算法验证与性能测试。',
+    description: '在本地浏览器 Worker 中使用 Clang/LLD（WASM）与 WASI Preview 1 编译、执行 C++20；源码、附带文件和 stdin 由本地 Worker 处理，不发送给远程编译/执行服务。首次使用需按需下载约 30 MB 的本站工具链静态资源（只传输编译器资产，不含用户代码）。可由设置关闭「本地 C++」。代码需含 main；捕获 stdout/stderr、退出码和超时。path/files/dir 支持主文件、递归头文件与多个独立 .cpp 翻译单元；stdin / args 传给程序。WASI 沙箱无网络或预打开文件系统，且该工具链不支持 C++ 异常与线程。',
     parameters: {
       type: 'object',
       properties: {
@@ -114,6 +114,7 @@ export const TOOL_DEFS = [
         stdin: { type: 'string', description: '可选：程序标准输入' },
         stdin_path: { type: 'string', description: '可选：从沙箱文件读 stdin' },
         args: { type: 'array', items: { type: 'string' }, description: '可选：传给 main 的命令行参数' },
+        timeout_sec: { type: 'integer', minimum: 1, maximum: 600, description: '可选：程序运行超时秒数，默认 30，最大 600；首次工具链加载/本地编译另有 120 秒准备窗口' },
       },
     },
   },
@@ -638,8 +639,8 @@ export const TOOL_DEFS = [
 export const CODE_TOOL_NAMES = [...REG_CODE_TOOL_NAMES]; // Helix 3.0：由能力登记处派生
 
 /** 按沙箱开关给出本轮可用的工具定义列表（纯过滤，不改原数组） */
-export function toolsFor(sandboxEnabled, { remoteCpp = true } = {}) {
-  if (sandboxEnabled) return remoteCpp ? TOOL_DEFS : TOOL_DEFS.filter((t) => t.name !== 'execute_cpp');
+export function toolsFor(sandboxEnabled, { localCpp = true } = {}) {
+  if (sandboxEnabled) return localCpp ? TOOL_DEFS : TOOL_DEFS.filter((t) => t.name !== 'execute_cpp');
   return TOOL_DEFS.filter((t) => !CODE_TOOL_NAMES.includes(t.name));
 }
 
@@ -901,8 +902,8 @@ async function executeToolBody(outerName, outerArgs, ctx) {
   if (umbrella && umbrella.error) { emit({ status: 'error', error: { message: umbrella.error } }); return umbrella.error; }
   if (umbrella) { name = umbrella.name; args = umbrella.args; }
   // 兜底防线：工具列表按开关过滤过，但缓存错配或旧上下文里的工具调用仍可能打进来
-  if (name === 'execute_cpp' && ctx.remoteCpp === false) {
-    return 'execute_cpp 已被用户关闭（设置 → 远程 C++）：该工具会把代码发送到 godbolt.org 远程执行。请改用 execute_javascript / execute_python 在本地沙箱完成，或告知用户需要开启远程 C++。';
+  if (name === 'execute_cpp' && ctx.localCpp === false) {
+    return 'execute_cpp 已被用户关闭（设置 → 本地 C++）；未启动编译器，也未发送源码给远程编译服务。可改用 execute_javascript / execute_python，或请用户开启本地 C++。';
   }
   if (ctx.sandboxEnabled === false && CODE_TOOL_NAMES.includes(name)) {
     emit({ status: 'error', error: { message: '代码沙箱已关闭' } });
@@ -959,7 +960,7 @@ async function executeToolBody(outerName, outerArgs, ctx) {
         return formatExecResult('Python', out) + commandRepairNote(retainCommandSource(name, args, ctx, out));
       }
       case 'execute_cpp': {
-        emit({ status: 'running', lang: 'cpp', note: '远程编译执行中（代码已发送至 godbolt.org）…' });
+        emit({ status: 'running', lang: 'cpp', note: '启动本地 C++ 工具链；源码不发送给远程编译器…' });
         let code = String(args.code || '');
         const mainPath = normalizeFsPath(args.path);
         if (!code.trim() && mainPath) {
@@ -974,8 +975,19 @@ async function executeToolBody(outerName, outerArgs, ctx) {
           try { stdin = String(fs.read(sp)); } catch { /* 保持空 stdin */ }
         }
         const argv = Array.isArray(args.args) ? args.args.map((a) => String(a)) : [];
-        const out = await runCpp(code, { files: extraFiles, stdin, args: argv });
-        emit({ status: out.ok ? 'ok' : 'error', sandboxOk: !!out.ok, lang: 'cpp', logs: out.logs, error: out.error, durationMs: out.durationMs });
+        const notes = {
+          bootstrap: '启动本地 C++ Worker…',
+          executing: '本地 C++ 工具链加载/编译中…',
+          'loading-assets': '按需加载本站 C++ 工具链（首次约 30 MB）…',
+          compiling: '本机 Clang/LLD 编译与链接中…',
+          'program-start': '本机 WASI 程序执行中…',
+        };
+        const out = await runCpp(code, {
+          mainPath: mainPath || 'main.cpp', files: extraFiles, stdin, args: argv,
+          timeoutMs: codeTimeoutMs(args.timeout_sec), signal: ctx.signal,
+          onPhase: (phase) => { if (notes[phase]) emit({ status: 'running', lang: 'cpp', workerStage: phase, note: notes[phase] }); },
+        });
+        emit({ status: out.ok ? 'ok' : 'error', sandboxOk: !!out.ok, lang: 'cpp', logs: out.logs, error: out.error, durationMs: out.durationMs, timedOut: out.timedOut });
         return formatExecResult('C++', out) + commandRepairNote(retainCommandSource(name, { ...args, code }, ctx, out));
       }
       case 'write_file': {
@@ -2070,39 +2082,97 @@ function u8ToB64(u8) {
 
 function collectCppFiles(fs, args, code, mainPath) {
   const map = new Map();
-  const put = (filename, contents) => {
-    const name = String(filename || '').replace(/\\/g, '/');
-    if (!name || map.has(name)) return;
-    map.set(name, String(contents ?? ''));
+  const paths = new Set((fs.list() || []).map((file) => normalizeFsPath(file.path)).filter(Boolean));
+  const sourceExt = /\.(?:c|cc|cpp|cxx|c\+\+)$/i;
+  const put = (filename, contents, compile = false) => {
+    const name = normalizeFsPath(filename);
+    if (!name || !isSafeFsPath(name) || name === mainPath) return;
+    const existing = map.get(name);
+    if (!existing || compile && !existing.compile) map.set(name, { filename: name, contents: String(contents ?? ''), compile: !!compile });
   };
-  const addPath = (p, asName) => {
-    const n = normalizeFsPath(p);
-    if (!n || n === mainPath) return;
+  const readWorkspace = (filename) => {
+    const name = normalizeFsPath(filename);
+    if (!name || !paths.has(name) || name === mainPath) return null;
     let contents;
-    try { contents = String(fs.read(n)); } catch { return; }
-    if (contents.startsWith('data:')) return;
-    put(asName || n.split('/').pop(), contents);
+    try { contents = String(fs.read(name)); } catch { return null; }
+    if (contents.startsWith('data:')) return null;
+    return { filename: name, contents };
   };
-  if (Array.isArray(args.files)) args.files.forEach((p) => addPath(p));
+  const addPath = (filename) => {
+    const file = readWorkspace(filename);
+    if (!file) return;
+    put(file.filename, file.contents, sourceExt.test(file.filename));
+  };
+  if (Array.isArray(args.files)) args.files.forEach(addPath);
   if (args.dir) {
     const pre = String(normalizeFsPath(args.dir) || args.dir).replace(/\/?$/, '');
-    for (const f of fs.list()) {
-      if ((f.path === pre || f.path.startsWith(pre + '/')) && /\.(h|hpp|hh|hxx|c|cc|cpp|cxx|ipp|inc)$/i.test(f.path)) addPath(f.path);
+    for (const file of fs.list()) {
+      if ((file.path === pre || file.path.startsWith(pre + '/'))
+          && /\.(?:h|hpp|hh|hxx|h\+\+|c|cc|cpp|cxx|c\+\+|ipp|inc|inl)$/i.test(file.path)) addPath(file.path);
     }
   }
-  const re = /#include\s+"([^"]+)"/g;
-  let m;
-  const hay = String(code || '');
-  while ((m = re.exec(hay))) {
-    const inc = String(m[1] || '').replace(/\\/g, '/');
-    const base = inc.split('/').pop();
-    const cands = fs.list().map((f) => f.path).filter((p) => p === inc || p.endsWith('/' + inc) || p.split('/').pop() === base);
-    const exact = cands.find((p) => p === inc) || cands.find((p) => p.endsWith('/' + inc)) || cands[0];
-    if (exact) addPath(exact, inc);
-  }
-  return [...map.entries()].map(([filename, contents]) => ({ filename, contents }));
-}
 
+  const dirname = (filename) => String(filename || '').includes('/') ? String(filename).slice(0, String(filename).lastIndexOf('/')) : '';
+  const resolveRelative = (base, reference) => {
+    const parts = [...String(base || '').split('/'), ...String(reference || '').replace(/\\/g, '/').split('/')];
+    const out = [];
+    for (const part of parts) {
+      if (!part || part === '.') continue;
+      if (part === '..') { if (!out.length) return ''; out.pop(); }
+      else out.push(part);
+    }
+    return out.join('/');
+  };
+  const resolveInclude = (fromPath, reference) => {
+    const inc = String(reference || '').replace(/\\/g, '/');
+    if (!inc || inc.startsWith('/') || /[\u0000-\u001f\u007f]/.test(inc)) return '';
+    const relative = resolveRelative(dirname(fromPath), inc);
+    const exact = normalizeFsPath(inc);
+    if (relative && paths.has(relative)) return relative;
+    if (exact && paths.has(exact)) return exact;
+    return [...paths].find((path) => path.endsWith('/' + inc))
+      || [...paths].find((path) => path.split('/').pop() === inc.split('/').pop())
+      || '';
+  };
+
+  // Resolve quoted includes recursively, preserving their workspace-relative paths.
+  // If a .cpp is textually included, retain it for #include but do not link it twice.
+  const queue = [{ filename: mainPath || 'main.cpp', contents: String(code || '') }, ...map.values()];
+  const scanned = new Set();
+  const includedSources = new Set();
+  const includeRe = /^\s*#\s*include\s*"([^"]+)"/gm;
+  while (queue.length && scanned.size < 512 && map.size < 256) {
+    const current = queue.shift();
+    if (!current || scanned.has(current.filename)) continue;
+    scanned.add(current.filename);
+    includeRe.lastIndex = 0;
+    let match;
+    while ((match = includeRe.exec(current.contents))) {
+      const actual = resolveInclude(current.filename, match[1]);
+      if (!actual) continue;
+      const file = readWorkspace(actual);
+      if (!file) continue;
+      const includedAs = resolveRelative(dirname(current.filename), match[1]);
+      const isSource = sourceExt.test(actual);
+      put(actual, file.contents, isSource && !includedSources.has(actual));
+      if (isSource) {
+        includedSources.add(actual);
+        const entry = map.get(actual);
+        if (entry) entry.compile = false;
+      }
+      if (includedAs && includedAs !== actual) put(includedAs, file.contents, false);
+      queue.push(file);
+    }
+  }
+
+  let totalBytes = 0;
+  for (const file of map.values()) {
+    totalBytes += contentByteSize(file.contents);
+    if (totalBytes > 16 * 1024 * 1024) throw new Error('本地 C++ 附带文件超过 16 MiB 上限；请缩小 dir 或 files 范围。');
+  }
+  if (map.size > 256) throw new Error('本地 C++ 一次最多接收 256 个附带文件；请缩小 dir 或 files 范围。');
+  return [...map.values()];
+}
 function collectAnalyzePaths(fs, args, listImgs) {
   const imgs = listImgs();
   const out = [];

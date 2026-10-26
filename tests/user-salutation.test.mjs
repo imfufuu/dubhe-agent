@@ -34,11 +34,12 @@ test('a saved state value wins and is immediately persisted for the standalone s
   assert.equal(storage.getItem(USER_SALUTATION_KEY), '星野');
 });
 
-test('salutation validation enforces one line, supported characters and the eight-character limit', () => {
+test('salutation validation enforces one line, supported characters and the sixteen-character limit', () => {
   assert.equal(normalizeUserSalutation('  青   禾  '), '青 禾');
   assert.equal(validateUserSalutation('').code, 'empty');
   assert.equal(validateUserSalutation('小星\n').code, 'control-character');
-  assert.equal(validateUserSalutation('一二三四五六七八九').code, 'too-long');
+  assert.equal(validateUserSalutation('一二三四五六七八九十一二三四五六七').code, 'too-long');
+  assert.equal(validateUserSalutation('一二三四五六七八九十一二三四五六').ok, true);
   assert.equal(validateUserSalutation('名字🙂').code, 'invalid-characters');
   assert.equal(validateUserSalutation('青禾').ok, true);
 });

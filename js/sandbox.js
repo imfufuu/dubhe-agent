@@ -423,12 +423,24 @@ export function warmSandboxWorker() {
 }
 export function releaseWarmSandboxWorker() { discardWarmWorker(); }
 
-function runInWorker(workerFile, payload, timeoutMs, { rpc = null, extraScripts = [], onOutput = null, onPhase = null, signal = null } = {}) {
+function runInWorker(workerFile, payload, timeoutMs, {
+  rpc = null, extraScripts = [], onOutput = null, onPhase = null, signal = null,
+  readyToken = 'js-runtime-2', workerType = 'classic', allowBlobFallback = true,
+  startupTimeoutMs = SANDBOX_JS_STARTUP_TIMEOUT_MS, executionTimeoutPhase = '',
+  preExecutionTimeoutMs = 0, timeoutMessage = '', preExecutionTimeoutMessage = '',
+} = {}) {
   return new Promise((resolve) => {
     let settled = false, active = null, triedBlob = false, started = false;
     let execTimer = null, attemptTimer = null;
     const fetchAbort = new AbortController();
     const sourceURL = versionedURL;
+    const canUseBlobFallback = allowBlobFallback === true && workerType !== 'module';
+    const timeoutResult = (message) => finish({ ok: false, timedOut: true, logs: [], files: payload.files || {},
+      error: { message } });
+    const armProgramTimeout = () => {
+      clearTimeout(execTimer);
+      execTimer = setTimeout(() => timeoutResult(timeoutMessage || `执行超时（>${Math.round(timeoutMs / 1000)}s），沙箱已强制终止`), timeoutMs);
+    };
     const closeActive = () => {
       if (!active) return;
       try { active.worker.terminate(); active.port?.close(); } catch { /* closed */ }
@@ -444,7 +456,7 @@ function runInWorker(workerFile, payload, timeoutMs, { rpc = null, extraScripts 
     const bootstrapFail = (detail) => finish({ ok: false, bootstrapFailed: true, logs: [], files: payload.files || {},
       error: { message: `沙箱 Worker 启动失败：${detail}。代码尚未执行；请检查 CSP、网络或在独立标签页打开应用。` } });
     const abort = () => finish({ ok: false, aborted: true, logs: [], files: payload.files || {}, error: { message: '执行已停止' } });
-    const bootTimer = setTimeout(() => bootstrapFail(`未在 ${SANDBOX_JS_STARTUP_TIMEOUT_MS / 1000}s 内就绪`), SANDBOX_JS_STARTUP_TIMEOUT_MS);
+    const bootTimer = setTimeout(() => bootstrapFail(`未在 ${startupTimeoutMs / 1000}s 内就绪`), startupTimeoutMs);
     signal?.addEventListener('abort', abort, { once: true });
     if (signal?.aborted) { abort(); return; }
     onPhase?.('bootstrap');
@@ -461,16 +473,17 @@ function runInWorker(workerFile, payload, timeoutMs, { rpc = null, extraScripts 
           worker = warmWorker.worker; dispose = warmWorker.dispose; adoptedReady = !!warmWorker.ready;
           warmWorker = null;
         } else if (useBlob) {
+          if (workerType === 'module') throw new Error('ES module Worker does not support the classic Blob fallback');
           const fetchText = async (name) => { const r = await fetch(sourceURL(name), { signal: fetchAbort.signal, cache: 'reload' }); if (!r.ok) throw new Error(`${name}: HTTP ${r.status}`); return r.text(); };
           const texts = await Promise.all([...extraScripts, workerFile].map(fetchText));
           if (settled || started) return;
           const url = URL.createObjectURL(new Blob([texts.join('\n;\n')], { type: 'text/javascript' }));
           dispose = () => URL.revokeObjectURL(url); worker = new Worker(url);
-        } else worker = new Worker(sourceURL(workerFile));
+        } else worker = new Worker(sourceURL(workerFile), workerType === 'module' ? { type: 'module' } : undefined);
       } catch (err) {
         dispose();
         if (settled || started) return;
-        if (!useBlob && !triedBlob) { triedBlob = true; return spawn(true); }
+        if (!useBlob && !triedBlob && canUseBlobFallback) { triedBlob = true; return spawn(true); }
         return bootstrapFail(String(err.message || err));
       }
       if (settled) { worker.terminate(); dispose(); return; }
@@ -480,8 +493,9 @@ function runInWorker(workerFile, payload, timeoutMs, { rpc = null, extraScripts 
         if (settled || active !== mine || mine.sent) return;
         mine.sent = true; started = true;
         clearTimeout(bootTimer); clearTimeout(attemptTimer); fetchAbort.abort(); onPhase?.('executing');
-        execTimer = setTimeout(() => finish({ ok: false, timedOut: true, logs: [], files: payload.files || {},
-          error: { message: `执行超时（>${Math.round(timeoutMs / 1000)}s），沙箱已强制终止` } }), timeoutMs);
+        if (executionTimeoutPhase && preExecutionTimeoutMs > 0) {
+          execTimer = setTimeout(() => timeoutResult(preExecutionTimeoutMessage || `编译准备超时（>${Math.round(preExecutionTimeoutMs / 1000)}s），沙箱已强制终止`), preExecutionTimeoutMs);
+        } else armProgramTimeout();
         let transfer = [];
         if (rpc && typeof MessageChannel === 'function') {
           const channel = new MessageChannel(); mine.port = channel.port1; transfer = [channel.port2];
@@ -500,7 +514,12 @@ function runInWorker(workerFile, payload, timeoutMs, { rpc = null, extraScripts 
         if (settled || active !== mine) return;
         let data = e.data;
         if (typeof data === 'string') try { data = JSON.parse(data); } catch { return bootstrapFail('无法解析 Worker 的响应'); }
-        if (data?.__dubheReady === 'js-runtime-2') { start(); return; }
+        if (data?.__dubheReady === readyToken) { start(); return; }
+        if (data?.__phase) {
+          onPhase?.(data.__phase);
+          if (executionTimeoutPhase && data.__phase === executionTimeoutPhase) armProgramTimeout();
+          return;
+        }
         if (data?.__log) { onOutput?.(data.__log); return; }
         if (!mine.sent || !data || typeof data.ok !== 'boolean') return;
         finish(data);
@@ -509,7 +528,7 @@ function runInWorker(workerFile, payload, timeoutMs, { rpc = null, extraScripts 
       worker.onerror = (e) => {
         if (settled || active !== mine) return;
         e.preventDefault?.();
-        if (!mine.sent && !useBlob && !triedBlob) { triedBlob = true; return spawn(true); }
+        if (!mine.sent && !useBlob && !triedBlob && canUseBlobFallback) { triedBlob = true; return spawn(true); }
         const detail = [e.message, e.filename && `${e.filename.split('/').pop()}:${e.lineno}`].filter(Boolean).join(' @ ');
         if (!mine.sent) bootstrapFail(detail || '脚本被浏览器拒绝');
         else finish({ ok: false, logs: [], error: { message: `沙箱 Worker 执行失败：${detail || '运行时崩溃，结果丢失'}` } });
@@ -517,7 +536,7 @@ function runInWorker(workerFile, payload, timeoutMs, { rpc = null, extraScripts 
       // 预热实例握手可能早于这里的监听器：直接开跑，不占启动预算。
       if (adoptedReady) { start(); return; }
       // Some WebKit/CSP failures never dispatch onerror. Fall back while the shared bootstrap deadline still has room.
-      if (!useBlob) attemptTimer = setTimeout(() => { if (!settled && active === mine && !mine.sent) { triedBlob = true; spawn(true); } }, 6000);
+      if (!useBlob && canUseBlobFallback) attemptTimer = setTimeout(() => { if (!settled && active === mine && !mine.sent) { triedBlob = true; spawn(true); } }, 6000);
     };
     spawn(false);
   });
@@ -749,71 +768,34 @@ export function runPython(code, fsObj, onProgress, extraPkgs = [], opts = {}) {
   return task;
 }
 
-// ── C++：Compiler Explorer 公共 API 远程编译执行 ───────────────────────
-// （浏览器内没有轻量 C++ 运行时；godbolt.org 已放行 CORS，实测执行/错误捕获可用）
-const CE_BASE = 'https://godbolt.org';
-let cppCompilerId = 'g142'; // 默认 GCC 14.2（已实测可用）
-let cppCompilerDetected = false;
-
-// 注意：编译器 ID 数字≠版本大小（g550=GCC 5.5.0 < g142=GCC 14.2），必须按 semver 字段排序
-async function detectCppCompiler() {
-  try {
-    const res = await fetch(`${CE_BASE}/api/compilers/c++?fields=id,semver`, { headers: { Accept: 'application/json' } });
-    if (!res.ok) return;
-    const list = await res.json();
-    const bySemverDesc = (x, y) => {
-      const a = String(x.semver).split('.').map(Number);
-      const b = String(y.semver).split('.').map(Number);
-      for (let i = 0; i < 3; i++) if ((b[i] || 0) !== (a[i] || 0)) return (b[i] || 0) - (a[i] || 0);
-      return 0;
-    };
-    const valid = (c) => /^\d+\.\d+/.test(c.semver || '');
-    const gcc = list.filter((c) => /^g\d/.test(c.id) && valid(c)).sort(bySemverDesc);
-    const any = list.filter(valid).sort(bySemverDesc);
-    if (gcc.length) cppCompilerId = gcc[0].id;
-    else if (any.length) cppCompilerId = any[0].id;
-  } catch { /* 网络失败保留默认 g142 */ }
-}
+// ── C++：Clang/LLD + WASI 1 本地浏览器编译 / 执行 ─────────────────────
+const SANDBOX_CPP_TIMEOUT_MS = 30000;
+const SANDBOX_CPP_PREPARATION_TIMEOUT_MS = 120000;
 
 export async function runCpp(code, opts = {}) {
   const t0 = performance.now();
-  const dur = () => Math.round(performance.now() - t0);
-  const extraFiles = Array.isArray(opts.files) ? opts.files.filter((f) => f && f.filename) : [];
-  const stdin = opts.stdin == null ? '' : String(opts.stdin);
-  const argv = Array.isArray(opts.args) ? opts.args.map((a) => String(a)) : [];
-  try {
-    if (!cppCompilerDetected) { cppCompilerDetected = true; await detectCppCompiler(); }
-    const payload = {
-      source: code,
-      options: {
-        userArguments: '-O2 -std=c++20',
-        executeParameters: { args: argv, stdin },
-        compilerOptions: { executorRequest: true }, // 关键：executorRequest 才是「编译并执行」
-        filters: { execute: true },
-        tools: [],
-      },
-      lang: 'c++',
-      allowStoreCodeDebug: true,
-    };
-    if (extraFiles.length) payload.files = extraFiles.map((f) => ({ filename: String(f.filename), contents: String(f.contents ?? '') }));
-    const res = await fetch(`${CE_BASE}/api/compiler/${cppCompilerId}/compile`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok) return { ok: false, logs: [], error: { message: `Compiler Explorer HTTP ${res.status}` }, durationMs: dur() };
-    const j = await res.json();
-    const logs = [
-      ...(j.stdout || []).filter((l) => l.text !== '').map((l) => ({ level: 'log', text: l.text })),
-      ...(j.stderr || []).filter((l) => l.text && l.text.trim() !== '').map((l) => ({ level: 'error', text: l.text })),
-    ];
-    const ok = j.code === 0;
-    return {
-      ok, logs,
-      error: ok ? undefined : { message: j.code === -1 ? '编译失败（详见 stderr 诊断）' : `进程退出码 ${j.code}` },
-      durationMs: dur(),
-    };
-  } catch (err) {
-    return { ok: false, logs: [], error: { message: `C++ 远程执行失败：${err.message}（godbolt.org 不可达？）` }, durationMs: dur() };
-  }
+  const timeoutMs = normalizeSandboxTimeoutMs(opts.timeoutMs, SANDBOX_CPP_TIMEOUT_MS);
+  const files = Array.isArray(opts.files) ? opts.files.filter((f) => f && f.filename).map((f) => ({
+    filename: String(f.filename), contents: String(f.contents ?? ''), compile: f.compile !== false,
+  })) : [];
+  const payload = {
+    code: String(code || ''),
+    mainPath: String(opts.mainPath || 'main.cpp'),
+    files,
+    stdin: opts.stdin == null ? '' : String(opts.stdin),
+    args: Array.isArray(opts.args) ? opts.args.map((value) => String(value)) : [],
+  };
+  const out = await runInWorker('worker-cpp.js', payload, timeoutMs, {
+    signal: opts.signal,
+    onOutput: opts.onOutput,
+    onPhase: opts.onPhase,
+    readyToken: 'cpp-runtime-1',
+    workerType: 'module',
+    allowBlobFallback: false,
+    executionTimeoutPhase: 'program-start',
+    preExecutionTimeoutMs: SANDBOX_CPP_PREPARATION_TIMEOUT_MS,
+    preExecutionTimeoutMessage: `本地 C++ 工具链加载/编译超时（>${SANDBOX_CPP_PREPARATION_TIMEOUT_MS / 1000}s），沙箱已强制终止`,
+    timeoutMessage: `C++ 程序执行超时（>${Math.round(timeoutMs / 1000)}s），沙箱已强制终止`,
+  });
+  return { ...out, durationMs: Math.round(performance.now() - t0) };
 }

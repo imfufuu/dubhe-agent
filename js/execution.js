@@ -589,7 +589,7 @@ export function buildCapabilityConstraints({
   relayOk = false,
   webEnabled = false,
   sandboxEnabled = true,
-  remoteCppEnabled = true,
+  localCppEnabled = true,
   canDispatch = false,
   overrides = null,
 } = {}) {
@@ -600,8 +600,8 @@ export function buildCapabilityConstraints({
     bits: { relay: relayOk ? 1 : 0, web: webOn ? 1 : 0, sandbox: sandboxEnabled ? 1 : 0, dispatch: canDispatch ? 1 : 0 },
     capCode: `R${relayOk ? 1 : 0}·W${webOn ? 1 : 0}·S${sandboxEnabled ? 1 : 0}·D${canDispatch ? 1 : 0}`,
     web: { enabled: webOn, ...base.web, ...(ov.web || {}) },
-    // remoteCpp：execute_cpp 是唯一把代码送出浏览器（godbolt.org）的执行路径，单独一个开关
-    sandbox: { enabled: !!sandboxEnabled, remoteCpp: !!remoteCppEnabled, ...base.sandbox, ...(ov.sandbox || {}) },
+    // localCpp：execute_cpp 在浏览器本地 WASM Worker 中编译/执行，用户可单独关闭
+    sandbox: { enabled: !!sandboxEnabled, localCpp: !!localCppEnabled, ...base.sandbox, ...(ov.sandbox || {}) },
     dispatch: { enabled: !!canDispatch, ...base.dispatch, ...(ov.dispatch || {}) },
     filesystem: { ...base.filesystem, ...(ov.filesystem || {}) },
   };
@@ -612,7 +612,7 @@ export function describeCapabilityConstraints(c) {
   const bits = [
     `中继=${c.bits.relay ? 'on' : 'off'}`,
     `Web=${c.web.enabled ? (c.web.allowedHosts && c.web.allowedHosts.length ? `限 ${c.web.allowedHosts.length} 个域名` : '全开放') : 'off'}`,
-    `Sandbox=${c.sandbox.enabled ? `网络${c.sandbox.network ? '允许' : '禁止'}·默认${Math.round((c.sandbox.defaultRuntimeMs || 30000) / 1000)}s·单次≤${Math.round(c.sandbox.maxRuntimeMs / 1000)}s·远程C++${c.sandbox.remoteCpp === false ? 'off' : 'on'}` : 'off'}`,
+    `Sandbox=${c.sandbox.enabled ? `网络${c.sandbox.network ? '允许' : '禁止'}·默认${Math.round((c.sandbox.defaultRuntimeMs || 30000) / 1000)}s·单次≤${Math.round(c.sandbox.maxRuntimeMs / 1000)}s·本地C++${c.sandbox.localCpp === false ? 'off' : 'on'}` : 'off'}`,
     `Dispatch=${c.dispatch.enabled ? `并发≤${c.dispatch.maxParallelTasks}` : 'off'}`,
     `覆盖策略=${c.filesystem.writeOverwrite}`,
   ];
@@ -867,7 +867,7 @@ export const TOOL_CONTRACTS = Object.freeze({
   browser_sandbox: contract({ sideEffect: 'sandbox', idempotent: false, timeoutMs: 75000, riskLevel: 'L2', verifyAfterRun: true, note: '只运行沙箱 HTML 项目；本机 Chromium 调试/截图，不接受公网 URL 或 shell 命令' }),
   execute_javascript: contract({ sideEffect: 'sandbox', idempotent: false, timeoutMs: 600000, riskLevel: 'L2', verifyAfterRun: true, note: '代码可写沙箱文件；默认 30 秒，可按 timeout_sec 设置至 600 秒，需核验副作用' }),
   execute_python: contract({ sideEffect: 'sandbox', idempotent: false, timeoutMs: 600000, riskLevel: 'L2', verifyAfterRun: true, note: '用户代码默认 30 秒、可设至 600 秒；冷启动/装包另有 120 秒准备窗口' }),
-  execute_cpp: contract({ sideEffect: 'remote', idempotent: true, retryPolicy: 'once', timeoutMs: 45000, riskLevel: 'L2', external: true, note: '远程 Compiler Explorer 调用' }),
+  execute_cpp: contract({ sideEffect: 'sandbox', idempotent: false, retryPolicy: 'never', timeoutMs: 720000, riskLevel: 'L2', note: '同源 WASM Worker 内 Clang/LLD 编译并执行 WASI；不向远程编译/执行服务发送源码' }),
   write_file: contract({ sideEffect: 'filesystem', idempotent: false, timeoutMs: 10000, riskLevel: 'L2', rollback: 'snapshot-fs', verifyAfterRun: true, note: '覆盖已有文件不可自动恢复' }),
   read_file: contract({ idempotent: true, retryPolicy: 'backoff', timeoutMs: 5000, riskLevel: 'L1' }),
   list_files: contract({ idempotent: true, retryPolicy: 'backoff', timeoutMs: 5000, riskLevel: 'L1' }),

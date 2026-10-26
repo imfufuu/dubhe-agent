@@ -36,7 +36,7 @@ export const CAPABILITY_REGISTRY = Object.freeze({
   // ── 代码沙箱（codeSandbox 门控：沙箱开关）──
   execute_javascript: R('codeSandbox', 'exec', { core: 1, heavy: true, tags: ['code'] }),
   execute_python: R('codeSandbox', 'exec', { core: 2, heavy: true, tags: ['code'] }),
-  execute_cpp: R('codeSandbox', 'remote', { core: 3, heavy: true, tags: ['code'] }),
+  execute_cpp: R('codeSandbox', 'exec', { core: 3, heavy: true, tags: ['code'] }),
   browser_sandbox: R('localBrowser', 'exec', { heavy: true, tags: ['code'] }),
   skill_library: R('invariantCore', 'local', { core: 14, parallel: true, readOnly: true }),
   tool_library: R('invariantCore', 'local', { core: 15 }),

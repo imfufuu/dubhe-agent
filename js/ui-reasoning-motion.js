@@ -1,4 +1,22 @@
 const lineStates = new WeakMap();
+const scrollFrames = new WeakMap();
+
+function followLatest(container) {
+  const win = container.ownerDocument.defaultView;
+  const scroll = () => {
+    if (!container.isConnected) return;
+    container.scrollTop = Math.max(0, container.scrollHeight - container.clientHeight);
+  };
+  scroll();
+  if (!win?.requestAnimationFrame) return;
+  const pending = scrollFrames.get(container);
+  if (pending != null) win.cancelAnimationFrame?.(pending);
+  const frame = win.requestAnimationFrame(() => {
+    scrollFrames.delete(container);
+    scroll();
+  });
+  scrollFrames.set(container, frame);
+}
 
 function motionEnabled(doc) {
   const mode = doc.documentElement?.dataset.motion;
@@ -46,5 +64,6 @@ export function renderReasoningLines(container, value, { summary = false, animat
     state.nodes.push(line);
     if (shouldAnimate) revealLine(line, Math.min((index - firstNew) * 48, 192));
   }
+  followLatest(container);
   return items.length;
 }

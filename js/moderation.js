@@ -10,7 +10,7 @@ import { DEFAULT_GATEWAY_ID, getGateway, defaultVisionModelForGateway } from './
 import { BLOCKING_TEXT, policyTextHeuristic } from './local-text-policy.js';
 export { policyTextHeuristic } from './local-text-policy.js';
 
-export const TEXT_MODERATION_MODEL = 'jev:systemone+policy-v3';
+export const TEXT_MODERATION_MODEL = 'jev:systemone+policy-v4';
 export const IMAGE_MODERATION_MODEL = 'local:nudenet-320n+nsfwjs-inception-v3';
 export const REMOTE_IMAGE_REVIEW_MODEL = 'gemini-3.5-flash-lite';   // 灰区图远程复核（便宜、快；只在本地拿不准时调用）
 export const REMOTE_IMAGE_REVIEW_MAX_PER_TURN = 3;                  // 每轮最多复核几张（视频抽帧也算），控成本
@@ -28,7 +28,7 @@ export const IMAGE_TURN_BUDGET_MS = 120000;      // 带图回合总预算（模�
 
 const JEV_MODERATION_QUESTIONS = {
   unsafe: noul(
-    'Classify the message in any language. Block requests that create or facilitate child sexual abuse, explicit pornography, incest/bestiality/non-consensual sexual exploitation, suicide or self-harm methods/encouragement, violent crime, terrorism, weapon construction/use, hard-drug manufacture/trafficking, malware or illegal hacking, fraud/theft or other actionable crime, credible threats, hateful/dehumanizing abuse or threats against protected groups, severe targeted profanity, or calls for political/religious violence. Include violent or unlawful incitement in mainland-China political contexts, but do NOT block neutral politics, news, history, religion, education, prevention, translation, victim reports, or help-seeking. Judge intent and context rather than topic keywords alone.',
+    'Classify the message in any language. Block requests that create or facilitate child sexual abuse, explicit pornography, incest/bestiality/non-consensual sexual exploitation, suicide or self-harm methods/encouragement, violent crime, terrorism, weapon construction/use, hard-drug manufacture/trafficking, malware or illegal hacking, fraud/theft or other actionable crime, credible threats, hateful/dehumanizing abuse or threats against protected groups, severe targeted profanity, or calls for political/religious violence. Include violent or unlawful incitement in mainland-China political contexts, but do NOT block neutral politics, news, history, religion, science, chemistry, public-health or drug-policy discussion, education, prevention, translation, victim reports, or help-seeking. For explosives and hard-drug trafficking, block explicit requests for construction, manufacture, acquisition, sale, distribution, or step-by-step operational help; include indirect and multilingual requests. Do not infer harmful intent from a neutral mention or raw lexicon match alone. Judge intent and context rather than topic keywords alone.',
     'Unsafe request or harmful intent that must be blocked',
     'Safe or benign request, neutral discussion, education/prevention, victim report, or help-seeking',
   ),
@@ -39,7 +39,7 @@ const JEV_MODERATION_QUESTIONS = {
     public_morals: 'Incest, bestiality, necrophilia, or non-consensual sexual exploitation',
     self_harm: 'Suicide or self-harm methods, encouragement, or glorification; not a disclosure seeking help',
     mass_harm: 'Terrorism, mass violence, or actionable instructions to commit or facilitate mass harm',
-    gun_crime: 'Actionable weapon construction, illegal acquisition, or instructions to use weapons in violence',
+    gun_crime: 'Actionable firearm or explosive construction, illegal acquisition, or instructions to use weapons in violence',
     credible_threat: 'A credible threat or intimidation aimed at an identifiable person or group',
     drug_crime: 'Manufacturing, selling, or trafficking hard drugs (meth, heroin, fentanyl, etc.)',
     crime_facilitation: 'Actionable fraud, theft, extortion, trafficking, evasion, or other criminal facilitation',
@@ -565,11 +565,17 @@ async function fetchWarm(href, label) {
 const NSFW_SHARD_URLS = [1, 2, 3, 4, 5, 6].map((i) => `../assets/moderation/nsfw-inception-v3/group1-shard${i}of6`);
 const TOXIC_SHARD_URLS = [1, 2, 3, 4, 5, 6, 7].map((i) => `../assets/moderation/text-toxic/group1-shard${i}of7`);
 
-function prewarmImageModeration() {
+function prewarmImageModeration(reason = 'attachment') {
   if (typeof document === 'undefined') return Promise.resolve(false);
+  prefetchImageModerationAssets();
+  // 启动时只缓存静态文件，不在没有图片任务时常驻加载约 20MB 权重并占用大块 RAM；
+  // 用户选择图片附件时仍完整预热两个模型，给实际审核留出加载窗口。
+  if (reason === 'startup') {
+    mlog('prewarm:deferred', { note: '启动只预取图像审核资产；模型在图片附件到达时加载，避免与本地 C++ WASM 编译争用内存' });
+    return Promise.resolve(false);
+  }
   const t0 = performance.now();
   mlog('prewarm:start', { note: '先显式下载图像审核资源（NudeNet + NSFWJS），再创建两个图像模型会话；文本审核交由 Jev 处理' });
-  prefetchImageModerationAssets();
   const warmup = (async () => {
     await Promise.all([
       fetchWarm(ORT_WASM_THREAD_URL, 'ort-wasm'),

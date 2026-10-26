@@ -13,7 +13,7 @@
      ·   （DeepSeek、Anthropic、OpenAI、Gemini、GLM、Grok、Kimi、Doubao、Qwen 的官方域名——
      ·    少了这些，设置里切到第一方网关时 fetch 会被本 CSP 直接拦下，表现为「直连失败」）/ C++ 远程执行 / Pyodide CDN / 本站代理
      · 'wasm-unsafe-eval' 为 Pyodide 在 Worker 内编译 WebAssembly 所需 -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' 'sha256-KWAlpbtB4R45zBOqEtLM+90JdLvHqoOyoaQRSGS6uBs=' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; img-src 'self' data: blob: https:; media-src 'self' blob: data:; font-src 'self' data: https://fonts.gstatic.com https://cdn.jsdelivr.net; connect-src 'self' https://api.teamorouter.com https://api.teamorouter.cn https://api.deepseek.com https://api.anthropic.com https://api.openai.com https://generativelanguage.googleapis.com https://open.bigmodel.cn https://api.x.ai https://api.moonshot.ai https://api.moonshot.cn https://ark.cn-beijing.volces.com https://dashscope.aliyuncs.com https://dashscope-intl.aliyuncs.com https://godbolt.org https://cdn.jsdelivr.net https://*.workers.dev https://huggingface.co https://*.hf.co; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' 'sha256-KWAlpbtB4R45zBOqEtLM+90JdLvHqoOyoaQRSGS6uBs=' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; img-src 'self' data: blob: https:; media-src 'self' blob: data:; font-src 'self' data: https://fonts.gstatic.com https://cdn.jsdelivr.net; connect-src 'self' https://api.teamorouter.com https://api.teamorouter.cn https://api.deepseek.com https://api.anthropic.com https://api.openai.com https://generativelanguage.googleapis.com https://open.bigmodel.cn https://api.x.ai https://api.moonshot.ai https://api.moonshot.cn https://ark.cn-beijing.volces.com https://dashscope.aliyuncs.com https://dashscope-intl.aliyuncs.com https://cdn.jsdelivr.net https://*.workers.dev https://huggingface.co https://*.hf.co; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'" />
 <!-- Runs synchronously before fonts or remote resources; offline entry immediately fences the page. -->
 <script src="js/offline-bootstrap.js?v=2026.10.25.1"></script>
 <meta name="app-version" content="2026.10.25.1" />
@@ -369,7 +369,7 @@
 
     <div class="composer-wrap">
       <div id="attach-chips" class="attach-chips" style="display:none"></div>
-      <div class="composer is-multiline">
+      <div class="composer">
         <div id="attach-menu-wrap" class="attach-menu-wrap">
           <button id="attach-btn" type="button" title="添加附件（图片 / 视频 / PDF / ZIP / 文本 / 代码；也可拖拽、粘贴文件或文件链接），或拍照" aria-label="添加附件或拍照" aria-haspopup="menu" aria-expanded="false" aria-controls="attach-menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></button>
           <div id="attach-menu" class="attach-menu" role="menu" aria-label="附件操作" hidden>
@@ -381,7 +381,7 @@
         </div>
         <input id="camera-input" type="file" hidden accept="image/*" capture="environment" aria-label="拍摄照片" />
         <input id="attach-input" type="file" multiple hidden accept="image/*,audio/*,.mp3,.wav,.m4a,.aac,.ogg,.opus,.flac,.weba,.doc,.docx,.pptx,video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov,.m4v,application/pdf,.pdf,application/zip,.zip,.txt,.md,.js,.mjs,.cjs,.ts,.tsx,.jsx,.py,.java,.c,.cpp,.h,.hpp,.cc,.cxx,.cs,.go,.rs,.rb,.php,.swift,.kt,.scala,.dart,.m,.r,.jl,.sh,.bash,.zsh,.ps1,.bat,.cmd,.json,.jsonc,.csv,.log,.html,.htm,.css,.scss,.less,.xml,.yaml,.yml,.toml,.ini,.env,.conf,.sql,.vue,.svelte,.tex,.latex,.lua,.hs,.erl,.ex,.exs,.clj,.cljs,.fs,.fsx,.ml,.mli,.asm,.diff,.patch,.svg,.bmp,.ico,.tiff,.tif,.avif,.heic,.heif,.apng" />
-        <textarea id="composer-input" rows="6" aria-label="消息输入框" placeholder="你出想法，Duhbe来实现"></textarea>
+        <textarea id="composer-input" rows="1" aria-label="消息输入框" placeholder="你出想法，Duhbe来实现"></textarea>
         <button id="voice-btn" type="button" aria-describedby="voice-privacy" title="语音输入" aria-label="语音输入" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3M8 22h8"/></svg></button>
         <button id="send-btn" type="button" title="发送 (Enter)" aria-label="发送"><span id="send-ico">↑</span></button>
       </div>
@@ -546,10 +546,12 @@
         <div class="set-row"><div class="set-lbl"><div class="set-title">语言</div><div class="set-sub">仅切换应用界面；不会改写用户对话或模型回复。英文界面启用英文系统提示词。</div></div><div class="set-ctl"><select id="set-language" class="set-select" aria-label="语言"><option value="zh">中文</option><option value="en">English</option><option value="ja">日本語</option><option value="es">Español</option><option value="fr">Français</option><option value="de">Deutsch</option><option value="ko">한국어</option><option value="ru">Русский</option><option value="ar">العربية</option></select></div></div>
         <div class="set-row"><div class="set-lbl"><div class="set-title">价格币种</div><div class="set-sub">自动：中文 CNY，其他语言 USD；手动选择后固定。</div></div><div class="set-ctl"><select id="set-currency" class="set-select" aria-label="价格币种"><option value="auto">自动（中文 CNY，其他 USD）</option><option value="USD">USD · 美元</option><option value="CNY">CNY · 人民币</option></select></div></div>
         <div class="set-row user-salutation-row">
-          <div class="set-lbl"><div id="set-user-salutation-title" class="set-title">用户称谓</div><div id="set-user-salutation-note" class="set-sub">最多 8 个字符；本地强制审核每秒刷新。默认称谓随机生成并保存在此设备。</div></div>
+          <div class="set-lbl"><div id="set-user-salutation-title" class="set-title">用户称谓</div><div id="set-user-salutation-note" class="set-sub">最多 16 个字符；本地强制审核每秒刷新。默认称谓随机生成并保存在此设备。</div></div>
           <div class="set-ctl user-salutation-control">
-            <span id="set-user-salutation-status" class="user-salutation-status" role="status" aria-live="polite">…</span>
-            <input id="set-user-salutation" class="set-input" type="text" maxlength="16" autocomplete="nickname" spellcheck="false" aria-labelledby="set-user-salutation-title" />
+            <div class="user-salutation-input-wrap">
+              <input id="set-user-salutation" class="set-input" type="text" maxlength="16" autocomplete="nickname" spellcheck="false" aria-labelledby="set-user-salutation-title" aria-describedby="set-user-salutation-status" />
+              <span id="set-user-salutation-status" class="user-salutation-status" role="status" aria-live="polite">…</span>
+            </div>
             <button id="save-user-salutation" class="mini-btn" type="button" disabled>保存称谓</button>
           </div>
         </div>
@@ -573,7 +575,7 @@
         <div class="set-row"><div class="set-lbl"><div class="set-title">长任务完成通知</div><div id="notifications-note" class="set-sub">固定：超过60秒且在后台；手动停止不通知</div></div><div class="set-ctl"><button id="set-notifications" class="mini-btn" type="button" aria-pressed="false">开启通知</button></div></div>
         <div class="set-row"><div class="set-lbl"><div class="set-title">代码沙箱</div><div class="set-sub">JS / Python / C++</div></div><div class="set-ctl"><label class="sw"><input type="checkbox" id="set-sandbox"/><span></span></label></div></div>
         <div class="set-row"><div class="set-lbl"><div class="set-title">自动清理未引用文件</div><div class="set-sub">默认关闭；开启后清理未被回答引用的新文件；internal/、uploads/ 始终保留</div></div><div class="set-ctl"><label class="sw"><input type="checkbox" id="set-cleanup-unreferenced"/><span></span></label></div></div>
-        <div class="set-row"><div class="set-lbl"><div class="set-title">远程 C++（Compiler Explorer）</div><div class="set-sub">代码会发送到 godbolt.org</div></div><div class="set-ctl"><label class="sw"><input type="checkbox" id="set-cpp"/><span></span></label></div></div>
+        <div class="set-row"><div class="set-lbl"><div class="set-title">本地 C++（WASM）</div><div class="set-sub">本机编译，源码不发远程编译器；聊天仍走所选网关；首用下载约30MB工具链</div></div><div class="set-ctl"><label class="sw"><input type="checkbox" id="set-cpp"/><span></span></label></div></div>
         <div class="set-row"><div class="set-lbl"><div class="set-title">联网抓取（fetch_url）</div></div><div class="set-ctl"><label class="sw"><input type="checkbox" id="set-web"/><span></span></label></div></div>
         <div class="set-row"><div class="set-lbl"><div class="set-title">快速模式（Fast）</div><div class="set-sub">GPT 系列 · 2× 计费</div></div><div class="set-ctl"><label class="sw"><input type="checkbox" id="set-fast"/><span></span></label></div></div>
         <div class="set-row"><div class="set-lbl"><div class="set-title">深度思考</div></div><div class="set-ctl"><label class="sw"><input type="checkbox" id="set-thinking"/><span></span></label></div></div>
@@ -627,12 +629,12 @@
             <button type="button" id="set-offline-model-remove" class="mini-btn" hidden>删除本地模型</button>
           </div>
         </div>
-        <div class="set-row offline-model-status-row"><div class="set-lbl"><div class="set-title" id="set-offline-model-status" role="status" aria-live="polite">检查本地存储…</div></div></div>
+        <div class="set-row offline-model-status-row"><div class="set-lbl"><div class="set-title offline-model-status" id="set-offline-model-status" role="status" aria-live="polite">检查本地存储…</div></div></div>
         <div class="set-sub offline-model-meta-text" id="set-offline-model-meta" hidden></div>
         <div class="offline-model-warning" id="set-offline-model-memory-warning" role="alert" aria-live="assertive" hidden></div>
         <div id="set-offline-model-progress-wrap" class="offline-model-progress" hidden><progress id="set-offline-model-progress" max="100" value="0" aria-label="本地 GGUF 保存进度"></progress><span id="set-offline-model-progress-label">0%</span></div>
         <div class="offline-model-details" id="offline-model-details" aria-expanded="false">
-          <button class="offline-model-summary" id="offline-model-details-toggle" type="button" aria-expanded="false" aria-controls="offline-model-detail-panel">本地文件、内存估算与模型许可</button>
+          <button class="offline-model-summary" id="offline-model-details-toggle" type="button" aria-expanded="false" aria-controls="offline-model-detail-panel">本地文件、内存估算与模型许可<svg class="offline-model-chevron" viewBox="0 0 12 12" aria-hidden="true"><path d="m3 4.5 3 3 3-3"/></svg></button>
           <div class="offline-model-detail-panel" id="offline-model-detail-panel" aria-hidden="true" inert>
             <div class="offline-model-detail-inner">
               <div class="set-sub">GGUF 保存在本机浏览器 OPFS，不上传；清理站点数据会删除。</div>

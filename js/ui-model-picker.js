@@ -28,6 +28,7 @@ export function installModelPicker({ store, agent, toast, getBusy, openKeyModal,
   const ddSearch = $('#model-search');
   // 网关仍可能返回已下线的福利档；本地兜底表删了也不够，这里再挡一层。
   const HIDDEN_MODELS = new Set(['glm-5.3-flash-free', 'deepseek-v4-flash-free', 'deepseek-flash-free']); // 后两者已从 FALLBACK_MODELS 删除，这里兜底防网关 /v1/models 再塞回来
+  const LOCAL_PROVIDER_ICON = '<svg class="p-icon local-provider-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="3.5" width="16" height="13" rx="2"/><path d="M2.5 20.5h19M9 16.5l-.7 4m6.4-4 .7 4"/><path d="M9 8h6m-6 3h3"/></svg>';
   // 对话模型列表：过滤掉生图模型（只能由主智能体通过 generate_image 工具调用，
   // 直接选中会绕过工具循环、破坏 Agent 特性；网关 /v1/models 里带它们时也照样隐藏）
   function localModelMetadata() {
@@ -143,12 +144,14 @@ export function installModelPicker({ store, agent, toast, getBusy, openKeyModal,
       const g = el('div', 'dd-group');
       const isRouterGroup = p === SMART_ROUTER_PROVIDER;
       const customProviderModel = groups.get(p).find((m) => m.customProvider);
+      const isLocalGroup = groups.get(p).some((model) => model.localModel);
       const groupIcon = customProviderModel
         ? providerIcon(p, { custom: true, iconDataUrl: customProviderModel.providerIconDataUrl })
-        : (p === localeText(OFFLINE_MODEL_PROVIDER_ZH, OFFLINE_MODEL_PROVIDER_EN)
-          ? providerIcon(p, { custom: true })
-          : providerIcon(p));
-      g.appendChild(el('div', 'dd-group-title', `${isRouterGroup ? `<span class="router-group-ico">${ROUTER_ICON_SVG}</span>` : groupIcon}<span>${esc(isRouterGroup ? SMART_ROUTER_PROVIDER_LABEL : p)}</span>`));
+        : (isLocalGroup ? LOCAL_PROVIDER_ICON : providerIcon(p));
+      const groupLabel = isRouterGroup
+        ? SMART_ROUTER_PROVIDER_LABEL
+        : (isLocalGroup ? 'LOCAL' : p);
+      g.appendChild(el('div', 'dd-group-title', `${isRouterGroup ? `<span class="router-group-ico">${ROUTER_ICON_SVG}</span>` : groupIcon}<span>${esc(groupLabel)}</span>`));
       for (const m of sortModelsInFamily(groups.get(p))) {
         const item = el('button', 'dd-item' + (m.id === store.state.model ? ' active' : ''));
         item.type = 'button';
@@ -180,7 +183,7 @@ export function installModelPicker({ store, agent, toast, getBusy, openKeyModal,
           : (local
             ? `<span class="dd-item-id mono">${esc(localModelName())}</span>
               <span class="dd-item-badges">
-                <span class="badge local-model-badge" title="Local inference only"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="2.5" width="10" height="9" rx="1.4"/><path d="M1.5 13.5h13M6 11.5l-.5 2m4-2 .5 2"/></svg><span>LOCAL</span></span>
+                <span class="badge local-model-badge">${localeText('本地', 'Local')}</span>
               </span>`
             : `<span class="dd-item-id mono">${esc(m.id)}</span>
               <span class="dd-item-badges">
