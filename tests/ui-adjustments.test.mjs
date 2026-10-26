@@ -3,27 +3,36 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { JSDOM } from 'jsdom';
 import { paintEditFoldContent } from '../js/ui-editpreview.js';
+import { renderReasoningLines } from '../js/ui-reasoning-motion.js';
+import { renderQuickChart, renderQuickDiagram } from '../js/quickviz.js';
 
 const read = (path) => fs.readFileSync(new URL(path, import.meta.url), 'utf8');
 
-test('local model picker uses a gray LOCAL badge with an inline SVG and no readiness label', () => {
+test('local model picker adds a gray provider-column label and preserves the original row badges', () => {
   const picker = read('../js/ui-model-picker.js');
   const css = read('../css/styles.css');
-  assert.match(picker, /class="badge local-model-badge"[^>]*><svg viewBox="0 0 16 16"[\s\S]*?<span>LOCAL<\/span>/);
-  assert.doesNotMatch(picker, /localState|已就绪|Not selected|Checking/);
-  assert.match(css, /\.badge\.local-model-badge \{[^}]*color: var\(--fg-3\); border-color: var\(--line-2\)/);
-  assert.match(css, /\.badge\.local-model-badge svg \{[^}]*width: 11px/);
+  assert.match(picker, /const LOCAL_PROVIDER_ICON = '<svg class="p-icon local-provider-icon" viewBox="0 0 24 24"/);
+  assert.match(picker, /isLocalGroup \? LOCAL_PROVIDER_ICON : providerIcon\(p\)/);
+  assert.match(picker, /class="badge local-model-badge">\$\{localeText\('本地', 'Local'\)\}<\/span>[\s\S]*?<span class="badge">\$\{localState\}<\/span>/);
+  assert.match(picker, /const localState = store\.state\.offlineModelAvailable[\s\S]*?localeText\('已就绪', 'Ready'\)[\s\S]*?localeText\('未选择', 'Not selected'\)[\s\S]*?localeText\('检查中', 'Checking'\)/);
+  assert.doesNotMatch(picker, /<span>LOCAL<\/span>/);
+  assert.match(css, /\.badge\.local-model-badge \{ color: #2563eb; border-color: #93c5fd; \}/);
+  assert.match(css, /\.dd-item\.active \.badge\.local-model-badge \{ color: var\(--bg\); border-color: var\(--bg\); \}/);
+  assert.match(css, /\.dd-group-title \.local-provider-icon \{[^}]*width: 12px; height: 12px; color: var\(--fg-3\)/);
 });
 
-test('salutation input matches standard setting width and shows only a local-review check or cross', () => {
+test('salutation input includes its trailing local status and keeps the check/cross inside the input at the far right', () => {
   const settings = read('../js/settings.js');
   const css = read('../css/styles.css');
   const app = read('../app.html');
   assert.match(settings, /status\.textContent = result\.ok \? '✓' : '✗';/);
   assert.match(settings, /salutationCheckTimer = setInterval\(refreshSalutation, 1000\)/);
-  assert.match(app, /id="set-user-salutation" class="set-input/);
-  assert.match(css, /\.user-salutation-control \.set-input \{ flex: 0 1 230px; width: 230px;/);
-  assert.doesNotMatch(css, /\.user-salutation-control \.set-input \{[^}]*126px/);
+  assert.match(app, /<div class="user-salutation-input-wrap">[\s\S]*?id="set-user-salutation"[^>]*aria-describedby="set-user-salutation-status"[\s\S]*?id="set-user-salutation-status"[\s\S]*?<\/div>[\s\S]*?<button id="save-user-salutation"/);
+  assert.match(css, /\.user-salutation-input-wrap \{ position: relative; flex: 0 1 230px; width: 230px;/);
+  assert.match(css, /\.user-salutation-status \{ position: absolute; top: 50%; right: 9px;/);
+  assert.match(css, /\.user-salutation-control \.set-input \{ display: block; width: 100%;[^}]*padding: 7px 34px 7px 9px/);
+  assert.match(css, /\.user-salutation-control \.mini-btn \{ flex: 0 0 auto; white-space: nowrap; \}/);
+  assert.doesNotMatch(css, /\.user-salutation-status \{ flex: 0 0 58px/);
   assert.match(read('../js/user-salutation.js'), /export function validateUserSalutation/);
 });
 
@@ -37,13 +46,20 @@ test('tool capability table stays fully expanded; local-model info toggles acros
   assert.match(css, /\.set-capability-details \.capability-detail-panel \{ display: grid; grid-template-rows: 1fr; opacity: 1/);
   const localStart = app.indexOf('id="offline-model-details"');
   const localDetails = app.slice(localStart, app.indexOf('</section>', localStart));
-  assert.match(localDetails, /<button class="offline-model-summary"[^>]*aria-expanded="false"[^>]*aria-controls="offline-model-detail-panel"/);
+  assert.match(localDetails, /<button class="offline-model-summary"[^>]*aria-expanded="false"[^>]*aria-controls="offline-model-detail-panel"[^>]*>本地文件、内存估算与模型许可<svg class="offline-model-chevron"/);
   assert.match(localDetails, /<div class="offline-model-detail-panel"[^>]*aria-hidden="true" inert/);
   assert.match(settings, /offlineDetailsToggle\.addEventListener\('click'/);
   assert.match(settings, /offlineDetailsPanel\.inert = !expanded/);
+  assert.match(settings, /statusEl\.classList\.toggle\('is-loading', offlineModelBusy \|\| offlineModelStatusChecking\)/);
   assert.match(css, /\.offline-model-summary \{[\s\S]*?width: 100%;[\s\S]*?text-align: left/s);
+  assert.match(css, /\.offline-model-summary \{[^}]*-webkit-tap-highlight-color: transparent/);
+  assert.match(css, /\.offline-model-chevron \{[^}]*width: 12px; height: 12px[^}]*stroke: currentColor/);
+  assert.doesNotMatch(css, /\.offline-model-summary::before/);
+  assert.match(css, /\.offline-model-details \.set-sub \{ margin-top: 3px; line-height: 1\.38/);
   assert.match(css, /\.offline-model-details\[aria-expanded="true"\] \.offline-model-detail-panel \{ grid-template-rows: 1fr; opacity: 1/);
-  assert.match(css, /transition: grid-template-rows \.34s var\(--ease\), opacity \.24s/);
+  assert.match(css, /transition: grid-template-rows \.28s var\(--ease\), opacity \.2s/);
+  assert.match(css, /\.offline-model-status\.is-loading::before \{[^}]*border-radius: 50%;[^}]*animation: offlineModelSpin/);
+  assert.match(css, /@keyframes offlineModelSpin \{ to \{ transform: rotate\(360deg\); \} \}/);
 });
 
 test('edited-file diffs default open while live, are individually collapsible, and render only green/red changed lines', () => {
@@ -90,6 +106,65 @@ test('reasoning menu requires actual displayable content; GPT uses only bold sum
   assert.match(ui, /if \(displayableThink\) \{/);
   assert.match(ui, /return !isGptModel\(model\) \|\| reasoningSummaryItems\(x\.reasoning, model\)\.length > 0;/);
   assert.doesNotMatch(ui, /hiddenThink|thinkPending|reasoning_tokens/);
+});
+
+test('chart expand buttons stay anchored to their outer window while only the SVG viewport scrolls', () => {
+  const css = read('../css/styles.css');
+  const dom = new JSDOM('<main id="charts"></main>');
+  const host = dom.window.document.querySelector('#charts');
+  host.insertAdjacentHTML('beforeend', renderQuickChart('bar', ['A, 1', 'B, 2'].join('\n'), 'Sales'));
+  host.insertAdjacentHTML('beforeend', renderQuickDiagram('flow', 'Start -> Review -> Done', 'Pipeline'));
+  const chart = host.querySelector('.md-chart');
+  const diagram = host.querySelector('.md-diagram');
+  for (const box of [chart, diagram]) {
+    assert.equal(box.querySelector('.md-chart-expand').parentElement, box);
+    const svg = box.querySelector('.md-chart-svg');
+    assert.equal(svg.parentElement, box.querySelector('.md-chart-viewport, .md-diagram-viewport'));
+  }
+  assert.match(css, /\.md-chart, \.md-diagram \{ position: relative; margin: 12px 0; overflow: visible; \}/);
+  assert.match(css, /\.md-chart-viewport, \.md-diagram-viewport \{ width: 100%; min-width: 0; overflow-x: auto;/);
+  dom.window.close();
+});
+
+test('reasoning viewports scroll to the newest streamed summary and full-text lines', async () => {
+  const dom = new JSDOM('<div id="full"></div><div id="summary"></div>', { pretendToBeVisual: true });
+  const full = dom.window.document.querySelector('#full');
+  const summary = dom.window.document.querySelector('#summary');
+  let fullHeight = 360;
+  let summaryHeight = 240;
+  Object.defineProperty(full, 'scrollHeight', { configurable: true, get: () => fullHeight });
+  Object.defineProperty(full, 'clientHeight', { configurable: true, get: () => 72 });
+  Object.defineProperty(summary, 'scrollHeight', { configurable: true, get: () => summaryHeight });
+  Object.defineProperty(summary, 'clientHeight', { configurable: true, get: () => 96 });
+  renderReasoningLines(full, ['one', 'two', 'three'].join('\n'));
+  renderReasoningLines(summary, ['summary one', 'summary two'], { summary: true });
+  assert.equal(full.scrollTop, 288);
+  assert.equal(summary.scrollTop, 144);
+  fullHeight = 540;
+  summaryHeight = 360;
+  renderReasoningLines(full, ['one', 'two', 'three', 'four'].join('\n'));
+  renderReasoningLines(summary, ['summary one', 'summary two', 'summary three'], { summary: true });
+  await new Promise((resolve) => dom.window.requestAnimationFrame(resolve));
+  assert.equal(full.scrollTop, 468);
+  assert.equal(summary.scrollTop, 264);
+  dom.window.close();
+});
+
+test('composer starts compact, grows from measured text, keeps rounded corners, and hides empty-state examples while drafting', () => {
+  const app = read('../app.html');
+  const ui = read('../js/ui.js');
+  const motion = read('../js/ui-welcome-motion.js');
+  const css = read('../css/styles.css');
+  assert.match(app, /<div class="composer">[\s\S]*?<textarea id="composer-input" rows="1"/);
+  assert.doesNotMatch(app, /<div class="composer is-multiline">/);
+  assert.match(css, /#composer-input \{[^}]*min-height: 24px; max-height: min\(42vh, 360px\)/);
+  assert.match(css, /\.composer\.is-multiline \{[^}]*border-radius: 28px/);
+  assert.match(css, /\.welcome-quick-prompts \{ display: none !important; \}/);
+  assert.match(ui, /compactContentHeight > compactLineHeight \+ 1/);
+  assert.match(ui, /classList\.toggle\('is-multiline', multiline\)/);
+  assert.match(ui, /if \(follow\) \{[\s\S]*?composer\.scrollTop = composer\.scrollHeight[\s\S]*?requestAnimationFrame/);
+  assert.ok(motion.includes('quickPrompts.hidden = true'));
+  assert.ok(motion.includes('quickPrompts.hidden = false'));
 });
 
 test('welcome typing is incremental and surrounding motion uses a slower cadence', () => {

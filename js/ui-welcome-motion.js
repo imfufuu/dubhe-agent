@@ -122,14 +122,17 @@ export function installWelcomeMotion({ main, messages, composerWrap, composer, i
   }
 
   function sync({ empty } = {}) {
+    const quickPrompts = doc?.querySelector('#welcome-quick-prompts');
     const hasEmptyState = !!messages?.querySelector('.empty-state') && (empty ?? isEmptyChat?.() ?? true);
     if (!hasEmptyState) {
+      if (quickPrompts) quickPrompts.hidden = true;
       cancelGreeting();
       main?.classList.remove('welcome-docked', 'welcome-draft', 'welcome-entering');
       main?.style.removeProperty('--welcome-shift-y');
       return;
     }
     if (composer?.value) {
+      if (quickPrompts) quickPrompts.hidden = true;
       cancelGreeting();
       const heading = messages.querySelector('#welcome-greeting');
       if (heading?.hasAttribute('data-typing')) {
@@ -142,6 +145,7 @@ export function installWelcomeMotion({ main, messages, composerWrap, composer, i
       main.style.removeProperty('--welcome-shift-y');
       return;
     }
+    if (quickPrompts?.childElementCount) quickPrompts.hidden = false;
     setDocked();
   }
 

@@ -83,6 +83,7 @@ function renderOfflineModelUI(status = null) {
   if (description) description.textContent = metadata
     ? `${metadata.parameterCount ? `${formatParameterCount(metadata.parameterCount, 'en')}${metadata.parameterCountSource === 'gguf-metadata' ? '' : ' ≈'}` : localeText('参数量未知', 'parameter count unknown')} · ${fileSize ? formatByteSize(fileSize) : ''} · ${localeText('本机推理', 'runs locally')}`
     : localeText('选择一个本地 GGUF 文件；单文件上限约 2 GiB。', 'Choose a local GGUF file; single-file limit is about 2 GiB.');
+  if (statusEl) statusEl.classList.toggle('is-loading', offlineModelBusy || offlineModelStatusChecking);
   if (statusEl && offlineModelStore) {
     if (offlineModelBusy) {
       if (offlineModelProgress?.phase === 'copy') {
@@ -144,6 +145,7 @@ async function refreshOfflineModelUI(store = offlineModelStore) {
   if (!store) return null;
   offlineModelStore = store;
   offlineModelStatusChecking = true;
+  renderOfflineModelUI();
   let status = null;
   try {
     status = await syncOfflineModelAvailability(store, { notify: false });
