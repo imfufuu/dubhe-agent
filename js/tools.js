@@ -985,7 +985,15 @@ async function executeToolBody(outerName, outerArgs, ctx) {
         const out = await runCpp(code, {
           mainPath: mainPath || 'main.cpp', files: extraFiles, stdin, args: argv,
           timeoutMs: codeTimeoutMs(args.timeout_sec), signal: ctx.signal,
-          onPhase: (phase) => { if (notes[phase]) emit({ status: 'running', lang: 'cpp', workerStage: phase, note: notes[phase] }); },
+          onPhase: (phase) => { if (notes[phase]) emit({ status: 'running', lang: 'cpp', workerStage: phase, note: notes[phase], progress: null }); },
+          onProgress: (p) => {
+            const total = Number(p?.total) || 0;
+            const loaded = Math.min(Number(p?.loaded) || 0, total || Number(p?.loaded) || 0);
+            const fraction = total > 0 ? Math.min(1, loaded / total) : 0;
+            const mb = (n) => (n / 1048576).toFixed(1);
+            emit({ status: 'running', lang: 'cpp', workerStage: 'loading-assets', progress: fraction,
+              note: `按需加载本站 C++ 工具链 ${Math.round(fraction * 100)}%（${mb(loaded)} / ${mb(total)} MB）` });
+          },
         });
         emit({ status: out.ok ? 'ok' : 'error', sandboxOk: !!out.ok, lang: 'cpp', logs: out.logs, error: out.error, durationMs: out.durationMs, timedOut: out.timedOut });
         return formatExecResult('C++', out) + commandRepairNote(retainCommandSource(name, { ...args, code }, ctx, out));

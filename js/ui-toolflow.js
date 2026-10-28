@@ -195,6 +195,7 @@ export function paintCommandRows(chips, { groups, sig, scope, ownerId, commandTo
             const key = String(t.id);
             if (t.status || Number.isFinite(Number(t.durationMs))) child._toolStates[key] = {
               status: t.status, settled: t.settled, note: t.errorNote || t.progressNote || '', durationMs: t.durationMs,
+              progress: t.status === 'running' ? (t.progress ?? null) : null,
             };
             else if (liveToolCallIds.has(key) && !child._toolStates[key]) child._toolStates[key] = { status: 'running', settled: t.settled };
           }

@@ -2,6 +2,16 @@
 
 仅保留稳定版和主要阶段性升级；同一发布周期的补丁构建合并记录，避免逐轮重复。
 
+## 2026-10-28 输入区、本地模型与 /system 补全（待发布）
+
+- 输入区：单行文本框与右侧按钮同高居中（此前顶对齐，整体偏上）；「最新输出」「撤销回滚」浮层通过 `ResizeObserver` 跟随输入区真实高度，多行输入时不再压住文字。
+- 用户消息：链接状态（`:link` / `:visited` / `:focus` / `:active`）统一锁定为气泡文字色，防止链接与气泡同色而不可见。
+- 本地模型：模型按钮的 `本地模型` 文字统一为 `LOCAL`，图标与模型菜单的本地分组一致。
+- Wllama 中止：`signal.abort` 改为同步处理并直接调用 `abort()`，修复「字段缺失时 `message.replace` 抛错 → 游离 Promise（`window.rejection`）+ 推理 Promise 永久挂起」的问题；新增 6 项单测。
+- 本地 C++ 工具链：首次下载（约 29 MB 压缩包）显示进度条与百分比，进度按字节由 Worker 汇报到工具芯片。
+- `/system` 通道：输入 `/` 时实时显示命令候选（随输入过滤）；`↑/↓` 选择、`Tab` 或未完成时 `Enter` 补全、`Esc` 关闭；带参数的命令（`/debug`、`/theme`、`/guard`、`/cache`、`/p2`、`/model`）补全参数。
+- 测试：新增 `tests/input-system-fixes.test.mjs`（8 项）并登记到 CI；`tests/wllama-abort-compat.test.mjs` 更新为 6 项。已知既有失败：`tests/dom-smoke.mjs` 的「探测成功后 relayOk=true」在基线提交上同样失败，未在本次修改中处理。
+
 ## 2026-10-26 本地 GGUF 导入与界面回归（本地，待发布）
 
 - `execute_cpp` 从 Compiler Explorer 远程编译改为同源 module Worker 内的 Clang/LLD + WASI 本地编译执行。提交的源码、文件和 stdin 不发送给远程编译/执行服务；Worker 只允许读取本站固定静态工具链资产（压缩合计约 29.4 MB），WASI 无网络/预打开文件系统，不支持 C++ 异常与线程。保留 `path` / `files` / `dir`、递归头文件、多翻译单元、stdin、argv、stdout/stderr、退出码与超时；首次工具链加载/编译有独立 120 秒准备窗口，程序超时可由 Worker 终止。

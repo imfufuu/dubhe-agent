@@ -427,7 +427,7 @@ function runInWorker(workerFile, payload, timeoutMs, {
   rpc = null, extraScripts = [], onOutput = null, onPhase = null, signal = null,
   readyToken = 'js-runtime-2', workerType = 'classic', allowBlobFallback = true,
   startupTimeoutMs = SANDBOX_JS_STARTUP_TIMEOUT_MS, executionTimeoutPhase = '',
-  preExecutionTimeoutMs = 0, timeoutMessage = '', preExecutionTimeoutMessage = '',
+  preExecutionTimeoutMs = 0, timeoutMessage = '', preExecutionTimeoutMessage = '', onProgress = null,
 } = {}) {
   return new Promise((resolve) => {
     let settled = false, active = null, triedBlob = false, started = false;
@@ -520,6 +520,7 @@ function runInWorker(workerFile, payload, timeoutMs, {
           if (executionTimeoutPhase && data.__phase === executionTimeoutPhase) armProgramTimeout();
           return;
         }
+        if (data?.__progress) { try { onProgress?.(data.__progress); } catch { /* 进度回调失败不影响执行 */ } return; }
         if (data?.__log) { onOutput?.(data.__log); return; }
         if (!mine.sent || !data || typeof data.ok !== 'boolean') return;
         finish(data);
@@ -789,6 +790,7 @@ export async function runCpp(code, opts = {}) {
     signal: opts.signal,
     onOutput: opts.onOutput,
     onPhase: opts.onPhase,
+    onProgress: opts.onProgress,
     readyToken: 'cpp-runtime-1',
     workerType: 'module',
     allowBlobFallback: false,
