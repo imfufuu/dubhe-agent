@@ -52,6 +52,8 @@ import { createMessageScrollManager } from './ui-message-scroll.js?v=2026.10.25.
 import { installAttachments } from './ui-attachments.js?v=2026.10.25.1';
 import { installCapabilityPanel } from './ui-capability.js?v=2026.10.25.1';
 import { installModelPicker } from './ui-model-picker.js?v=2026.10.25.1';
+import { installComposerOffset } from './ui-composer-offset.js?v=2026.10.25.1';
+import { installSystemCommandComplete } from './ui-system-complete.js?v=2026.10.25.1';
 import { installPopovers } from './ui-popovers.js?v=2026.10.25.1';
 import { installCommandPalette } from './ui-command-palette.js?v=2026.10.25.1';
 import { installSystemCommands } from './ui-system-commands.js?v=2026.10.25.1';
@@ -88,6 +90,7 @@ export function mountUI(store, agent) {
   function paintFoot(wrap, m) { return paintAssistantFoot(wrap, m); }
   const composer = $('#composer-input');
   const welcomeMotion = installWelcomeMotion({ main: $('.main'), messages: msgList, composerWrap: $('.composer-wrap'), composer, isEmptyChat: () => !store.state.messages.length });
+  installComposerOffset({ main: $('.main'), wrap: $('.composer-wrap') });
   let pendingSendOrigin = null, sendAnimation = null;
   const jumpBtn = $('#jump-bottom');
   const { captureMessageScroll, restoreMessageScroll, jumpToBottom, scrollToBottom } = createMessageScrollManager({
@@ -1234,7 +1237,15 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
         if (state.innerHTML !== stateHtml) state.innerHTML = stateHtml;
         state.title = ''; state.classList.remove('bad');
       } else {
-        state.textContent = running ? (running.note || '执行中…') : (settled ? `${settled}/${ids.length}` : '…');
+        const pct = running && Number.isFinite(Number(running.progress)) ? Math.max(0, Math.min(1, Number(running.progress))) : null;
+        if (pct != null) {
+          const note = running.note || '加载中…';
+          const html = `<span class="chip-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(pct * 100)}" aria-label="${esc(note)}"><i style="width:${(pct * 100).toFixed(1)}%"></i></span><span class="chip-note">${esc(note)}</span>`;
+          if (state.dataset.progressHtml !== html) { state.innerHTML = html; state.dataset.progressHtml = html; }
+        } else {
+          if (state.dataset.progressHtml) { delete state.dataset.progressHtml; state.innerHTML = ''; }
+          state.textContent = running ? (running.note || '执行中…') : (settled ? `${settled}/${ids.length}` : '…');
+        }
         state.title = running ? (running.note || '') : ''; state.classList.remove('bad');
       }
     }
@@ -1425,7 +1436,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
             };
           } else if (t.status || Number.isFinite(Number(t.durationMs))) {
             const previous = child._toolStates[id] || {};
-            child._toolStates[id] = { ...previous, status: t.status || previous.status, settled: t.settled, note: t.errorNote || t.progressNote || previous.note || '', durationMs: Number.isFinite(Number(previous.durationMs)) ? previous.durationMs : Number(t.durationMs) };
+            child._toolStates[id] = { ...previous, status: t.status || previous.status, settled: t.settled, note: t.errorNote || t.progressNote || previous.note || '', progress: t.status === 'running' ? (t.progress ?? previous.progress ?? null) : null, durationMs: Number.isFinite(Number(previous.durationMs)) ? previous.durationMs : Number(t.durationMs) };
           }
         }
         if (m.cancelled) {
@@ -2277,7 +2288,15 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
   } else {
     window.addEventListener('resize', autoGrow, { passive: true });
   }
+  // /system 通道：输入 / 时的实时命令候选（↑↓ 选择，Tab/Enter 补全，Esc 关闭）
+  const sysComplete = installSystemCommandComplete({
+    composer, wrap: $('.composer-wrap'),
+    isActive: () => store.state.model === '__system__',
+    getModelIds: () => chatModels().map((m) => m.id),
+  });
+  composer.addEventListener('input', () => sysComplete.refresh());
   composer.addEventListener('keydown', (e) => {
+    if (sysComplete.handleKeydown(e)) return;
     if (e.key !== 'Enter' || e.isComposing) return;
     if (e.shiftKey) { shiftEnterGuard.capture(); return; }
     e.preventDefault(); doSend();
@@ -2291,7 +2310,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     if (!text && !attachments.hasPending()) return;
     if (store.state.model === '__system__') {
       if (getBusy()) return;
-      composer.value = ''; autoGrow();
+      composer.value = ''; autoGrow(); sysComplete.close();
       handleSystemCommand(text);
       welcomeMotion.sync();
       return;
@@ -2809,6 +2828,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       if (['running', 'ok', 'error'].includes(patch.status)) call.status = patch.status;
       if (typeof patch.settled === 'boolean') call.settled = patch.settled;
       if (patch.note) call.progressNote = String(patch.note);
+      if (Object.hasOwn(patch, 'progress')) call.progress = patch.progress == null ? null : Number(patch.progress);
       if (patch.status === 'running' || patch.status === 'ok') call.errorNote = '';
       if (patch.status === 'error') call.errorNote = String(patch.error?.message || patch.note || '工具失败').slice(0, 400);
       if (patch.durationMs != null) call.durationMs = Number(patch.durationMs);
@@ -2837,6 +2857,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
         const previous = chip._toolStates[id] || {};
         chip._toolStates[id] = { ...previous, status: patch.status, settled: call.settled,
           note: call.errorNote || patch.note || previous.note || '',
+          progress: patch.status === 'running' ? (Object.hasOwn(patch, 'progress') ? patch.progress : previous.progress) : null,
           durationMs: patch.durationMs != null ? Number(patch.durationMs) : previous.durationMs };
         syncToolChip(chip);
       }

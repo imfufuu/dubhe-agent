@@ -1,4 +1,5 @@
-const PATCH_MARKER = Symbol.for('dubhe.wllama.abort-message-guard.v1');
+const PATCH_MARKER = Symbol.for('dubhe.wllama.abort-message-guard.v2');
+const ASSERTIONS_HINT = 'Build with -sASSERTIONS for more info.';
 
 function safeString(value) {
   if (typeof value === 'string') return value;
@@ -6,20 +7,20 @@ function safeString(value) {
   try { return String(value); } catch { return ''; }
 }
 
-function surfaceAbort(instance, signalType, message, rawStack, error) {
-  const detail = message || safeString(error?.message) || 'Local model aborted.';
-  const abortMessage = signalType === 'abort' && !detail.startsWith('(ABORT)') ? `(ABORT) ${detail}` : detail;
-  const stack = safeString(rawStack).replace(/\|/gu, '\n') || safeString(error?.stack);
-  try { instance?.logger?.error?.('Wllama abort handler failed; preserving the original abort.', error); } catch { /* diagnostic logging is best-effort */ }
-  try { instance?.abort?.(abortMessage, stack); } catch { /* never replace the original abort with fallback cleanup */ }
+function safeLog(logger, level, ...args) {
+  try { logger?.[level]?.(...args); } catch { /* 诊断日志是尽力而为，绝不能打断中止流程 */ }
 }
 
 /**
- * Wllama 3.8.1's `signal.abort` handler calls `.replace()` on both `message` and
- * `rawStack` from the worker payload. Some aborts deliver a missing/non-string
- * field, which can throw a TypeError and mask the actual model abort. Normalize
- * those two fields before Wllama handles the message; keep all other messages
- * and the library implementation untouched.
+ * Wllama 3.8.1 的 `signal.abort` 处理器有两个问题：
+ *  1. 它把 `message.replace(...)` 放进一个 `__async` IIFE 里并 `return;`，
+ *     IIFE 内部抛出的错误（例如 message 缺失/非字符串，或栈解码失败）变成没人接的
+ *     Promise rejection，即控制台里的 `window.rejection`；
+ *  2. 因为异常发生在 `this.abort(...)` 之前，挂起的推理 Promise 永远不会被 reject，界面一直转圈。
+ *
+ * 这里对 `signal.abort` 消息改为同步处理：规范化字段 → 记录日志 → 同步调用 `this.abort(...)`。
+ * 不再调用原实现，因此不会产生游离 Promise；代价是栈不再经过 wasm 函数名解码（仅影响诊断细节）。
+ * 其它 verb 原样交给 Wllama 原实现。
  */
 export function patchWllamaAbortMessageHandling(WllamaClass) {
   const prototype = WllamaClass?.prototype;
@@ -33,25 +34,32 @@ export function patchWllamaAbortMessageHandling(WllamaClass) {
 
     const args = Array.isArray(data.args) ? [...data.args] : Array.from(data.args || []);
     const signalType = safeString(args[0]);
-    const message = safeString(args[1]);
+    const rawMessage = safeString(args[1]);
     const rawStack = safeString(args[2]);
-    args[0] = signalType;
-    args[1] = message;
-    args[2] = rawStack;
-    const safeEvent = { data: { ...data, args } };
+    const originalErr = args[3];
+    const logger = this?.logger;
 
-    try {
-      const result = original.call(this, safeEvent);
-      if (result && typeof result.then === 'function') {
-        return result.catch((error) => surfaceAbort(this, signalType, message, rawStack, error));
-      }
-      return result;
-    } catch (error) {
-      // If this runtime build throws synchronously, preserve the abort rather than
-      // surfacing a secondary message/stack formatting error to the caller.
-      surfaceAbort(this, signalType, message, rawStack, error);
-      return undefined;
+    if (originalErr) safeLog(logger, 'error', originalErr);
+
+    let message = rawMessage.split(ASSERTIONS_HINT).join('').trim();
+    if (!message) message = signalType === 'exception' ? 'Local model runtime exception.' : 'Local model aborted.';
+    let stack = '';
+    if (signalType === 'abort') {
+      if (!message.startsWith('(ABORT)')) message = `(ABORT) ${message}`;
+      stack = rawStack.replace(/\|/gu, '\n');
+    } else if (signalType === 'exception') {
+      stack = rawStack;
     }
+
+    safeLog(logger, 'error', `Stack trace (${signalType || 'unknown'}):\n${stack}`);
+    try {
+      this.abort(message, stack);
+    } catch (error) {
+      // 最后的兜底：仍要把原始中止原因交给挂起的任务，否则推理 Promise 会永久挂起。
+      safeLog(logger, 'error', 'Wllama abort handler failed; forwarding the original abort reason.', error);
+      try { this.abort(message, stack || safeString(error?.stack)); } catch { /* 无法再中止时只能放弃 */ }
+    }
+    return undefined;
   };
   Object.defineProperty(prototype, PATCH_MARKER, { value: true, configurable: false });
   prototype.onRecvMsg = guarded;

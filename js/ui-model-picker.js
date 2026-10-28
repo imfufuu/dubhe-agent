@@ -288,11 +288,11 @@ export function installModelPicker({ store, agent, toast, getBusy, openKeyModal,
       name = SMART_ROUTER_LABEL;
       prov = SMART_ROUTER_PROVIDER_LABEL;
     } else if (isOfflineModelId(displayedId)) {
-      const localProvider = localeText(OFFLINE_MODEL_PROVIDER_ZH, OFFLINE_MODEL_PROVIDER_EN);
-      icon = providerIcon(localProvider, { custom: true });
+      // 与模型菜单的本地分组保持一致：图标用同一个 LOCAL 图标，文字统一为 LOCAL
+      icon = LOCAL_PROVIDER_ICON;
       name = localModelName();
       if (!store.state.offlineModelAvailable) name += ` · ${localeText('未选择', 'not selected')}`;
-      prov = isNetworkOffline() ? localeText('离线 · 本地', 'Offline · local') : localProvider;
+      prov = 'LOCAL';
     } else if (selected?.customProvider) {
       icon = providerIcon(selected.provider, { custom: true, iconDataUrl: selected.providerIconDataUrl });
       name = selected.displayName || selected.id;

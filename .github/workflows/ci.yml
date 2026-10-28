@@ -45,6 +45,9 @@ jobs:
       - name: tests/local-cpp.test.mjs · 本地 C++ WASM 多文件编译执行
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/local-cpp.test.mjs
+      - name: tests/input-system-fixes.test.mjs · 输入区布局 / 浮层定位 / LOCAL 标签 / C++ 进度 / /system 补全
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/input-system-fixes.test.mjs
       - name: tests/wllama-abort-compat.test.mjs · Wllama 取消兼容
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/wllama-abort-compat.test.mjs
