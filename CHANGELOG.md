@@ -4,6 +4,10 @@
 
 ## 2026-10-29 视频生成、子智能体附件与思考流（待发布）
 
+- 进度条：本地 C++ 与 Python 运行时启动阶段（尚无字节数）显示不确定进度条；此前 Worker 启动期间界面只有文字，看起来像没有进度。
+- 联网/生成折叠行标题改为英文：Generating / Generated image、video，多条显示为「Generated 2 images」（此前两张图片会显示成「Web tools 2」）；生成类行不再重复显示工具名；结果区改为平滑展开收起。
+- 停止按钮：生图/生视频运行中点击停止，先二次确认（已提交的任务可能仍计费）。
+
 - 视频生成：新增工具 `generate_video`（TeamoRouter `/v1/videos`：提交 → 轮询 → 下载到沙箱 `outputs/*.mp4`），模型在设置页「多模态模型」里选择（文档表格共 18 个：Seedance 2.5 / 2.0 / 2.0 Fast / 2.0 Mini、MiniMax H3 Max / H3，各含文生、图生、参考图生变体）。仅 TeamoRouter 渠道可用；上限 15 分钟，计费按网关。**未做真实生成测试**（沙箱无法访问 `api.teamorouter.cn`）。
 - 联网 / 生成类工具（`search_web`、`fetch_url`、`generate_image`、`generate_video`）归为同一类折叠行，样式与 Explored File(s) 一致。
 - Editing File(s) 图标特效：由旋转改为笔尖摆动与笔迹逐段书写；`data-motion=off` 与减少动态效果下关闭。

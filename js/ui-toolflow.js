@@ -247,14 +247,43 @@ export function activeToolOwner(messages, call, stopped) {
   return owner && !owner.cancelled && messages.indexOf(owner) > messages.findLastIndex((m) => m.role === 'user' && !m.silent) ? owner : null;
 }
 
+// 是否有生图 / 生视频（计费）调用正在运行：停止前需要二次确认。
+export function hasMediaTaskRunning(messages, liveIds) {
+  return (messages || []).some((m) => (m.toolCalls || []).some((t) => t
+    && (t.name === 'generate_image' || t.name === 'generate_video')
+    && (t.status === 'running' || (liveIds && liveIds.has(String(t.id))))));
+}
+// 联网折叠行标题（英文）。单一工具：生成中 / 已完成；多条同类：Generated 2 images；混合：Web tools · N。
+const WEB_SPEC = {
+  generate_image: { run: 'Generating', done: 'Generated', one: 'image', many: 'images' },
+  generate_video: { run: 'Generating', done: 'Generated', one: 'video', many: 'videos' },
+  search_web: { run: 'Searching for', done: 'Searched for', one: '', many: 'queries' },
+  fetch_url: { run: 'Fetching', done: 'Fetched', one: 'page', many: 'pages' },
+};
+export function webGroupLabel(rows, running) {
+  const names = [...new Set(rows.map((r) => r.name))];
+  const n = rows.length;
+  if (names.length === 1 && WEB_SPEC[names[0]]) {
+    const spec = WEB_SPEC[names[0]];
+    const verb = running ? spec.run : spec.done;
+    if (n === 1) return spec.one ? `${verb} ${spec.one}` : verb;
+    return `${verb} ${n} ${spec.many}`;
+  }
+  return running ? `Web tools · ${n}` : `Used ${n} web tools`;
+}
+// 生成类工具的行不再显示工具名：一个提示词即一个成品，标题已经表达了类别。
+const HIDE_ROW_NAME = new Set(['generate_image', 'generate_video']);
+
 // 联网折叠行：行集合变化才整体重建；状态/结果原地更新，避免已展开的行重播入场动画。
+// 结果区是可平滑展开收起的折叠块（grid-rows 过渡，与 chip-detail 一致），展开状态按行保留。
 export function paintWebActivity(node, { rows, label, icon, labels, stateText, readFile }) {
   const shape = JSON.stringify([label, rows.map((r) => [r.id, r.name, r.summary, r.videoPath ? 1 : 0])]);
+  node._openResults ||= new Set();
   if (node._webShape !== shape) {
     node._webShape = shape;
     node.innerHTML = `<span class="chip-ico think-ico">${icon}</span><span class="mono chip-name">${esc(label)}</span>`
       + `<div class="chip-detail"><div class="fold-inner"><ul>${rows.map((r) => `<li class="web-row" data-call="${esc(r.id)}">`
-      + `<span class="web-name">${esc(labels[r.name]?.[0] || r.name)}</span>`
+      + (HIDE_ROW_NAME.has(r.name) ? '' : `<span class="web-name">${esc(labels[r.name]?.[0] || r.name)}</span>`)
       + `<span class="web-arg mono" title="${esc(r.summary)}">${esc(r.summary)}</span>`
       + `<span class="web-state"></span>`
       + (r.videoPath ? `<div class="web-video" data-path="${esc(r.videoPath)}"></div>` : '')
@@ -271,10 +300,20 @@ export function paintWebActivity(node, { rows, label, icon, labels, stateText, r
     let det = li.querySelector(':scope > .web-result');
     if (r.body) {
       if (!det) {
-        det = el('details', 'web-result');
-        det.innerHTML = `<summary>${localeText('结果', 'Result')}</summary><pre></pre>`;
+        det = el('div', 'web-result');
+        det.dataset.call = r.id;
+        det.innerHTML = `<button type="button" class="web-result-toggle" aria-expanded="false"><span>${localeText('结果', 'Result')}</span></button>`
+          + `<div class="web-result-body"><div><pre></pre></div></div>`;
         const anchor = li.querySelector(':scope > .web-video');
         if (anchor) li.insertBefore(det, anchor); else li.append(det);
+        det.querySelector('.web-result-toggle').addEventListener('click', (e) => {
+          e.stopPropagation();
+          const open = !det.classList.contains('open');
+          det.classList.toggle('open', open);
+          det.querySelector('.web-result-toggle').setAttribute('aria-expanded', String(open));
+          if (open) node._openResults.add(r.id); else node._openResults.delete(r.id);
+        });
+        if (node._openResults.has(r.id)) { det.classList.add('open'); det.querySelector('.web-result-toggle').setAttribute('aria-expanded', 'true'); }
       }
       const pre = det.querySelector('pre');
       const txt = r.body.slice(0, 6000);

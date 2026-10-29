@@ -1028,8 +1028,9 @@ async function executeToolBody(outerName, outerArgs, ctx) {
           const loaded = Number(p && p.loaded) || 0;
           const mb = (n) => (n / 1048576).toFixed(1);
           const fraction = total > 0 ? Math.min(1, loaded / total) : null;
-          emit({ status: 'running', lang: 'python', workerStage: 'loading-runtime', progress: fraction,
-            note: fraction != null ? `下载 Python 运行时 ${Math.round(fraction * 100)}%（${mb(loaded)} / ${mb(total)} MB）` : `下载 Python 运行时（已 ${mb(loaded)} MB）…` });
+          // 无字节数（启动中或压缩响应）：-1 = 不确定进度条，只显示文字
+          emit({ status: 'running', lang: 'python', workerStage: 'loading-runtime', progress: fraction != null ? fraction : -1,
+            note: fraction != null ? `下载 Python 运行时 ${Math.round(fraction * 100)}%（${mb(loaded)} / ${mb(total)} MB）` : (loaded > 0 ? `下载 Python 运行时（已 ${mb(loaded)} MB）…` : '加载 Python 运行时…') });
         }, extraPkgs, { signal: ctx.signal, timeoutMs: codeTimeoutMs(args.timeout_sec), onOutput: (log) => emit({ stream: log.level === 'error' ? 'stderr' : 'stdout', delta: `[${log.level}] ${log.text}\n` }) });
         emit({ status: out.ok ? 'ok' : 'error', sandboxOk: !!out.ok, lang: 'python', logs: out.logs, result: out.result, error: out.error, durationMs: out.durationMs, timedOut: out.timedOut });
         return formatExecResult('Python', out) + commandRepairNote(retainCommandSource(name, args, ctx, out));
@@ -1060,7 +1061,8 @@ async function executeToolBody(outerName, outerArgs, ctx) {
         const out = await runCpp(code, {
           mainPath: mainPath || 'main.cpp', files: extraFiles, stdin, args: argv,
           timeoutMs: codeTimeoutMs(args.timeout_sec), signal: ctx.signal,
-          onPhase: (phase) => { if (notes[phase]) emit({ status: 'running', lang: 'cpp', workerStage: phase, note: notes[phase], progress: null }); },
+          // 启动阶段（Worker 载入脚本、尚未开始下载）无字节数：progress:-1 表示不确定进度条；下载开始后由 onProgress 给出百分比。
+          onPhase: (phase) => { if (notes[phase]) emit({ status: 'running', lang: 'cpp', workerStage: phase, note: notes[phase], progress: phase === 'bootstrap' || phase === 'executing' ? -1 : null }); },
           onProgress: (p) => {
             const total = Number(p?.total) || 0;
             const loaded = Math.min(Number(p?.loaded) || 0, total || Number(p?.loaded) || 0);

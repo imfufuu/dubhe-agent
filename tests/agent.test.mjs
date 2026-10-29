@@ -11032,7 +11032,7 @@ test('界面动效偏好：auto / on / off 三态，on 覆盖系统 reduce，off
   assert.match(main, /applyMotion\(\);/);
   assert.match(main, /browserFeatureReport\(\)[\s\S]*?dubhe-oldbrowser-noted/);
   const css = fsp.readFileSync(new URL('../css/styles.css', import.meta.url), 'utf8');
-  assert.equal((css.match(/@media \(prefers-reduced-motion: reduce\) \{/g) || []).length, 13, '含 Editing 笔迹动画（edit-nib / edit-ink）减少动效块；含欢迎页/思考摘要动效、嵌套编辑预览、语音球体、设置详情与状态抛光的减少动效块（原思维链逐行动画已移除；跨页过渡在 css/page-fx.css）');
+  assert.equal((css.match(/@media \(prefers-reduced-motion: reduce\) \{/g) || []).length, 14, '含 Editing 笔迹动画（edit-nib / edit-ink）减少动效块；含 C++/Python 加载不确定进度条的减少动效块；含欢迎页/思考摘要动效、嵌套编辑预览、语音球体、设置详情与状态抛光的减少动效块（原思维链逐行动画已移除；跨页过渡在 css/page-fx.css）');
   assert.doesNotMatch(css, /thinkLineEnter|think-stream/, '进度摘要不再逐行呈现原始思维链');
   const reduceBlocks = css.split('@media (prefers-reduced-motion: reduce) {').slice(1);
   for (const b of reduceBlocks) {

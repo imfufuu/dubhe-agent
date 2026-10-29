@@ -10,7 +10,7 @@ import { installFeedback } from './ui-feedback.js';
 import { installSpeechInput } from './ui-speech.js';
 import { createToolPresentation, presentationCallSettled, turnToolResults } from './toolpresentation.js?v=2026.10.25.1';
 import { paintEditFoldContent, syncEditingFold, toggleEditingFold } from './ui-editpreview.js?v=2026.10.25.1';
-import { paintOrderedAssistant, renderToolChipDetail, paintCommandRows, paintKnowledgeFold, syncToolMenuCursor, ownerOfTool, paintVisibleTurn, activeToolOwner, persistTurnTiming, paintWebActivity } from './ui-toolflow.js?v=2026.10.25.1';
+import { paintOrderedAssistant, renderToolChipDetail, paintCommandRows, paintKnowledgeFold, webGroupLabel, hasMediaTaskRunning, syncToolMenuCursor, ownerOfTool, paintVisibleTurn, activeToolOwner, persistTurnTiming, paintWebActivity } from './ui-toolflow.js?v=2026.10.25.1';
 import { classifyToolResult, toolResultFailed } from './toolwindows.js?v=2026.10.25.1';
 import { adjacentToolMessages, appendToolStream, toolFamily, commandRunFor } from './toolflow.js?v=2026.10.25.1';
 import { createRollbackFx } from './ui-rollback-fx.js?v=2026.10.25.1';
@@ -1271,8 +1271,14 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
         state.title = ''; state.classList.remove('bad');
       } else {
         // 仅真实进度（Python/C++ 资源加载等）才显示进度条；progress 为 null 时 Number(null) 为 0，曾导致所有命令都出现 0% 条。
-        const pct = running && running.progress != null && Number.isFinite(Number(running.progress)) ? Math.max(0, Math.min(1, Number(running.progress))) : null;
-        if (pct != null) {
+        const raw = running && running.progress != null && Number.isFinite(Number(running.progress)) ? Number(running.progress) : null;
+        // -1 = 启动阶段（尚无字节数）：不确定进度条（滑动动画）；0~1 = 确定进度
+        const pct = raw == null || raw < 0 ? null : Math.min(1, raw);
+        if (raw === -1) {
+          const note = running.note || '加载中…';
+          const html = `<span class="chip-progress indeterminate" role="progressbar" aria-busy="true" aria-label="${esc(note)}"><i></i></span><span class="chip-note">${esc(note)}</span>`;
+          if (state.dataset.progressHtml !== html) { state.innerHTML = html; state.dataset.progressHtml = html; }
+        } else if (pct != null) {
           const note = running.note || '加载中…';
           const html = `<span class="chip-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(pct * 100)}" aria-label="${esc(note)}"><i style="width:${(pct * 100).toFixed(1)}%"></i></span><span class="chip-note">${esc(note)}</span>`;
           if (state.dataset.progressHtml !== html) { state.innerHTML = html; state.dataset.progressHtml = html; }
@@ -1669,12 +1675,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     };
     // 联网 / 生成类工具（搜索、抓取、生图、生视频）：与 Explored File(s) 同样的折叠行，逐条列出调用。
     // 只由同一簇的最后一条消息绘制（与路径折叠一致）；结果折在每行的「结果」里，不再逐条占用命令芯片。
-    const WEB_LABELS = {
-      search_web: [localeText('搜索网页', 'Searched for'), localeText('网页搜索', 'Searched for')],
-      fetch_url: [localeText('抓取网页', 'Fetched page'), localeText('抓取网页', 'Fetched page')],
-      generate_image: [localeText('生成图片', 'Generated image'), localeText('生成图片', 'Generated image')],
-      generate_video: [localeText('生成视频', 'Generated video'), localeText('生成视频', 'Generated video')],
-    };
+    const WEB_LABELS = { search_web: ['Searched for'], fetch_url: ['Fetched page'], generate_image: ['Generated image'], generate_video: ['Generated video'] };
     const webIcon = (name) => ({ search_web: ICON.globe, fetch_url: ICON.globe, generate_image: ICON.image, generate_video: ICON.video })[name] || ICON.globe || '';
     const paintWebFold = (afterEl) => {
       let node = $('.web-activity', wrap);
@@ -1696,7 +1697,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
         const videoPath = c.name === 'generate_video' ? (/\[视频已生成\] (outputs\/[^\s]+\.mp4)/.exec(body) || [])[1] || '' : '';
         return { id: String(c.id), name: c.name, summary, status, body, videoPath };
       });
-      const label = rows.length === 1 ? WEB_LABELS[rows[0].name]?.[0] || rows[0].name : `${localeText('联网工具', 'Web tools')} ${rows.length}`;
+      const label = webGroupLabel(rows, rows.some((r) => r.status === 'running'));
       const working = rows.some((r) => r.status === 'running') && getBusy() && !m.cancelled;
       const stateText = (s) => ({ ok: localeText('完成', 'Done'), error: localeText('失败', 'Failed'), running: localeText('进行中', 'Running') })[s];
       const sig = JSON.stringify(rows.map((r) => [r.id, r.status, r.body.length]));
@@ -2389,8 +2390,14 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     if (e.shiftKey) { shiftEnterGuard.capture(); return; }
     e.preventDefault(); doSend();
   });
+  // 生图 / 生视频是计费任务：运行中点停止前二次确认
   sendBtn.addEventListener('click', () => {
-    if (getBusy()) { agent.abort(); return; }
+    if (getBusy()) {
+      if (hasMediaTaskRunning(store.state.messages, liveToolCallIds) && !window.confirm(localeText(
+        '正在生成图片或视频。停止后，已提交的生成任务可能仍会计费，且结果不会返回。确定停止吗？',
+        'An image or video is still being generated. Stopping now may still be billed for the submitted job, and its result will not be returned. Stop anyway?'))) return;
+      agent.abort(); return;
+    }
     doSend();
   });
   function doSend() {
