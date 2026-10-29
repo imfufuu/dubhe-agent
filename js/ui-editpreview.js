@@ -19,7 +19,9 @@ function createPreviewCard(path) {
   empty.appendChild(make('span', 'ep-tx ep-empty', '（等待预览数据…）'));
   const foot = make('div', 'ep-foot mono');
   head.append(title, meta); body.appendChild(empty); window.append(head, body, foot);
-  return { window, title, meta, body, empty, foot, lines: [], caret: null, previewPath: null };
+  body.addEventListener('scroll', () => { card.userScrolledX = body.scrollLeft > 0; }, { passive: true });
+  const card = { window, title, meta, body, empty, foot, lines: [], caret: null, previewPath: null, userScrolledX: false };
+  return card;
 }
 
 function paintPreviewCard(card, preview, live) {
@@ -66,7 +68,8 @@ function paintPreviewCard(card, preview, live) {
   if (cursor && !card.caret) { card.caret = make('span', 'ep-caret'); card.caret.setAttribute('aria-hidden', 'true'); body.appendChild(card.caret); }
   else if (!cursor && card.caret) { card.caret.remove(); card.caret = null; }
   body.scrollTop = follow ? body.scrollHeight : (pathChanged ? 0 : scrollTop);
-  body.scrollLeft = pathChanged ? 0 : scrollLeft;
+  // 横向位置始终回到最左：行号与行首必须可见；横向滚动仅在用户主动滚动时保留（见 scroll 监听）。
+  body.scrollLeft = pathChanged || !card.userScrolledX ? 0 : scrollLeft;
   card.previewPath = path;
 }
 

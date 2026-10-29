@@ -62,6 +62,10 @@ export function snapshotMessage(m, messages, fs, { tools = false, reasoning = fa
     }
     node.append(box);
   }
+  if (m.role !== 'user' && !body.trim() && !m.error && (m.cancelled || m.done)) {
+    const n = document.createElement('p'); n.className = 'share-note';
+    n.textContent = text('本轮在输出前被中断，没有生成内容。', 'Interrupted before any output was generated.'); node.append(n);
+  }
   if (!body && !tools && m.toolCalls?.length) {
     const n = document.createElement('p'); n.className = 'share-note'; n.textContent = text('该消息仅含工具记录；需勾选工具详情才能导出内容', 'This message contains tool calls only. Include tool details to export their content.'); node.append(n);
   }
