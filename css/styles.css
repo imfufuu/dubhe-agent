@@ -2357,12 +2357,12 @@ html[data-motion="off"] .edit-path-fold { transition: none !important; }
 .edit-preview .ep-path { overflow-wrap: anywhere; font-weight: 650; }
 .edit-preview .ep-meta { color: var(--fg-3); }
 .edit-preview .ep-body {
-  margin: 0; padding: 5px 0 6px; max-height: min(36vh, 300px); overflow: auto; overscroll-behavior: contain; display: block;
+  margin: 0; padding: 5px 0 6px; max-height: min(36vh, 300px); overflow: auto; overscroll-behavior: contain; display: grid; grid-template-columns: minmax(max-content, 1fr); min-width: 100%; box-sizing: border-box;
   font-family: var(--mono); font-size: var(--ui-fs-11px, 11px); line-height: 1.55; text-align: left; white-space: pre;
 }
-.edit-preview .ep-line { display: flex; gap: 8px; padding: 0 9px; width: max-content; min-width: 100%; box-sizing: border-box; }
+.edit-preview .ep-line { display: flex; gap: 8px; padding: 0 9px; min-width: 0; }
 .edit-preview .ep-no {
-  flex: 0 0 auto; position: sticky; left: 0; min-width: 2.4em; text-align: right; color: var(--fg-3); opacity: .65;
+  flex: 0 0 auto; min-width: 2.4em; text-align: right; color: var(--fg-3); opacity: .65;
   user-select: none;
 }
 .edit-preview .ep-tx { white-space: pre; overflow-wrap: normal; min-width: 0; flex: 1 0 auto; }
