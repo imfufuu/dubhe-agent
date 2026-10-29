@@ -1000,8 +1000,9 @@ store.state.messages.push(
 ui.rebuildMessages();
 const claudeReason = $('#messages [data-id="reason-claude"] .reasoning');
 const gptReason = $('#messages [data-id="reason-gpt"] .reasoning');
-ok('非 GPT 的完整思考按纯文本写入详情区（标签不作为 HTML 执行）', !!claudeReason
-  && claudeReason.querySelector('.think-full-text')?.textContent === '<step>完整过程</step>\n逐字保留'
+ok('非 GPT 的完整思考以 Markdown 渲染进详情区（标签仍按文本转义，不作为 HTML 执行）', !!claudeReason
+  && (claudeReason.querySelector('.think-full-text')?.textContent || '').replace(/\s+/g, '') === '<step>完整过程</step>逐字保留'
+  && !claudeReason.querySelector('.think-full-text step')
   && !claudeReason.querySelector('.think-summary-item') && !claudeReason.querySelector('.think-full-text b'));
 ok('GPT 只显示**…**摘要项，不回显原始推理全文', !!gptReason && gptReason.querySelectorAll('.think-summary-item').length === 2
   && [...gptReason.querySelectorAll('.think-summary-item')].map((n) => n.textContent).join('|') === 'Plan|Check constraints'

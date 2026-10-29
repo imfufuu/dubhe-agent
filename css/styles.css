@@ -663,6 +663,8 @@ html { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
 .msg { max-width: 760px; margin: 0 auto 16px; padding: 0 28px; overflow-x: hidden; max-width: min(760px, 100%); }
 /* 助手回复保持编辑式纯文本排版；只有用户消息保留气泡。 */
 .msg-assistant:not(.msg-collapsed) { padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+/* 窄窗口（如 700×600）：助手正文不能贴着窗口边缘，恢复与 .msg 一致的水平留白。 */
+@media (max-width: 800px) { .msg-assistant:not(.msg-collapsed) { padding-inline: clamp(16px, 4vw, 24px); } }
 .msg-assistant .md-body { font-family: var(--chat-font, Georgia, serif); }
 .msg-assistant:has(+ .msg-assistant) { margin-bottom: 8px; }
 .msg-assistant.tools-continue { margin-bottom: 0; }

@@ -83,6 +83,27 @@ const SESSION_TURN_FORMS = {
   ar: { zero: '{count} جولة', one: '{count} جولة', two: '{count} جولتان', few: '{count} جولات', many: '{count} جولة', other: '{count} جولة' },
 };
 
+// 思考原文按 Markdown 渲染，但形似 HTML 标签的内容（如 <step>）包成行内代码，原样作为文字显示，不能被当成标签吞掉。
+function reasoningMarkdownSource(value) {
+  return String(value ?? '').replace(/<(\/?[A-Za-z][\w-]*(?:\s[^<>`]*)?\/?>)/g, (tag) => (tag.includes('`') ? tag : '`' + tag + '`'));
+}
+
+// 「本轮回复」纯文本：上一条用户消息之后的全部非临时助手消息，按时间顺序拼接。
+// 每段取已渲染 DOM 的 innerText，表格/代码/列表保留排版；DOM 缺失时回退到原始文本。
+function turnPlainText(m, wrap) {
+  const all = store.state.messages;
+  const at = all.findIndex((x) => x.id === m.id);
+  const userAt = all.slice(0, Math.max(at, 0)).findLastIndex((x) => x.role === 'user');
+  const turn = at < 0 ? [m] : all.slice(userAt + 1, at + 1).filter((x) => x.role === 'assistant' && !x.transientModeration);
+  const container = wrap?.parentElement;
+  const parts = turn.map((x) => {
+    const node = container?.querySelector(`[data-id="${CSS.escape(String(x.id))}"] .md-body`);
+    return String((node ? node.innerText : x.text) || '').replace(/\n{3,}/g, '\n\n').trim();
+  }).filter(Boolean);
+  if (parts.length) return parts.join('\n\n');
+  return String(wrap?.querySelector('.md-body')?.innerText || m.text || '');
+}
+
 export function mountUI(store, agent) {
   let feedbackUI, sharingUI;
   const msgList = $('#messages');
@@ -1048,8 +1069,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
         if (b.dataset.act === 'copy') {
           // 优先从已渲染的 DOM 取纯文本（浏览器自动解码 HTML 实体 / URI 编码，避免 %20/&amp; 等直接进入剪贴板）；
           // 如果 body 尚未渲染再回落到原始 m.text。
-          const body = $('.md-body', wrap);
-          const plain = body ? body.innerText : (m.text || '');
+          const plain = turnPlainText(m, wrap);
           navigator.clipboard.writeText(plain).then(() => toast('已复制', 'ok', 1200), () => toast('复制失败：浏览器拒绝了剪贴板权限', 'err'));
         }
       }));
@@ -1096,8 +1116,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
         const act = b.dataset.act;
         if (act === 'copy') {
           // 取渲染后纯文本，自动解码 HTML 实体/URI 编码，避免 %20/&amp; 等进入剪贴板
-          const body = $('.md-body', wrap);
-          const plain = body ? body.innerText : (m.text || '');
+          const plain = turnPlainText(m, wrap);
           navigator.clipboard.writeText(plain).then(() => toast('已复制', 'ok', 1200), () => toast('复制失败：浏览器拒绝了剪贴板权限', 'err'));
         }
         if (act === 'rollback') doRollback(m);
@@ -1374,7 +1393,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       }
       if (inner && displayableThink && !gptSummaryOnly) {
         const full = $('.think-full-text', inner);
-        if (full) paintReasoningBlocks(full, renderMarkdown(String(m.reasoning ?? '')), { animate: thinkRunning });
+        if (full) paintReasoningBlocks(full, renderMarkdown(reasoningMarkdownSource(m.reasoning)), { animate: thinkRunning });
       }
       const thinkLive = thinkRunning && displayableThink && !m.text && !(m.toolCalls && m.toolCalls.length);
       const expanded = reason._user == null ? thinkLive : !!reason._user;
