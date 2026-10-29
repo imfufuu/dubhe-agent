@@ -27,7 +27,7 @@ test('reasoning UI parses GPT summary markers only and shows complete non-GPT re
   assert.match(ui, /reasoningSummaryItems\(m\.reasoning, reasoningModel\)/);
   assert.match(ui, /isGptModel\(reasoningModel\)/);
   assert.match(ui, /think-full-text/);
-  assert.match(ui, /paintReasoningBlocks\(full, renderMarkdown\(String\(m\.reasoning \?\? ''\)\), \{ animate: thinkRunning \}\)/, '非 GPT 思考全文走 Markdown 渲染，并与正文同一浮现机制');
+  assert.match(ui, /paintReasoningBlocks\(full, renderMarkdown\(reasoningMarkdownSource\(m\.reasoning\)\), \{ animate: thinkRunning \}\)/, '非 GPT 思考全文走 Markdown 渲染，并与正文同一浮现机制');
   assert.match(ui, /paintReasoningBlocks\(list, items\.map/, 'GPT 摘要条目同样复用浮现机制');
   assert.doesNotMatch(ui, /renderReasoningLines/);
   assert.match(css, /\.reasoning \.think-full-text/);
