@@ -1351,13 +1351,11 @@ html { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
 }
 .reasoning .think-full-text {
   margin: 0; padding: 0; border: 0; background: transparent; color: var(--fg-2); font: inherit;
-  max-height: min(60vh, 520px); overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere;
+  max-height: min(60vh, 520px); overflow: auto; overflow-wrap: anywhere;
   word-break: break-word; overscroll-behavior: contain;
 }
-.reasoning .reasoning-line { display: inline-block; max-width: 100%; min-height: 1.65em; vertical-align: top; white-space: pre-wrap; overflow-wrap: anywhere; }
-.reasoning .reasoning-line-entering { opacity: 0; transform: translateY(6px); }
-.reasoning .reasoning-line-entering.is-visible { animation: reasoningLineReveal .46s cubic-bezier(.22,.72,.24,1) both; animation-delay: var(--reasoning-reveal-delay, 0ms); }
-@keyframes reasoningLineReveal { to { opacity: 1; transform: translateY(0); } }
+.reasoning .think-full-text > :first-child { margin-top: 0; }
+.reasoning .think-full-text > :last-child { margin-bottom: 0; }
 .reasoning.live .think-summary-list {
   max-height: calc(1.65em * 6); overflow-y: auto; overscroll-behavior: contain;
   scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; scroll-behavior: auto;
@@ -2952,7 +2950,7 @@ html[data-motion="off"] .chunk-tail { animation: none; }
    ② 减少动效（系统设置或应用内「动效」关闭）时只停彩虹换色，不再连闪烁一起停——
       文本光标属于输入指示而非装饰动效，原生光标在「减少动效」下也照常闪烁，此前整条 animation:none
       导致光标常亮「有时不闪」的观感差异。 */
-@media (pointer:fine){#composer-input{caret-color:transparent}}
+@media (pointer:fine){#composer-input:not([data-caret-effect="native"]){caret-color:transparent}}
 .rb-mirror{position:absolute;top:0;left:0;visibility:hidden;pointer-events:none;overflow:hidden;box-sizing:border-box;white-space:pre-wrap;word-wrap:break-word}
 .rb-caret{position:absolute;left:0;top:0;width:2px;border-radius:1px;pointer-events:none;background-color:#ef4444;will-change:transform,opacity;animation:rb-blink 1.1s steps(1,end) infinite,rb-color 7.7s steps(1,end) infinite -.55s}
 @media (pointer:fine){.rb-caret{width:2px}}
@@ -3107,9 +3105,7 @@ html[data-motion="off"] :is(.fv-switcher, .fv-switcher .fv-sw-q, .fv-too-big-ico
 html[data-motion="off"] .fv-switcher.is-closing .fv-sw-list { transition: none !important; }
 html[data-motion="off"] :is(.composer-wrap, .empty-state #welcome-prompt, .main.welcome-draft .empty-state, .main.welcome-draft .welcome-quick-prompts) { transition: none !important; }
 html[data-motion="off"] .empty-state h2[data-typing="true"]::after,
-html[data-motion="off"] .reasoning .reasoning-line-entering { animation: none !important; opacity: 1; transform: none; }
 @media (prefers-reduced-motion: reduce) {
   html:not([data-motion="on"]) :is(.composer-wrap, .empty-state #welcome-prompt, .main.welcome-draft .empty-state, .main.welcome-draft .welcome-quick-prompts) { transition: none !important; }
   html:not([data-motion="on"]) .empty-state h2[data-typing="true"]::after,
-  html:not([data-motion="on"]) .reasoning .reasoning-line-entering { animation: none !important; opacity: 1; transform: none; }
 }

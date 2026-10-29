@@ -37,7 +37,7 @@ import { shortSuggest } from './commands.js';
 import { getOrCreateUserSalutation, buildWelcomeGreeting } from './user-salutation.js';
 import { installShiftEnterGuard } from './composer-newline-guard.js';
 import { installWelcomeMotion } from './ui-welcome-motion.js?v=2026.10.25.1';
-import { renderReasoningLines } from './ui-reasoning-motion.js?v=2026.10.25.1';
+import { paintReasoningBlocks } from './ui-reasoning-motion.js?v=2026.10.25.1';
 import { summarizeTurnCost, formatCcy } from './pricing.js';
 import { installLanguageCostRefresh } from './ui-language-costs.js';
 import { createAssistantFootPainter } from './ui-foot.js?v=2026.10.25.1';
@@ -1359,7 +1359,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       if (stateEl) stateEl.textContent = bits.join(' · ');
       const inner = $('.fold-inner', reason);
       const summaryMarkup = `<div class="think-summary-list" aria-live="polite"></div><div class="think-hidden think-summary-empty">${esc(localeText('等待 GPT 返回摘要标记…', 'Waiting for GPT summary markers…'))}</div>`;
-      const detail = gptSummaryOnly ? summaryMarkup : '<pre class="think-full-text"></pre>';
+      const detail = gptSummaryOnly ? summaryMarkup : '<div class="think-full-text md-body"></div>';
       const sig = `${thinkRunning ? 'live' : 'done'}:visible:${gptSummaryOnly ? 'gpt' : 'full'}`;
       if (inner && inner.dataset.sig !== sig) {
         inner.dataset.sig = sig;
@@ -1368,12 +1368,13 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       if (inner && displayableThink && gptSummaryOnly) {
         const list = $('.think-summary-list', inner);
         const empty = $('.think-summary-empty', inner);
-        const count = renderReasoningLines(list, summaryItems, { summary: true, animate: thinkRunning });
+        const items = (Array.isArray(summaryItems) ? summaryItems : []).map((item) => String(item ?? '')).filter(Boolean);
+        const count = paintReasoningBlocks(list, items.map((item) => `<div class="think-summary-item">${esc(item)}</div>`).join(''), { animate: thinkRunning });
         if (empty) empty.hidden = count > 0;
       }
       if (inner && displayableThink && !gptSummaryOnly) {
         const full = $('.think-full-text', inner);
-        if (full) renderReasoningLines(full, m.reasoning, { animate: thinkRunning });
+        if (full) paintReasoningBlocks(full, renderMarkdown(String(m.reasoning ?? '')), { animate: thinkRunning });
       }
       const thinkLive = thinkRunning && displayableThink && !m.text && !(m.toolCalls && m.toolCalls.length);
       const expanded = reason._user == null ? thinkLive : !!reason._user;

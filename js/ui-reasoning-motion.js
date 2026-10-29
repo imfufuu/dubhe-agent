@@ -1,4 +1,8 @@
-const lineStates = new WeakMap();
+import { revealChunks } from './ui-chunks.js';
+
+// 思考过程与正文使用同一套浮现机制（ui-chunks.js）：
+// 新块整段淡入；既有块新增的尾文本只淡入新字。没有位移，因此不会“弹入”。
+// 每次绘制都会整体重建 DOM（与正文一致），跨绘制的文本快照保存在容器上。
 const scrollFrames = new WeakMap();
 
 function followLatest(container) {
@@ -23,47 +27,14 @@ function motionEnabled(doc) {
   return mode === 'on' || (mode !== 'off' && !doc.defaultView?.matchMedia?.('(prefers-reduced-motion: reduce)').matches);
 }
 
-function revealLine(node, delay) {
-  const win = node.ownerDocument.defaultView;
-  node.classList.add('reasoning-line-entering');
-  node.style.setProperty('--reasoning-reveal-delay', `${delay}ms`);
-  const finish = () => {
-    node.classList.remove('reasoning-line-entering', 'is-visible');
-    node.style.removeProperty('--reasoning-reveal-delay');
-  };
-  node.addEventListener('animationend', finish, { once: true });
-  const animate = win.requestAnimationFrame ? (callback) => win.requestAnimationFrame(callback) : (callback) => win.setTimeout(callback, 16);
-  animate(() => { if (node.isConnected) node.classList.add('is-visible'); });
-  win.setTimeout(finish, 700 + delay);
-}
-
-export function renderReasoningLines(container, value, { summary = false, animate = false } = {}) {
+// html：非 GPT 模型为 Markdown 渲染结果；GPT 摘要为转义后的条目 HTML。
+// animate：思考仍在进行时为 true；结束后的重绘不再产生动画。
+export function paintReasoningBlocks(container, html, { animate = false } = {}) {
   if (!container) return 0;
   const doc = container.ownerDocument;
-  const mode = summary ? 'summary' : 'full';
-  const items = summary
-    ? (Array.isArray(value) ? value.map((item) => String(item ?? '')) : [])
-    : String(value ?? '').split(/\r\n|\r|\n/);
-  let state = lineStates.get(container);
-  if (!state || state.mode !== mode || items.length < state.nodes.length) {
-    container.replaceChildren();
-    state = { mode, nodes: [] };
-    lineStates.set(container, state);
-  }
-  const shouldAnimate = animate && motionEnabled(doc);
-  for (let index = 0; index < Math.min(items.length, state.nodes.length); index++) {
-    if (state.nodes[index].textContent !== items[index]) state.nodes[index].textContent = items[index];
-  }
-  const firstNew = state.nodes.length;
-  for (let index = firstNew; index < items.length; index++) {
-    const line = doc.createElement(summary ? 'div' : 'span');
-    line.className = summary ? 'think-summary-item' : 'reasoning-line';
-    line.textContent = items[index];
-    if (!summary && index > 0) container.appendChild(doc.createTextNode('\n'));
-    container.appendChild(line);
-    state.nodes.push(line);
-    if (shouldAnimate) revealLine(line, Math.min((index - firstNew) * 48, 192));
-  }
+  container.innerHTML = html;
+  const state = container._reasoningChunkState || (container._reasoningChunkState = {});
+  revealChunks(container, state, animate && motionEnabled(doc));
   followLatest(container);
-  return items.length;
+  return container.children.length;
 }

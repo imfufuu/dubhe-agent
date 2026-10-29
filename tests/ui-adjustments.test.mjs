@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { JSDOM } from 'jsdom';
 import { paintEditFoldContent } from '../js/ui-editpreview.js';
-import { renderReasoningLines } from '../js/ui-reasoning-motion.js';
+import { paintReasoningBlocks } from '../js/ui-reasoning-motion.js';
 import { renderQuickChart, renderQuickDiagram } from '../js/quickviz.js';
 
 const read = (path) => fs.readFileSync(new URL(path, import.meta.url), 'utf8');
@@ -137,14 +137,14 @@ test('reasoning viewports scroll to the newest streamed summary and full-text li
   Object.defineProperty(full, 'clientHeight', { configurable: true, get: () => 72 });
   Object.defineProperty(summary, 'scrollHeight', { configurable: true, get: () => summaryHeight });
   Object.defineProperty(summary, 'clientHeight', { configurable: true, get: () => 96 });
-  renderReasoningLines(full, ['one', 'two', 'three'].join('\n'));
-  renderReasoningLines(summary, ['summary one', 'summary two'], { summary: true });
+  paintReasoningBlocks(full, '<p>one</p><p>two</p><p>three</p>');
+  paintReasoningBlocks(summary, '<div>summary one</div><div>summary two</div>');
   assert.equal(full.scrollTop, 288);
   assert.equal(summary.scrollTop, 144);
   fullHeight = 540;
   summaryHeight = 360;
-  renderReasoningLines(full, ['one', 'two', 'three', 'four'].join('\n'));
-  renderReasoningLines(summary, ['summary one', 'summary two', 'summary three'], { summary: true });
+  paintReasoningBlocks(full, '<p>one</p><p>two</p><p>three</p><p>four</p>', { animate: true });
+  paintReasoningBlocks(summary, '<div>summary one</div><div>summary two</div><div>summary three</div>', { animate: true });
   await new Promise((resolve) => dom.window.requestAnimationFrame(resolve));
   assert.equal(full.scrollTop, 468);
   assert.equal(summary.scrollTop, 264);
@@ -176,5 +176,5 @@ test('welcome typing is incremental and surrounding motion uses a slower cadence
   assert.match(css, /welcomeCaret 1s steps\(1, end\) infinite/);
   assert.match(css, /welcomeFade \.58s/);
   assert.match(css, /\.chunk \{ opacity: 0; transition: opacity \.46s ease-out; \}/);
-  assert.match(css, /\.reasoning \.reasoning-line-entering\.is-visible \{ animation: reasoningLineReveal \.46s/);
+  assert.doesNotMatch(css, /reasoningLineReveal/, '思考区不再使用位移式逐行弹入');
 });
