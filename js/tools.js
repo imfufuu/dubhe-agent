@@ -171,14 +171,16 @@ export const TOOL_DEFS = [
     name: 'generate_video',
     description:
       '调用视频生成模型生成短视频（TeamoRouter /v1/videos）。不要传 model：一律用用户在设置里选定的视频生成模型。' +
-      '文生视频只给 prompt；给 input_image（沙箱内图片路径，如 uploads/x.png）则走图生视频（同族图生视频变体）。' +
+      '模式由 mode 选择：text 文生（只给 prompt）、image 图生、reference 参考图生视频（均需 input_image，沙箱内图片路径，如 uploads/x.png）。' +
+      '不传 mode 时：有 input_image 则图生，否则文生；mode=text 却给了 input_image 时按图生处理。' +
       '生成通常需要数分钟，上限 15 分钟，且按网关计费：开始前先告诉用户大致耗时与费用，只在用户明确要求生成视频时调用。' +
       '完成后视频写入沙箱 outputs/*.mp4 并在对话中展示；失败时说明原因，不要编造结果。',
     parameters: {
       type: 'object',
       properties: {
         prompt: { type: 'string', description: '画面、动作、镜头与风格描述' },
-        input_image: { type: 'string', description: '可选：沙箱内参考图路径（图生视频）' },
+        mode: { type: 'string', enum: ['text', 'image', 'reference'], description: '生成模式：text 文生 / image 图生 / reference 参考图生视频；不传则自动判断' },
+        input_image: { type: 'string', description: '可选：沙箱内参考图路径（image / reference 模式必填）' },
         seconds: { type: 'integer', minimum: 4, maximum: 30, description: '时长（秒）。各模型范围不同：Seedance 2.5 为 4–30，其余多为 4–15；默认 5' },
         resolution: { type: 'string', enum: ['480p', '720p', '768p', '1080p', '2k', '4k'], description: '分辨率；须为当前模型支持的档位（如 Seedance 2.0 Fast 只支持 480p/720p）' },
         aspect_ratio: { type: 'string', enum: VIDEO_GEN_ASPECT_RATIOS, description: '画面比例，默认 16:9' },
@@ -1017,9 +1019,18 @@ async function executeToolBody(outerName, outerArgs, ctx) {
           emit({ status: 'error', lang: 'python', error: { message: msg } });
           return msg;
         }
-        emit({ status: 'running', lang: 'python', note: '执行中…' });
+        emit({ status: 'running', lang: 'python', note: '执行中…', progress: null });
         const extraPkgs = Array.isArray(args.packages) ? args.packages.map((p) => String(p || '').trim()).filter(Boolean) : [];
-        const out = await runPython(args.code || '', fs, (note) => emit({ status: 'running', lang: 'python', note }), extraPkgs, { signal: ctx.signal, timeoutMs: codeTimeoutMs(args.timeout_sec), onOutput: (log) => emit({ stream: log.level === 'error' ? 'stderr' : 'stdout', delta: `[${log.level}] ${log.text}\n` }) });
+        const out = await runPython(args.code || '', fs, (p) => {
+          // 文字提示一律显式 progress:null，否则 ui.js 会沿用上一次的进度值；只有运行时下载才带百分比。
+          if (typeof p === 'string') { emit({ status: 'running', lang: 'python', note: p, progress: null }); return; }
+          const total = Number(p && p.total) || 0;
+          const loaded = Number(p && p.loaded) || 0;
+          const mb = (n) => (n / 1048576).toFixed(1);
+          const fraction = total > 0 ? Math.min(1, loaded / total) : null;
+          emit({ status: 'running', lang: 'python', workerStage: 'loading-runtime', progress: fraction,
+            note: fraction != null ? `下载 Python 运行时 ${Math.round(fraction * 100)}%（${mb(loaded)} / ${mb(total)} MB）` : `下载 Python 运行时（已 ${mb(loaded)} MB）…` });
+        }, extraPkgs, { signal: ctx.signal, timeoutMs: codeTimeoutMs(args.timeout_sec), onOutput: (log) => emit({ stream: log.level === 'error' ? 'stderr' : 'stdout', delta: `[${log.level}] ${log.text}\n` }) });
         emit({ status: out.ok ? 'ok' : 'error', sandboxOk: !!out.ok, lang: 'python', logs: out.logs, result: out.result, error: out.error, durationMs: out.durationMs, timedOut: out.timedOut });
         return formatExecResult('Python', out) + commandRepairNote(retainCommandSource(name, args, ctx, out));
       }
@@ -1351,7 +1362,7 @@ async function executeToolBody(outerName, outerArgs, ctx) {
           imageDataUrl = content;
         }
         const plan = planVideoRequest({
-          model: resolveVideoGenModel(ctx.videoGenModel),
+          model: resolveVideoGenModel(ctx.videoGenModel), mode: args.mode,
           prompt, seconds: args.seconds, resolution: args.resolution, aspectRatio: args.aspect_ratio,
           hasImage: !!imageDataUrl,
         });

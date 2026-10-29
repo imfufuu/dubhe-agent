@@ -19,6 +19,7 @@ const FAMILIES = [
 ];
 
 const MODE_OF = ['text', 'image', 'reference'];
+export const VIDEO_GEN_MODES = ['text', 'image', 'reference'];
 const MODE_LABEL = { text: '文生视频', image: '图生视频', reference: '参考图生视频' };
 const MODE_LABEL_EN = { text: 'Text-to-video', image: 'Image-to-video', reference: 'Reference-to-video' };
 
@@ -38,26 +39,22 @@ export const VIDEO_GEN_MODELS = FAMILIES.flatMap((f) => f.ids.map((id, i) => ({
 
 export const DEFAULT_VIDEO_GEN_MODEL = 'seedance-2-0-mini-text-to-video-basic';
 
-// 设置页下拉菜单：每族一项（文生与图生合并，有参考图时 planVideoRequest 自动切到同族图生变体），
-// 参考图变体保留为独立项。默认模型标注「默认」。
-export const VIDEO_GEN_MENU = FAMILIES.flatMap((f) => {
-  const [text, , reference] = f.ids;
-  const isDefault = text === DEFAULT_VIDEO_GEN_MODEL;
-  const range = `${f.seconds[0]}–${f.seconds[1]} 秒 · ${f.resolutions.join('/')}`;
-  const rangeEn = `${f.seconds[0]}–${f.seconds[1]} s · ${f.resolutions.join('/')}`;
-  return [
-    { id: text, label: f.family, tag: isDefault ? '默认' : '文生 / 图生', tagEn: isDefault ? 'Default' : 'Text / image',
-      note: range, noteEn: rangeEn, family: f.family },
-    { id: reference, label: f.family, tag: '参考图', tagEn: 'Reference', note: range, noteEn: rangeEn, family: f.family },
-  ];
+// 设置页下拉菜单：每族一项。文生 / 图生 / 参考图三种模式合并在同一型号下，
+// 由 Agent 调用 generate_video 时通过 mode 选择（未指定时按是否有参考图自动判断）。
+export const VIDEO_GEN_MENU = FAMILIES.map((f) => {
+  const isDefault = f.ids[0] === DEFAULT_VIDEO_GEN_MODEL;
+  return {
+    id: f.ids[0], label: f.family, tag: isDefault ? '默认' : '多模式', tagEn: isDefault ? 'Default' : 'Multi-mode',
+    note: `${f.seconds[0]}–${f.seconds[1]} 秒 · ${f.resolutions.join('/')}`,
+    noteEn: `${f.seconds[0]}–${f.seconds[1]} s · ${f.resolutions.join('/')}`, family: f.family,
+  };
 });
 
 // 把任一目录 ID 映射到菜单项（旧设置里保存的图生 ID 显示为同族合并项）
 export function videoMenuIdOf(id) {
   const spec = videoGenModelSpec(id);
   if (!spec) return DEFAULT_VIDEO_GEN_MODEL;
-  if (spec.mode === 'reference') return spec.id;
-  return VIDEO_GEN_MENU.find((m) => m.family === spec.family && m.tag !== '参考图')?.id || spec.id;
+  return VIDEO_GEN_MENU.find((m) => m.family === spec.family)?.id || DEFAULT_VIDEO_GEN_MODEL;
 }
 
 export function videoGenModelSpec(id) {
@@ -89,18 +86,19 @@ export function videoSizeFor(resolution, aspectRatio) {
 }
 
 // 校验并生成请求参数。返回 { ok:true, model, size, seconds, needsImage } 或 { ok:false, error }
-export function planVideoRequest({ model, prompt, seconds, resolution, aspectRatio, hasImage }) {
+export function planVideoRequest({ model, mode, prompt, seconds, resolution, aspectRatio, hasImage }) {
   const text = String(prompt || '').trim();
   if (!text) return { ok: false, error: 'generate_video 需要 prompt（画面与动作描述）。' };
-  let spec = videoGenModelSpec(model) || videoGenModelSpec(DEFAULT_VIDEO_GEN_MODEL);
-  let chosen = spec.id;
-  if (hasImage && spec.mode === 'text') {
-    const img = imageVariantOf(spec.id);
-    if (img) { chosen = img; spec = videoGenModelSpec(img); }
+  const base = videoGenModelSpec(model) || videoGenModelSpec(DEFAULT_VIDEO_GEN_MODEL);
+  // 生成模式：Agent 指定则用之；未指定时有参考图→图生（参考图型号保持参考图），无参考图→沿用型号自身模式。
+  let target = VIDEO_GEN_MODES.includes(mode) ? mode
+    : hasImage ? (base.mode === 'reference' ? 'reference' : 'image') : base.mode;
+  if (target === 'text' && hasImage) target = 'image'; // 带参考图时不可能是纯文生
+  if (!hasImage && target !== 'text') {
+    return { ok: false, error: `「${base.family}」的${MODE_LABEL[target]}需要参考图：请传入 input_image（沙箱中的图片路径），或改用文生视频（mode: text）。` };
   }
-  if (!hasImage && spec.mode !== 'text') {
-    return { ok: false, error: `「${spec.label}」需要参考图：请传入 input_image（沙箱中的图片路径），或在设置里选择文生视频型号。` };
-  }
+  const spec = VIDEO_GEN_MODELS.find((m) => m.family === base.family && m.mode === target);
+  if (!spec) return { ok: false, error: `「${base.family}」不支持${MODE_LABEL[target]}。` };
   const sec = seconds == null || seconds === '' ? Math.min(Math.max(5, spec.seconds[0]), spec.seconds[1]) : Math.round(Number(seconds));
   if (!Number.isFinite(sec) || sec < spec.seconds[0] || sec > spec.seconds[1]) {
     return { ok: false, error: `「${spec.label}」时长须在 ${spec.seconds[0]}–${spec.seconds[1]} 秒之间（收到 ${seconds}）。` };
@@ -113,7 +111,7 @@ export function planVideoRequest({ model, prompt, seconds, resolution, aspectRat
   if (!VIDEO_GEN_ASPECT_RATIOS.includes(ratio)) {
     return { ok: false, error: `画面比例须为 ${VIDEO_GEN_ASPECT_RATIOS.join(' / ')} 之一（收到 ${aspectRatio}）。` };
   }
-  return { ok: true, model: chosen, size: videoSizeFor(res, ratio), seconds: sec, resolution: res, aspectRatio: ratio, needsImage: spec.mode !== 'text' };
+  return { ok: true, model: spec.id, mode: target, size: videoSizeFor(res, ratio), seconds: sec, resolution: res, aspectRatio: ratio, needsImage: target !== 'text' };
 }
 
 // POST /v1/videos 的 JSON 请求体。seconds 按文档为字符串整数。
