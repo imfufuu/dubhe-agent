@@ -1,6 +1,9 @@
 // Historical summaries are derived from CHANGELOG.md and the V1.5 git release entries.
-// Only V1.4 and V1.8 carry the Stable designation.
+// Only V1.4 and V1.9 carry the Stable designation.
 export const RELEASE_HISTORY = [
+  ['V1.8', '更大的工作区与按模型适配的执行体验', 'A larger workspace and model-aware execution',
+    ['更大的工作区、更顺滑的交互与按模型适配的执行体验。'],
+    ['A larger workspace, smoother motion and model-aware execution.']],
   ['V1.7', 'Helix 3.0 · 执行治理与完整工作台', 'Helix 3.0 · governed execution and workbenches',
     ['统一能力登记、按需工具、风险授权、预算、审计、检查点与恢复。', '本地数据/图表/照片工作台、持久文件、多语言、按轮分享与本地 Chromium 调试。', '工具顺序展示、编辑差异、按需 Python 依赖、真实发送动画与按型号适配的思考分级。'],
     ['Unified capabilities, on-demand tools, scoped authorization, budgets, audit, checkpoints and recovery.', 'Data/chart/photo workbenches, persistent files, bilingual UI, turn-level sharing and local Chromium debugging.', 'Ordered tool output, editing diffs, on-demand Python packages, send animations and model-aware effort levels.']],
@@ -45,8 +48,8 @@ export function releaseNotes(language = 'zh') {
     ['AGENT', '模型适配与可靠执行', '按型号映射原生思考档位并保留分级验证降级；Python 按需加载依赖，编辑仅显示差异，导航演示可重播。'],
     ['PREVIEW', '静态预览默认隔离', 'HTML/SVG 预览禁用脚本与外网，支持嵌入本地样式和图片；需要交互运行时，仍通过明确的本地 Chromium 操作。'],
   ];
-  return `<h2>${en ? 'Changelog' : '更新日志'}</h2><p class="h-sub">${en ? 'Current release and every historical stage. Only V1.8 and V1.4 are designated Stable.' : '当前版本与完整历史阶段。仅 V1.8 与 V1.4 标记为 Stable。'}</p>`
-    + `<div class="release-overview"><div><span class="release-label">CURRENT RELEASE · 2026-10-14</span><h3>V1.8 Stable</h3><p>${en ? 'A larger workspace, smoother motion and model-aware execution.' : '更大的工作区、更顺滑的交互与按模型适配的执行体验。'}</p></div><a class="build-manifest-link" href="./build.json">${en ? 'Deployment manifest' : '部署清单'}<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h7v7M13 3 7 9M12 13H3V4"/></svg></a></div>`
+  return `<h2>${en ? 'Changelog' : '更新日志'}</h2><p class="h-sub">${en ? 'Current release and every historical stage. Only V1.9 and V1.4 are designated Stable.' : '当前版本与完整历史阶段。仅 V1.9 与 V1.4 标记为 Stable。'}</p>`
+    + `<div class="release-overview"><div><span class="release-label">CURRENT RELEASE · 2026-10-29</span><h3>V1.9 Stable</h3><p>${en ? 'Patch, DOM and chart tools join the workbench; the app, docs and manifest now read V1.9.' : '工作台新增补丁应用、DOM 静态检查与 CSV 图表；应用、文档与部署清单统一为 V1.9。'}</p></div><a class="build-manifest-link" href="./build.json">${en ? 'Deployment manifest' : '部署清单'}<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h7v7M13 3 7 9M12 13H3V4"/></svg></a></div>`
     + `<div class="change-grid">${cards.map(([tag,title,body]) => `<article><span>${tag}</span><h3>${title}</h3><p>${body}</p></article>`).join('')}</div>`
     + `<div class="archive-heading"><h3>${en ? 'Release history' : '历史版本摘要'}</h3><p>${en ? 'From the early prototypes through V1.7, without retroactive Stable labels.' : '从早期原型到 V1.7，按阶段完整归档，不追加稳定版称号。'}</p></div>`
     + RELEASE_HISTORY.map(([version,zh,enTitle,zhLines,enLines]) => `<details class="release-archive"><summary><span>${version}</span><b>${en ? enTitle : zh}</b><small>${en ? 'Summary' : '展开摘要'}</small></summary><ul>${(en ? enLines : zhLines).map(line=>`<li>${line}</li>`).join('')}</ul></details>`).join('')

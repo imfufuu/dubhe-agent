@@ -69,10 +69,10 @@ const privacy = card([
  ['Changes and contact', ['This policy was updated on 2026-10-24 to clarify Jev text moderation, local-only salutation checks and optional image review. Major changes are described here.', 'Questions: <code>lks.tan.cn@gmail.com</code>.']],
 ]);
 const pages = {
- agreement: `<h2>User agreement</h2><p class="h-sub">Using the app means accepting this agreement.</p><div class="legal-meta">V1.8 · updated 2026-10-24</div><div class="note">AI output is provided as-is, may be inaccurate and is not professional advice.</div>${agreement}`,
- usage: `<h2>Usage policy</h2><p class="h-sub">What is allowed, what is prohibited and how it is enforced — an operational code of conduct.</p><div class="legal-meta">V1.8 · updated 2026-10-24</div><div class="note">This policy is a <strong>code of conduct separate from the user agreement</strong>: the agreement settles rights and duties between you and the author, while this policy defines concrete content boundaries, operating requirements and enforcement. They are distinct documents and do not replace each other. Where wording differs, the <strong>stricter</strong> boundary prevails. Continued use means acceptance.</div>${usage}`,
- terms: `<h2>Terms of service</h2><p class="h-sub">Real capabilities, availability and safety boundaries.</p><div class="legal-meta">V1.8 · updated 2026-10-24</div>${terms}`,
- privacy: `<h2>Privacy policy</h2><p class="h-sub">Local-first, minimal data.</p><div class="legal-meta">V1.8 · updated 2026-10-24</div>${privacy}`,
+ agreement: `<h2>User agreement</h2><p class="h-sub">Using the app means accepting this agreement.</p><div class="legal-meta">V1.9 · updated 2026-10-29</div><div class="note">AI output is provided as-is, may be inaccurate and is not professional advice.</div>${agreement}`,
+ usage: `<h2>Usage policy</h2><p class="h-sub">What is allowed, what is prohibited and how it is enforced — an operational code of conduct.</p><div class="legal-meta">V1.9 · updated 2026-10-29</div><div class="note">This policy is a <strong>code of conduct separate from the user agreement</strong>: the agreement settles rights and duties between you and the author, while this policy defines concrete content boundaries, operating requirements and enforcement. They are distinct documents and do not replace each other. Where wording differs, the <strong>stricter</strong> boundary prevails. Continued use means acceptance.</div>${usage}`,
+ terms: `<h2>Terms of service</h2><p class="h-sub">Real capabilities, availability and safety boundaries.</p><div class="legal-meta">V1.9 · updated 2026-10-29</div>${terms}`,
+ privacy: `<h2>Privacy policy</h2><p class="h-sub">Local-first, minimal data.</p><div class="legal-meta">V1.9 · updated 2026-10-29</div>${privacy}`,
  changelog: releaseNotes('en'),
 };
 for (const [name, html] of Object.entries(pages)) {

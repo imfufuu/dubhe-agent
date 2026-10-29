@@ -39,11 +39,11 @@ test('SVG shapes, local gradient references and data images remain; dynamic SVG 
   assert.equal(doc.querySelector('a').getAttribute('href'), '#g');
 });
 test('bilingual archive is complete and only V1.4 is historically Stable', () => {
-  assert.deepEqual(RELEASE_HISTORY.map(v => v[0]), ['V1.7','V1.6','V1.5','V1.4 Stable','V1.3','V1.2','V1.1','V1.0','Pre-V1.0']);
+  assert.deepEqual(RELEASE_HISTORY.map(v => v[0]), ['V1.8','V1.7','V1.6','V1.5','V1.4 Stable','V1.3','V1.2','V1.1','V1.0','Pre-V1.0']);
   for (const language of ['zh','en']) {
     const doc = documentOf(releaseNotes(language));
-    assert.equal(doc.querySelector('.release-overview h3').textContent, 'V1.8 Stable');
-    assert.equal(doc.querySelectorAll('.release-archive').length, 9);
+    assert.equal(doc.querySelector('.release-overview h3').textContent, 'V1.9 Stable');
+    assert.equal(doc.querySelectorAll('.release-archive').length, 10);
     assert.deepEqual([...doc.querySelectorAll('summary>span')].filter(n=>n.textContent.includes('Stable')).map(n=>n.textContent), ['V1.4 Stable']);
     assert.equal(doc.querySelector('a[href*="pulls"],a[href*="CHANGELOG"]'), null);
   }

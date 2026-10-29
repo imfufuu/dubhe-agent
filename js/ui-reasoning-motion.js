@@ -1,4 +1,4 @@
-import { revealChunks } from './ui-chunks.js';
+import { revealChunks } from './ui-chunks.js?v=2026.10.25.1';
 
 // 思考过程与正文使用同一套浮现机制（ui-chunks.js）：
 // 新块整段淡入；既有块新增的尾文本只淡入新字。没有位移，因此不会“弹入”。

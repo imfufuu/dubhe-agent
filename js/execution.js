@@ -794,7 +794,7 @@ export function checkCapabilityConstraints({ name = '', args = {}, capabilities 
   }
 
   // 文件系统类约束（写 / 覆盖 / 删除 / 复制）
-  if (['write_file', 'delete_file', 'copy_file', 'unzip_file', 'render_mermaid', 'render_dot', 'zip_files', 'execute_sql', 'convert_file'].includes(name)) {
+  if (['write_file', 'delete_file', 'copy_file', 'unzip_file', 'render_mermaid', 'render_dot', 'zip_files', 'execute_sql', 'convert_file', 'patch_apply', 'chart_render'].includes(name)) {
     const target = extractTargetPath(a);
     if (target && !pathAllowed(target, caps.sandbox.allowedPaths)) {
       return {
@@ -885,6 +885,9 @@ export const TOOL_CONTRACTS = Object.freeze({
   analyze_video: contract({ sideEffect: 'remote', idempotent: true, retryPolicy: 'once', timeoutMs: 240000, riskLevel: 'L1', external: true, note: '视频 base64 上行到网关交给 Gemini 做视频理解（≤16MB）' }),
   zip_files: contract({ sideEffect: 'filesystem', idempotent: false, timeoutMs: 15000, riskLevel: 'L2', verifyAfterRun: true }),
   unzip_file: contract({ sideEffect: 'filesystem', idempotent: false, timeoutMs: 15000, riskLevel: 'L2', verifyAfterRun: true, note: '批量写入文件' }),
+  patch_apply: contract({ sideEffect: 'filesystem', idempotent: false, timeoutMs: 15000, riskLevel: 'L2', verifyAfterRun: true, note: '补丁严格校验，失败不写入' }),
+  dom_inspect: contract({ idempotent: true, retryPolicy: 'backoff', timeoutMs: 5000, riskLevel: 'L1' }),
+  chart_render: contract({ sideEffect: 'filesystem', idempotent: true, timeoutMs: 15000, riskLevel: 'L2', verifyAfterRun: true }),
   convert_file: contract({ sideEffect: 'filesystem', idempotent: false, timeoutMs: 300000, riskLevel: 'L2', verifyAfterRun: true, note: '媒体格式转换（ffmpeg 首次加载引擎较慢）' }),
   fetch_url: contract({ sideEffect: 'network', idempotent: true, retryPolicy: 'backoff', timeoutMs: 30000, riskLevel: 'L2', external: true }),
   search_web: contract({ sideEffect: 'network', idempotent: true, retryPolicy: 'once', timeoutMs: 30000, riskLevel: 'L2', external: true, note: '搜索词会发送给 Worker 配置的搜索服务，结果需核验' }),

@@ -590,7 +590,7 @@ test('convert_file：三条通路计划、ffmpeg 参数、注册表/契约/挂�
   assert.equal(String.fromCharCode(wav[0], wav[1], wav[2], wav[3]), 'RIFF');
   const { TOOL_DEFS } = await import('../js/tools.js');
   assert.ok(TOOL_DEFS.some((t) => t.name === 'convert_file' && /ffmpeg\.wasm/.test(t.description)));
-  assert.equal(TOOL_DEFS.length, 42, '含新增的 tool_library 与 xlsx_tool');
+  assert.equal(TOOL_DEFS.length, 45, '含新增的 tool_library 与 xlsx_tool；V1.9 再增 patch_apply / dom_inspect / chart_render');
   const caps = await import('../js/capabilities.js');
   assert.ok(caps.CAPABILITY_REGISTRY.convert_file, '能力登记');
   assert.ok(caps.TOOL_MOUNT_RULES.convert_file, '按需挂载规则（no-rule 会全量下发）');
@@ -874,9 +874,9 @@ test('文档页部署清单使用主题化圆角链接与 SVG 外链图标（静
 
 test('文档页首页长描述与独立声明按实际文案精确翻译', () => {
   const docs = read('../docs.html');
-  const description = '查看 V1.8 Stable 的重点更新、历史版本概览，以及使用本应用前应了解的协议、使用规范与隐私约定。';
+  const description = '查看 V1.9 Stable 的重点更新、历史版本概览，以及使用本应用前应了解的协议、使用规范与隐私约定。';
   assert.ok(docs.includes(description));
-  assert.equal(translateUI(description, 'en'), 'Review the V1.8 Stable highlights, release history, and the agreement, usage policy, and privacy terms to know before using the app.');
+  assert.equal(translateUI(description, 'en'), 'Review the V1.9 Stable highlights, release history, and the agreement, usage policy, and privacy terms to know before using the app.');
   assert.equal(translateUI('互不隶属', 'en'), 'are unaffiliated');
 });
 

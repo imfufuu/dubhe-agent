@@ -23,6 +23,7 @@ import { DEFAULT_GATEWAY_ID, getGateway, defaultVisionModelForGateway } from './
 import { unpackZip, unpackZipFromDataUrl } from './unzip.js';
 import { runRegex, runHash, runCodec, runUnicode } from './codetools.js';
 import { searchFiles, diffText, jsonTool, formatSearch } from './worktools.js';
+import { applyUnifiedPatch, inspectHtml, chartSvg } from './tools-v19.js';
 import { formatMemory, upsertFacts, isValidMemoryFact, forgetMemoryFact, purgeMemoryFact, restoreMemoryFact, getSoftArchivedMemories } from './memory.js';
 import { evaluateExpression, formatMathResult } from './mathtool.js';
 import { getCoarseBrowserEnvironment } from './browser-env.js?v=2026.10.25.1';
@@ -72,6 +73,9 @@ export const TOOL_DEFS = [
   { name: 'skill_library', description: 'Discover built-in extension skills on demand (Word/DOCX, PPTX, advanced PDF, audio and document workflows). Search returns a small directory; read loads only one guide. Skill bodies are not preloaded into prompts. Does not execute documents.', parameters: { type: 'object', properties: { action: { type: 'string', enum: ['search','read'] }, query: { type: 'string' }, id: { type: 'string', description: 'ID returned by search' }, offset: { type: 'integer' } } } },
   { name: 'document_tool', description: 'Browser-local DOCX/PPTX/PDF operations in a bounded Worker. Common DOCX/PPTX create needs no skill lookup — call directly. DOCX create data: {title, author?, header?, footer?, paragraphs:["text" | {text, heading:1-3, bold, bullet} | {table:{rows:[["H1","H2"],["a","b"]]}}], tables?:[{rows}], images?:[{path,width,height,alt}]} (inline {table} keeps the table under its section). PPTX create data: {title, slides:[{title, body:"text"|["point"], table?:{rows}, notes?, images?:[{path,x,y,w,h,alt}]}]}. Read skill_library only for PDF form/markup workflows or limitations. Inspect/create DOCX or PPTX; PDF inspect/create/merge/extract/rotate/watermark/form_fields/fill_form/metadata. No document upload, no macros, no Office renderer, no legacy .doc conversion. Defaults to new outputs/ files; pages are 1-based.', parameters: { type: 'object', properties: { format: { type: 'string', enum: ['docx','pptx','pdf'] }, action: { type: 'string', enum: ['inspect','create','merge','extract','rotate','watermark','form_fields','fill_form','metadata'] }, path: { type: 'string' }, paths: { type: 'array', items: { type: 'string' } }, out: { type: 'string' }, pages: { type: 'array', items: { type: 'integer' } }, angle: { type: 'integer', enum: [90,180,270] }, data: { type: 'object', description: 'Structured content/options (DOCX/PPTX create schema in the tool description; PDF details in skill_library)' }, offset: { type: 'integer' }, overwrite: { type: 'boolean' } }, required: ['action'] } },
   { name: 'tool_library', description: 'Search the compact tool directory and read one full tool schema on demand. Search returns names and short summaries only; read requires a search result from this turn and causes the execution kernel to mount the complete workflow group for the next request. Does not execute the selected tool.', parameters: { type: 'object', properties: { action: { type: 'string', enum: ['search','read'] }, query: { type: 'string', description: 'Search words, tool name, or task / 检索词或能力名称' }, name: { type: 'string', description: 'Exact tool name returned by search' } }, required: ['action'] } },
+  { name: 'patch_apply', description: '把 unified diff（--- / +++ / @@ 格式，可由 diff_text 产生）应用到沙箱文件。严格校验：每个 hunk 的上下文必须与文件精确匹配，任何一处不一致则整个补丁拒绝、文件保持不变。结果写回 path（或 out）。', parameters: { type: 'object', properties: { path: { type: 'string', description: '要修改的沙箱文件' }, patch: { type: 'string', description: 'unified diff 文本' }, out: { type: 'string', description: '可选：写到另一个路径，默认覆盖 path' } }, required: ['path', 'patch'] } },
+  { name: 'dom_inspect', description: '不启动浏览器，对沙箱 HTML 做静态结构检查：lang、title、viewport、标题层级、图片 alt、链接与按钮可读名称、表单标签、外部脚本。只报告从源码能确定的问题，不做渲染或颜色对比；要看真实渲染请用 browser_sandbox。', parameters: { type: 'object', properties: { path: { type: 'string', description: '沙箱内 .html 文件' } }, required: ['path'] } },
+  { name: 'chart_render', description: '把沙箱 CSV 的一列标签与一列数值渲染为 SVG 柱状图（bar）或折线图（line），写入 out（默认 outputs/<原名>.svg）。数值列必须全部是有效数字；超过 200 行请先用 data_tool 聚合。', parameters: { type: 'object', properties: { path: { type: 'string', description: '沙箱内 CSV 文件' }, label: { type: 'string', description: '标签列名（表头）' }, value: { type: 'string', description: '数值列名（表头）' }, type: { type: 'string', description: 'bar 或 line，默认 bar' }, title: { type: 'string', description: '图表标题（可选）' }, out: { type: 'string', description: '输出 .svg 路径（可选）' } }, required: ['path', 'label', 'value'] } },
   { name: 'xlsx_tool', description: 'Browser-local XLSX workbook operations in a bounded Worker; it mounts together with document_tool for DOCX/PPTX/PDF workflows. Use action=create with data.sheets:[{name,rows:[["Item","Amount"],["A",12]]}] and out="outputs/report.xlsx"; values are written as literal text/numbers/booleans, never formulas. Use inspect with path to read cell values and formulas as untrusted data; does not evaluate formulas, follow external links, render formatting/charts, or preserve merged cells. Output paths must be new outputs/*.xlsx files unless overwrite=true.', parameters: { type: 'object', properties: { action: { type: 'string', enum: ['inspect','create'] }, path: { type: 'string' }, out: { type: 'string' }, data: { type: 'object', description: 'Workbook creation: {sheets:[{name?,rows:[[cellValue,...],...]}]}; numbers and booleans retain their cell types, strings remain literal.' }, offset: { type: 'integer' }, overwrite: { type: 'boolean' } }, required: ['action'] } },
   { name: 'knowledge_search', description: 'Search the bundled bilingual project knowledge for exact rendering grammar, tool/runtime details and product/file policies. No external search; retrieve only needed sections. 核心规则/实时能力优先于历史参考。', parameters: { type:'object', properties: { query:{type:'string',description:'Topic keywords / 关键词'}, topic:{type:'string',enum:['runtime','rendering'],description:'Optional topic filter'}, language:{type:'string',enum:['zh','en']}, offset:{type:'number',description:'Continue a long matched section at this character offset'} }, required:['query'] } },
   {
@@ -1837,6 +1841,42 @@ ${to} · ${done.bytes.length} 字节${done.mode === 'ffmpeg' ? ' · ffmpeg.wasm�
         const r = searchFiles(fs, args || {});
         emit({ status: r.ok ? 'ok' : 'error', note: r.ok ? `${(r.hits || []).length} 处` : r.error });
         return r.ok ? formatSearch(r) : `search_files 失败：${r.error}`;
+      }
+      case 'patch_apply': {
+        const path = normalizeFsPath(args.path);
+        if (!path) return 'patch_apply 缺少 path。';
+        let raw; try { raw = String(fs.read(path)); } catch { return `patch_apply 失败：沙箱中找不到 ${path}`; }
+        let result;
+        try { result = applyUnifiedPatch(raw, args.patch); }
+        catch (err) { return `patch_apply 失败：${err.message}（文件未修改）`; }
+        const out = normalizeFsPath(args.out || path);
+        if (!out) return 'patch_apply：out 路径非法。';
+        fs.write(out, result.text);
+        emit({ status: 'ok', fsChange: true, editedPath: out, note: `应用 ${result.hunks} 个 hunk` });
+        return `已应用 ${result.hunks} 个 hunk，写入 ${out}`;
+      }
+      case 'dom_inspect': {
+        const path = normalizeFsPath(args.path);
+        if (!path) return 'dom_inspect 缺少 path。';
+        let raw; try { raw = String(fs.read(path)); } catch { return `dom_inspect 失败：沙箱中找不到 ${path}`; }
+        const r = inspectHtml(raw);
+        emit({ status: 'ok', note: `警告 ${r.counts.warn} · 提示 ${r.counts.info}` });
+        if (!r.issues.length) return `${path}：未发现结构问题。`;
+        return `${path}：警告 ${r.counts.warn}，提示 ${r.counts.info}\n` + r.issues.map((i) => `- [${i.level === 'warn' ? '警告' : '提示'}] ${i.message}`).join('\n');
+      }
+      case 'chart_render': {
+        const path = normalizeFsPath(args.path);
+        if (!path) return 'chart_render 缺少 path。';
+        let raw; try { raw = String(fs.read(path)); } catch { return `chart_render 失败：沙箱中找不到 ${path}`; }
+        const base = path.split('/').pop().replace(/\.[^.]+$/, '');
+        const out = normalizeFsPath(args.out || `outputs/${base}.svg`);
+        if (!out || !/\.svg$/i.test(out)) return 'chart_render：out 必须是 .svg 路径。';
+        let svg;
+        try { svg = chartSvg(raw, { type: args.type === 'line' ? 'line' : 'bar', label: args.label, value: args.value, title: args.title || '' }); }
+        catch (err) { return `chart_render 失败：${err.message}`; }
+        fs.write(out, svg);
+        emit({ status: 'ok', fsChange: true, editedPath: out });
+        return `已生成 ${out}（${args.type === 'line' ? '折线图' : '柱状图'}）`;
       }
       case 'diff_text': {
         const L = args.left_path ? readToolText({ path: args.left_path }, fs) : { text: args.left, label: 'a' };
