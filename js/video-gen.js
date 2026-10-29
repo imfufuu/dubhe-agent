@@ -38,6 +38,28 @@ export const VIDEO_GEN_MODELS = FAMILIES.flatMap((f) => f.ids.map((id, i) => ({
 
 export const DEFAULT_VIDEO_GEN_MODEL = 'seedance-2-0-mini-text-to-video-basic';
 
+// 设置页下拉菜单：每族一项（文生与图生合并，有参考图时 planVideoRequest 自动切到同族图生变体），
+// 参考图变体保留为独立项。默认模型标注「默认」。
+export const VIDEO_GEN_MENU = FAMILIES.flatMap((f) => {
+  const [text, , reference] = f.ids;
+  const isDefault = text === DEFAULT_VIDEO_GEN_MODEL;
+  const range = `${f.seconds[0]}–${f.seconds[1]} 秒 · ${f.resolutions.join('/')}`;
+  const rangeEn = `${f.seconds[0]}–${f.seconds[1]} s · ${f.resolutions.join('/')}`;
+  return [
+    { id: text, label: f.family, tag: isDefault ? '默认' : '文生 / 图生', tagEn: isDefault ? 'Default' : 'Text / image',
+      note: range, noteEn: rangeEn, family: f.family },
+    { id: reference, label: f.family, tag: '参考图', tagEn: 'Reference', note: range, noteEn: rangeEn, family: f.family },
+  ];
+});
+
+// 把任一目录 ID 映射到菜单项（旧设置里保存的图生 ID 显示为同族合并项）
+export function videoMenuIdOf(id) {
+  const spec = videoGenModelSpec(id);
+  if (!spec) return DEFAULT_VIDEO_GEN_MODEL;
+  if (spec.mode === 'reference') return spec.id;
+  return VIDEO_GEN_MENU.find((m) => m.family === spec.family && m.tag !== '参考图')?.id || spec.id;
+}
+
 export function videoGenModelSpec(id) {
   return VIDEO_GEN_MODELS.find((m) => m.id === id) || null;
 }

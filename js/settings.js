@@ -9,7 +9,7 @@ import { sanitizeSvgMarkup, svgDataUrl } from './svg-safety.js';
 import { text as localeText } from './locale.js';
 import { getOrCreateUserSalutation, validateUserSalutation, saveUserSalutation } from './user-salutation.js';
 import { getLanguage, onLanguageChange } from './locale.js';
-import { VIDEO_GEN_MODELS, resolveVideoGenModel } from './video-gen.js';
+import { VIDEO_GEN_MENU, resolveVideoGenModel, videoMenuIdOf } from './video-gen.js';
 // 设置弹窗：API Key / 中继地址 / 主题 / 字号 / 沙箱 / 联网 / 快速 / 思考 / 识图·音视频解析模型 / 清空数据 / 关于
 import { APP_RELEASE, APP_VERSION, STORAGE_KEY, VISION_MODELS, VIDEO_MODELS, IMAGE_MODELS, DEFAULT_IMAGE_MODEL, isImageGenModel, imageModelLabel, resolveVisionModel, resolveVideoModel } from './config.js?v=2026.10.25.1';
 import { DEFAULT_GATEWAY_ID, getGateway, validateGatewayApiKey, validateGatewayBaseUrl, gatewayModelListLabel, defaultModelForGateway } from './gateway-registry.js?v=2026.10.25.1';
@@ -212,7 +212,7 @@ function syncMultimodalSelects(store) {
   const image = isImageGenModel(store && store.state && store.state.imageModel) ? store.state.imageModel : DEFAULT_IMAGE_MODEL;
   // 视频生成模型：全局设置（settings.videoGenModel），不在目录内的值退回默认
   const vgen = resolveVideoGenModel(settings.videoGenModel);
-  fillModelSelect($('#set-vgen-model'), VIDEO_GEN_MODELS, vgen);
+  fillModelSelect($('#set-vgen-model'), VIDEO_GEN_MENU, videoMenuIdOf(vgen));
   fillModelSelect($('#set-image-model'), IMAGE_MODELS, image);
   fillModelSelect($('#set-vision-model'), VISION_MODELS, vision);
   fillModelSelect($('#set-av-model'), VIDEO_MODELS, av);
@@ -967,7 +967,7 @@ export function mountSettings(store, { onRelayChanged, onKeySaved, onSettingChan
     store.state.settings.videoGenModel = id;
     store.notify();
     syncMultimodalSelects(store);
-    toast(`视频生成模型已切换为 ${(VIDEO_GEN_MODELS.find((m) => m.id === id) || {}).label || id}（generate_video 使用）`, 'ok');
+    toast(`视频生成模型已切换为 ${(VIDEO_GEN_MENU.find((m) => m.id === videoMenuIdOf(id)) || {}).label || id}（generate_video 使用）`, 'ok');
   });
   // 音视频解析模型合并为一个设置：analyze_video / analyze_audio 共用同一档位。
   // videoModel 是存档主键；audioModel 同步同值，旧快照与工具 ctx 的读取路径无需改动。
@@ -1038,9 +1038,16 @@ export function mountSettings(store, { onRelayChanged, onKeySaved, onSettingChan
       setUpdateStatus(localeText('离线状态：不检查更新，也不清除离线应用资源。', 'Offline: update checks are disabled and cached app resources are preserved.'));
       return;
     }
-    updateCacheBtn.disabled = true;
-    if (cacheBtn) cacheBtn.disabled = true;
-    updateCacheBtn.textContent = localeText('检查中…', 'Checking…');
+    // 不用 disabled：检查很快结束时，按钮会闪一下灰底。改用 busy 标志防重复点击，
+    // 「检查中…」文案延迟 300ms 才出现；结束时直接恢复。
+    if (updateCacheBtn._busy) return;
+    updateCacheBtn._busy = true;
+    updateCacheBtn.setAttribute('aria-busy', 'true');
+    const busyLabel = setTimeout(() => {
+      if (!updateCacheBtn._busy) return;
+      updateCacheBtn.textContent = localeText('检查中…', 'Checking…');
+      if (cacheBtn) cacheBtn.disabled = true;
+    }, 300);
     if (progressWrap) progressWrap.hidden = true;
     if (progressBar) progressBar.value = 0;
     setUpdateStatus(localeText('正在清除应用缓存…', 'Clearing app caches…'));
@@ -1064,6 +1071,9 @@ export function mountSettings(store, { onRelayChanged, onKeySaved, onSettingChan
     } catch (error) {
       setUpdateStatus(updateFailureText(error));
     } finally {
+      clearTimeout(busyLabel);
+      updateCacheBtn._busy = false;
+      updateCacheBtn.removeAttribute('aria-busy');
       updateCacheBtn.disabled = isNetworkOffline();
       updateCacheBtn.textContent = localeText('检查并更新', 'Check & update');
       if (cacheBtn) cacheBtn.disabled = isNetworkOffline();

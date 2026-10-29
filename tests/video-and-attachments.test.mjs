@@ -6,7 +6,7 @@ import { createFS } from '../js/sandbox.js';
 import { executeTool, TOOL_DEFS, buildSubagentAttachments, SUB_ATTACH_MAX } from '../js/tools.js';
 import {
   VIDEO_GEN_MODELS, DEFAULT_VIDEO_GEN_MODEL, videoSizeFor, planVideoRequest, buildVideoBody,
-  videoJobState, imageVariantOf, resolveVideoGenModel,
+  videoJobState, imageVariantOf, resolveVideoGenModel, VIDEO_GEN_MENU, videoMenuIdOf,
 } from '../js/video-gen.js';
 import { toolFamily } from '../js/toolflow.js';
 
@@ -26,6 +26,20 @@ test('视频目录：文档表格共 18 个模型、ID 唯一、六族各含文�
   assert.ok(VIDEO_GEN_MODELS.some((m) => m.id === 'minimax-h3-max-image-to-video'));
   assert.equal(resolveVideoGenModel('no-such-model'), DEFAULT_VIDEO_GEN_MODEL);
   assert.equal(imageVariantOf('seedance-2-0-mini-text-to-video-basic'), 'seedance-2-0-mini-image-to-video-basic');
+});
+
+test('设置菜单：每族文生与图生合并为一项，另有参考图项；仅默认模型标注「默认」', () => {
+  assert.equal(VIDEO_GEN_MENU.length, 12);
+  assert.equal(new Set(VIDEO_GEN_MENU.map((m) => m.id)).size, 12);
+  const textItems = VIDEO_GEN_MENU.filter((m) => m.tag !== '参考图');
+  assert.equal(textItems.length, 6);
+  assert.equal(new Set(textItems.map((m) => m.family)).size, 6);
+  assert.equal(VIDEO_GEN_MENU.filter((m) => m.tag === '默认').length, 1);
+  assert.equal(VIDEO_GEN_MENU.find((m) => m.tag === '默认').id, DEFAULT_VIDEO_GEN_MODEL);
+  for (const m of VIDEO_GEN_MENU) assert.ok(m.note.length <= 30, m.note);
+  assert.equal(videoMenuIdOf('seedance-2-0-mini-image-to-video-basic'), DEFAULT_VIDEO_GEN_MODEL);
+  assert.equal(videoMenuIdOf('minimax-h3-reference-to-video'), 'minimax-h3-reference-to-video');
+  assert.equal(videoMenuIdOf('no-such-model'), DEFAULT_VIDEO_GEN_MODEL);
 });
 
 test('尺寸：分辨率档位的短边 + 比例推出 WIDTHxHEIGHT（偶数）', () => {
