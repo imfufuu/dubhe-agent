@@ -30,7 +30,7 @@ Subresource Integrity 校验。项目通过固定到精确版本（`v0.26.4`）�
 
 ## 浏览器本地 C++ 编译器（随仓库发行）
 
-C++ 编译、链接与 WASI 执行均在同源 module Worker 内完成；源码、附带文件、stdin 和程序参数不会发送到 Compiler Explorer 或其它远程编译/执行服务。运行时只从本站按需加载已压缩的 Clang/LLD/WASI 静态资产。程序没有预打开文件系统或网络接口，且 Worker 可在超时后终止。首次使用需下载约 30 MB 的压缩工具链资源（随后可由浏览器静态缓存复用）。WASI SDK 25 目标不支持 C++ exceptions 或 threading；其余已支持能力见 `assets/vendor/cpp/README.md`。
+C++ 有两种运行方式：本地模式下编译、链接与 WASI 执行均在同源 module Worker 内完成，源码、附带文件、stdin 和程序参数不发送到任何远程服务；远程模式（默认）下，这些内容会发送到 Compiler Explorer（godbolt.org）编译执行，并由其返回输出。运行时只从本站按需加载已压缩的 Clang/LLD/WASI 静态资产。程序没有预打开文件系统或网络接口，且 Worker 可在超时后终止。首次使用需下载约 30 MB 的压缩工具链资源（随后可由浏览器静态缓存复用）。WASI SDK 25 目标不支持 C++ exceptions 或 threading；其余已支持能力见 `assets/vendor/cpp/README.md`。
 
 - `browsercc@0.1.1`: MIT wrapper (`assets/vendor/cpp/browsercc/LICENSE`); compiler binaries are LLVM/Clang/LLD 20.1.2 under Apache-2.0 WITH LLVM-exception (`LICENSE-LLVM.TXT`). Emscripten-generated JavaScript glue is covered by the included dual MIT/NCSA notice (`LICENSE-EMSCRIPTEN.txt`).
 - WASI SDK 25.0 sysroot / `libclang_rt`: notices in `LICENSE-WASI-SDK.txt`, `LICENSE-LLVM.TXT`, and the included `wasi-libc-*` files. The wasi-libc notice lists Apache-2.0/Apache-2.0 WITH LLVM-exception/MIT plus dlmalloc (CC0), emmalloc (MIT), cloudlibc (BSD-2-Clause), musl (MIT), and musl-fts (BSD-3-Clause); corresponding license texts/notices are included.

@@ -239,6 +239,7 @@ self.addEventListener('message', async (e) => {
       post({ __progress: '正在加载 Python 运行时…' });
       realImportScripts(PY_BASE + 'pyodide.js');
       startRuntimeTrack();
+      reportRuntime(true); // 立刻告知主线程「运行时加载中」（无字节数，主线程显示不确定进度条）
       try {
         loaded = await loadPyodide({ indexURL: PY_BASE });
       } finally {

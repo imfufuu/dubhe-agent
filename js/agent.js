@@ -234,7 +234,7 @@ export function subagentTools(sandboxEnabled, def, { localCpp = true } = {}) {
   return list.length ? list : null;
 }
 
-export async function runSubagent(def, task, { apiKey, gatewayId = 'teamorouter', gatewayBaseUrl = '', model, thinking, reasoningLevel, sandboxEnabled, localCpp = true, webEnabled, fs, signal, onThinkingFallback, onWebFallback, imageModel, videoGenModel, visionModel, videoModel, audioModel, onSubagentUsage, memory, onThink }) {
+export async function runSubagent(def, task, { apiKey, gatewayId = 'teamorouter', gatewayBaseUrl = '', model, thinking, reasoningLevel, sandboxEnabled, localCpp = true, cppMode = 'remote', webEnabled, fs, signal, onThinkingFallback, onWebFallback, imageModel, videoGenModel, visionModel, videoModel, audioModel, onSubagentUsage, memory, onThink }) {
   const offlineOnly = isNetworkOffline() || isOfflineModelId(model);
   const availableSubTools = subagentTools(sandboxEnabled, def, { localCpp });
   const subTools = offlineOnly ? (availableSubTools || []).filter((tool) => isOfflineToolAllowed(tool.name)) : availableSubTools;
@@ -297,7 +297,7 @@ export async function runSubagent(def, task, { apiKey, gatewayId = 'teamorouter'
     messages.push({ role: 'assistant', text, toolCalls: calls, ...(blocks.length ? { thinkingBlocks: blocks } : {}) });
     for (const c of calls) {
       // imageModel 要透传：否则子智能体出图会绕开用户在模型菜单里选定的生图模型
-      const res = await executeTool(c.name, c.args, { fs, onUi: () => {}, apiKey, model, gatewayId, gatewayBaseUrl, imageModel: imageModel || null, videoGenModel: videoGenModel || null, visionModel: visionModel || null, videoModel: videoModel || null, audioModel: audioModel || null, sandboxEnabled, localCpp, signal });
+      const res = await executeTool(c.name, c.args, { fs, onUi: () => {}, apiKey, model, gatewayId, gatewayBaseUrl, imageModel: imageModel || null, videoGenModel: videoGenModel || null, visionModel: visionModel || null, videoModel: videoModel || null, audioModel: audioModel || null, sandboxEnabled, localCpp, cppMode, signal });
       messages.push({ role: 'tool', toolCallId: c.id, name: c.name, content: res });
     }
   }
@@ -715,6 +715,7 @@ export function createAgent(store, hooks = {}) {
         canDispatch,
         sandboxEnabled: settings.sandboxEnabled,
         localCpp: settings.localCppEnabled !== false,
+        cppMode: settings.cppMode === 'local' ? 'local' : 'remote',
         webEnabled: !offlineOnly && settings.webEnabled !== false && relayOk,
         imageModel: store.state.imageModel || DEFAULT_IMAGE_MODEL,
         videoGenModel: (store.state.settings && store.state.settings.videoGenModel) || null,

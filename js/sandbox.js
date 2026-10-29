@@ -801,3 +801,85 @@ export async function runCpp(code, opts = {}) {
   });
   return { ...out, durationMs: Math.round(performance.now() - t0) };
 }
+
+// ── C++ 远程模式：Compiler Explorer 公共 API（godbolt.org，默认模式）─────────
+// 源码会发送到 godbolt.org 编译执行；本地模式（runCpp）则完全在浏览器内完成。
+// 实现移植自 2026-10-01 版本（023fe1b），并增加超时与取消支持。
+const CE_BASE = 'https://godbolt.org';
+let cppCompilerId = 'g142'; // 默认 GCC 14.2
+let cppCompilerDetected = false;
+
+// 编译器 ID 数字≠版本大小（g550=GCC 5.5.0 < g142=GCC 14.2），必须按 semver 排序
+async function detectCppCompiler(signal) {
+  try {
+    const res = await fetch(`${CE_BASE}/api/compilers/c++?fields=id,semver`, { headers: { Accept: 'application/json' }, signal });
+    if (!res.ok) return;
+    const list = await res.json();
+    const bySemverDesc = (x, y) => {
+      const a = String(x.semver).split('.').map(Number);
+      const b = String(y.semver).split('.').map(Number);
+      for (let i = 0; i < 3; i++) if ((b[i] || 0) !== (a[i] || 0)) return (b[i] || 0) - (a[i] || 0);
+      return 0;
+    };
+    const valid = (c) => /^\d+\.\d+/.test(c.semver || '');
+    const gcc = list.filter((c) => /^g\d/.test(c.id) && valid(c)).sort(bySemverDesc);
+    const any = list.filter(valid).sort(bySemverDesc);
+    if (gcc.length) cppCompilerId = gcc[0].id;
+    else if (any.length) cppCompilerId = any[0].id;
+  } catch { /* 探测失败保留默认编译器 */ }
+}
+
+export async function runCppRemote(code, opts = {}) {
+  const t0 = performance.now();
+  const dur = () => Math.round(performance.now() - t0);
+  const extraFiles = Array.isArray(opts.files) ? opts.files.filter((f) => f && f.filename) : [];
+  const stdin = opts.stdin == null ? '' : String(opts.stdin);
+  const argv = Array.isArray(opts.args) ? opts.args.map((a) => String(a)) : [];
+  const timeoutMs = Number(opts.timeoutMs) > 0 ? Number(opts.timeoutMs) : 45000;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  const onAbort = () => ctrl.abort();
+  if (opts.signal) { if (opts.signal.aborted) ctrl.abort(); else opts.signal.addEventListener('abort', onAbort, { once: true }); }
+  try {
+    if (!cppCompilerDetected) { cppCompilerDetected = true; await detectCppCompiler(ctrl.signal); }
+    const payload = {
+      source: code,
+      options: {
+        userArguments: '-O2 -std=c++20',
+        executeParameters: { args: argv, stdin },
+        compilerOptions: { executorRequest: true }, // executorRequest 才是「编译并执行」
+        filters: { execute: true },
+        tools: [],
+      },
+      lang: 'c++',
+      allowStoreCodeDebug: true,
+    };
+    if (extraFiles.length) payload.files = extraFiles.map((f) => ({ filename: String(f.filename), contents: String(f.contents ?? '') }));
+    const res = await fetch(`${CE_BASE}/api/compiler/${cppCompilerId}/compile`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify(payload),
+      signal: ctrl.signal,
+    });
+    if (!res.ok) return { ok: false, logs: [], error: { message: `Compiler Explorer HTTP ${res.status}` }, durationMs: dur() };
+    const j = await res.json();
+    const logs = [
+      ...(j.stdout || []).filter((l) => l.text !== '').map((l) => ({ level: 'log', text: l.text })),
+      ...(j.stderr || []).filter((l) => l.text && l.text.trim() !== '').map((l) => ({ level: 'error', text: l.text })),
+    ];
+    const ok = j.code === 0;
+    return {
+      ok, logs,
+      error: ok ? undefined : { message: j.code === -1 ? '编译失败（详见 stderr 诊断）' : `进程退出码 ${j.code}` },
+      durationMs: dur(),
+    };
+  } catch (err) {
+    if (ctrl.signal.aborted && !(opts.signal && opts.signal.aborted)) {
+      return { ok: false, logs: [], error: { message: `远程 C++ 执行超时（${Math.round(timeoutMs / 1000)} 秒）` }, timedOut: true, durationMs: dur() };
+    }
+    return { ok: false, logs: [], error: { message: `C++ 远程执行失败：${err.message}（godbolt.org 不可达？）` }, durationMs: dur() };
+  } finally {
+    clearTimeout(timer);
+    if (opts.signal) opts.signal.removeEventListener('abort', onAbort);
+  }
+}

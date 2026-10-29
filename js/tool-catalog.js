@@ -9,7 +9,7 @@ export const TOOL_SUMMARIES = Object.freeze({
   knowledge_search: ['按关键词检索内置项目知识库中的必要片段。', 'Search the bundled project knowledge base for relevant excerpts.'],
   execute_javascript: ['在受限浏览器 Worker 中运行 JavaScript 并访问沙箱文件。', 'Run JavaScript in a bounded browser Worker with sandbox-file access.'],
   execute_python: ['在受限浏览器 Worker 中运行 Python 代码。', 'Run Python code in a bounded browser Worker.'],
-  execute_cpp: ['在浏览器本地 WASM Worker 中编译并运行 C/C++；不向远程编译器发送源码。', 'Compile and run C/C++ locally in a browser WASM Worker; source is not sent to a remote compiler.'],
+  execute_cpp: ['编译并运行 C/C++：本地模式在浏览器 WASM Worker 内完成；远程模式（默认）经 godbolt.org（Compiler Explorer）编译执行。', 'Compile and run C/C++: local mode runs in a browser WASM Worker; remote mode (default) compiles and runs via godbolt.org (Compiler Explorer).'],
   write_file: ['在允许的沙箱路径中创建或编辑文本文件。', 'Create or edit text files in allowed sandbox paths.'],
   read_file: ['读取沙箱文件内容或查看二进制文件信息。', 'Read sandbox file contents or inspect binary-file metadata.'],
   list_files: ['列出沙箱文件及其大小。', 'List sandbox files and their sizes.'],

@@ -281,7 +281,7 @@ export function createStore(onChange) {
     models: [],
     // webEnabled：联网开关。控制模型原生联网格式与已探测到的 Worker 搜索/抓取工具；
     // fetch_url/search_web/crawl_site 仍须存在相应 relay capability 才会进入工具表。
-    settings: { sandboxEnabled: true, localCppEnabled: true, fastMode: false, theme: 'light', thinking: true, reasoningLevel: 'medium', webEnabled: true, jevEnabled: true, visionModel: 'deepseek-v4-flash-vision-exp', videoModel: 'gemini-3.5-flash-lite', audioModel: 'gemini-3.5-flash-lite', imageRemoteReview: true, cleanupUnreferencedFiles: false, userSalutation: '' },
+    settings: { sandboxEnabled: true, localCppEnabled: true, cppMode: 'remote', fastMode: false, theme: 'light', thinking: true, reasoningLevel: 'medium', webEnabled: true, jevEnabled: true, visionModel: 'deepseek-v4-flash-vision-exp', videoModel: 'gemini-3.5-flash-lite', audioModel: 'gemini-3.5-flash-lite', imageRemoteReview: true, cleanupUnreferencedFiles: false, userSalutation: '' },
     sessions: [newSession()],
     activeSessionId: null,
     // 根级字段 = 活动会话的实时引用（由 hydrate/commit 同步，其余代码零改动）
@@ -542,7 +542,7 @@ export function createStore(onChange) {
       const localCppEnabled = storedSettings.localCppEnabled !== undefined
         ? storedSettings.localCppEnabled !== false
         : storedSettings.remoteCppEnabled !== false;
-      state.settings = Object.assign({ sandboxEnabled: true, localCppEnabled: true, fastMode: false, theme: 'light', thinking: true, reasoningLevel: 'medium', webEnabled: true, jevEnabled: true, visionModel: 'deepseek-v4-flash-vision-exp', videoModel: 'gemini-3.5-flash-lite', audioModel: 'gemini-3.5-flash-lite', imageRemoteReview: true, cleanupUnreferencedFiles: false, userSalutation: '' }, storedSettings, { localCppEnabled });
+      state.settings = Object.assign({ sandboxEnabled: true, localCppEnabled: true, cppMode: 'remote', fastMode: false, theme: 'light', thinking: true, reasoningLevel: 'medium', webEnabled: true, jevEnabled: true, visionModel: 'deepseek-v4-flash-vision-exp', videoModel: 'gemini-3.5-flash-lite', audioModel: 'gemini-3.5-flash-lite', imageRemoteReview: true, cleanupUnreferencedFiles: false, userSalutation: '' }, storedSettings, { localCppEnabled });
       delete state.settings.remoteCppEnabled;
       const sandboxOverride = state.settings.capabilityConstraints?.sandbox;
       if (sandboxOverride && typeof sandboxOverride === 'object' && !Array.isArray(sandboxOverride)) {

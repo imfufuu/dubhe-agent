@@ -402,7 +402,7 @@ V1.8.1 起工具表 38 个：新增 `convert_file`（媒体格式互转——图
 2. **token 估算缓存**：`estimateTokens` 以 WeakMap 按消息对象缓存，text / content / toolCalls / attachments 任一变化即失效；300 条长消息热路径从 ~173 ms 降到 <0.1 ms。
 3. **ui.js 拆分（第一刀）**：图表 / 示意图 SVG 渲染拆为 `js/quickviz.js`（纯函数、Node 可直接单测；.17 扩至 14 类统计图），ui.js 降到 4568 行。后续按「消息渲染 / 侧栏 / 沙箱面板 / 设置」继续拆。
 4. **Python FILES 增量同步**：常驻 Worker 持有工作区镜像，主线程只发 `diffFiles(镜像, files)`，Worker 只回传 `filesDelta {set, del}`；Worker 重建或上次失败自动退回全量；引用相同的大文件比较是 O(1)。顺带修了一个老 bug：Pyodide「不可用」判定曾用正则匹配错误文本，而用户代码回溯里天然带 `_pyodide/` 路径——任何一次异常都会禁用整个会话的 Python 沙箱，现改为只看加载阶段。
-5. **C++ 编译器迁移（已由 2026-10-26 本地实现取代）**：历史构建曾通过 Compiler Explorer 远程执行；当前设置改为「本地 C++（WASM）」，工具在同源 Worker 内编译运行，源码/输入不再发送到 godbolt.org。
+5. **C++ 运行方式**：设置中可选「远程」（默认，经 Compiler Explorer / godbolt.org 编译执行，源码会发送至该服务）或「本地」（同源 Worker 内 Clang/LLD WASM 编译运行，源码/输入不离开本机）。远程实现回溯自 2026-10-01 版本。
 
 **构建 2026.10.5.11 继续落地**
 
@@ -722,7 +722,7 @@ python3 server.py    # http://localhost:8787，含 API 代理兜底通道
 - 浏览器直连时 Key 出现在前端，仅适合个人本地使用；生产环境请改为服务端持有 Key。
 - 顶栏「沙箱」开关决定三个代码执行工具及本地 browser_sandbox 是否下发（文件读写/生图/委派不受影响）；无鉴权中继 `server.py` 因此同源使用，不要暴露到共享网络。
 - JS/Python 沙箱为浏览器内隔离（Worker 无 DOM；Pyodide 为 WASM），非容器级安全边界。V1.7 加固：JS Worker 执行前拆除 `fetch` / `XMLHttpRequest` / `WebSocket` / `EventSource` / `importScripts` / `Worker` / `BroadcastChannel` / `indexedDB` / `caches` 并私有化 `postMessage`（用户代码无法联网、无法伪造结果帧）；Python Worker 的 `fetch` 只放行 Pyodide CDN 与 PyPI；日志 500 条 / 1 MB、返回值 200 KB、文件 128 MB / 5000 个硬上限；主线程 `sanitizeWorkerFiles` 逐键校验回写路径（拒绝绝对路径、`..`、反斜杠、控制字符、原型键），`internal/` 与 `.git/` 不可被沙箱代码增删改，超容量整体回滚；C++ 通过同源浏览器 Worker 内本地 Clang/LLD 与 WASI **本机编译执行**；源码、输入和文件不发送给远程编译服务，首次使用会按需获取同源静态工具链资产。
-- 应用页启用 CSP（`app.html` meta）：脚本仅放行同源与 Pyodide CDN，连接仅放行网关 / 本站静态资产 / 必要 CDN / 本站代理；不再为 Compiler Explorer 配置远程编译例外。渲染层本身也经注入探针验证。
+- 应用页启用 CSP（`app.html` meta）：脚本仅放行同源与 Pyodide CDN，连接仅放行网关 / 本站静态资产 / 必要 CDN / 本站代理；CSP `connect-src` 仅为 C++ 远程模式（默认）放行 `https://godbolt.org`；本地模式不需要该连接。渲染层本身也经注入探针验证。
 - 本地服务器默认仅监听 `127.0.0.1`（代理通道无鉴权，`--host 0.0.0.0` 显式开放需自担风险）。
 
 ## 许可

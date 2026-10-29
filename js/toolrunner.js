@@ -212,6 +212,7 @@ export function createToolRunner({ store, emit, getFs, runSubagent } = {}) {
       audioModel: turn.audioModel,
       sandboxEnabled: turn.sandboxEnabled,
       localCpp: turn.localCpp !== false,
+      cppMode: turn.cppMode,
       allowDispatch: !!turn.canDispatch,
       webEnabled: !!turn.webEnabled, // .35：沙箱内受控 fetch 是否放行（与网页工具同一开关）
       signal: turn.signal,
@@ -239,6 +240,7 @@ export function createToolRunner({ store, emit, getFs, runSubagent } = {}) {
           reasoningLevel: turn.reasoningLevel,
           sandboxEnabled: turn.sandboxEnabled,
           localCpp: turn.localCpp !== false,
+          cppMode: turn.cppMode,
           webEnabled: turn.webEnabled,
           imageModel: turn.imageModel,
           videoGenModel: turn.videoGenModel,

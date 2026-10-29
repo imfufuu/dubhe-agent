@@ -7,7 +7,7 @@ import { prepareCommandArgs, retainCommandSource, commandRepairNote } from './co
 import { sandboxProject, sandboxBrowserRequest } from './localbrowser.js?v=2026.10.25.1';
 // ─── Agent 工具集：定义 + 执行调度 ─────────────────────────────────────
 import { CODE_TOOL_NAMES as REG_CODE_TOOL_NAMES, LEGACY_TOOL_ALIASES as REG_LEGACY_TOOL_ALIASES } from './capabilities.js';
-import { runJavaScript, runPython, runCpp, pythonAvailable, persistenceNote, isSafeFsPath, contentByteSize } from './sandbox.js';
+import { runJavaScript, runPython, runCpp, runCppRemote, pythonAvailable, persistenceNote, isSafeFsPath, contentByteSize } from './sandbox.js';
 import { SANDBOX_STORAGE_CAP } from './storagefmt.js';
 import { generateImage, editImage, bytesToDataUrl, dataUrlToBytes, sniffImage, createVideoJob, getVideoJob, fetchVideoContent } from './api.js?v=2026.10.25.1';
 import { VIDEO_GEN_ASPECT_RATIOS, planVideoRequest, buildVideoBody, videoJobState, videoJobError, resolveVideoGenModel, VIDEO_POLL_INTERVAL_MS, VIDEO_MAX_WAIT_MS, VIDEO_SANDBOX_MAX_BYTES } from './video-gen.js';
@@ -110,7 +110,7 @@ export const TOOL_DEFS = [
   },
   {
     name: 'execute_cpp',
-    description: '在本地浏览器 Worker 中使用 Clang/LLD（WASM）与 WASI Preview 1 编译、执行 C++20；源码、附带文件和 stdin 由本地 Worker 处理，不发送给远程编译/执行服务。首次使用需按需下载约 30 MB 的本站工具链静态资源（只传输编译器资产，不含用户代码）。可由设置关闭「本地 C++」。代码需含 main；捕获 stdout/stderr、退出码和超时。path/files/dir 支持主文件、递归头文件与多个独立 .cpp 翻译单元；stdin / args 传给程序。WASI 沙箱无网络或预打开文件系统，且该工具链不支持 C++ 异常与线程。',
+    description: '编译、执行 C++20。设置中的「C++ 运行方式」决定执行位置：本地在浏览器 Worker 中用 Clang/LLD（WASM）与 WASI Preview 1 完成，源码、附带文件和 stdin 不离开本机，首次使用需按需下载约 30 MB 的本站工具链静态资源；远程（默认）则把源码、附带文件和 stdin 发送至 godbolt.org（Compiler Explorer）编译执行，需要网络。可由设置关闭「C++ 工具」。代码需含 main；捕获 stdout/stderr、退出码和超时。path/files/dir 支持主文件、递归头文件与多个独立 .cpp 翻译单元；stdin / args 传给程序。WASI 沙箱无网络或预打开文件系统，且该工具链不支持 C++ 异常与线程。',
     parameters: {
       type: 'object',
       properties: {
@@ -969,7 +969,7 @@ async function executeToolBody(outerName, outerArgs, ctx) {
   if (umbrella) { name = umbrella.name; args = umbrella.args; }
   // 兜底防线：工具列表按开关过滤过，但缓存错配或旧上下文里的工具调用仍可能打进来
   if (name === 'execute_cpp' && ctx.localCpp === false) {
-    return 'execute_cpp 已被用户关闭（设置 → 本地 C++）；未启动编译器，也未发送源码给远程编译服务。可改用 execute_javascript / execute_python，或请用户开启本地 C++。';
+    return 'execute_cpp 已被用户关闭（设置 → C++ 工具）；未启动编译器，也未发送源码给远程编译服务。可改用 execute_javascript / execute_python，或请用户开启本地 C++。';
   }
   if (ctx.sandboxEnabled === false && CODE_TOOL_NAMES.includes(name)) {
     emit({ status: 'error', error: { message: '代码沙箱已关闭' } });
@@ -1028,14 +1028,23 @@ async function executeToolBody(outerName, outerArgs, ctx) {
           const loaded = Number(p && p.loaded) || 0;
           const mb = (n) => (n / 1048576).toFixed(1);
           const fraction = total > 0 ? Math.min(1, loaded / total) : null;
-          emit({ status: 'running', lang: 'python', workerStage: 'loading-runtime', progress: fraction,
-            note: fraction != null ? `下载 Python 运行时 ${Math.round(fraction * 100)}%（${mb(loaded)} / ${mb(total)} MB）` : `下载 Python 运行时（已 ${mb(loaded)} MB）…` });
+          // 无字节数（启动中或压缩响应）：-1 = 不确定进度条，只显示文字
+          emit({ status: 'running', lang: 'python', workerStage: 'loading-runtime', progress: fraction != null ? fraction : -1,
+            note: fraction != null ? `下载 Python 运行时 ${Math.round(fraction * 100)}%（${mb(loaded)} / ${mb(total)} MB）` : (loaded > 0 ? `下载 Python 运行时（已 ${mb(loaded)} MB）…` : '加载 Python 运行时…') });
         }, extraPkgs, { signal: ctx.signal, timeoutMs: codeTimeoutMs(args.timeout_sec), onOutput: (log) => emit({ stream: log.level === 'error' ? 'stderr' : 'stdout', delta: `[${log.level}] ${log.text}\n` }) });
         emit({ status: out.ok ? 'ok' : 'error', sandboxOk: !!out.ok, lang: 'python', logs: out.logs, result: out.result, error: out.error, durationMs: out.durationMs, timedOut: out.timedOut });
         return formatExecResult('Python', out) + commandRepairNote(retainCommandSource(name, args, ctx, out));
       }
       case 'execute_cpp': {
-        emit({ status: 'running', lang: 'cpp', note: '启动本地 C++ 工具链；源码不发送给远程编译器…' });
+        const cppRemote = ctx.cppMode !== 'local';
+        if (cppRemote && isNetworkOffline()) {
+          const msg = 'C++ 远程模式需要网络，当前处于离线状态。请在设置 → C++ 运行方式中切换为「本地」，或稍后再试。';
+          emit({ status: 'error', lang: 'cpp', error: { message: msg } });
+          return msg;
+        }
+        emit({ status: 'running', lang: 'cpp', note: cppRemote
+          ? '远程模式：源码将发送至 godbolt.org（Compiler Explorer）编译执行…'
+          : '启动本地 C++ 工具链；源码不发送给远程编译器…' });
         let code = String(args.code || '');
         const mainPath = normalizeFsPath(args.path);
         if (!code.trim() && mainPath) {
@@ -1057,10 +1066,14 @@ async function executeToolBody(outerName, outerArgs, ctx) {
           compiling: '本机 Clang/LLD 编译与链接中…',
           'program-start': '本机 WASI 程序执行中…',
         };
-        const out = await runCpp(code, {
+        const runOpts = {
           mainPath: mainPath || 'main.cpp', files: extraFiles, stdin, args: argv,
           timeoutMs: codeTimeoutMs(args.timeout_sec), signal: ctx.signal,
-          onPhase: (phase) => { if (notes[phase]) emit({ status: 'running', lang: 'cpp', workerStage: phase, note: notes[phase], progress: null }); },
+        };
+        const out = cppRemote ? await runCppRemote(code, runOpts) : await runCpp(code, {
+          ...runOpts,
+          // 启动阶段（Worker 载入脚本、尚未开始下载）无字节数：progress:-1 表示不确定进度条；下载开始后由 onProgress 给出百分比。
+          onPhase: (phase) => { if (notes[phase]) emit({ status: 'running', lang: 'cpp', workerStage: phase, note: notes[phase], progress: phase === 'bootstrap' || phase === 'executing' ? -1 : null }); },
           onProgress: (p) => {
             const total = Number(p?.total) || 0;
             const loaded = Math.min(Number(p?.loaded) || 0, total || Number(p?.loaded) || 0);
