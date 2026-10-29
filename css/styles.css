@@ -1776,8 +1776,9 @@ html[data-motion="off"] .file-viewer.switching > :not(.file-viewer-head) { anima
 .set-sub { font-size: var(--ui-fs-11_5px, 11.5px); color: var(--fg-3); margin-top: 2px; line-height: 1.4; }
 .set-ctl { flex: 0 0 auto; }
 .user-salutation-row { align-items: flex-start; }
-.user-salutation-control { display: flex; align-items: center; gap: 7px; min-width: 0; }
-.user-salutation-input-wrap { position: relative; flex: 0 1 230px; width: 230px; min-width: 120px; }
+.user-salutation-control { display: flex; align-items: center; gap: 7px; min-width: 0; width: 230px; max-width: 100%; box-sizing: border-box; }
+.user-salutation-input-wrap { position: relative; flex: 1 1 0; width: auto; min-width: 72px; }
+.user-salutation-control #save-user-salutation { flex: 0 0 auto; }
 .user-salutation-control .set-input { display: block; width: 100%; min-width: 0; padding: 7px 34px 7px 9px; }
 .user-salutation-status { position: absolute; top: 50%; right: 9px; transform: translateY(-50%); width: 16px; text-align: center; pointer-events: none; font-size: var(--ui-fs-11_5px, 11.5px); font-weight: 650; color: var(--fg-3); white-space: nowrap; }
 .user-salutation-status.available { color: #258047; }
