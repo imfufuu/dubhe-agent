@@ -29,7 +29,8 @@ test('salutation input includes its trailing local status and keeps the check/cr
   assert.match(settings, /status\.textContent = result\.ok \? '✓' : '✗';/);
   assert.match(settings, /salutationCheckTimer = setInterval\(refreshSalutation, 1000\)/);
   assert.match(app, /<div class="user-salutation-input-wrap">[\s\S]*?id="set-user-salutation"[^>]*aria-describedby="set-user-salutation-status"[\s\S]*?id="set-user-salutation-status"[\s\S]*?<\/div>[\s\S]*?<button id="save-user-salutation"/);
-  assert.match(css, /\.user-salutation-input-wrap \{ position: relative; flex: 0 1 230px; width: 230px;/);
+  assert.match(css, /\.user-salutation-control \{ display: flex; align-items: center; gap: 7px; min-width: 0; width: 230px;/, '整组控件与上方 230px 菜单等宽，输入框收缩为剩余宽度');
+  assert.match(css, /\.user-salutation-input-wrap \{ position: relative; flex: 1 1 0; width: auto;/);
   assert.match(css, /\.user-salutation-status \{ position: absolute; top: 50%; right: 9px;/);
   assert.match(css, /\.user-salutation-control \.set-input \{ display: block; width: 100%;[^}]*padding: 7px 34px 7px 9px/);
   assert.match(css, /\.user-salutation-control \.mini-btn \{ flex: 0 0 auto; white-space: nowrap; \}/);
