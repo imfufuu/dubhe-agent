@@ -590,7 +590,7 @@ test('convert_file：三条通路计划、ffmpeg 参数、注册表/契约/挂�
   assert.equal(String.fromCharCode(wav[0], wav[1], wav[2], wav[3]), 'RIFF');
   const { TOOL_DEFS } = await import('../js/tools.js');
   assert.ok(TOOL_DEFS.some((t) => t.name === 'convert_file' && /ffmpeg\.wasm/.test(t.description)));
-  assert.equal(TOOL_DEFS.length, 45, '含新增的 tool_library 与 xlsx_tool；V1.9 再增 patch_apply / dom_inspect / chart_render');
+  assert.equal(TOOL_DEFS.length, 46, '含新增的 tool_library 与 xlsx_tool；V1.9 再增 patch_apply / dom_inspect / chart_render；视频生成增 generate_video');
   const caps = await import('../js/capabilities.js');
   assert.ok(caps.CAPABILITY_REGISTRY.convert_file, '能力登记');
   assert.ok(caps.TOOL_MOUNT_RULES.convert_file, '按需挂载规则（no-rule 会全量下发）');

@@ -10,7 +10,7 @@ import { installFeedback } from './ui-feedback.js';
 import { installSpeechInput } from './ui-speech.js';
 import { createToolPresentation, presentationCallSettled, turnToolResults } from './toolpresentation.js?v=2026.10.25.1';
 import { paintEditFoldContent, syncEditingFold, toggleEditingFold } from './ui-editpreview.js?v=2026.10.25.1';
-import { paintOrderedAssistant, renderToolChipDetail, paintCommandRows, paintKnowledgeFold, syncToolMenuCursor, ownerOfTool, paintVisibleTurn, activeToolOwner, persistTurnTiming } from './ui-toolflow.js?v=2026.10.25.1';
+import { paintOrderedAssistant, renderToolChipDetail, paintCommandRows, paintKnowledgeFold, syncToolMenuCursor, ownerOfTool, paintVisibleTurn, activeToolOwner, persistTurnTiming, hydrateWebVideos } from './ui-toolflow.js?v=2026.10.25.1';
 import { classifyToolResult, toolResultFailed } from './toolwindows.js?v=2026.10.25.1';
 import { adjacentToolMessages, appendToolStream, toolFamily, commandRunFor } from './toolflow.js?v=2026.10.25.1';
 import { createRollbackFx } from './ui-rollback-fx.js?v=2026.10.25.1';
@@ -1666,6 +1666,68 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       } else if (node) node.remove();
       return $(`.${cls}`, wrap) || afterEl;
     };
+    // 联网 / 生成类工具（搜索、抓取、生图、生视频）：与 Explored File(s) 同样的折叠行，逐条列出调用。
+    // 只由同一簇的最后一条消息绘制（与路径折叠一致）；结果折在每行的「结果」里，不再逐条占用命令芯片。
+    const WEB_LABELS = {
+      search_web: [localeText('搜索网页', 'Searched web'), localeText('网页搜索', 'Web search')],
+      fetch_url: [localeText('抓取网页', 'Fetched page'), localeText('抓取网页', 'Fetched page')],
+      generate_image: [localeText('生成图片', 'Generated image'), localeText('生成图片', 'Generated image')],
+      generate_video: [localeText('生成视频', 'Generated video'), localeText('生成视频', 'Generated video')],
+    };
+    const webIcon = (name) => ({ search_web: ICON.search, fetch_url: ICON.globe, generate_image: ICON.image, generate_video: ICON.video })[name] || ICON.globe || '';
+    const paintWebFold = (afterEl) => {
+      let node = $('.web-activity', wrap);
+      const cluster = m._displayFragment ? [m] : adjacentToolMessages(msgsAll, m.id, (t) => toolFamily(t) === 'web');
+      const hostIsLast = !cluster.length || cluster[cluster.length - 1].id === m.id;
+      const calls = hostIsLast ? (cluster.length ? cluster : [m]).flatMap((x) => x.toolCalls || []).filter((c) => c && toolFamily(c) === 'web') : [];
+      if (!m._displayFragment) {
+        for (const x of cluster.slice(0, -1)) { const w = msgNodes.get(x.id), old = w && $('.web-activity', w); if (old) { old.remove(); syncAssistantShell(w); } }
+      }
+      if (!calls.length) { if (node) node.remove(); return $('.web-activity', wrap) || afterEl; }
+      const results = toolResults(m.id);
+      const rows = calls.map((c) => {
+        const tm = results.get(String(c.id));
+        const body = tm ? String(tm.content == null ? '' : tm.content) : '';
+        const status = c.status === 'error' || (tm && toolResultFailed(body)) ? 'error'
+          : (c.status === 'ok' || tm) ? 'ok' : 'running';
+        const a = c.args && typeof c.args === 'object' ? c.args : {};
+        const summary = String(a.query || a.url || a.prompt || '').trim().slice(0, 140);
+        const videoPath = c.name === 'generate_video' ? (/\[视频已生成\] (outputs\/[^\s]+\.mp4)/.exec(body) || [])[1] || '' : '';
+        return { id: String(c.id), name: c.name, summary, status, body, videoPath };
+      });
+      const label = rows.length === 1 ? WEB_LABELS[rows[0].name]?.[0] || rows[0].name : `${localeText('联网工具', 'Web tools')} ${rows.length}`;
+      const working = rows.some((r) => r.status === 'running') && getBusy() && !m.cancelled;
+      const stateText = (s) => ({ ok: localeText('完成', 'Done'), error: localeText('失败', 'Failed'), running: localeText('进行中', 'Running') })[s];
+      const sig = JSON.stringify(rows.map((r) => [r.id, r.status, r.body.length]));
+      if (!node) {
+        node = el('div', 'web-activity');
+        const [lo] = turnRange(msgsAll, idxA);
+        node._toggleKey = `${msgsAll[lo]?.id || m.id}:web-activity:${rows[0]?.id || m.id}`;
+        node._userToggle = fileToggle.get(node._toggleKey) ?? null;
+        node.addEventListener('click', (e) => {
+          if (e.target.closest('a, button, .chip-copy, details')) return;
+          node.classList.toggle('expanded');
+          node._userToggle = node.classList.contains('expanded');
+          fileToggle.set(node._toggleKey, node._userToggle);
+        });
+        afterEl.after(node);
+      } else if (node.previousElementSibling !== afterEl) afterEl.after(node);
+      node.dataset.ownerId = m.id;
+      node.classList.toggle('is-working', working);
+      if (node._webSig !== sig || node._webLabel !== label) {
+        node._webSig = sig; node._webLabel = label;
+        node.innerHTML = `<span class="chip-ico think-ico">${webIcon(rows[0]?.name) || ''}</span><span class="mono chip-name">${esc(label)}</span>`
+          + `<div class="chip-detail"><div class="fold-inner"><ul>${rows.map((r) => `<li class="web-row ${r.status}">`
+            + `<span class="web-name">${esc(WEB_LABELS[r.name]?.[0] || r.name)}</span>`
+            + `<span class="web-arg mono" title="${esc(r.summary)}">${esc(r.summary)}</span>`
+            + `<span class="web-state">${esc(stateText(r.status))}</span>`
+            + (r.body ? `<details class="web-result"><summary>${localeText('结果', 'Result')}</summary><pre>${esc(r.body.slice(0, 6000))}</pre></details>` : '')
+            + (r.videoPath ? `<div class="web-video" data-path="${esc(r.videoPath)}"></div>` : '')
+            + '</li>').join('')}</ul></div></div>`;
+        hydrateWebVideos(node, (p) => agent.fs.read(p));
+      }
+      return $('.web-activity', wrap) || afterEl;
+    };
     // Editing shows only changed lines. Its stable shell is never rebuilt for a parameter delta.
     const paintEditFold = (afterEl, liveNow) => {
       const edited = mergedPaths('write_file', pathsOfEdit);
@@ -1720,10 +1782,11 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     };
     const afterKnowledge = paintKnowledgeFold(wrap, m, chips, { msgsAll, msgNodes, syncFileFold, syncAssistantShell, decodeRawJsonString });
     const afterRead = paintPathFold('explored-files', 'read_file', ICON.file, 'Explored file', 'Explored files', afterKnowledge, pathsOfExplored);
+    const afterWeb = paintWebFold(afterRead);
     const currentTurn = idxA >= msgsAll.findLastIndex((x) => x.role === 'user' && !x.silent);
     const resultIds = new Set(toolResults(m.id).keys());
     const writing = currentTurn && getBusy() && !m.cancelled && !presentationStopped && fileCluster('write_file').flatMap((x) => x.toolCalls || []).some((c) => c.name === 'write_file' && !presentationCallSettled(c, resultIds));
-    paintEditFold(afterRead, !!writing);
+    paintEditFold(afterWeb, !!writing);
     const read = (m.toolCalls || []).filter((c) => c.name === 'read_file').at(-1);
     const readNode = $('.explored-files', wrap);
     if (read && readNode) {
@@ -1750,7 +1813,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     let hasFlow = false;
     for (const frag of w.querySelector(':scope > .assistant-flow')?.children || []) {
       const b = frag.querySelector(':scope > .md-body');
-      const empty = !frag.querySelector(':scope > .reasoning, :scope > .explored-files, :scope > .edited-files, :scope > .searched-library')
+      const empty = !frag.querySelector(':scope > .reasoning, :scope > .explored-files, :scope > .web-activity, :scope > .edited-files, :scope > .searched-library')
         && !frag.querySelector(':scope > .tool-chips')?.children.length && !(b && !b.classList.contains('empty') && b.innerHTML.trim());
       frag.classList.toggle('frag-empty', empty);
       hasFlow ||= !empty;
@@ -1759,7 +1822,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     const hasReason = !!$('.reasoning', w);
     const chipsEl = $('.tool-chips', w);
     const hasChips = !!(chipsEl && chipsEl.children.length > 0);
-    const hasExplored = !!$('.explored-files', w);
+    const hasExplored = !!$('.explored-files', w) || !!$('.web-activity', w);
     const hasEdited = !!$('.edited-files', w);
     const hasSearched = !!$('.searched-library', w);
     const footEl = $('.msg-foot', w);

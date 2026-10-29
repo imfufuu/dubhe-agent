@@ -9,6 +9,7 @@ import { sanitizeSvgMarkup, svgDataUrl } from './svg-safety.js';
 import { text as localeText } from './locale.js';
 import { getOrCreateUserSalutation, validateUserSalutation, saveUserSalutation } from './user-salutation.js';
 import { getLanguage, onLanguageChange } from './locale.js';
+import { VIDEO_GEN_MODELS, resolveVideoGenModel } from './video-gen.js';
 // 设置弹窗：API Key / 中继地址 / 主题 / 字号 / 沙箱 / 联网 / 快速 / 思考 / 识图·音视频解析模型 / 清空数据 / 关于
 import { APP_RELEASE, APP_VERSION, STORAGE_KEY, VISION_MODELS, VIDEO_MODELS, IMAGE_MODELS, DEFAULT_IMAGE_MODEL, isImageGenModel, imageModelLabel, resolveVisionModel, resolveVideoModel } from './config.js?v=2026.10.25.1';
 import { DEFAULT_GATEWAY_ID, getGateway, validateGatewayApiKey, validateGatewayBaseUrl, gatewayModelListLabel, defaultModelForGateway } from './gateway-registry.js?v=2026.10.25.1';
@@ -209,6 +210,9 @@ function syncMultimodalSelects(store) {
   const av = resolveVideoModel(settings.videoModel || settings.audioModel);
   // 生图模型随会话保存（store.state.imageModel），不在 settings 里；不在目录内的值退回默认
   const image = isImageGenModel(store && store.state && store.state.imageModel) ? store.state.imageModel : DEFAULT_IMAGE_MODEL;
+  // 视频生成模型：全局设置（settings.videoGenModel），不在目录内的值退回默认
+  const vgen = resolveVideoGenModel(settings.videoGenModel);
+  fillModelSelect($('#set-vgen-model'), VIDEO_GEN_MODELS, vgen);
   fillModelSelect($('#set-image-model'), IMAGE_MODELS, image);
   fillModelSelect($('#set-vision-model'), VISION_MODELS, vision);
   fillModelSelect($('#set-av-model'), VIDEO_MODELS, av);
@@ -957,6 +961,14 @@ export function mountSettings(store, { onRelayChanged, onKeySaved, onSettingChan
     toast(`生图模型已切换为 ${imageModelLabel(id)}（由 Agent 的 generate_image 工具调用，随当前会话保存）`, 'ok');
   });
   bindModelSelect('#set-vision-model', 'visionModel', resolveVisionModel);
+  const vgenSel = $('#set-vgen-model');
+  if (vgenSel) vgenSel.addEventListener('change', () => {
+    const id = resolveVideoGenModel(vgenSel.value);
+    store.state.settings.videoGenModel = id;
+    store.notify();
+    syncMultimodalSelects(store);
+    toast(`视频生成模型已切换为 ${(VIDEO_GEN_MODELS.find((m) => m.id === id) || {}).label || id}（generate_video 使用）`, 'ok');
+  });
   // 音视频解析模型合并为一个设置：analyze_video / analyze_audio 共用同一档位。
   // videoModel 是存档主键；audioModel 同步同值，旧快照与工具 ctx 的读取路径无需改动。
   const avSel = $('#set-av-model');
@@ -970,7 +982,7 @@ export function mountSettings(store, { onRelayChanged, onKeySaved, onSettingChan
   // 语言切换：模型档位的 tag/note 有中英两版，切换后立刻重排（面板开着时也生效）
   onLanguageChange(() => {
     paintMotionNote();
-    for (const sel of ['#set-image-model', '#set-vision-model', '#set-av-model']) { const el = $(sel); if (el) el._lang = ''; }
+    for (const sel of ['#set-image-model', '#set-vision-model', '#set-av-model', '#set-vgen-model']) { const el = $(sel); if (el) el._lang = ''; }
     syncMultimodalSelects(store);
     renderOfflineModelUI();
     renderManualModelList(store);

@@ -234,7 +234,7 @@ export function subagentTools(sandboxEnabled, def, { localCpp = true } = {}) {
   return list.length ? list : null;
 }
 
-export async function runSubagent(def, task, { apiKey, gatewayId = 'teamorouter', gatewayBaseUrl = '', model, thinking, reasoningLevel, sandboxEnabled, localCpp = true, webEnabled, fs, signal, onThinkingFallback, onWebFallback, imageModel, visionModel, videoModel, audioModel, onSubagentUsage, memory }) {
+export async function runSubagent(def, task, { apiKey, gatewayId = 'teamorouter', gatewayBaseUrl = '', model, thinking, reasoningLevel, sandboxEnabled, localCpp = true, webEnabled, fs, signal, onThinkingFallback, onWebFallback, imageModel, videoGenModel, visionModel, videoModel, audioModel, onSubagentUsage, memory, onThink }) {
   const offlineOnly = isNetworkOffline() || isOfflineModelId(model);
   const availableSubTools = subagentTools(sandboxEnabled, def, { localCpp });
   const subTools = offlineOnly ? (availableSubTools || []).filter((tool) => isOfflineToolAllowed(tool.name)) : availableSubTools;
@@ -253,6 +253,8 @@ export async function runSubagent(def, task, { apiKey, gatewayId = 'teamorouter'
   let subCacheCreation1h = 0;
   for (let i = 0; SUBAGENT_LOOP_MAX <= 0 || i < SUBAGENT_LOOP_MAX; i++) {
     if (signal && signal.aborted) throw new DOMException('Aborted', 'AbortError');
+    // 思考过程流式推给父工具芯片（onThink 缺省即不推送）；多轮工具调用之间用分隔行区分
+    if (i > 0 && typeof onThink === 'function') onThink(`\n\n— 第 ${i + 1} 轮 —\n`);
     const acc = createToolCallAccumulator();
     const tb = createThinkingTracker(); // 思考块需随 tool_use 回合回传，否则下一轮 400
     let text = '';
@@ -265,7 +267,7 @@ export async function runSubagent(def, task, { apiKey, gatewayId = 'teamorouter'
       messages,
       onEvent: (ev) => {
         if (ev.type === 'text') text += ev.text;
-        else if (ev.type === 'reasoning') tb.delta(ev.index, ev.text);
+        else if (ev.type === 'reasoning') { tb.delta(ev.index, ev.text); if (typeof onThink === 'function' && ev.text) onThink(String(ev.text)); }
         else if (ev.type === 'block_start' && ev.block && (ev.block.type === 'thinking' || ev.block.type === 'redacted_thinking')) tb.start(ev.index, ev.block);
         else if (ev.type === 'signature_delta') tb.signature(ev.index, ev.signature);
         else if (ev.type === 'tool_delta') acc.push(ev);
@@ -295,7 +297,7 @@ export async function runSubagent(def, task, { apiKey, gatewayId = 'teamorouter'
     messages.push({ role: 'assistant', text, toolCalls: calls, ...(blocks.length ? { thinkingBlocks: blocks } : {}) });
     for (const c of calls) {
       // imageModel 要透传：否则子智能体出图会绕开用户在模型菜单里选定的生图模型
-      const res = await executeTool(c.name, c.args, { fs, onUi: () => {}, apiKey, model, gatewayId, gatewayBaseUrl, imageModel: imageModel || null, visionModel: visionModel || null, videoModel: videoModel || null, audioModel: audioModel || null, sandboxEnabled, localCpp, signal });
+      const res = await executeTool(c.name, c.args, { fs, onUi: () => {}, apiKey, model, gatewayId, gatewayBaseUrl, imageModel: imageModel || null, videoGenModel: videoGenModel || null, visionModel: visionModel || null, videoModel: videoModel || null, audioModel: audioModel || null, sandboxEnabled, localCpp, signal });
       messages.push({ role: 'tool', toolCallId: c.id, name: c.name, content: res });
     }
   }
@@ -536,6 +538,8 @@ export function createAgent(store, hooks = {}) {
         now: new Date(),
         model,
         imageModel: store.state.imageModel || DEFAULT_IMAGE_MODEL,
+        // 视频生成模型：设置页「多模态模型」里选定（全局，不随会话）
+        videoGenModel: (store.state.settings && store.state.settings.videoGenModel) || null,
         filesNote: fsNote(),
         webNote: formatWebCapabilityNote({ relayOk, webEnabled: st.webEnabled !== false, tools: turnTools, dropped: nexusState && nexusState.turnDropped, deferred: nexusState && nexusState.turnDeferred }),
         relayNote: relayOk ? '' : RELAY_OFF_NOTE,
@@ -713,6 +717,7 @@ export function createAgent(store, hooks = {}) {
         localCpp: settings.localCppEnabled !== false,
         webEnabled: !offlineOnly && settings.webEnabled !== false && relayOk,
         imageModel: store.state.imageModel || DEFAULT_IMAGE_MODEL,
+        videoGenModel: (store.state.settings && store.state.settings.videoGenModel) || null,
         // 识图 / 视频识别模型：设置页「多模态模型」全局生效（不随会话）
         visionModel: settings.visionModel || null,
         videoModel: settings.videoModel || null,
@@ -1378,7 +1383,7 @@ export function createAgent(store, hooks = {}) {
               ? 'pyodide-wasm'
               : call.name === 'execute_javascript'
                 ? 'worker-8ms'
-                : (call.name === 'dispatch_subagent' || call.name === 'generate_image' || call.name === 'analyze_image' || call.name === 'analyze_pdf' || call.name === 'analyze_svg' || call.name === 'analyze_video' || call.name === 'analyze_audio')
+                : (call.name === 'dispatch_subagent' || call.name === 'generate_image' || call.name === 'generate_video' || call.name === 'analyze_image' || call.name === 'analyze_pdf' || call.name === 'analyze_svg' || call.name === 'analyze_video' || call.name === 'analyze_audio')
                   ? 'gateway-api'
                   : 'browser-0ms';
             telemetry.recordTool(call.name, Math.round(waveMs / Math.max(1, toolCalls.length)), { engine, ok: !isErr });

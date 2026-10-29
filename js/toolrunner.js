@@ -206,6 +206,7 @@ export function createToolRunner({ store, emit, getFs, runSubagent } = {}) {
       gatewayId: turn.gatewayId,
       gatewayBaseUrl: turn.gatewayBaseUrl,
       imageModel: turn.imageModel,
+      videoGenModel: turn.videoGenModel,
       visionModel: turn.visionModel,
       videoModel: turn.videoModel,
       audioModel: turn.audioModel,
@@ -225,7 +226,7 @@ export function createToolRunner({ store, emit, getFs, runSubagent } = {}) {
           captureEditPreviewSnapshot(call, fs, { path: patch.editedPath, refresh: true });
         emit('onToolEvent', call, patch);
       },
-      dispatch: async (agentId, subTask, onNote) => {
+      dispatch: async (agentId, subTask, onNote, opts = {}) => {
         const def = findSubagent(agentId);
         if (!def) return `未知子智能体：${agentId}。请用 enum 中列出的 ID。`;
         onNote && onNote(`子智能体「${def.name}」思考中…`);
@@ -240,10 +241,12 @@ export function createToolRunner({ store, emit, getFs, runSubagent } = {}) {
           localCpp: turn.localCpp !== false,
           webEnabled: turn.webEnabled,
           imageModel: turn.imageModel,
+          videoGenModel: turn.videoGenModel,
           visionModel: turn.visionModel,
           videoModel: turn.videoModel,
       audioModel: turn.audioModel,
           memory: store.state.memory,
+          onThink: typeof opts.onThink === 'function' ? opts.onThink : undefined, // 子智能体思考过程流式推送到父芯片
           onThinkingFallback: (m) => emit('onThinkingFallback', m),
           onWebFallback: (m, why) => emit('onWebFallback', m, why),
           onSubagentUsage: (b) => {

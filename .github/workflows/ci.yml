@@ -70,6 +70,14 @@ jobs:
       - name: tests/turn-settle.test.mjs · 回合结束释放工具呈现队列
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/turn-settle.test.mjs
+
+      - name: tests/search-fallback.test.mjs · 回退到 DuckDuckGo 的搜索结果不判为工具失败
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/search-fallback.test.mjs
+
+      - name: tests/video-and-attachments.test.mjs · 视频生成（generate_video）与子智能体附件
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/video-and-attachments.test.mjs
       - name: tests/moderation-prewarm.test.mjs · 图像审核按需加载，避免与本地 C++ 抢内存
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/moderation-prewarm.test.mjs

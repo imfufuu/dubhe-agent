@@ -69,6 +69,7 @@ export const CAPABILITY_REGISTRY = Object.freeze({
   get_browser_environment: R('invariantCore', 'local', { parallel: true }),
   // ── 多模态（永远在；识图走网关属 remote，生图计费属 cost）──
   generate_image: R('invariantCore', 'cost', { heavy: true, tags: ['image'] }),
+  generate_video: R('invariantCore', 'cost', { heavy: true, tags: ['video'] }),
   analyze_image: R('invariantCore', 'remote', { core: 11, parallel: true, heavy: true, tags: ['image'] }),
   analyze_pdf: R('invariantCore', 'remote', { tags: ['image'] }),
   analyze_svg: R('invariantCore', 'remote', { tags: ['image'] }),

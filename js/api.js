@@ -1420,3 +1420,36 @@ export async function editImage({ model, apiKey, prompt, images = [], mask, size
   }, { signal, onRetry, parse: (j) => parseImageResponse(j, format, { status: 200 }) });
   return json;
 }
+
+// ── 视频生成（/v1/videos）：创建 / 查询 / 下载内容 ─────────────────────────
+// 文档：POST /v1/videos 创建；GET /v1/videos/{id} 查询；GET /v1/videos/{id}/content 下载（媒体保留 7 天）。
+// 创建请求带 Idempotency-Key：重试时必须沿用同一个 key，避免重复计费。
+async function videoRequest(method, path, { apiKey, body, signal, timeoutMs = REQUEST_TIMEOUT_MS, gatewayId = DEFAULT_GATEWAY_ID, gatewayBaseUrl = '', idempotencyKey = '', binary = false } = {}) {
+  const t = withTimeout(signal, timeoutMs);
+  try {
+    const headers = { ...authHeaders('openai', apiKey, gatewayId), ...(body ? { 'Content-Type': 'application/json' } : {}), ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}) };
+    const r = await request(path, { method, headers, body: body ? JSON.stringify(body) : undefined, signal: t.signal, gatewayId, gatewayBaseUrl });
+    if (!r.ok) {
+      const text = await r.text().catch(() => '');
+      const err = new Error(httpErrorMessage(r.status, text, gatewayId));
+      err.status = r.status;
+      err.retryable = r.status === 429 || r.status >= 500;
+      throw err;
+    }
+    return await (binary ? r.arrayBuffer() : r.json());
+  } finally {
+    t.release();
+  }
+}
+
+export function createVideoJob(opts) {
+  return videoRequest('POST', '/v1/videos', opts);
+}
+
+export function getVideoJob(id, opts = {}) {
+  return videoRequest('GET', `/v1/videos/${encodeURIComponent(id)}`, { ...opts, timeoutMs: opts.timeoutMs || 30000 });
+}
+
+export function fetchVideoContent(id, opts = {}) {
+  return videoRequest('GET', `/v1/videos/${encodeURIComponent(id)}/content`, { ...opts, binary: true, timeoutMs: opts.timeoutMs || 120000 });
+}
