@@ -53,6 +53,9 @@ export const CAPABILITY_REGISTRY = Object.freeze({
   zip_files: R('invariantCore', 'fs-write', { heavy: true }),
   unzip_file: R('invariantCore', 'fs-write', { heavy: true }),
   convert_file: R('invariantCore', 'fs-write', { heavy: true }),
+  patch_apply: R('invariantCore', 'fs-write', { heavy: true }),
+  dom_inspect: R('invariantCore', 'fs-read', { parallel: true, readOnly: true }),
+  chart_render: R('invariantCore', 'fs-write', { heavy: true }),
   // ── 本地工作台（永远在，纯本地）──
   diff_text: R('invariantCore', 'local', { parallel: true, readOnly: true }),
   json_tool: R('invariantCore', 'local', { parallel: true, readOnly: true }),

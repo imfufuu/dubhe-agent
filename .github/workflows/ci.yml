@@ -63,6 +63,9 @@ jobs:
       - name: tests/text-moderation-bypass.test.mjs · 文本审核规避写法回归
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/text-moderation-bypass.test.mjs
+      - name: tests/tools-v19.test.mjs · V1.9 工具（patch_apply / dom_inspect / chart_render）
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/tools-v19.test.mjs
       - name: tests/moderation-prewarm.test.mjs · 图像审核按需加载，避免与本地 C++ 抢内存
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/moderation-prewarm.test.mjs
