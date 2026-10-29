@@ -5934,13 +5934,13 @@ test('V1.8 发布标识与入口构建一致；历史完整但不再提供仓库
   const html = fsp.readFileSync(new URL('../app.html', import.meta.url), 'utf8');
   const home = fsp.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
   const docs = fsp.readFileSync(new URL('../docs.html', import.meta.url), 'utf8');
-  assert.equal(APP_RELEASE, 'V1.8');
+  assert.equal(APP_RELEASE, 'V1.9');
   assert.ok(html.includes('Dubhe Agent ' + APP_RELEASE + ' —'));
   assert.ok(home.includes('Dubhe Agent ' + APP_RELEASE + ' Stable'));
   assert.ok(docs.includes('title="Dubhe Agent ' + APP_RELEASE + '">' + APP_RELEASE + '</span>'));
   assert.match(docs, /CURRENT RELEASE/);
   assert.ok(docs.includes('app-version" content="' + APP_VERSION));
-  for (const release of ['V1.0','V1.1','V1.2','V1.3','V1.4 Stable','V1.5','V1.6','V1.7','V1.8 Stable']) assert.ok(docs.includes(release));
+  for (const release of ['V1.0','V1.1','V1.2','V1.3','V1.4 Stable','V1.5','V1.6','V1.7','V1.8','V1.9 Stable']) assert.ok(docs.includes(release));
   assert.doesNotMatch(docs, /href="[^" ]*(?:CHANGELOG|pulls)/);
 });
 test('电脑端沙箱面板从右侧展开，手机端才从底部上滑', async () => {

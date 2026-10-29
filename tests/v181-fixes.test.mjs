@@ -874,9 +874,9 @@ test('文档页部署清单使用主题化圆角链接与 SVG 外链图标（静
 
 test('文档页首页长描述与独立声明按实际文案精确翻译', () => {
   const docs = read('../docs.html');
-  const description = '查看 V1.8 Stable 的重点更新、历史版本概览，以及使用本应用前应了解的协议、使用规范与隐私约定。';
+  const description = '查看 V1.9 Stable 的重点更新、历史版本概览，以及使用本应用前应了解的协议、使用规范与隐私约定。';
   assert.ok(docs.includes(description));
-  assert.equal(translateUI(description, 'en'), 'Review the V1.8 Stable highlights, release history, and the agreement, usage policy, and privacy terms to know before using the app.');
+  assert.equal(translateUI(description, 'en'), 'Review the V1.9 Stable highlights, release history, and the agreement, usage policy, and privacy terms to know before using the app.');
   assert.equal(translateUI('互不隶属', 'en'), 'are unaffiliated');
 });
 

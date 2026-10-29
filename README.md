@@ -1,6 +1,6 @@
 # ◐ Dubhe Agent — 基于 TeamoRouter 的网页端智能体
 
-> **Dubhe Agent V1.8 Stable** · 架构 **Dubhe Helix 3.0 · DC（Dubhe Cambrian，天枢·寒武）** · 构建以 [部署清单](https://imfufuu.github.io/dubhe-agent/build.json) 为准 · [线上介绍](https://imfufuu.github.io/dubhe-agent/) · 对话 [app.html](./app.html) · [CHANGELOG](./CHANGELOG.md)
+> **Dubhe Agent V1.9 Stable** · 架构 **Dubhe Helix 3.0 · DC（Dubhe Cambrian，天枢·寒武）** · 构建以 [部署清单](https://imfufuu.github.io/dubhe-agent/build.json) 为准 · [线上介绍](https://imfufuu.github.io/dubhe-agent/) · 对话 [app.html](./app.html) · [CHANGELOG](./CHANGELOG.md)
 
 [![CI](https://github.com/imfufuu/dubhe-agent/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/imfufuu/dubhe-agent/actions/workflows/ci.yml)
 [![Pages](https://github.com/imfufuu/dubhe-agent/actions/workflows/pages.yml/badge.svg?branch=main)](https://github.com/imfufuu/dubhe-agent/actions/workflows/pages.yml)
@@ -17,6 +17,17 @@ npm ci && npm test   # 一条命令跑完 tests/ 下全部 .mjs + Python 护栏�
 - Key 只存在本机 localStorage，请求直发网关
 - 网页检索走显式工具：本地 `server.py` 提供单页 `fetch_url`，新版 Cloudflare Worker 另提供 `search_web` 与同源 `crawl_site`；不向模型请求注入原生网页搜索字段，Worker 能力由 `/api/health` 探测
 - 下面先「快速开始」。协议表和架构图是排错用的，日常对话不必先读完
+
+## V1.9 Stable：补丁应用、HTML 静态检查与 CSV 图表（2026-10-29）
+
+- **`patch_apply`**：把 unified diff（可由 `diff_text` 产生）严格应用到沙箱文件。每个 hunk 的上下文必须与文件精确匹配，任一处不一致则整份补丁拒绝，文件保持不变；可用 `out` 写到另一个路径。
+- **`dom_inspect`**：不启动浏览器，对沙箱 HTML 做静态检查（`lang`、`title`、`viewport`、标题层级、图片 `alt`、链接与按钮可读名称、表单标签、外部脚本）。只报告可从源码确定的问题；真实渲染与截图仍用 `browser_sandbox`。
+- **`chart_render`**：把 CSV 的标签列与数值列渲染为 SVG 柱状图或折线图（200 行以内）；数值列含非数字时报错，不画半张图。大数据请先用 `data_tool` 聚合。
+- 编辑预览：高亮行撑满可滚动宽度，行号与正文不再重叠。
+- 思考过程：非 GPT 模型的完整思考按 Markdown 渲染，与正文一致地逐块浮现。
+- 复制「本轮回复」会拼接本轮全部助手消息，表格与代码保留排版。
+- 文本审核：补充拼写规避（如 `b o m b`）、购买途径句式与中文勒索病毒等规则，并加入回归测试。
+- 中断或失败的轮次保留为带状态的助手消息，不再覆盖上一条未回答的提问。
 
 ## V1.8.3：沙箱文件预览增强与第一方直连修复（2026-10-19）
 

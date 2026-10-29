@@ -10,7 +10,7 @@
 <!-- 首帧前置（必须早于任何样式）：主题 / 动效 / 语言偏好在首次绘制前写好，深色用户不再先看到浅色页再缓慢渐变 -->
 <script src="js/theme-boot.js?v=2026.10.25.1" data-theme-fallback="system"></script>
 <meta name="app-version" content="2026.10.25.1" />
-<meta name="app-release" content="V1.8" />
+<meta name="app-release" content="V1.9" />
 <meta name="description" content="Dubhe Agent — 浏览器里的智能体。沙箱、文件、生图、深度思考，打开网页即可开始。" />
 <title>Dubhe Agent — 浏览器里的智能体</title>
 <!-- 聊天平台链接预览（微信 / QQ / Discord / Telegram / Slack 等抓取）：图标 + 标题 + 简介 -->
@@ -174,9 +174,9 @@ RMSE = 0.5831
 <section class="section" id="capabilities"><div class="section-head"><p class="kicker">CAPABILITIES</p><h2>从任务到产物，功能在同一处。</h2><p class="sub">只列能实际调用的能力；是否可用，由当前环境与工具表决定。</p></div>
 <div class="cap-grid">
 <article class="card"><span class="feature-no">01 / BUILD</span><h3>执行与修补</h3><p>浏览器 JS / Pyodide / 本地 C++（WASM）可单独关闭。编译在本地运行，不发送给远程编译器；长命令保留源码，小错误局部替换后按路径重跑，不再把全文抄一遍。</p></article>
-<article class="card"><span class="feature-no">02 / FILES</span><h3>工作区与文件</h3><p>读取、全文写入预览、追加、替换、搜索与差分。会话工作区最高120MB，可下载单文件或整包ZIP。</p></article>
-<article class="card"><span class="feature-no">03 / VERIFY</span><h3>生成项目，实际检查</h3><p>安装本地伴侣后，用真实Chromium调试Agent创建的静态页面：检查、点击、输入、重载与截图。Pages本身不提供原生浏览器。</p></article>
-<article class="card"><span class="feature-no">04 / READ</span><h3>图片、视频与文档</h3><p>专用工具识图、分析视频和PDF；图片生成与编辑经网关调用，结果保存到工作区。对话模型不假装看见附件。</p></article>
+<article class="card"><span class="feature-no">02 / FILES</span><h3>工作区与文件</h3><p>读取、全文写入预览、追加、替换、搜索与差分。差分得到的补丁可严格应用回文件：任一上下文不一致则整份补丁拒绝，文件保持不变。会话工作区最高120MB，可下载单文件或整包ZIP。</p></article>
+<article class="card"><span class="feature-no">03 / VERIFY</span><h3>生成项目，实际检查</h3><p>安装本地伴侣后，用真实Chromium调试Agent创建的静态页面：检查、点击、输入、重载与截图。无需浏览器的静态检查（dom_inspect）可直接查看标题层级、图片alt、链接与表单标签。Pages本身不提供原生浏览器。</p></article>
+<article class="card"><span class="feature-no">04 / READ</span><h3>图片、视频、文档与图表</h3><p>专用工具识图、分析视频和PDF；图片生成与编辑经网关调用，结果保存到工作区。CSV 的标签列与数值列可直接渲染为 SVG 柱状图或折线图。对话模型不假装看见附件。</p></article>
 <article class="card"><span class="feature-no">05 / SHARE</span><h3>选中再分享</h3><p>多选消息，导出长图或同风格的单页HTML。工具与思考细节可选，离线页面保留折叠、复制和图表操作。</p></article>
 <article class="card"><span class="feature-no">06 / CONTROL</span><h3>语言、输入与反馈</h3><p>中英文界面、原生语音输入、超过60秒后台完成通知，以及可选的最新答复赞踩。硬件与权限决定按钮可用性。</p></article>
 </div>
@@ -188,7 +188,7 @@ RMSE = 0.5831
 </section>
 <section class="cta-block"><h2>把目标写下来。</h2><p>选一个模型，给出约束，从第一步开始。</p><a class="cta" href="./app.html">打开 Dubhe Agent</a></section>
 </main>
-<footer><span>Dubhe Agent V1.8 Stable</span><span class="foot-links"><button type="button" class="nav-link language-toggle" data-language-toggle title="语言">EN</button><a href="./docs.html">文档与协议</a><a href="mailto:lks.tan.cn@gmail.com">联系</a><a href="https://github.com/imfufuu/dubhe-agent" target="_blank" rel="noopener">GitHub</a><a href="./app.html">对话</a></span></footer>
+<footer><span>Dubhe Agent V1.9 Stable</span><span class="foot-links"><button type="button" class="nav-link language-toggle" data-language-toggle title="语言">EN</button><a href="./docs.html">文档与协议</a><a href="mailto:lks.tan.cn@gmail.com">联系</a><a href="https://github.com/imfufuu/dubhe-agent" target="_blank" rel="noopener">GitHub</a><a href="./app.html">对话</a></span></footer>
 </div>
 <script type="module" src="js/home.js?v=2026.10.25.1"></script>
 </body>
