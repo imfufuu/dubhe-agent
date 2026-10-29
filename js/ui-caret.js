@@ -23,12 +23,22 @@ const MIRROR_PROPS = ['boxSizing', 'fontStyle', 'fontVariant', 'fontWeight', 'fo
   'letterSpacing', 'textTransform', 'textIndent', 'textAlign', 'wordSpacing', 'tabSize',
   'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth'];
 
-export function installCaretEffect(input, { doc = document } = {}) {
+// Windows 用户反馈：高 DPI 缩放 + 中文字体回退时，镜像排版与真实 textarea 的像素坐标不一致，
+// 自绘光标与输入位置错位，且原生光标已被隐藏，导致「看起来在 A 处、字实际进在 B 处」。
+// 因此 Windows 上不做自绘光标，保留原生光标（位置由系统文本引擎决定，必然正确）。
+export function isWindowsPlatform(nav = globalThis.navigator) {
+  if (!nav) return false;
+  const uaPlatform = nav.userAgentData && nav.userAgentData.platform;
+  return /windows/i.test(String(uaPlatform || '')) || /windows/i.test(String(nav.userAgent || '')) || /win(32|64)/i.test(String(nav.platform || ''));
+}
+
+export function installCaretEffect(input, { doc = document, nav = globalThis.navigator } = {}) {
   const win = doc.defaultView;
   const host = input && input.parentElement;
   if (!input || !host || !win) return { stop() {}, refresh() {} };
   // 触屏（iOS / iPad 无触控板）保留原生光标：自绘光标在这些设备上会消失
   if (win.matchMedia && !win.matchMedia('(pointer: fine)').matches) return { stop() {}, refresh() {} };
+  if (isWindowsPlatform(nav)) { input.dataset.caretEffect = 'native'; return { stop() {}, refresh() {} }; }
   input.dataset.caretEffect = 'custom';
   if (win.getComputedStyle(host).position === 'static') host.style.position = 'relative';
 
@@ -51,15 +61,17 @@ export function installCaretEffect(input, { doc = document } = {}) {
     const marker = doc.createElement('span');
     marker.textContent = '\u200b';
     mirror.appendChild(marker);
+    // 用亚像素的 getBoundingClientRect 代替整数的 offsetLeft/Top，减少高 DPI 下的取整偏差
     const ir = input.getBoundingClientRect(), hr = host.getBoundingClientRect();
+    const mr = marker.getBoundingClientRect(), mirrorRect = mirror.getBoundingClientRect();
     const fs = parseFloat(cs.fontSize) || 14;
     const lh = parseFloat(cs.lineHeight) || fs * 1.4 || 20;
     // V1.8.1：旧版高度取整行行高，比文字长出一截（上冒 2px、下拖 6px 多）。
     // 改为约 1.2em（接近原生光标的字面高度），整体下沉 2px 对齐文字主体；
     // 2px 宽的光标经 CARET_NUDGE.x = -1 左移后，正好以插入点为中心（左右各 1px）。
     caret.style.height = `${Math.round(Math.min(lh, fs * CARET_EM))}px`;
-    const x = ir.left - hr.left + marker.offsetLeft - input.scrollLeft + CARET_NUDGE.x;
-    const y = ir.top - hr.top + marker.offsetTop - input.scrollTop + CARET_NUDGE.y;
+    const x = ir.left - hr.left + (mr.left - mirrorRect.left) - input.scrollLeft + CARET_NUDGE.x;
+    const y = ir.top - hr.top + (mr.top - mirrorRect.top) - input.scrollTop + CARET_NUDGE.y;
     caret.style.transform = `translate(${x}px, ${y}px)`;
   };
   const update = () => {

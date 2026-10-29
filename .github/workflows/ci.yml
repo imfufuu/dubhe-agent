@@ -60,6 +60,9 @@ jobs:
       - name: tests/local-text-policy.test.mjs · 本地文本审核规则
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/local-text-policy.test.mjs
+      - name: tests/text-moderation-bypass.test.mjs · 文本审核规避写法回归
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/text-moderation-bypass.test.mjs
       - name: tests/moderation-prewarm.test.mjs · 图像审核按需加载，避免与本地 C++ 抢内存
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/moderation-prewarm.test.mjs

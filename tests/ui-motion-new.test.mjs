@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { JSDOM } from 'jsdom';
 import { installWelcomeMotion } from '../js/ui-welcome-motion.js';
-import { renderReasoningLines } from '../js/ui-reasoning-motion.js';
+import { paintReasoningBlocks } from '../js/ui-reasoning-motion.js';
 
 function page(html) { return new JSDOM(html, { pretendToBeVisual: true }); }
 
@@ -46,20 +46,19 @@ test('welcome composer docks under the prompt while empty, returns to the bottom
   dom.window.close();
 });
 
-test('reasoning reveals source lines as safe text, preserves existing lines, and keeps summary mode separate', () => {
-  const dom = page('<pre class="think-full-text"></pre><div class="think-summary-list"></div>');
+test('reasoning paints through the body chunk reveal: new blocks fade in, appended text fades in place', () => {
+  const dom = page('<div class="think-full-text md-body"></div><div class="think-summary-list"></div>');
   const full = dom.window.document.querySelector('.think-full-text');
   const summary = dom.window.document.querySelector('.think-summary-list');
-  dom.window.document.documentElement.dataset.motion = 'off';
-  renderReasoningLines(full, '<step>first</step>\nsecond line', { animate: true });
-  const firstLine = full.querySelector('.reasoning-line');
-  assert.equal(full.textContent, '<step>first</step>\nsecond line');
-  assert.equal(full.querySelector('step'), null, 'reasoning stays escaped text, not markup');
-  assert.equal(full.querySelectorAll('.reasoning-line').length, 2);
-  renderReasoningLines(full, '<step>first</step>\nsecond line\nthird line', { animate: true });
-  assert.equal(full.querySelector('.reasoning-line'), firstLine, 'existing lines are not rebuilt while streaming');
-  assert.equal(full.textContent, '<step>first</step>\nsecond line\nthird line');
-  renderReasoningLines(summary, ['Plan', 'Check constraints'], { summary: true, animate: true });
+  dom.window.document.documentElement.dataset.motion = 'on';
+  paintReasoningBlocks(full, '<p>&lt;step&gt;first&lt;/step&gt;</p>', { animate: true });
+  assert.equal(full.textContent, '<step>first</step>', 'reasoning stays escaped text, not markup');
+  assert.equal(full.querySelector('step'), null);
+  assert.ok(full.querySelector('p.chunk'), 'first streamed block fades in as a whole block');
+  paintReasoningBlocks(full, '<p>&lt;step&gt;first&lt;/step&gt; more words</p><ul><li>second</li></ul>', { animate: true });
+  assert.equal(full.querySelector('.chunk-tail')?.textContent, ' more words', 'only appended text fades in place');
+  assert.ok(full.querySelector('ul.chunk'), 'a new Markdown block fades in');
+  paintReasoningBlocks(summary, '<div class="think-summary-item">Plan</div><div class="think-summary-item">Check constraints</div>', { animate: true });
   assert.deepEqual([...summary.querySelectorAll('.think-summary-item')].map((node) => node.textContent), ['Plan', 'Check constraints']);
   assert.equal(summary.querySelector('.think-full-text'), null);
   dom.window.close();

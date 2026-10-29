@@ -1521,11 +1521,19 @@ export function createAgent(store, hooks = {}) {
         exec.machine.transition(EXECUTION_STATES.INTERRUPTED, '用户中止（Abort）', { phase: exec.machine.state });
         const userAt = store.state.messages.findLastIndex((m) => m.role === 'user');
         const last = store.state.messages.slice(userAt + 1).reverse().find((m) => m.role === 'assistant');
+        // 用户在输出前中止：补一条空的助手占位，让这一轮可见、可分享，而不是留下悬空的提问。
         if (last) store.updateMessage(last.id, { cancelled: true, done: true });
+        else store.pushMessage({ role: 'assistant', text: '', cancelled: true, done: true, model: store.state.model });
         emit('onCancelled');
       } else {
         setStatus('error');
         exec.machine.transition(EXECUTION_STATES.INTERRUPTED, `执行出错：${String((err && err.message) || err).slice(0, 80)}`, { phase: exec.machine.state });
+        {
+          // 网关失败且没有任何输出：补一条带错误的助手占位，避免用户的提问悬空，也让它可以被分享。
+          const failAt = store.state.messages.findLastIndex((m) => m.role === 'user');
+          const answered = store.state.messages.slice(failAt + 1).some((m) => m.role === 'assistant');
+          if (!answered) store.pushMessage({ role: 'assistant', text: '', done: true, model: store.state.model, error: String((err && err.message) || err || 'error').slice(0, 300) });
+        }
         emit('onError', err);
       }
     } finally {
@@ -1780,36 +1788,17 @@ export function createAgent(store, hooks = {}) {
         if (a && Array.isArray(a.frames)) { videoFrames.set(a, a.frames); delete a.frames; }
       }
       const forModeration = attachments.map((a) => (videoFrames.has(a) ? { ...a, frames: videoFrames.get(a) } : a));
-      // 若上一条 user 消息发出后用户立即停止（assistant 还没输出/被取消），
-      // 本次新发送直接替换它，而不是再追加一条 user，避免留下一个"问了但没回答"的悬空气泡。
-      // 判定：最后一条消息是 user，且非 transient（说明已经过了审核、发出过），且其后没有 assistant 收尾。
+      // 每次发送都追加新的 user 消息：不再替换上一条尚未回答的消息（那会悄悄丢失用户的输入）。
+      // 未回答的轮次由中断/失败路径补一条带状态的助手占位消息，保证它可见、可分享。
       let userMsg;
-      const msgs = store.state.messages;
-      const last = msgs[msgs.length - 1];
-      const replacePrev = last && last.role === 'user'
-        && !last.transientModeration && !last.moderationPending
-        && !(last.moderation && last.moderation.blocked);
       const checkpoint = store.createCheckpoint(userText || (attachments[0] ? `[附件] ${attachments[0].name}` : ''));
-      if (replacePrev) {
-        store.updateMessage(last.id, {
-          text: userText,
-          attachments: attachments.length ? attachments : undefined,
-          transientModeration: true,
-          moderationPending: true,
-          // 清掉之前的 error（如果有）
-          error: undefined,
-        });
-        userMsg = store.state.messages.find((m) => m.id === last.id);
-        emit('onUserMessage', userText, userMsg);
-      } else {
-        userMsg = store.pushMessage({
-          role: 'user', text: userText,
-          attachments: attachments.length ? attachments : undefined,
-          transientModeration: true,
-          moderationPending: true,
-        });
-        emit('onUserMessage', userText, userMsg);
-      }
+      userMsg = store.pushMessage({
+        role: 'user', text: userText,
+        attachments: attachments.length ? attachments : undefined,
+        transientModeration: true,
+        moderationPending: true,
+      });
+      emit('onUserMessage', userText, userMsg);
       try {
         const moderation = await runContentModeration(userText, forModeration);
         if (moderation && moderation.blocked) { removePreviewTurn(userMsg, checkpoint); blockByModeration(moderation); return; }

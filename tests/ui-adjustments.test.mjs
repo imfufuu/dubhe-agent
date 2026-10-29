@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { JSDOM } from 'jsdom';
 import { paintEditFoldContent } from '../js/ui-editpreview.js';
-import { renderReasoningLines } from '../js/ui-reasoning-motion.js';
+import { paintReasoningBlocks } from '../js/ui-reasoning-motion.js';
 import { renderQuickChart, renderQuickDiagram } from '../js/quickviz.js';
 
 const read = (path) => fs.readFileSync(new URL(path, import.meta.url), 'utf8');
@@ -29,7 +29,8 @@ test('salutation input includes its trailing local status and keeps the check/cr
   assert.match(settings, /status\.textContent = result\.ok \? '✓' : '✗';/);
   assert.match(settings, /salutationCheckTimer = setInterval\(refreshSalutation, 1000\)/);
   assert.match(app, /<div class="user-salutation-input-wrap">[\s\S]*?id="set-user-salutation"[^>]*aria-describedby="set-user-salutation-status"[\s\S]*?id="set-user-salutation-status"[\s\S]*?<\/div>[\s\S]*?<button id="save-user-salutation"/);
-  assert.match(css, /\.user-salutation-input-wrap \{ position: relative; flex: 0 1 230px; width: 230px;/);
+  assert.match(css, /\.user-salutation-control \{ display: flex; align-items: center; gap: 7px; min-width: 0; width: 230px;/, '整组控件与上方 230px 菜单等宽，输入框收缩为剩余宽度');
+  assert.match(css, /\.user-salutation-input-wrap \{ position: relative; flex: 1 1 0; width: auto;/);
   assert.match(css, /\.user-salutation-status \{ position: absolute; top: 50%; right: 9px;/);
   assert.match(css, /\.user-salutation-control \.set-input \{ display: block; width: 100%;[^}]*padding: 7px 34px 7px 9px/);
   assert.match(css, /\.user-salutation-control \.mini-btn \{ flex: 0 0 auto; white-space: nowrap; \}/);
@@ -137,14 +138,14 @@ test('reasoning viewports scroll to the newest streamed summary and full-text li
   Object.defineProperty(full, 'clientHeight', { configurable: true, get: () => 72 });
   Object.defineProperty(summary, 'scrollHeight', { configurable: true, get: () => summaryHeight });
   Object.defineProperty(summary, 'clientHeight', { configurable: true, get: () => 96 });
-  renderReasoningLines(full, ['one', 'two', 'three'].join('\n'));
-  renderReasoningLines(summary, ['summary one', 'summary two'], { summary: true });
+  paintReasoningBlocks(full, '<p>one</p><p>two</p><p>three</p>');
+  paintReasoningBlocks(summary, '<div>summary one</div><div>summary two</div>');
   assert.equal(full.scrollTop, 288);
   assert.equal(summary.scrollTop, 144);
   fullHeight = 540;
   summaryHeight = 360;
-  renderReasoningLines(full, ['one', 'two', 'three', 'four'].join('\n'));
-  renderReasoningLines(summary, ['summary one', 'summary two', 'summary three'], { summary: true });
+  paintReasoningBlocks(full, '<p>one</p><p>two</p><p>three</p><p>four</p>', { animate: true });
+  paintReasoningBlocks(summary, '<div>summary one</div><div>summary two</div><div>summary three</div>', { animate: true });
   await new Promise((resolve) => dom.window.requestAnimationFrame(resolve));
   assert.equal(full.scrollTop, 468);
   assert.equal(summary.scrollTop, 264);
@@ -176,5 +177,5 @@ test('welcome typing is incremental and surrounding motion uses a slower cadence
   assert.match(css, /welcomeCaret 1s steps\(1, end\) infinite/);
   assert.match(css, /welcomeFade \.58s/);
   assert.match(css, /\.chunk \{ opacity: 0; transition: opacity \.46s ease-out; \}/);
-  assert.match(css, /\.reasoning \.reasoning-line-entering\.is-visible \{ animation: reasoningLineReveal \.46s/);
+  assert.doesNotMatch(css, /reasoningLineReveal/, '思考区不再使用位移式逐行弹入');
 });
