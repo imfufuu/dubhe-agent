@@ -867,7 +867,7 @@ export const TOOL_CONTRACTS = Object.freeze({
   browser_sandbox: contract({ sideEffect: 'sandbox', idempotent: false, timeoutMs: 75000, riskLevel: 'L2', verifyAfterRun: true, note: '只运行沙箱 HTML 项目；本机 Chromium 调试/截图，不接受公网 URL 或 shell 命令' }),
   execute_javascript: contract({ sideEffect: 'sandbox', idempotent: false, timeoutMs: 600000, riskLevel: 'L2', verifyAfterRun: true, note: '代码可写沙箱文件；默认 30 秒，可按 timeout_sec 设置至 600 秒，需核验副作用' }),
   execute_python: contract({ sideEffect: 'sandbox', idempotent: false, timeoutMs: 600000, riskLevel: 'L2', verifyAfterRun: true, note: '用户代码默认 30 秒、可设至 600 秒；冷启动/装包另有 120 秒准备窗口' }),
-  execute_cpp: contract({ sideEffect: 'sandbox', idempotent: false, retryPolicy: 'never', timeoutMs: 720000, riskLevel: 'L2', note: '同源 WASM Worker 内 Clang/LLD 编译并执行 WASI；不向远程编译/执行服务发送源码' }),
+  execute_cpp: contract({ sideEffect: 'sandbox', idempotent: false, retryPolicy: 'never', timeoutMs: 720000, riskLevel: 'L2', note: '本地：同源 WASM Worker 内 Clang/LLD 编译并执行 WASI；远程（默认）：源码发送至 godbolt.org 编译执行' }),
   write_file: contract({ sideEffect: 'filesystem', idempotent: false, timeoutMs: 10000, riskLevel: 'L2', rollback: 'snapshot-fs', verifyAfterRun: true, note: '覆盖已有文件不可自动恢复' }),
   read_file: contract({ idempotent: true, retryPolicy: 'backoff', timeoutMs: 5000, riskLevel: 'L1' }),
   list_files: contract({ idempotent: true, retryPolicy: 'backoff', timeoutMs: 5000, riskLevel: 'L1' }),

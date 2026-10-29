@@ -447,6 +447,7 @@ export function openSettingsModal({ store } = {}) {
   if ($('#set-cleanup-unreferenced')) $('#set-cleanup-unreferenced').checked = store.state.settings.cleanupUnreferencedFiles === true;
   $('#set-thinking').checked = store.state.settings.thinking !== false;
   syncSeg('#set-reason', store.state.settings.reasoningLevel || 'medium');
+  syncSeg('#set-cpp-mode', store.state.settings.cppMode === 'local' ? 'local' : 'remote');
   syncBudgetInputs(store);
   syncMultimodalSelects(store);
   $('#set-about-ver').textContent = APP_RELEASE;
@@ -940,6 +941,13 @@ export function mountSettings(store, { onRelayChanged, onKeySaved, onSettingChan
     store.state.settings.reasoningLevel = v;
     store.notify();
     changed('reasoningLevel', v);
+  });
+
+  // C++ 运行方式：远程（Compiler Explorer，默认）/ 本地（浏览器内 WASM）
+  bindSeg('#set-cpp-mode', (v) => {
+    store.state.settings.cppMode = v === 'local' ? 'local' : 'remote';
+    store.notify();
+    changed('cppMode', store.state.settings.cppMode);
   });
 
   // 识图 / 视频识别模型：全局设置（不随会话），analyze_image / analyze_pdf / analyze_video 读取

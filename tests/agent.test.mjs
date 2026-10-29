@@ -2779,7 +2779,7 @@ test('execute_cpp collects workspace files/stdin/argv for its local module Worke
       'src/util.h': 'int n = 42;\n',
       'src/in.txt': 'hello-stdin\n',
     });
-    const out = await executeTool('execute_cpp', { path: 'src/main.cpp', stdin_path: 'src/in.txt', args: ['--quiet'] }, { fs, sandboxEnabled: true, localCpp: true });
+    const out = await executeTool('execute_cpp', { path: 'src/main.cpp', stdin_path: 'src/in.txt', args: ['--quiet'] }, { fs, sandboxEnabled: true, localCpp: true, cppMode: 'local' });
     assert.match(out, /ok-cpp/);
     assert.equal(workers.length, 1);
     assert.match(workers[0].url, /worker-cpp\.js/);
@@ -8813,14 +8813,15 @@ test('本地 C++ 开关：关闭后两条工具表派生路径都不含 execute_
   const cr = subagentTools(true, { tools: ['execute_cpp', 'execute_python', 'read_file'] }, { localCpp: false });
   assert.deepEqual(cr.map((t) => t.name), ['skill_library', 'knowledge_search', 'execute_python', 'read_file']);
   const def = TOOL_DEFS.find((t) => t.name === 'execute_cpp');
-  assert.match(def.description, /本地|WASM|on-device/i, '工具描述必须说明这是本地 WASM 编译');
-  assert.doesNotMatch(def.description, /godbolt\.org|Compiler Explorer|remote compiler/i, '不得宣传或调用远程编译器');
+  assert.match(def.description, /本地|WASM|on-device/i, '工具描述必须说明本地 WASM 编译');
+  assert.match(def.description, /godbolt\.org/, '工具描述必须如实说明远程模式会发送至 godbolt.org');
   const fsp = await import('node:fs');
   const html = fsp.readFileSync(new URL('../app.html', import.meta.url), 'utf8');
   assert.match(html, /id="set-cpp"/);
-  assert.match(html, /本地 C\+\+（WASM）/);
+  assert.match(html, /C\+\+ 运行方式/);
+  assert.match(html, /id="set-cpp-mode"/);
   assert.match(html, /connect-src 'self'/);
-  assert.doesNotMatch(html, /https:\/\/godbolt\.org/, 'CSP must not permit remote compiler access');
+  assert.match(html, /connect-src[^;]*https:\/\/godbolt\.org/, 'CSP must permit the remote C++ mode endpoint');
   const st = fsp.readFileSync(new URL('../js/state.js', import.meta.url), 'utf8');
   assert.match(st, /localCppEnabled: true/, '默认值在 state.js 的 settings 合并处');
 });
@@ -9775,7 +9776,7 @@ test('工具结果契约：默认告知 outputs/ 会保留，只有自动清理�
   assert.equal(strip(r3), '已写入 outputs/c.md（3 字符）', '基座 FS（子代理 / 直接调用）不加说明');
   const fsp = await import('node:fs');
   const tools = fsp.readFileSync(new URL('../js/tools.js', import.meta.url), 'utf8');
-  assert.match(tools, /import \{ runJavaScript, runPython, runCpp, pythonAvailable, persistenceNote, isSafeFsPath, contentByteSize \} from '\.\/sandbox\.js';/);
+  assert.match(tools, /import \{ runJavaScript, runPython, runCpp, runCppRemote, pythonAvailable, persistenceNote, isSafeFsPath, contentByteSize \} from '\.\/sandbox\.js';/);
   assert.match(tools, /全文已存 \$\{r\.savedTo\}\$\{persistenceNote\(fs, r\.savedTo\)\}/, 'fetch_url 的落盘说明带持久契约');
   assert.match(tools, /保存：\$\{path\}\$\{persistenceNote\(fs, path\)\}/, 'download_file 的落盘说明带持久契约');
   const cfg = fsp.readFileSync(new URL('../js/config.js', import.meta.url), 'utf8');

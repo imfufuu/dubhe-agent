@@ -21,12 +21,13 @@ assert.doesNotMatch(worker, /godbolt\.org|Compiler Explorer|https?:\/\//i, 'C++ 
 assert.match(sandbox, /runInWorker\('worker-cpp\.js',[\s\S]*?workerType:\s*'module'/, 'sandbox must invoke the module Worker');
 assert.match(sandbox, /allowBlobFallback:\s*false/, 'local compiler must not fall back to a blob worker');
 assert.match(tools, /case 'execute_cpp':[\s\S]*?runCpp\(code,/, 'execute_cpp must route to local runCpp');
-assert.doesNotMatch(tools, /godbolt\.org|Compiler Explorer|compiler-explorer/i, 'tool handler must not call a remote compiler');
+assert.match(tools, /runCppRemote\(code, runOpts\)/, 'remote mode must route through runCppRemote (default)');
+assert.match(sandbox, /https:\/\/godbolt\.org/, 'remote mode endpoint is Compiler Explorer');
 assert.match(execution, /execute_cpp:\s*contract\(\{ sideEffect: 'sandbox'/, 'local C++ must be classified as a local sandbox side effect');
 assert.doesNotMatch(execution, /execute_cpp:\s*contract\(\{[^}]*external:\s*true/, 'local C++ must not be recorded as an external action');
 assert.match(capabilities, /execute_cpp:\s*R\('codeSandbox', 'exec'/, 'local C++ is an execution capability, not a remote capability');
 assert.match(appHtml, /connect-src 'self'/, 'same-origin compiler assets must be permitted by CSP');
-assert.doesNotMatch(appHtml, /https:\/\/godbolt\.org/, 'CSP must not grant a remote compiler exception');
+assert.match(appHtml, /connect-src[^;]*https:\/\/godbolt\.org/, 'CSP must allow the remote C++ mode endpoint');
 
 const realFetch = globalThis.fetch;
 const fetchedAssets = new Set();
