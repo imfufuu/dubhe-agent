@@ -166,6 +166,20 @@ export function mountUI(store, agent) {
     return messages.map((m) => m.role !== 'assistant' ? m : (toolPresentation.deferred(m, messages)
       ? { ...m, text: '', toolCalls: [], tempCommit: null, webSearch: null } : toolPresentation.project(m, { advance: false })));
   }
+  // 回合结束：释放工具呈现队列，并重绘本回合的助手消息（含尚未上屏的总结）。
+  // 否则逐个揭示的计时器若未触发，总结会一直被延后，屏上停在最后一次绘制（光标持续闪烁）。
+  function settleTurn() {
+    toolPresentation.release();
+    const msgs = store.state.messages;
+    const userAt = msgs.findLastIndex((m) => m.role === 'user' && !m.silent);
+    for (const m of msgs.slice(userAt + 1)) {
+      if (m.role !== 'assistant') continue;
+      const wrap = msgNodes.get(m.id);
+      if (wrap) paintAssistant(wrap, m);
+      else appendMessage(m, { scroll: false });
+    }
+    flushDeferredAssistants(); scrollToBottom();
+  }
   function flushDeferredAssistants() {
     if (presentationStopped) return;
     for (const m of store.state.messages) {
@@ -2691,6 +2705,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     renderSessions,
     renderFiles,
     rebuildMessages, // 外部触发整段对话重绘（会话切换、示例卡刷新等）
+    settleTurn,      // 回合结束：释放工具呈现队列并补齐本回合的最终正文
     // 用户消息入列后立刻上屏：否则要等本轮输出完（甚至切出再切回会话）才看得到自己说了什么
     onUserMessage(m) {
       // 兼容只传文本的旧调用方（缓存错配时会出现）：退化为「最近一条还没上屏的 user 消息」

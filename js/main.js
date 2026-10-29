@@ -81,6 +81,7 @@ const hooks = {
   onConfirmationResolved: (call, rec) => ui && ui.onConfirmationResolved && ui.onConfirmationResolved(call, rec),
   onTaskFinished: (info) => { notifications.finish(info).catch(() => {}); },
   onTurnEnd: () => {
+    ui && ui.settleTurn && ui.settleTurn();
     ui && ui.renderFiles(); ui && ui.renderSessions(); ui && ui.updateStats();
     // 回合结束后让 Agent 给这次会话起个标题（用户手改过的不会被覆盖；失败静默退回兜底标题）
     ui && ui.autoTitle && ui.autoTitle();

@@ -65,18 +65,19 @@ export function createToolPresentation({ readMessage, resultIds = () => new Set(
   };
   const pending = (message) => {
     const state = states.get(message?.id), calls = callsInDisplayOrder(message);
+    if (state?.released) return false;
     return !!state && !!calls.length && (state.shown < calls.length
       || !presentationCallSettled(calls[Math.min(state.shown, calls.length) - 1], resultIds()));
   };
   const arm = (message, state) => {
     const calls = callsInDisplayOrder(message);
     if (message.cancelled || message.error) { state.frozen = true; if (state.timer != null) cancel(state.timer); state.timer = null; }
-    if (state.frozen || state.timer != null || state.shown >= calls.length
+    if (state.frozen || state.released || state.timer != null || state.shown >= calls.length
       || !presentationCallSettled(calls[state.shown - 1], resultIds())) return;
     state.timer = schedule(() => {
       state.timer = null;
       // A session switch/reset can invalidate this timer after it was scheduled.
-      if (states.get(message.id) !== state || state.frozen) return;
+      if (states.get(message.id) !== state || state.frozen || state.released) return;
       const latest = readMessage(message.id);
       if (!latest || latest.cancelled || latest.error) { state.frozen = true; return; }
       const latestCalls = callsInDisplayOrder(latest);
@@ -88,6 +89,7 @@ export function createToolPresentation({ readMessage, resultIds = () => new Set(
   const project = (message, { advance = true } = {}) => {
     const state = stateFor(message);
     if (!state) return message;
+    if (state.released) return projectToolPrefix(message, callsInDisplayOrder(message).length);
     if (advance) arm(message, state);
     return projectToolPrefix(message, state.shown);
   };
@@ -102,6 +104,15 @@ export function createToolPresentation({ readMessage, resultIds = () => new Set(
   const freeze = () => {
     for (const state of states.values()) { state.frozen = true; if (state.timer != null) cancel(state.timer); state.timer = null; }
   };
+  // 回合正常结束：不再等待逐个揭示的计时器，所有工具芯片直接可见（取消/出错的回合保持原样）。
+  const release = () => {
+    for (const state of states.values()) {
+      if (state.frozen) continue;
+      state.released = true;
+      if (state.timer != null) cancel(state.timer);
+      state.timer = null;
+    }
+  };
   const clear = () => { freeze(); states.clear(); watched.clear(); };
-  return { watch, project, pending, deferred, freeze, clear };
+  return { watch, project, pending, deferred, freeze, release, clear };
 }
