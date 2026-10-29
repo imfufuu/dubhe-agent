@@ -10,6 +10,12 @@
 - 修复：回退到 DuckDuckGo 的搜索结果不再显示为工具失败。根因是结果前 160 字符的失败关键词扫描会命中回退提示（如「不可用」）；外部内容类工具现在只认 `工具名 失败：` 前缀。
 - `dispatch_subagent` 支持 `files`（最多 5 个沙箱路径）：文本内联到子任务（超长截断），图片与二进制只给路径（子智能体用 `analyze_image` / `analyze_pdf` 查看）。
 - 子智能体思考过程以「THINKING」窗口流式显示，每轮一条分隔行；不弹出，结束后保留。
+- 联网折叠行：`search_web` 标签改为英文「Searched for」，图标改为地球（知识库检索仍为放大镜）；行结构只在行集合变化时重建，状态与结果原地更新；展开/收起与 Explored File(s) 共用同一套状态同步。
+- 修复：`generate_image` / `generate_video` / `fetch_url` / `search_web` 不再出现在 Run Command 命令菜单里。
+- 修复：命令执行中所有命令都显示 0% 进度条（`Number(null)` 为 0 所致）；进度条仅在真实进度（C++ 工具链按需加载）时显示。
+- 修复：设置页「检查并更新」按钮在快速检查时闪一下灰底：不再立即 `disabled`，「检查中…」延迟 300ms 才出现。
+- 视频生成模型菜单：每族一项，文生 / 图生 / 参考图三种模式合并在同一型号下；`generate_video` 新增 `mode`（text / image / reference）由 Agent 选择，未指定时按是否有参考图自动判断；默认模型标注「默认」；说明文字缩短。
+- Python 沙箱首次加载运行时时显示下载进度条（按 Pyodide 资源的字节数统计；响应带 Content-Encoding 时无法按字节换算，只显示已下载 MB）。依赖包安装仍只显示文字提示。
 
 ## Dubhe Agent V1.9 Stable · 2026-10-29
 

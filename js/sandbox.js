@@ -697,7 +697,7 @@ async function runPythonNow(code, fsObj, onProgress, extraPkgs = [], opts = {}) 
           releaseBlobUrl();
           if (e.data?.__userCodeStart) { armTimeout('run', codeTimeoutMs); return; }
           if (e.data?.__log) { opts.onOutput?.(e.data.__log); return; }
-          if (e.data && e.data.__progress) { onProgress && onProgress(String(e.data.__progress)); return; }
+          if (e.data && e.data.__progress) { onProgress && onProgress(typeof e.data.__progress === 'object' ? e.data.__progress : String(e.data.__progress)); return; }
           finish(e.data);
         };
         worker.onerror = (e) => {

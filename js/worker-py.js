@@ -26,6 +26,50 @@ let loaded = null;
 let mirror = Object.create(null);
 const installed = new Set();
 const networkDenied = [];
+// 运行时下载进度：只在 loadPyodide 期间统计 PY_BASE 下的响应字节，节流后发给主线程。
+let runtimeTrack = null;
+const PROGRESS_MIN_INTERVAL_MS = 120;
+function startRuntimeTrack() {
+  runtimeTrack = { entries: new Map(), lastSent: 0, timer: null, lastFraction: 0 };
+}
+function runtimeSnapshot() {
+  let loaded = 0, total = 0, known = true;
+  for (const e of runtimeTrack.entries.values()) {
+    loaded += e.loaded;
+    if (e.total > 0) total += e.total; else known = false;
+  }
+  return { phase: 'runtime', loaded, total: known ? total : 0 };
+}
+function reportRuntime(force) {
+  if (!runtimeTrack) return;
+  const now = Date.now();
+  const send = () => {
+    if (!runtimeTrack) return; // 加载已结束，迟到的定时器直接丢弃
+    runtimeTrack.lastSent = Date.now();
+    runtimeTrack.timer = null;
+    post({ __progress: runtimeSnapshot() });
+  };
+  if (force || now - runtimeTrack.lastSent >= PROGRESS_MIN_INTERVAL_MS) send();
+  else if (!runtimeTrack.timer) runtimeTrack.timer = setTimeout(send, PROGRESS_MIN_INTERVAL_MS);
+}
+// 包装响应体：读到的字节即计入；不改变内容，返回的 Response 与原响应等价。
+function trackRuntimeResponse(url, res) {
+  if (!runtimeTrack || !res || !res.ok || !res.body) return res;
+  // 带 Content-Encoding 时 Content-Length 是压缩后大小，与解码后的字节不可比，此时只报告已下载量。
+  const encoded = !!res.headers.get('content-encoding');
+  const declared = encoded ? 0 : Number(res.headers.get('content-length')) || 0;
+  const entry = { loaded: 0, total: declared };
+  runtimeTrack.entries.set(url, entry);
+  const counter = new TransformStream({
+    transform(chunk, controller) {
+      entry.loaded += chunk.byteLength;
+      reportRuntime(false);
+      controller.enqueue(chunk);
+    },
+    flush() { reportRuntime(true); },
+  });
+  return new Response(res.body.pipeThrough(counter), { status: res.status, statusText: res.statusText, headers: res.headers });
+}
 
 function urlOf(input) {
   try { return String(input instanceof Request ? input.url : (input && input.url) || input); } catch { return String(input); }
@@ -42,6 +86,7 @@ function lockdown() {
       networkDenied.push(url);
       return Promise.reject(new TypeError(`沙箱禁止联网：${url.slice(0, 120)}（仅允许 Pyodide CDN 与 PyPI 下载依赖）`));
     }
+    if (runtimeTrack && url.startsWith(PY_BASE)) return realFetch(input, init).then((res) => trackRuntimeResponse(url, res));
     return realFetch(input, init);
   };
   const guardedImport = function importScripts(...urls) {
@@ -193,7 +238,13 @@ self.addEventListener('message', async (e) => {
     if (!loaded) {
       post({ __progress: '正在加载 Python 运行时…' });
       realImportScripts(PY_BASE + 'pyodide.js');
-      loaded = await loadPyodide({ indexURL: PY_BASE });
+      startRuntimeTrack();
+      try {
+        loaded = await loadPyodide({ indexURL: PY_BASE });
+      } finally {
+        reportRuntime(true);
+        runtimeTrack = null;
+      }
       post({ __progress: 'Python 运行时就绪' });
     }
     stage = 'run';

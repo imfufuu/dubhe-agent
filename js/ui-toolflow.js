@@ -247,6 +247,42 @@ export function activeToolOwner(messages, call, stopped) {
   return owner && !owner.cancelled && messages.indexOf(owner) > messages.findLastIndex((m) => m.role === 'user' && !m.silent) ? owner : null;
 }
 
+// 联网折叠行：行集合变化才整体重建；状态/结果原地更新，避免已展开的行重播入场动画。
+export function paintWebActivity(node, { rows, label, icon, labels, stateText, readFile }) {
+  const shape = JSON.stringify([label, rows.map((r) => [r.id, r.name, r.summary, r.videoPath ? 1 : 0])]);
+  if (node._webShape !== shape) {
+    node._webShape = shape;
+    node.innerHTML = `<span class="chip-ico think-ico">${icon}</span><span class="mono chip-name">${esc(label)}</span>`
+      + `<div class="chip-detail"><div class="fold-inner"><ul>${rows.map((r) => `<li class="web-row" data-call="${esc(r.id)}">`
+      + `<span class="web-name">${esc(labels[r.name]?.[0] || r.name)}</span>`
+      + `<span class="web-arg mono" title="${esc(r.summary)}">${esc(r.summary)}</span>`
+      + `<span class="web-state"></span>`
+      + (r.videoPath ? `<div class="web-video" data-path="${esc(r.videoPath)}"></div>` : '')
+      + '</li>').join('')}</ul></div></div>`;
+    hydrateWebVideos(node, readFile);
+  }
+  for (const r of rows) {
+    const li = $$('li[data-call]', node).find((x) => x.dataset.call === r.id);
+    if (!li) continue;
+    li.className = `web-row ${r.status}`;
+    const st = li.querySelector('.web-state');
+    const text = stateText(r.status);
+    if (st && st.textContent !== text) st.textContent = text;
+    let det = li.querySelector(':scope > .web-result');
+    if (r.body) {
+      if (!det) {
+        det = el('details', 'web-result');
+        det.innerHTML = `<summary>${localeText('结果', 'Result')}</summary><pre></pre>`;
+        const anchor = li.querySelector(':scope > .web-video');
+        if (anchor) li.insertBefore(det, anchor); else li.append(det);
+      }
+      const pre = det.querySelector('pre');
+      const txt = r.body.slice(0, 6000);
+      if (pre && pre.textContent !== txt) pre.textContent = txt;
+    }
+  }
+}
+
 // generate_video 折叠行里的视频预览：数据从沙箱读出 → Blob URL 就地播放（视频不进消息存储）
 export function hydrateWebVideos(node, readFile) {
   for (const box of node.querySelectorAll('.web-video[data-path]')) {

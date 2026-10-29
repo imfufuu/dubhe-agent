@@ -6,7 +6,7 @@ import { createFS } from '../js/sandbox.js';
 import { executeTool, TOOL_DEFS, buildSubagentAttachments, SUB_ATTACH_MAX } from '../js/tools.js';
 import {
   VIDEO_GEN_MODELS, DEFAULT_VIDEO_GEN_MODEL, videoSizeFor, planVideoRequest, buildVideoBody,
-  videoJobState, imageVariantOf, resolveVideoGenModel,
+  videoJobState, imageVariantOf, resolveVideoGenModel, VIDEO_GEN_MENU, videoMenuIdOf,
 } from '../js/video-gen.js';
 import { toolFamily } from '../js/toolflow.js';
 
@@ -26,6 +26,32 @@ test('视频目录：文档表格共 18 个模型、ID 唯一、六族各含文�
   assert.ok(VIDEO_GEN_MODELS.some((m) => m.id === 'minimax-h3-max-image-to-video'));
   assert.equal(resolveVideoGenModel('no-such-model'), DEFAULT_VIDEO_GEN_MODEL);
   assert.equal(imageVariantOf('seedance-2-0-mini-text-to-video-basic'), 'seedance-2-0-mini-image-to-video-basic');
+});
+
+test('设置菜单：每族一项（三种模式合并），仅默认模型标注「默认」', () => {
+  assert.equal(VIDEO_GEN_MENU.length, 6);
+  assert.equal(new Set(VIDEO_GEN_MENU.map((m) => m.family)).size, 6);
+  assert.equal(VIDEO_GEN_MENU.filter((m) => m.tag === '默认').length, 1);
+  assert.equal(VIDEO_GEN_MENU.find((m) => m.tag === '默认').id, DEFAULT_VIDEO_GEN_MODEL);
+  for (const m of VIDEO_GEN_MENU) assert.ok(m.note.length <= 30, m.note);
+  assert.equal(videoMenuIdOf('seedance-2-0-mini-image-to-video-basic'), DEFAULT_VIDEO_GEN_MODEL);
+  assert.equal(videoMenuIdOf('minimax-h3-reference-to-video'), 'minimax-h3-text-to-video');
+  assert.equal(videoMenuIdOf('no-such-model'), DEFAULT_VIDEO_GEN_MODEL);
+});
+
+test('生成模式：Agent 可在合并型号中指定 text / image / reference', () => {
+  const base = { model: 'minimax-h3-text-to-video', prompt: 'a cat', seconds: 5, resolution: '768p', aspectRatio: '16:9' };
+  assert.equal(planVideoRequest({ ...base, hasImage: false }).model, 'minimax-h3-text-to-video');
+  assert.equal(planVideoRequest({ ...base, mode: 'text', hasImage: false }).mode, 'text');
+  assert.equal(planVideoRequest({ ...base, mode: 'image', hasImage: true }).model, 'minimax-h3-image-to-video');
+  const ref = planVideoRequest({ ...base, mode: 'reference', hasImage: true });
+  assert.equal(ref.ok, true); assert.equal(ref.model, 'minimax-h3-reference-to-video'); assert.equal(ref.mode, 'reference');
+  // 未指定模式：有参考图→图生；mode=text 却带参考图→按图生
+  assert.equal(planVideoRequest({ ...base, hasImage: true }).model, 'minimax-h3-image-to-video');
+  assert.equal(planVideoRequest({ ...base, mode: 'text', hasImage: true }).mode, 'image');
+  // 缺参考图时图生 / 参考图模式给出明确错误
+  const miss = planVideoRequest({ ...base, mode: 'reference', hasImage: false });
+  assert.equal(miss.ok, false); assert.match(miss.error, /参考图/);
 });
 
 test('尺寸：分辨率档位的短边 + 比例推出 WIDTHxHEIGHT（偶数）', () => {

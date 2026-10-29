@@ -10,7 +10,7 @@ import { installFeedback } from './ui-feedback.js';
 import { installSpeechInput } from './ui-speech.js';
 import { createToolPresentation, presentationCallSettled, turnToolResults } from './toolpresentation.js?v=2026.10.25.1';
 import { paintEditFoldContent, syncEditingFold, toggleEditingFold } from './ui-editpreview.js?v=2026.10.25.1';
-import { paintOrderedAssistant, renderToolChipDetail, paintCommandRows, paintKnowledgeFold, syncToolMenuCursor, ownerOfTool, paintVisibleTurn, activeToolOwner, persistTurnTiming, hydrateWebVideos } from './ui-toolflow.js?v=2026.10.25.1';
+import { paintOrderedAssistant, renderToolChipDetail, paintCommandRows, paintKnowledgeFold, syncToolMenuCursor, ownerOfTool, paintVisibleTurn, activeToolOwner, persistTurnTiming, paintWebActivity } from './ui-toolflow.js?v=2026.10.25.1';
 import { classifyToolResult, toolResultFailed } from './toolwindows.js?v=2026.10.25.1';
 import { adjacentToolMessages, appendToolStream, toolFamily, commandRunFor } from './toolflow.js?v=2026.10.25.1';
 import { createRollbackFx } from './ui-rollback-fx.js?v=2026.10.25.1';
@@ -196,7 +196,7 @@ export function mountUI(store, agent) {
   }
   function syncCompletedToolFolds() {
     for (const fold of $$('.ran-commands', msgList)) syncRanCommandsFold(fold);
-    for (const fold of $$('.edited-files, .explored-files, .searched-library', msgList)) syncFileFold(fold);
+    for (const fold of $$('.edited-files, .explored-files, .searched-library, .web-activity', msgList)) syncFileFold(fold);
   }
 
   // 未决的高风险确认卡（每个回合结束时由 agent 作废；重绘消息时一并清掉，避免残留旧卡）
@@ -1270,7 +1270,8 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
         if (state.innerHTML !== stateHtml) state.innerHTML = stateHtml;
         state.title = ''; state.classList.remove('bad');
       } else {
-        const pct = running && Number.isFinite(Number(running.progress)) ? Math.max(0, Math.min(1, Number(running.progress))) : null;
+        // 仅真实进度（Python/C++ 资源加载等）才显示进度条；progress 为 null 时 Number(null) 为 0，曾导致所有命令都出现 0% 条。
+        const pct = running && running.progress != null && Number.isFinite(Number(running.progress)) ? Math.max(0, Math.min(1, Number(running.progress))) : null;
         if (pct != null) {
           const note = running.note || '加载中…';
           const html = `<span class="chip-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(pct * 100)}" aria-label="${esc(note)}"><i style="width:${(pct * 100).toFixed(1)}%"></i></span><span class="chip-note">${esc(note)}</span>`;
@@ -1315,7 +1316,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     // 光标/连接动画只属于「正在跑的这一条」。导入的历史回复没有 done 字段，
     // 不能靠 !m.done 一直闪烁 —— 必须叠上本轮忙碌状态。
     const live = !m.done && getBusy();
-    const toolMenuBusy = live && (m.toolCalls || []).some((t) => t && !FILE_FOLD_TOOLS.has(t.name)
+    const toolMenuBusy = live && (m.toolCalls || []).some((t) => t && toolFamily(t) === 'commands'
       && (liveToolCallIds.has(String(t.id)) || t.status === 'running'));
     // 思考内容：Off 本轮不画；空标记不展示菜单，GPT 仅展示 **…** 摘要。
     const thinkOn = m.reasoningLevel !== 'off';
@@ -1433,9 +1434,9 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     const msgsAll = displayedMessages();
     const idxA = msgsAll.findIndex((x) => x.id === m.id);
     // 分开但连续的 Ran command 块（跨消息、中间没有任何可见内容）合并成一块，由最后一段承载
-    const ownCalls = ((m && m.toolCalls) || []).filter((t) => t && !FILE_FOLD_TOOLS.has(t.name));
+    const ownCalls = ((m && m.toolCalls) || []).filter((t) => t && toolFamily(t) === 'commands');
     const run = ownCalls.length ? commandRunFor(msgsAll, m.id, m._displayFragment ? (m._partIndex || 0) : 0, { reasoningVisible }) : null;
-    const mergedCalls = !run ? ownCalls : (run.isHost ? run.calls.filter((t) => t && !FILE_FOLD_TOOLS.has(t.name)) : []);
+    const mergedCalls = !run ? ownCalls : (run.isHost ? run.calls.filter((t) => t && toolFamily(t) === 'commands') : []);
     if (run?.isHost) for (const seg of run.segments.slice(0, -1)) {
       const w = msgNodes.get(seg.id), frag = w && [...w.querySelectorAll('.assistant-fragment')].find((n) => n.dataset.part === String(seg.part));
       const oldChips = w && $('.tool-chips', frag || w);
@@ -1669,12 +1670,12 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     // 联网 / 生成类工具（搜索、抓取、生图、生视频）：与 Explored File(s) 同样的折叠行，逐条列出调用。
     // 只由同一簇的最后一条消息绘制（与路径折叠一致）；结果折在每行的「结果」里，不再逐条占用命令芯片。
     const WEB_LABELS = {
-      search_web: [localeText('搜索网页', 'Searched web'), localeText('网页搜索', 'Web search')],
+      search_web: [localeText('搜索网页', 'Searched for'), localeText('网页搜索', 'Searched for')],
       fetch_url: [localeText('抓取网页', 'Fetched page'), localeText('抓取网页', 'Fetched page')],
       generate_image: [localeText('生成图片', 'Generated image'), localeText('生成图片', 'Generated image')],
       generate_video: [localeText('生成视频', 'Generated video'), localeText('生成视频', 'Generated video')],
     };
-    const webIcon = (name) => ({ search_web: ICON.search, fetch_url: ICON.globe, generate_image: ICON.image, generate_video: ICON.video })[name] || ICON.globe || '';
+    const webIcon = (name) => ({ search_web: ICON.globe, fetch_url: ICON.globe, generate_image: ICON.image, generate_video: ICON.video })[name] || ICON.globe || '';
     const paintWebFold = (afterEl) => {
       let node = $('.web-activity', wrap);
       const cluster = m._displayFragment ? [m] : adjacentToolMessages(msgsAll, m.id, (t) => toolFamily(t) === 'web');
@@ -1713,19 +1714,9 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
         afterEl.after(node);
       } else if (node.previousElementSibling !== afterEl) afterEl.after(node);
       node.dataset.ownerId = m.id;
-      node.classList.toggle('is-working', working);
-      if (node._webSig !== sig || node._webLabel !== label) {
-        node._webSig = sig; node._webLabel = label;
-        node.innerHTML = `<span class="chip-ico think-ico">${webIcon(rows[0]?.name) || ''}</span><span class="mono chip-name">${esc(label)}</span>`
-          + `<div class="chip-detail"><div class="fold-inner"><ul>${rows.map((r) => `<li class="web-row ${r.status}">`
-            + `<span class="web-name">${esc(WEB_LABELS[r.name]?.[0] || r.name)}</span>`
-            + `<span class="web-arg mono" title="${esc(r.summary)}">${esc(r.summary)}</span>`
-            + `<span class="web-state">${esc(stateText(r.status))}</span>`
-            + (r.body ? `<details class="web-result"><summary>${localeText('结果', 'Result')}</summary><pre>${esc(r.body.slice(0, 6000))}</pre></details>` : '')
-            + (r.videoPath ? `<div class="web-video" data-path="${esc(r.videoPath)}"></div>` : '')
-            + '</li>').join('')}</ul></div></div>`;
-        hydrateWebVideos(node, (p) => agent.fs.read(p));
-      }
+      node._activeCalls = calls;
+      paintWebActivity(node, { rows, label, icon: webIcon(rows[0]?.name) || '', labels: WEB_LABELS, stateText, readFile: (p) => agent.fs.read(p) });
+      syncFileFold(node);
       return $('.web-activity', wrap) || afterEl;
     };
     // Editing shows only changed lines. Its stable shell is never rebuilt for a parameter delta.
