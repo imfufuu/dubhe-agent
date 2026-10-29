@@ -878,6 +878,8 @@ export const TOOL_CONTRACTS = Object.freeze({
   codec: contract({ idempotent: true, timeoutMs: 5000, riskLevel: 'L0' }),
   unicode: contract({ idempotent: true, timeoutMs: 5000, riskLevel: 'L0' }),
   generate_image: contract({ sideEffect: 'cost', idempotent: false, timeoutMs: 180000, riskLevel: 'L2', external: true, note: '外部生图调用（计费）' }),
+  // 视频生成：提交 + 轮询（上限 15 分钟）+ 下载；幂等键只在单次调用内重试，不跨轮复用
+  generate_video: contract({ sideEffect: 'cost', idempotent: false, timeoutMs: 960000, riskLevel: 'L2', external: true, note: '外部视频生成调用（计费，数分钟）' }),
   analyze_image: contract({ sideEffect: 'remote', idempotent: true, retryPolicy: 'once', timeoutMs: 60000, riskLevel: 'L1', external: true, note: '图片上行到网关做视觉分析' }),
   analyze_pdf: contract({ sideEffect: 'remote', idempotent: true, retryPolicy: 'once', timeoutMs: 180000, riskLevel: 'L1', external: true, note: 'PDF 文本层本地提取；页图整批上行到网关做视觉分析' }),
   analyze_svg: contract({ sideEffect: 'remote', idempotent: true, retryPolicy: 'once', timeoutMs: 120000, riskLevel: 'L1', external: true, note: 'SVG 本地安全清理与栅格化后上行单张 PNG；ocr/code 为本地模式' }),
@@ -1130,6 +1132,8 @@ export function fsDigest(fsOrFiles) {
   return { count: paths.length, digest: sha256Hex(lines.join('\n')).slice(0, 32) };
 }
 
+const EXTERNAL_CONTENT_TOOLS = new Set(['search_web', 'fetch_url', 'crawl_site', 'download_file']);
+const EXTERNAL_FAILURE_PREFIX_RE = /^(?:search_web|fetch_url|crawl_site|download_file) 失败[：:]/;
 const TOOL_FAILURE_TEXT_RE = /(?:失败|报错|错误|异常|超时|未执行|拒绝执行|不可用|未找到|找不到|cannot|failed|error|timeout|not\s+allowed|denied)/i;
 
 export function validateToolResultPost({
@@ -1140,7 +1144,11 @@ export function validateToolResultPost({
   const text = result == null ? '' : String(result);
   const issues = [];
   const stateChanged = !!(fsBefore && fsAfter && fsBefore.digest !== fsAfter.digest);
-  const failureSignalled = !ok || TOOL_FAILURE_TEXT_RE.test(text.slice(0, 160));
+  // 外部内容类工具（搜索 / 抓取 / 爬取 / 下载）的正文来自网页：标题、摘要、Worker 的「已回退」提示都可能含
+  // 「不可用」「error」等字样。失败只认工具自己的失败前缀（如「search_web 失败：」），不再扫描正文。
+  const failureSignalled = !ok || (EXTERNAL_CONTENT_TOOLS.has(name)
+    ? EXTERNAL_FAILURE_PREFIX_RE.test(text)
+    : TOOL_FAILURE_TEXT_RE.test(text.slice(0, 160)));
 
   if (c && c.timeoutMs && durationMs > c.timeoutMs) {
     issues.push({ id: 'timeout-exceeded', severity: 'warn', detail: `耗时 ${Math.round(durationMs)}ms 超过契约超时 ${c.timeoutMs}ms` });
@@ -1353,7 +1361,7 @@ export function formatBudgetLedger(gov) {
 // 「还剩几次、该怎么省」，耗尽的通道直接告知「这类调用不会再被放行」，让模型提前收敛而不是事后被拦。
 export const BUDGET_WARN_THRESHOLD = 2;
 // 计 1 次外部副作用的工具（与 classifyToolRisk 的 hasExternalSideEffect 判定一致：external / network / cost / remote）
-const EXTERNAL_TOOL_HINT = 'fetch_url / search_web / crawl_site / download_file / pull_github_project / generate_image / analyze_image / analyze_pdf / analyze_svg / analyze_video / analyze_audio / execute_cpp / run_git / dispatch_subagent';
+const EXTERNAL_TOOL_HINT = 'fetch_url / search_web / crawl_site / download_file / pull_github_project / generate_image / generate_video / analyze_image / analyze_pdf / analyze_svg / analyze_video / analyze_audio / execute_cpp / run_git / dispatch_subagent';
 
 export function formatBudgetForecast(gov, { tools = null } = {}) {
   if (!gov) return '';

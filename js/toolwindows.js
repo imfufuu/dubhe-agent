@@ -106,14 +106,18 @@ function windowHtml({ kind, title, text, extraClass = '', copyLabel }) {
  * 显示有内容的输出窗口；如果没有 stdout/stderr 则显示「No output」。
  * `noOutput: false` 可用于仍在执行、结果尚未返回的状态，避免提前出现空输出提示。
  */
-export function renderToolWindowsHtml({ command = '', stdout = '', stderr = '', missing = false, noOutput } = {}) {
+export function renderToolWindowsHtml({ command = '', stdout = '', stderr = '', thinking = '', missing = false, noOutput } = {}) {
   const err = String(stderr || '');
   const out = String(stdout || '');
+  const think = String(thinking || '');
   const hasStdout = !!stripExecutionMetadata(out).trim();
   const hasStderr = !!stripExecutionMetadata(err).trim();
-  const showNoOutput = noOutput === true || (noOutput == null && !hasStdout && !hasStderr);
+  const hasThinking = !!think.trim();
+  const showNoOutput = noOutput === true || (noOutput == null && !hasStdout && !hasStderr && !hasThinking);
   return `<div class="fold-inner tool-windows">`
     + windowHtml({ kind: 'command', title: 'COMMAND', text: command, copyLabel: 'COMMAND' })
+    // 子智能体思考过程（流式增量累积；与 STDOUT 分开，便于区分「推理」与「产出」）
+    + (hasThinking ? windowHtml({ kind: 'thinking', title: 'THINKING', text: think, copyLabel: 'THINKING' }) : '')
     + (hasStdout ? windowHtml({ kind: 'stdout', title: 'STDOUT', text: out, extraClass: missing ? ' tool-result-missing' : '', copyLabel: 'STDOUT' }) : '')
     + (hasStderr ? windowHtml({ kind: 'stderr', title: 'STDERR', text: err, copyLabel: 'STDERR' }) : '')
     + (showNoOutput ? '<div class="chip-no-output" role="note">No output</div>' : '')
@@ -126,11 +130,14 @@ export function toolWindowsOf(chip) {
   const commands = [];
   const outs = [];
   const errs = [];
+  const thinking = [];
   let missing = false;
   let noOutput = false;
   ids.forEach((id, i) => {
     const item = items.find((t) => String(t && t.id) === id) || items[i] || {};
     commands.push(commandWindowText(item.args !== undefined ? item.args : chip._args));
+    // 思考过程是流式累积的独立通道：有结果后仍保留，便于回看子智能体是怎么推理的
+    if (item.liveOutput && item.liveOutput.thinking) thinking.push(String(item.liveOutput.thinking));
     const state = (chip._toolStates && chip._toolStates[id]) || {};
     if (chip._outs && Object.hasOwn(chip._outs, id)) {
       const body = stripInternalNotes(chip._outs[id]);
@@ -171,6 +178,7 @@ export function toolWindowsOf(chip) {
   });
   return {
     command: commands.join('\n\n'), stdout: outs.join('\n\n'), stderr: errs.join('\n\n'),
-    missing, noOutput: noOutput && !outs.length && !errs.length,
+    thinking: thinking.join('\n\n'),
+    missing, noOutput: noOutput && !outs.length && !errs.length && !thinking.length,
   };
 }

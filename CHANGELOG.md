@@ -2,6 +2,15 @@
 
 仅保留稳定版和主要阶段性升级；同一发布周期的补丁构建合并记录，避免逐轮重复。
 
+## 2026-10-29 视频生成、子智能体附件与思考流（待发布）
+
+- 视频生成：新增工具 `generate_video`（TeamoRouter `/v1/videos`：提交 → 轮询 → 下载到沙箱 `outputs/*.mp4`），模型在设置页「多模态模型」里选择（文档表格共 18 个：Seedance 2.5 / 2.0 / 2.0 Fast / 2.0 Mini、MiniMax H3 Max / H3，各含文生、图生、参考图生变体）。仅 TeamoRouter 渠道可用；上限 15 分钟，计费按网关。**未做真实生成测试**（沙箱无法访问 `api.teamorouter.cn`）。
+- 联网 / 生成类工具（`search_web`、`fetch_url`、`generate_image`、`generate_video`）归为同一类折叠行，样式与 Explored File(s) 一致。
+- Editing File(s) 图标特效：由旋转改为笔尖摆动与笔迹逐段书写；`data-motion=off` 与减少动态效果下关闭。
+- 修复：回退到 DuckDuckGo 的搜索结果不再显示为工具失败。根因是结果前 160 字符的失败关键词扫描会命中回退提示（如「不可用」）；外部内容类工具现在只认 `工具名 失败：` 前缀。
+- `dispatch_subagent` 支持 `files`（最多 5 个沙箱路径）：文本内联到子任务（超长截断），图片与二进制只给路径（子智能体用 `analyze_image` / `analyze_pdf` 查看）。
+- 子智能体思考过程以「THINKING」窗口流式显示，每轮一条分隔行；不弹出，结束后保留。
+
 ## Dubhe Agent V1.9 Stable · 2026-10-29
 
 - 新增工具：`patch_apply`（严格应用 unified diff，失败整体拒绝）、`dom_inspect`（HTML 静态结构与可访问性检查，不启动浏览器）、`chart_render`（CSV 标签/数值列渲染为 SVG 柱状图或折线图）。工具表 42 → 45。

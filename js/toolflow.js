@@ -14,8 +14,11 @@ export function recordOutputTool(message, index) {
   if (last?.kind === 'tools') last.indices.push(index);
   else order.push({ kind: 'tools', indices: [index] });
 }
+// 联网检索 / 网页抓取 / 生成类工具：与 Explored File(s) 相同，合并为一个可展开的折叠行（不再散落为命令芯片）。
+export const WEB_TOOL_NAMES = new Set(['search_web', 'fetch_url', 'generate_image', 'generate_video']);
 export function toolFamily(call) {
   if (call?.name === 'write_file') return 'edited';
+  if (WEB_TOOL_NAMES.has(call?.name)) return 'web';
   // 2026.10.21：知识库检索是独立消息块（进行中显示检索词的抛光行，完成后收起且不可展开），
   // 不再混进 Ran command 命令菜单。
   if (call?.name === 'knowledge_search') return 'knowledge';
@@ -118,7 +121,7 @@ export function commandRunFor(messages, id, partIndex = 0, { reasoningVisible = 
 }
 export const TOOL_STREAM_MAX_CHARS = 65536;
 export function appendToolStream(call, { stream, delta, reset } = {}) {
-  if (!call || !['stdout', 'stderr'].includes(stream)) return;
+  if (!call || !['stdout', 'stderr', 'thinking'].includes(stream)) return;
   const output = call.liveOutput || (call.liveOutput = { stdout: '', stderr: '' });
   output[stream] = ((reset ? '' : output[stream] || '') + String(delta || '')).slice(-TOOL_STREAM_MAX_CHARS);
 }

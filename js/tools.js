@@ -9,7 +9,8 @@ import { sandboxProject, sandboxBrowserRequest } from './localbrowser.js?v=2026.
 import { CODE_TOOL_NAMES as REG_CODE_TOOL_NAMES, LEGACY_TOOL_ALIASES as REG_LEGACY_TOOL_ALIASES } from './capabilities.js';
 import { runJavaScript, runPython, runCpp, pythonAvailable, persistenceNote, isSafeFsPath, contentByteSize } from './sandbox.js';
 import { SANDBOX_STORAGE_CAP } from './storagefmt.js';
-import { generateImage, editImage, bytesToDataUrl, dataUrlToBytes, sniffImage } from './api.js?v=2026.10.25.1';
+import { generateImage, editImage, bytesToDataUrl, dataUrlToBytes, sniffImage, createVideoJob, getVideoJob, fetchVideoContent } from './api.js?v=2026.10.25.1';
+import { VIDEO_GEN_ASPECT_RATIOS, planVideoRequest, buildVideoBody, videoJobState, videoJobError, resolveVideoGenModel, VIDEO_POLL_INTERVAL_MS, VIDEO_MAX_WAIT_MS, VIDEO_SANDBOX_MAX_BYTES } from './video-gen.js';
 import { analyzeImage, analyzeVideo, analyzeAudio, VISION_TOOL_MODEL, VIDEO_TOOL_MODEL } from './vision.js';
 import { sanitizeSvgMarkup, svgSourceFromValue, svgDataUrl, extractSvgText } from './svg-safety.js';
 import { pdfToImages, pdfExtractText } from './pdfpages.js';
@@ -50,6 +51,8 @@ function gatewayRequestContext(ctx) {
   return { gatewayId: ctx && ctx.gatewayId || DEFAULT_GATEWAY_ID, gatewayBaseUrl: ctx && ctx.gatewayBaseUrl || '' };
 }
 
+// dispatch_subagent 附件数量上限（TOOL_DEFS 的 schema 也引用它，须定义在前）
+export const SUB_ATTACH_MAX = 5;
 export const TOOL_DEFS = [
   {
     name: 'browser_sandbox',
@@ -163,6 +166,25 @@ export const TOOL_DEFS = [
     name: 'get_browser_environment',
     description: '仅在用户明确询问浏览器/设备环境时调用。只读取公开的粗略浏览器信息（浏览器主版本、OS 家族、语言、时区、取整后的视口、触屏/联网/减少动态效果偏好）；不读取 Cookie、localStorage、IP、GPS/精确位置、硬件序列号或设备 ID。',
     parameters: { type: 'object', properties: {} },
+  },
+  {
+    name: 'generate_video',
+    description:
+      '调用视频生成模型生成短视频（TeamoRouter /v1/videos）。不要传 model：一律用用户在设置里选定的视频生成模型。' +
+      '文生视频只给 prompt；给 input_image（沙箱内图片路径，如 uploads/x.png）则走图生视频（同族图生视频变体）。' +
+      '生成通常需要数分钟，上限 15 分钟，且按网关计费：开始前先告诉用户大致耗时与费用，只在用户明确要求生成视频时调用。' +
+      '完成后视频写入沙箱 outputs/*.mp4 并在对话中展示；失败时说明原因，不要编造结果。',
+    parameters: {
+      type: 'object',
+      properties: {
+        prompt: { type: 'string', description: '画面、动作、镜头与风格描述' },
+        input_image: { type: 'string', description: '可选：沙箱内参考图路径（图生视频）' },
+        seconds: { type: 'integer', minimum: 4, maximum: 30, description: '时长（秒）。各模型范围不同：Seedance 2.5 为 4–30，其余多为 4–15；默认 5' },
+        resolution: { type: 'string', enum: ['480p', '720p', '768p', '1080p', '2k', '4k'], description: '分辨率；须为当前模型支持的档位（如 Seedance 2.0 Fast 只支持 480p/720p）' },
+        aspect_ratio: { type: 'string', enum: VIDEO_GEN_ASPECT_RATIOS, description: '画面比例，默认 16:9' },
+      },
+      required: ['prompt'],
+    },
   },
   {
     name: 'generate_image',
@@ -625,12 +647,19 @@ export const TOOL_DEFS = [
     description:
       '把专业任务委派给子智能体（同模型、专属系统提示词与工具子集，独立上下文），无需用户点名即可调用。' +
       '子智能体看不到对话历史，task 必须自包含（附必要代码/数据/上下文）。返回其文字报告，由你整合后答复。' +
-      '互不依赖的子任务可以在同一轮里一次发出多个调用并行委派。完整名录与适用场景见系统提示词的「子智能体委派」一节。',
+      '互不依赖的子任务可以在同一轮里一次发出多个调用并行委派。需要用户上传的文件时，先确认其沙箱路径（uploads/…），再放进 files 一并交给子智能体。' +
+      '子智能体的思考过程会实时显示在本次调用的「THINKING」窗口里。完整名录与适用场景见系统提示词的「子智能体委派」一节。',
     parameters: {
       type: 'object',
       properties: {
         agent: { type: 'string', enum: SUBAGENTS.map((a) => a.id), description: '子智能体 ID' },
         task: { type: 'string', description: '自包含的任务描述（含必要上下文、代码、数据与期望产出格式）' },
+        files: {
+          type: 'array',
+          items: { type: 'string' },
+          maxItems: SUB_ATTACH_MAX,
+          description: `可选：交给子智能体的沙箱文件路径（最多 ${SUB_ATTACH_MAX} 个）。文本文件内联到任务中（超长截断）；图片与二进制只给路径，子智能体可用 analyze_image / analyze_pdf 查看。`,
+        },
       },
       required: ['agent', 'task'],
     },
@@ -650,6 +679,28 @@ export function toolsFor(sandboxEnabled, { localCpp = true } = {}) {
 
 // 模型给的沙箱路径经常带前导 '/' 或 './'，直接当字典键就会分裂成两套目录树
 // （/data/a.md 与 data/a.md 是两个键）。这里归一，非法路径返回 ''（由调用方反馈纠错）。
+// dispatch_subagent 附件：文本内联进子任务；图片/二进制只给沙箱路径（与对话通道一致，不把 data URL 塞进上下文）
+const SUB_TEXT_MAX_CHARS = 60000;
+export function buildSubagentAttachments(fs, raw) {
+  const paths = (Array.isArray(raw) ? raw : []).map((p) => normalizeFsPath(String(p || '').trim())).filter(Boolean);
+  if (!paths.length) return { block: '' };
+  if (paths.length > SUB_ATTACH_MAX) return { error: `dispatch_subagent 附件最多 ${SUB_ATTACH_MAX} 个（收到 ${paths.length} 个）。` };
+  const parts = [];
+  for (const p of paths) {
+    let content = null;
+    try { content = fs.read(p); } catch { content = null; }
+    if (content == null) return { error: `dispatch_subagent 附件不存在：${p}。请先确认沙箱路径（如 uploads/文件名）。` };
+    const body = String(content);
+    if (/^data:/i.test(body)) {
+      parts.push(`【图片/二进制附件「${p}」已在沙箱中；需要查看请调用 analyze_image（图片）或 analyze_pdf（PDF）。】`);
+    } else {
+      const text = body.length > SUB_TEXT_MAX_CHARS ? `${body.slice(0, SUB_TEXT_MAX_CHARS)}\n…（已截断，全文 ${body.length} 字符）` : body;
+      parts.push(`【附件：${p}】\n${text || '（空文件）'}`);
+    }
+  }
+  return { block: `\n\n---\n以下是委派方提供的附件（沙箱路径）：\n\n${parts.join('\n\n')}` };
+}
+
 export function normalizeFsPath(p) {
   const parts = String(p == null ? '' : p).trim().split('/').map((s) => s.trim()).filter((s) => s && s !== '.');
   if (!parts.length || parts.includes('..') || /[\u0000-\u001f]/.test(parts.join('/'))) return '';
@@ -809,6 +860,15 @@ function codeTimeoutMs(seconds) {
   const n = Number(seconds);
   if (!Number.isFinite(n) || n < 1) return DEFAULT_CODE_TIMEOUT_MS;
   return Math.min(MAX_CODE_TIMEOUT_MS, Math.floor(n) * 1000);
+}
+
+function sleepAbortable(ms, signal) {
+  return new Promise((resolve, reject) => {
+    if (signal && signal.aborted) { reject(new Error('已取消')); return; }
+    const timer = setTimeout(() => { if (signal) signal.removeEventListener('abort', onAbort); resolve(); }, ms);
+    const onAbort = () => { clearTimeout(timer); reject(new Error('已取消')); };
+    if (signal) signal.addEventListener('abort', onAbort, { once: true });
+  });
 }
 
 function nextOutputPath(fs, prefix, ext) {
@@ -1251,10 +1311,118 @@ async function executeToolBody(outerName, outerArgs, ctx) {
           return '当前思考级别不是 Max/Ultra，不能委派子智能体。请用户把「思考」调到 Max 或 Ultra，或由你直接回答。';
         }
         if (!ctx.dispatch) return '子智能体调度器不可用。';
-        emit({ status: 'running', note: `子智能体 ${args.agent} 执行中…` });
-        const report = await ctx.dispatch(args.agent, args.task || '', (note) => emit({ status: 'running', note }));
+        const attach = buildSubagentAttachments(fs, args.files);
+        if (attach.error) {
+          emit({ status: 'error', error: { message: attach.error } });
+          return attach.error;
+        }
+        emit({ status: 'running', note: `子智能体 ${args.agent} 执行中…${attach.block ? `（附件 ${String(args.files.length)} 个）` : ''}` });
+        const report = await ctx.dispatch(args.agent, (args.task || '') + attach.block,
+          (note) => emit({ status: 'running', note }),
+          // 思考过程增量：走工具流通道（stream: 'thinking'），由芯片的 THINKING 窗口实时展示
+          { onThink: (delta) => emit({ stream: 'thinking', delta }) });
         emit({ status: 'ok', note: '报告已返回' });
         return report;
+      }
+      case 'generate_video': {
+        const gatewayId = ctx.gatewayId || DEFAULT_GATEWAY_ID;
+        if (gatewayId !== DEFAULT_GATEWAY_ID) {
+          const message = '视频生成目前只支持 TeamoRouter 渠道：请在设置里把网关切换为 TeamoRouter 后再试。';
+          emit({ status: 'error', error: { message } });
+          return message;
+        }
+        if (!ctx.apiKey) {
+          const message = '未配置 TeamoRouter API Key，无法调用视频生成模型。';
+          emit({ status: 'error', error: { message } });
+          return message;
+        }
+        const prompt = String(args.prompt || '').trim();
+        if (!prompt) return 'generate_video 缺少 prompt 参数。';
+        let imageDataUrl = '';
+        const imagePath = args.input_image ? normalizeFsPath(String(args.input_image)) : '';
+        if (imagePath) {
+          let content = '';
+          try { content = String(fs.read(imagePath) || ''); } catch { content = ''; }
+          if (!/^data:image\//i.test(content)) {
+            const message = `沙箱中找不到参考图（需为图片）：${imagePath}`;
+            emit({ status: 'error', error: { message } });
+            return `视频调用在发起前失败：${message}`;
+          }
+          imageDataUrl = content;
+        }
+        const plan = planVideoRequest({
+          model: resolveVideoGenModel(ctx.videoGenModel),
+          prompt, seconds: args.seconds, resolution: args.resolution, aspectRatio: args.aspect_ratio,
+          hasImage: !!imageDataUrl,
+        });
+        if (!plan.ok) {
+          emit({ status: 'error', error: { message: plan.error } });
+          return `视频调用在发起前失败：${plan.error}`;
+        }
+        const common = { apiKey: ctx.apiKey, signal: ctx.signal, ...gatewayRequestContext(ctx) };
+        // 幂等键：本次调用内的重试沿用同一个 key，避免重复创建任务（重复计费）
+        const idempotencyKey = `dubhe-video-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+        emit({ status: 'running', note: `提交视频任务（${plan.model} · ${plan.size} · ${plan.seconds}s）…` });
+        let job;
+        try {
+          job = await createVideoJob({ ...common, body: buildVideoBody(plan, prompt, imageDataUrl), idempotencyKey, timeoutMs: 60000 });
+        } catch (err) {
+          const message = `视频任务创建失败：${err.message || err}`;
+          emit({ status: 'error', error: { message } });
+          return message;
+        }
+        const id = job && job.id;
+        if (!id) {
+          const message = '视频任务创建失败：网关未返回任务 ID。';
+          emit({ status: 'error', error: { message } });
+          return message;
+        }
+        const started = Date.now();
+        let state = videoJobState(job);
+        let pollFails = 0;
+        while (state === 'pending') {
+          if (Date.now() - started > VIDEO_MAX_WAIT_MS) {
+            const message = `视频生成超过 ${Math.round(VIDEO_MAX_WAIT_MS / 60000)} 分钟仍未完成（任务 ${id}）。可稍后再查询该任务。`;
+            emit({ status: 'error', error: { message } });
+            return message;
+          }
+          await sleepAbortable(VIDEO_POLL_INTERVAL_MS, ctx.signal);
+          try {
+            job = await getVideoJob(id, common);
+            pollFails = 0;
+          } catch (err) {
+            // 偶发的查询失败不终止任务：连续 3 次才放弃
+            if (++pollFails >= 3) {
+              const message = `视频任务查询失败（任务 ${id}）：${err.message || err}`;
+              emit({ status: 'error', error: { message } });
+              return message;
+            }
+            continue;
+          }
+          state = videoJobState(job);
+          const pct = Number(job && job.progress);
+          emit({ status: 'running', note: `视频生成中${Number.isFinite(pct) ? `（${Math.round(pct)}%）` : ''}…` });
+        }
+        if (state === 'failed') {
+          const message = `视频生成失败：${videoJobError(job)}（任务 ${id}）`;
+          emit({ status: 'error', error: { message } });
+          return message;
+        }
+        const bytes = new Uint8Array(await fetchVideoContent(id, common));
+        if (bytes.byteLength > VIDEO_SANDBOX_MAX_BYTES) {
+          const message = `视频已生成但超过沙箱存储上限（${Math.round(bytes.byteLength / 1048576)} MB > 16 MB），未写入沙箱。任务 ${id} 的媒体在网关保留 7 天。`;
+          emit({ status: 'error', error: { message } });
+          return message;
+        }
+        let last = 0;
+        for (const f of fs.list()) {
+          const m = /^outputs\/video-(\d+)\.[^.]*$/.exec(f.path);
+          if (m) last = Math.max(last, Number(m[1]));
+        }
+        const path = `outputs/video-${String(last + 1).padStart(3, '0')}.mp4`;
+        fs.write(path, bytesToDataUrl(bytes, 'video/mp4'));
+        emit({ status: 'ok', fsChange: true, note: `视频已生成 ${path}`, video: { path, model: plan.model, seconds: plan.seconds, size: plan.size } });
+        return `[视频已生成] ${path}\n模型：${plan.model} · ${plan.seconds} 秒 · ${plan.size}\n任务 ID：${id}\n请在随后的回复里用 sandbox://${path} 引用；视频保存在沙箱 outputs/。`;
       }
       case 'generate_image': {
         const comparePaths = (Array.isArray(args.compare_paths) ? args.compare_paths : [])

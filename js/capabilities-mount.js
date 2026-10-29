@@ -8,6 +8,7 @@ export const TOOL_MOUNT_RULES_SOURCE = Object.freeze({
   get_current_time: { text: /现在(?:几点|是几号|时间|日期)|当前时间|几点|今天|明天|昨天|这周|本周|上周|这个月|本月|今年|日期|星期|周几|几号|\bnow\b|\btoday\b|\btime\b|\bdate\b/i },
   get_browser_environment: { text: /浏览器|运行环境|user.?agent|分辨率|时区|语言设置|\bbrowser\b|\benvironment\b|\bplatform\b/i },
   generate_image: { text: /画(?:一|个|张|幅|出)|生成.{0,8}(?:图片|照片|插画|海报|头像|logo|封面|壁纸)|生图|文生图|插画|海报|\bimage\b|\bpicture\b|\billustration\b|\bposter\b|\bdraw\b|\blogo\b/i, exclude: /折线图|柱状图|饼图|散点图|图表|流程图|架构图|时序图|思维导图|关系图|类图|状态图|甘特图|依赖图|拓扑/i },
+  generate_video: { text: /视频|影片|短片|动态图|\bvideo\b|\bclip\b|文生视频|图生视频|seedance|minimax|\bmp4\b/i, exclude: /分析视频|识别视频|视频理解|总结视频|转写视频|理解视频/i },
   document_tool: { text: /\bdocx?\b|\bpptx?\b|\bpdf\b|word|\bwps\b|演示|幻灯片|文稿|文档|表单|水印|合并.*文件|\bslides?\b|合同|简历|周报|月报|年报|报告书|纪要|公文|标书|说明书|讲义|教案/i, attachments: ['office', 'pdf'] },
   xlsx_tool: { text: /\bxlsx\b|\bexcel\b|\bspreadsheet\b|\bworkbook\b|电子表格|工作簿/i, attachments: ['office'] },
   analyze_audio: { text: /音频|录音|语音|转录|听写|播客|\baudio\b|\btranscri|\bmp3\b|\bwav\b/i, attachments: ['audio'] },

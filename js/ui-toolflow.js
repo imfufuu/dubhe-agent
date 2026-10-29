@@ -43,7 +43,7 @@ export function paintOrderedAssistant(wrap, m, { paintPart, paintMeta, paintFoot
       let flow = wrap.querySelector(':scope > .assistant-flow');
       if (!flow) {
         flow = document.createElement('div'); flow.className = 'assistant-flow';
-        for (const child of [...wrap.children]) if (child.matches('.md-body,.tool-chips,.reasoning,.explored-files,.edited-files,.searched-library,.message-tail')) child.remove();
+        for (const child of [...wrap.children]) if (child.matches('.md-body,.tool-chips,.reasoning,.explored-files,.web-activity,.edited-files,.searched-library,.message-tail')) child.remove();
         const anchor = wrap.querySelector(':scope > .msg-foot') || wrap.querySelector(':scope > .msg-actions');
         wrap.insertBefore(flow, anchor || null);
       }
@@ -82,10 +82,10 @@ export function renderToolChipDetail(chip) {
     if (!chip || !chip._detail) return;
     const w = toolWindowsOf(chip);
     chip._win = w;
-    const sig = JSON.stringify([w.command, w.stdout, w.stderr, w.missing, w.noOutput]);
+    const sig = JSON.stringify([w.command, w.stdout, w.stderr, w.thinking, w.missing, w.noOutput]);
     if (chip._detailSig !== sig) {
       chip._detailSig = sig;
-      const expected = ['command', ...(w.stdout ? ['stdout'] : []), ...(w.stderr ? ['stderr'] : [])];
+      const expected = ['command', ...(w.thinking ? ['thinking'] : []), ...(w.stdout ? ['stdout'] : []), ...(w.stderr ? ['stderr'] : [])];
       const existing = [...chip._detail.querySelectorAll('[data-win]')].map((n) => n.dataset.win);
       const hasNoOutput = !!chip._detail.querySelector('.chip-no-output');
       if (expected.join() !== existing.join() || hasNoOutput !== !!w.noOutput) chip._detail.innerHTML = renderToolWindowsHtml(w);
@@ -95,10 +95,14 @@ export function renderToolChipDetail(chip) {
         if (pre && pre.textContent !== text) pre.textContent = text;
       }
     }
+    // 子智能体思考流式增长：思考窗口始终贴住最新一行
+    const thinkPre = chip._detail.querySelector('[data-win="thinking"] pre');
+    if (thinkPre) thinkPre.scrollTop = thinkPre.scrollHeight;
   }
 
 
-import { $, $$, el, esc } from './ui-markdown.js?v=2026.10.25.1';
+import { $, $$, el, esc, videoBlobUrl } from './ui-markdown.js?v=2026.10.25.1';
+import { text as localeText } from './locale.js';
 import { ICON } from './icons.js';
 
 // 2026.10.21：知识库检索 = 独立消息块。检索中：英文进行时「Searching library」+ 与命令/文件行
@@ -241,4 +245,17 @@ export function activeToolOwner(messages, call, stopped) {
   if (stopped) return null;
   const owner = ownerOfTool(messages, call);
   return owner && !owner.cancelled && messages.indexOf(owner) > messages.findLastIndex((m) => m.role === 'user' && !m.silent) ? owner : null;
+}
+
+// generate_video 折叠行里的视频预览：数据从沙箱读出 → Blob URL 就地播放（视频不进消息存储）
+export function hydrateWebVideos(node, readFile) {
+  for (const box of node.querySelectorAll('.web-video[data-path]')) {
+    if (box.firstChild) continue;
+    let url = '';
+    try { url = videoBlobUrl(readFile(box.dataset.path)); } catch { url = ''; }
+    if (!url) { box.textContent = localeText('视频文件不在沙箱中', 'Video file not found in sandbox'); continue; }
+    const v = document.createElement('video');
+    v.controls = true; v.preload = 'metadata'; v.src = url; v.className = 'web-video-player';
+    box.appendChild(v);
+  }
 }

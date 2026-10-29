@@ -14,7 +14,7 @@ export function syncMessageRhythm(root) {
         if (child.matches('.assistant-flow, .assistant-fragment')) visit(child);
         else if (child.matches('.md-body') && !child.classList.contains('empty') && child.textContent.trim()) surfaces.push('text');
         else if (child.matches('.tool-chips') && child.children.length) surfaces.push('tools');
-        else if (child.matches('.edited-files, .explored-files, .reasoning, .md-fold')) surfaces.push('tools');
+        else if (child.matches('.edited-files, .explored-files, .web-activity, .reasoning, .md-fold')) surfaces.push('tools');
       }
     };
     visit(node);

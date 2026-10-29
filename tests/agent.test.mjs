@@ -8940,7 +8940,8 @@ test('ui.js 拆分：文件面板 / 全屏预览 / 附件 / 图表各自成模�
   // P4 验收：字节上限（ui.js < 168 KB，agent.js < 110 KB），防止「行数达标、单行塞爆」
   // 2026.10.21：160 KB 预算在上一版就只剩 104 B 余量，本轮新增知识库检索折叠行后正式调到 168 KB
   //（折叠绘制逻辑已抽到 ui-toolflow.js，ui.js 只留接线）。
-  assert.ok(Buffer.byteLength(ui, 'utf8') < 168 * 1024, `ui.js 应小于 168 KB（当前 ${Buffer.byteLength(ui, 'utf8')} B）`);
+  // 2026.10.29：联网/生成类折叠行（paintWebFold）与设置页视频模型接线后调到 176 KB。
+  assert.ok(Buffer.byteLength(ui, 'utf8') < 176 * 1024, `ui.js 应小于 176 KB（当前 ${Buffer.byteLength(ui, 'utf8')} B）`);
   const agentSrcP4 = fsp.readFileSync(new URL('../js/agent.js', import.meta.url), 'utf8');
   assert.ok(Buffer.byteLength(agentSrcP4, 'utf8') < 110 * 1024, `agent.js 应小于 110 KB（当前 ${Buffer.byteLength(agentSrcP4, 'utf8')} B）`);
   for (const mod of ['toolrunner', 'turnfinalizer']) {
@@ -9234,7 +9235,7 @@ test('analyze_video 工具：定义 / 契约 / 并行与访问表 / 执行路径
   assert.match(def.description, /不要传 model/);
   assert.match(def.description, /16MB/);
   assert.deepEqual(Object.keys(def.parameters.properties).sort(), ['path', 'prompt']);
-  assert.equal(TOOL_DEFS.length, 45, '45 工具（V1.9 新增 patch_apply / dom_inspect / chart_render）：工具目录与 XLSX 能力均登记到能力表和执行契约');
+  assert.equal(TOOL_DEFS.length, 46, '46 工具（V1.9 新增 patch_apply / dom_inspect / chart_render；视频生成新增 generate_video）：工具目录与 XLSX 能力均登记到能力表和执行契约');
   const c = ex.getToolContract('analyze_video');
   assert.equal(c.sideEffect, 'remote');
   assert.equal(c.external, true);
@@ -10941,7 +10942,7 @@ test('能力登记处：TOOL_DEFS ↔ 登记表 ↔ execution.js 契约三方一
   same(reg.PARALLEL_TOOL_NAMES, ['skill_library', 'knowledge_search', 'read_file', 'list_files', 'search_files', 'get_current_time', 'get_browser_environment', 'fetch_url', 'search_web', 'regex', 'hash', 'codec', 'unicode', 'evaluate_expression', 'diff_text', 'dom_inspect', 'json_tool', 'date_calc', 'convert_units', 'analyze_image', 'text_tool']);
   same(reg.NETWORK_TOOL_NAMES, ['fetch_url', 'search_web', 'crawl_site', 'download_file', 'pull_github_project']);
   same(reg.READ_ONLY_TOOL_NAMES, ['skill_library', 'knowledge_search', 'read_file', 'list_files', 'search_files', 'get_current_time', 'regex', 'hash', 'codec', 'unicode', 'evaluate_expression', 'diff_text', 'dom_inspect', 'json_tool', 'csv_tool', 'date_calc', 'text_tool', 'convert_units', 'data_tool']);
-  same(reg.HEAVY_TOOL_NAMES, ['document_tool', 'xlsx_tool', 'browser_sandbox', 'write_file', 'delete_file', 'copy_file', 'zip_files', 'unzip_file', 'convert_file', 'patch_apply', 'chart_render', 'execute_javascript', 'execute_python', 'execute_cpp', 'generate_image', 'dispatch_subagent', 'fetch_url', 'run_git', 'analyze_image', 'render_mermaid', 'render_dot', 'execute_sql']);
+  same(reg.HEAVY_TOOL_NAMES, ['document_tool', 'xlsx_tool', 'browser_sandbox', 'write_file', 'delete_file', 'copy_file', 'zip_files', 'unzip_file', 'convert_file', 'patch_apply', 'chart_render', 'execute_javascript', 'execute_python', 'execute_cpp', 'generate_image', 'generate_video', 'dispatch_subagent', 'fetch_url', 'run_git', 'analyze_image', 'render_mermaid', 'render_dot', 'execute_sql']);
   assert.deepEqual([...reg.CORE_TOOL_NAMES], ['execute_javascript', 'execute_python', 'execute_cpp', 'write_file', 'read_file', 'list_files', 'delete_file', 'copy_file', 'fetch_url', 'search_web', 'analyze_image', 'dispatch_subagent', 'knowledge_search', 'skill_library', 'tool_library'], '稳定核心顺序末尾增加工具目录 Schema');
   assert.deepEqual(Object.keys(reg.CAPABILITY_GATED_TOOL_GROUPS), ['invariantCore', 'webFetch', 'workerSearch', 'siteCrawler', 'fileDownload', 'codeSandbox', 'localBrowser', 'subagentSwarm']);
   assert.deepEqual([...reg.CAPABILITY_GATED_TOOL_GROUPS.codeSandbox], ['execute_javascript', 'execute_python', 'execute_cpp']);
@@ -11031,7 +11032,7 @@ test('界面动效偏好：auto / on / off 三态，on 覆盖系统 reduce，off
   assert.match(main, /applyMotion\(\);/);
   assert.match(main, /browserFeatureReport\(\)[\s\S]*?dubhe-oldbrowser-noted/);
   const css = fsp.readFileSync(new URL('../css/styles.css', import.meta.url), 'utf8');
-  assert.equal((css.match(/@media \(prefers-reduced-motion: reduce\) \{/g) || []).length, 12, '含欢迎页/思考摘要动效、嵌套编辑预览、语音球体、设置详情与状态抛光的减少动效块（原思维链逐行动画已移除；跨页过渡在 css/page-fx.css）');
+  assert.equal((css.match(/@media \(prefers-reduced-motion: reduce\) \{/g) || []).length, 13, '含 Editing 笔迹动画（edit-nib / edit-ink）减少动效块；含欢迎页/思考摘要动效、嵌套编辑预览、语音球体、设置详情与状态抛光的减少动效块（原思维链逐行动画已移除；跨页过渡在 css/page-fx.css）');
   assert.doesNotMatch(css, /thinkLineEnter|think-stream/, '进度摘要不再逐行呈现原始思维链');
   const reduceBlocks = css.split('@media (prefers-reduced-motion: reduce) {').slice(1);
   for (const b of reduceBlocks) {
