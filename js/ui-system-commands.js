@@ -47,8 +47,8 @@ export function installSystemCommands({ store, agent, toast, inSystem, isSystemI
       else if (typeof globalThis.__dubheDebugSet !== 'function') out = localeText('调试浮窗模块未加载（旧版本缓存），请强刷页面后重试', 'Debug panel module not loaded (stale cache). Hard-refresh the page and try again');
       else {
         const now = globalThis.__dubheDebugSet(on);
-        out = now ? localeText('✓ 调试浮窗已开启：审核全链路 / console.warn·error / Agent 状态将实时上屏（Ctrl+Alt+D 可关）', '✓ Debug panel on: moderation pipeline, console.warn/error and agent state appear live (Ctrl+Alt+D to hide)')
-                  : localeText('✓ 调试浮窗已关闭', '✓ Debug panel off');
+        out = now ? localeText('调试浮窗已开启：审核全链路 / console.warn·error / Agent 状态将实时上屏（Ctrl+Alt+D 可关）', 'Debug panel on: moderation pipeline, console.warn/error and agent state appear live (Ctrl+Alt+D to hide)')
+                  : localeText('调试浮窗已关闭', 'Debug panel off');
       }
     } else if (name === 'status') {
       const log = globalThis.__dubheModLog || [];
@@ -58,7 +58,7 @@ export function installSystemCommands({ store, agent, toast, inSystem, isSystemI
         : modelDisplayName(store.state.model);
       const debugOn = !!(globalThis.__dubheDebugActive && globalThis.__dubheDebugActive());
       const pwTxt = pw
-        ? localeText(`已完成（NudeNet ${pw.nudenet ? '✓' : '✗'} / NSFWJS ${pw.nsfwjs ? '✓' : '✗'}${pw.toxicity != null ? ` / Toxicity ${pw.toxicity ? '✓' : '✗'}` : ''}）`, `done (NudeNet ${pw.nudenet ? '✓' : '✗'} / NSFWJS ${pw.nsfwjs ? '✓' : '✗'}${pw.toxicity != null ? ` / Toxicity ${pw.toxicity ? '✓' : '✗'}` : ''})`)
+        ? localeText(`已完成（NudeNet ${pw.nudenet ? '通过' : '未通过'} / NSFWJS ${pw.nsfwjs ? 'pass' : 'fail'}${pw.toxicity != null ? ` / Toxicity ${pw.toxicity ? 'pass' : 'fail'}` : ''}）`, `done (NudeNet ${pw.nudenet ? 'pass' : 'fail'} / NSFWJS ${pw.nsfwjs ? 'pass' : 'fail'}${pw.toxicity != null ? ` / Toxicity ${pw.toxicity ? 'pass' : 'fail'}` : ''})`)
         : localeText('尚未执行（发图或打开页面 2 秒后自动开始）', 'not run yet (starts 2 seconds after an image is sent or the page opens)');
       const modOn = store.state.settings.contentModeration === true;
       out = [
@@ -107,7 +107,7 @@ export function installSystemCommands({ store, agent, toast, inSystem, isSystemI
       else {
         store.state.settings.executionGuard = v;
         store.notify();
-        out = localeText(`✓ 执行内核确认档位已切换：${v}（${modes[v]}）\n高风险操作会先给出「操作 / 原因 / 影响 / 可逆性 / 参数摘要」，再由你决定是否放行；超时或未应答一律按拒绝处理。`, `✓ Execution-kernel confirmation level set to ${v} (${modes[v]})\nHigh-risk actions first show operation / reason / impact / reversibility / parameter summary; you decide whether to allow them. Timeouts or no response count as refusal.`);
+        out = localeText(`执行内核确认档位已切换：${v}（${modes[v]}）\n高风险操作会先给出「操作 / 原因 / 影响 / 可逆性 / 参数摘要」，再由你决定是否放行；超时或未应答一律按拒绝处理。`, `Execution-kernel confirmation level set to ${v} (${modes[v]})\nHigh-risk actions first show operation / reason / impact / reversibility / parameter summary; you decide whether to allow them. Timeouts or no response count as refusal.`);
       }
     } else if (name === 'p2') {
       // P2 面板：一次看全「策略版本 / 指标 / 审计三层 / 故障 / 实验 / 上下文一致性」
@@ -119,7 +119,7 @@ export function installSystemCommands({ store, agent, toast, inSystem, isSystemI
       if (!sub || sub === 'policy') {
         try {
           const r = agent && agent.verifyPolicies ? await agent.verifyPolicies() : null;
-          lines.push('', r ? (r.ok ? localeText(`✓ 策略注册表自检通过（${r.checked}/${r.total} 项）`, `✓ Policy registry self-check passed (${r.checked}/${r.total})`) : `⚠ 策略漂移：${r.mismatches.map((m) => `${m.key} 声明=${m.declared} 实际=${m.actual}`).join('；')}`) : localeText('（策略自检不可用）', '(policy self-check unavailable)'));
+          lines.push('', r ? (r.ok ? localeText(`策略注册表自检通过（${r.checked}/${r.total} 项）`, `Policy registry self-check passed (${r.checked}/${r.total})`) : `注意：策略漂移：${r.mismatches.map((m) => `${m.key} 声明=${m.declared} 实际=${m.actual}`).join('；')}`) : localeText('（策略自检不可用）', '(policy self-check unavailable)'));
         } catch (e) { lines.push(localeText(`（策略自检失败：${e.message}）`, `(policy self-check failed: ${e.message})`)); }
       }
       if (!sub || sub === 'fault') {
@@ -127,7 +127,7 @@ export function installSystemCommands({ store, agent, toast, inSystem, isSystemI
         const want = String(arg || '').split(/\s+/).slice(1);
         if (want.length && agent && agent.armFaultInjection) {
           const r = agent.armFaultInjection(want);
-          lines.push('', r.cleared ? localeText('✓ 已清除待注入故障', '✓ Pending fault injection cleared') : localeText(`✓ 已装备故障注入：${r.kinds.join('、')}（下一轮生效一次）`, `✓ Fault injection armed: ${r.kinds.join(', ')} (applies once, next turn)`));
+          lines.push('', r.cleared ? localeText('已清除待注入故障', 'Pending fault injection cleared') : localeText(`已装备故障注入：${r.kinds.join('、')}（下一轮生效一次）`, `Fault injection armed: ${r.kinds.join(', ')} (applies once, next turn)`));
         } else {
           lines.push('', localeText('可用故障类型（下一轮生效一次）：', 'Available fault types (applies once, next turn):'), kinds.map((k) => `  · ${k}`).join('\n'), localeText('用法：/p2 fault tool-timeout 或 /p2 fault tool-timeout,audit-event-missing', 'Usage: /p2 fault tool-timeout or /p2 fault tool-timeout,audit-event-missing'));
         }
@@ -150,20 +150,20 @@ export function installSystemCommands({ store, agent, toast, inSystem, isSystemI
           plan.summary,
           plan.reusableSteps && plan.reusableSteps.length ? localeText(`可直接复用：${plan.reusableSteps.join('、')}`, `Reusable: ${plan.reusableSteps.join(', ')}`) : localeText('可直接复用：无', 'Reusable: none'),
           plan.verificationSteps && plan.verificationSteps.length ? localeText(`续跑前先核验：${plan.verificationSteps.join('；')}`, `Verify before resuming: ${plan.verificationSteps.join('; ')}`) : localeText('续跑前先核验：无（产物与检查点一致）', 'Verify before resuming: none (artifacts match the checkpoint)'),
-          plan.needsConfirmation ? localeText('⚠ 涉及高风险或能力变化：续跑前需要你明确确认', '⚠ High-risk or capability change: confirm before resuming') : localeText('无需重新确认', 'No re-confirmation needed'),
+          plan.needsConfirmation ? localeText('注意：涉及高风险或能力变化，续跑前需要你明确确认', 'Note: high-risk or capability change; confirm before resuming') : localeText('无需重新确认', 'No re-confirmation needed'),
         ].join('\n');
       }
     } else if (name === 'theme') {
       const v = String(arg || '').toLowerCase();
       if (v !== 'dark' && v !== 'light') out = localeText('用法：/theme dark 或 /theme light', 'Usage: /theme dark or /theme light');
-      else { store.state.settings.theme = v; applyTheme(); store.notify(); out = localeText(`✓ 主题已切换：${v === 'dark' ? '深色' : '浅色'}`, `✓ Theme set to ${v === 'dark' ? 'dark' : 'light'}`); }
+      else { store.state.settings.theme = v; applyTheme(); store.notify(); out = localeText(`主题已切换：${v === 'dark' ? '深色' : '浅色'}`, `Theme set to ${v === 'dark' ? 'dark' : 'light'}`); }
     } else if (name === 'cache') {
       if (typeof caches === 'undefined') out = localeText('当前环境不支持 Cache Storage（需 https 或 localhost）', 'Cache Storage is not supported here (needs https or localhost)');
       else {
         const names = await caches.keys();
         if (/^(clear|清空|clean)$/i.test(arg)) {
           await Promise.all(names.map((n) => caches.delete(n)));
-          out = localeText(`✓ 已清空 ${names.length} 个离线缓存。刷新页面后自动重建（模型/审核资产会重新下载一次）`, `✓ Cleared ${names.length} offline cache(s). Rebuilt after a page refresh (model and moderation assets download once more)`);
+          out = localeText(`已清空 ${names.length} 个离线缓存。刷新页面后自动重建（模型/审核资产会重新下载一次）`, `Cleared ${names.length} offline cache(s). Rebuilt after a page refresh (model and moderation assets download once more)`);
         } else {
           let n = 0;
           for (const nm of names) { try { n += (await (await caches.open(nm)).keys()).length; } catch { /* 忽略 */ } }
@@ -183,13 +183,13 @@ export function installSystemCommands({ store, agent, toast, inSystem, isSystemI
         a.download = `dubhe-sessions-${new Date().toISOString().slice(0, 10)}.json`;
         document.body.appendChild(a); a.click(); a.remove();
         setTimeout(() => URL.revokeObjectURL(a.href), 4000);
-        out = localeText(`✓ 已导出 ${(store.state.sessions || []).length} 个会话（JSON，含沙箱文件清单）`, `✓ Exported ${(store.state.sessions || []).length} session(s) (JSON, including sandbox file list)`);
+        out = localeText(`已导出 ${(store.state.sessions || []).length} 个会话（JSON，含沙箱文件清单）`, `Exported ${(store.state.sessions || []).length} session(s) (JSON, including sandbox file list)`);
       } catch (e) { out = localeText(`导出失败：${e && e.message ? e.message : e}`, `Export failed: ${e && e.message ? e.message : e}`); }
     } else if (name === 'model') {
       const id = arg.trim();
       if (!id) out = localeText('用法：/model <模型完整 ID>（如 /model claude-sonnet-5）', 'Usage: /model <full model ID> (e.g. /model claude-sonnet-5)');
       else if (id === '__system__') out = localeText('不能切换到保留标识', 'Cannot switch to a reserved identifier');
-      else if (chatModels().some((m) => m.id === id)) { selectModel(id); out = localeText(`✓ 已切换模型：${id}`, `✓ Switched model: ${id}`); }
+      else if (chatModels().some((m) => m.id === id)) { selectModel(id); out = localeText(`已切换模型：${id}`, `Switched model: ${id}`); }
       else out = localeText(`未找到模型「${id}」——输入 /models 查看可用列表`, `Model “${id}” not found — type /models to see the list`);
     } else if (name === 'models') {
       const ids = chatModels().map((m) => m.id);
@@ -201,7 +201,7 @@ export function installSystemCommands({ store, agent, toast, inSystem, isSystemI
       if (!inSystem()) { try { agent.loadFiles({}); } catch { /* 忽略 */ } }
       store.notify();
       rebuildMessages(); renderFiles(); updateStats();
-      out = inSystem() ? localeText('✓ 通道草稿已清空（真实会话不受影响）', '✓ Channel draft cleared (real sessions unaffected)') : localeText('✓ 当前会话消息与沙箱文件已清空（会话本身保留）', '✓ Messages and sandbox files cleared (session kept)');
+      out = inSystem() ? localeText('通道草稿已清空（真实会话不受影响）', 'Channel draft cleared (real sessions unaffected)') : localeText('当前会话消息与沙箱文件已清空（会话本身保留）', 'Messages and sandbox files cleared (session kept)');
     } else {
       out = localeText(`未知命令「${name}」——输入 /help 查看可用命令`, `Unknown command “${name}” — type /help to see the commands`);
     }

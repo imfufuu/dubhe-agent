@@ -1073,12 +1073,19 @@ async function executeToolBody(outerName, outerArgs, ctx) {
         const out = cppRemote ? await runCppRemote(code, runOpts) : await runCpp(code, {
           ...runOpts,
           // 启动阶段（Worker 载入脚本、尚未开始下载）无字节数：progress:-1 表示不确定进度条；下载开始后由 onProgress 给出百分比。
-          onPhase: (phase) => { if (notes[phase]) emit({ status: 'running', lang: 'cpp', workerStage: phase, note: notes[phase], progress: phase === 'bootstrap' || phase === 'executing' ? -1 : null }); },
+          // 所有阶段都给进度条：有字节数时由 onProgress 给出百分比；其余阶段（启动 / 解压 / 编译 / 运行）为不确定条 -1，不再清空
+          onPhase: (phase) => { if (notes[phase]) emit({ status: 'running', lang: 'cpp', workerStage: phase, note: notes[phase], progress: -1 }); },
           onProgress: (p) => {
             const total = Number(p?.total) || 0;
             const loaded = Math.min(Number(p?.loaded) || 0, total || Number(p?.loaded) || 0);
-            const fraction = total > 0 ? Math.min(1, loaded / total) : 0;
             const mb = (n) => (n / 1048576).toFixed(1);
+            // 总字节未知（服务器未给 Content-Length 且无兜底值）时不能显示 0%：改用不确定条，并显示已下载量
+            if (!(total > 0)) {
+              emit({ status: 'running', lang: 'cpp', workerStage: 'loading-assets', progress: -1,
+                note: `按需加载本站 C++ 工具链…（已下载 ${mb(loaded)} MB）` });
+              return;
+            }
+            const fraction = Math.min(1, loaded / total);
             emit({ status: 'running', lang: 'cpp', workerStage: 'loading-assets', progress: fraction,
               note: `按需加载本站 C++ 工具链 ${Math.round(fraction * 100)}%（${mb(loaded)} / ${mb(total)} MB）` });
           },
@@ -1606,10 +1613,12 @@ async function executeToolBody(outerName, outerArgs, ctx) {
           let visionOut = 0;
           for (let i = 0; i < paths.length; i++) {
             const path = paths[i];
-            let dataUrl = '';
-            try { dataUrl = fs.read(path); } catch { return `analyze_image 失败：找不到 ${path}（现有图片：${listImgs().join('、') || '无'}）`; }
-            if (!/^data:image\//i.test(dataUrl) && !/^https?:\/\//i.test(dataUrl)) {
-              return `analyze_image 失败：${path} 不是图片 data URL（当前是文本文件？）。`;
+            let raw;
+            try { raw = fs.read(path); } catch { return `analyze_image 失败：找不到 ${path}（现有图片：${listImgs().join('、') || '无'}）`; }
+            // 沙箱里的图片可能是 data URL、纯 base64 文本或原始字节：统一解码为真实图片字节后再识图
+            const dataUrl = /^https?:\/\//i.test(String(raw)) ? String(raw) : sandboxImageDataUrl(raw);
+            if (!dataUrl) {
+              return `analyze_image 失败：${path} 不是可识别的图片（解码后不是 PNG/JPEG/WebP/GIF）。`;
             }
             emit({ status: 'running', note: `识图中（${visionModel} · ${i + 1}/${paths.length} · ${path}）…` });
             const pagePrompt = paths.length > 1
@@ -2017,7 +2026,22 @@ async function executeToolBody(outerName, outerArgs, ctx) {
         try {
           const done = await runConversion({
             bytes, mime, plan, opts,
-            onProgress: (p) => { const pct = Math.round(Number(p) || 0); if (pct !== lastPct && pct % 10 === 0) { lastPct = pct; emit({ status: 'running', note: convertProgressNote(pct + '%') }); } },
+            onProgress: (p) => {
+              const mb = (n) => (Number(n) / 1048576).toFixed(1);
+              // 首次加载 ffmpeg core（约 30 MB wasm）：下载字节进度 → 界面进度条；编译阶段为不确定条
+              if (p && typeof p === 'object' && p.loading) {
+                if (p.stage === 'init') { emit({ status: 'running', workerStage: 'loading-assets', progress: -1, note: 'ffmpeg 引擎加载中（编译 wasm）…' }); return; }
+                const total = Number(p.total) || 0;
+                const loaded = Number(p.loaded) || 0;
+                const frac = total > 0 ? Math.min(1, loaded / total) : -1;
+                emit({ status: 'running', workerStage: 'loading-assets', progress: frac,
+                  note: frac >= 0 ? `加载 ffmpeg 引擎 ${Math.round(frac * 100)}%（${mb(loaded)} / ${mb(total)} MB）` : `加载 ffmpeg 引擎…（已下载 ${mb(loaded)} MB）` });
+                return;
+              }
+              // 转换执行阶段：0–99 的百分比，同步给界面进度条（首帧 0% 也要显示）
+              const pct = Math.round(Number(p) || 0);
+              if (pct !== lastPct) { lastPct = pct; emit({ status: 'running', progress: pct / 100, note: convertProgressNote(pct + '%') }); }
+            },
           });
           fs.write(out, `data:${done.outMime};base64,${u8ToB64(done.bytes)}`);
           emit({ status: 'ok', fsChange: true, editedPath: out, note: `${fromExt || 'media'} → ${to} · ${done.mode}` });
@@ -2284,6 +2308,23 @@ ${to} · ${done.bytes.length} 字节${done.mode === 'ffmpeg' ? ' · ffmpeg.wasm�
     emit({ status: 'error', error: { message: msg } });
     return msg;
   }
+}
+
+// 沙箱文件 → 真实图片 data URL：支持 data:image/...、带或不带 data: 前缀的 base64 文本、Uint8Array 原始字节；
+// 解码后用文件头（magic bytes）判断真实格式，不依赖扩展名。无法识别时返回 null。
+export function sandboxImageDataUrl(content) {
+  if (content instanceof Uint8Array) {
+    const s = sniffImage(content);
+    return s.mime && /^image\//.test(s.mime) ? bytesToDataUrl(content, s.mime) : null;
+  }
+  const text = String(content ?? '');
+  if (/^data:image\//i.test(text)) return text;
+  const body = text.replace(/^data:[^,]*;base64,/i, '').replace(/\s+/g, '');
+  if (body.length < 16 || !/^[A-Za-z0-9+/]+={0,2}$/.test(body)) return null;
+  let bytes;
+  try { bytes = Uint8Array.from(atob(body), (c) => c.charCodeAt(0)); } catch { return null; }
+  const s = sniffImage(bytes);
+  return s.mime && /^image\//.test(s.mime) ? bytesToDataUrl(bytes, s.mime) : null;
 }
 
 function formatExecResult(lang, out) {

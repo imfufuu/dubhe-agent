@@ -103,3 +103,6 @@ export function providerIcon(provider, { custom = false, iconDataUrl = '' } = {}
   // These same-origin SVGs are pre-cached by the service worker; eager loading avoids a blank logo when the picker opens.
   return `<img class="${cls}" src="assets/icons/${def.file}" alt="${iconEscape(provider)}" loading="eager" decoding="async">`;
 }
+
+// 本地 GGUF 模型统一图标（模型菜单、消息头、连接提示共用）
+export const LOCAL_PROVIDER_ICON_SVG = '<svg class="p-icon local-provider-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="3.5" width="16" height="13" rx="2"/><path d="M2.5 20.5h19M9 16.5l-.7 4m6.4-4 .7 4"/><path d="M9 8h6m-6 3h3"/></svg>';

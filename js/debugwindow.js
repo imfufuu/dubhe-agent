@@ -13,7 +13,7 @@ import { readLocal, writeLocal, removeLocal } from './legacy-keys.js';
 
 const DEBUG_KEY = 'dubhe.debug';
 const POS_KEY = 'dubhe.debug.pos';
-const MAX_ROWS = 300;
+const MAX_ROWS = 1000; // 排查长会话时需要更长的历史（原 300）
 const MIN_W = 320, MIN_H = 220;
 
 let root = null;
@@ -44,11 +44,28 @@ function nowStamp() {
   return new Date().toISOString().slice(11, 23);
 }
 
+const FMT_MAX = 2400; // 单条日志上限（原 700）：完整保留 JSON / 长错误信息
+
+// Error 对象保留名称、消息与调用栈（原先只取 message，栈全部丢失）
+function formatError(err, max = 1800) {
+  const head = `${err.name || 'Error'}: ${err.message || ''}`;
+  const stack = typeof err.stack === 'string' ? err.stack : '';
+  // 栈里通常已包含 message，避免重复显示
+  return (stack && stack.includes(head) ? stack : (stack ? `${head}\n${stack}` : head)).slice(0, max);
+}
+
+function fmtArg(x) {
+  if (typeof x === 'string') return x;
+  if (x instanceof Error) return formatError(x);
+  return fmtData(x);
+}
+
 function fmtData(data) {
   if (data == null) return '';
   if (typeof data === 'string') return data;
-  try { return JSON.stringify(data).slice(0, 700); }
-  catch { return String(data).slice(0, 700); }
+  if (data instanceof Error) return formatError(data);
+  try { return JSON.stringify(data).slice(0, FMT_MAX); }
+  catch { return String(data).slice(0, FMT_MAX); }
 }
 
 function kindOf(stage, data) {
@@ -168,10 +185,13 @@ function wrapNetworkAndGlobals() {
   }
   window.addEventListener('unhandledrejection', (e) => {
     const r = e && e.reason;
-    addLine('window.rejection', r && (r.stack || r.message) ? String(r.stack || r.message).slice(0, 400) : String(r));
+    addLine('window.rejection', r instanceof Error ? formatError(r) : (r && typeof r === 'object' ? fmtData(r) : String(r)));
   });
   window.addEventListener('error', (e) => {
-    if (e && (e.error || e.message)) addLine('window.error', String((e.error && e.error.stack) || e.message).slice(0, 400));
+    if (e && (e.error || e.message)) {
+      const where = e.filename ? ` @ ${String(e.filename).split('/').slice(-2).join('/')}:${e.lineno || 0}:${e.colno || 0}` : '';
+      addLine('window.error', (e.error instanceof Error ? formatError(e.error) : String(e.message || '')) + where);
+    }
   }, true);
 }
 
@@ -181,8 +201,8 @@ function wrapConsole() {
   console.__dubheDebugWrapped = true;
   const ow = console.warn.bind(console);
   const oe = console.error.bind(console);
-  console.warn = (...a) => { addLine('console.warn', a.map((x) => (typeof x === 'string' ? x : x && x.message ? x.message : fmtData(x))).join(' ')); ow(...a); };
-  console.error = (...a) => { addLine('console.error', a.map((x) => (typeof x === 'string' ? x : x && x.message ? x.message : fmtData(x))).join(' ')); oe(...a); };
+  console.warn = (...a) => { addLine('console.warn', a.map(fmtArg).join(' ')); ow(...a); };
+  console.error = (...a) => { addLine('console.error', a.map(fmtArg).join(' ')); oe(...a); };
 }
 
 const STYLE = `

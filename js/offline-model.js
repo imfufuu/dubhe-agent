@@ -444,3 +444,15 @@ export async function streamOfflineModel({
     activeOfflineRuns = Math.max(0, activeOfflineRuns - 1);
   }
 }
+
+// 修改本地模型的显示名（只改元数据，不重写 GGUF 文件）。名称须先经 validateLocalModelName 校验。
+export async function renameOfflineModel(displayName, { storage = globalThis.navigator?.storage } = {}) {
+  const name = String(displayName ?? '').trim();
+  if (!name || Array.from(name).length > 64) throw new Error('模型名称需为 1–64 个字符。');
+  const root = await getRootDirectory(storage);
+  let metadata = null;
+  try { metadata = await readStoredMetadata(root); } catch { metadata = null; }
+  if (!metadata) throw new Error('当前没有可修改的本地模型。');
+  await writeJsonToOPFS(root, MODEL_METADATA_FILE, { ...metadata, displayName: name });
+  return getOfflineModelStatus({ storage });
+}

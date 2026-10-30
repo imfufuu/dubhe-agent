@@ -24,10 +24,11 @@ import { REASONING_LEVELS, normalizeReasoningLevel, reasoningLevelLabel, reasoni
 import { isGptModel, reasoningSummaryItems } from './reasoning-summary.js';
 import { fileBytesFromValue, withExtension, mimeFromPath } from './zip.js';
 import { getTransport } from './api.js?v=2026.10.25.1';
-import { isOfflineModelId } from './offline-model-config.js';
+import { isOfflineModelId, OFFLINE_MODEL_DISPLAY_NAME } from './offline-model-config.js';
 import { gatewayBase, gatewayChosenBy, setGatewayBase, otherGatewayBase } from './endpoint.js';
 import { estimateTokens } from './context.js';
-import { providerIcon, APP_LOGO, ICON } from './icons.js';
+import { providerIcon, APP_LOGO, ICON, LOCAL_PROVIDER_ICON_SVG } from './icons.js';
+import { reasoningMarkdownSource, localModelLabel, keyDraftFrom, restorableComposerText } from './ui-draft.js';
 import { readThemePreference, writeThemePreference, THEME_STORAGE_KEY } from './theme.js';
 import { autoTitle } from './titler.js';
 import { pickSuggestionCards } from './suggestions.js';
@@ -82,11 +83,6 @@ const SESSION_TURN_FORMS = {
   ru: { one: '{count} раунд', few: '{count} раунда', many: '{count} раундов', other: '{count} раунда' },
   ar: { zero: '{count} جولة', one: '{count} جولة', two: '{count} جولتان', few: '{count} جولات', many: '{count} جولة', other: '{count} جولة' },
 };
-
-// 思考原文按 Markdown 渲染，但形似 HTML 标签的内容（如 <step>）包成行内代码，原样作为文字显示，不能被当成标签吞掉。
-function reasoningMarkdownSource(value) {
-  return String(value ?? '').replace(/<(\/?[A-Za-z][\w-]*(?:\s[^<>`]*)?\/?>)/g, (tag) => (tag.includes('`') ? tag : '`' + tag + '`'));
-}
 
 // 「本轮回复」纯文本：上一条用户消息之后的全部非临时助手消息，按时间顺序拼接。
 // 每段取已渲染 DOM 的 innerText，表格/代码/列表保留排版；DOM 缺失时回退到原始文本。
@@ -295,7 +291,7 @@ export function mountUI(store, agent) {
     applyTheme(); store.notify();
   });
 
-  const { inSystem, isSystemIsolated, selectModel, chatModels, updateModelBtn, renderModelMenu, refreshModels, syncGateway } = installModelPicker({
+  const { inSystem, isSystemIsolated, leaveSystemChannel, selectModel, chatModels, updateModelBtn, renderModelMenu, refreshModels, syncGateway } = installModelPicker({
     store, agent, toast, getBusy, openKeyModal, rebuildMessages, renderSessions, renderFiles: () => renderFiles(), updateStats, syncCapLine, syncWeb: () => syncWeb(),
   });
   // ── 开关 ──
@@ -491,18 +487,19 @@ export function mountUI(store, agent) {
     if (!needed && adminPhraseInput) adminPhraseInput.value = '';
   };
   let modalReturnFocus = null;
+  let keyDraft = null, composerDraftAwaitingKey = null; // 未保存的 Key 草稿；发送被 API Key 拦下的原文（核对后放回）
   window.openKeyModal = openKeyModal;
   function openKeyModal() {
     modalReturnFocus = document.activeElement;
     syncGatewayKeyModal(store.state.gatewayId || DEFAULT_GATEWAY_ID, keyInput, $('#key-modal-title'), $('#key-desc'));
-    keyInput.value = store.state.apiKey;
-    if (adminPhraseInput) adminPhraseInput.value = '';
+    keyInput.value = keyDraft ? keyDraft.key : store.state.apiKey; if (adminPhraseInput) adminPhraseInput.value = keyDraft ? keyDraft.phrase : '';
     syncAdminPhraseField();
     keyModal.classList.add('open');
     setTimeout(() => (adminPhraseWrap && !adminPhraseWrap.hidden ? adminPhraseInput : keyInput).focus(), 100);
   }
   function closeKeyModal() {
     if (!keyModal.classList.contains('open')) return;
+    keyDraft = keyDraftFrom(keyInput.value, adminPhraseInput ? adminPhraseInput.value : '', store.state.apiKey);
     keyModal.classList.remove('open');
     if (adminPhraseInput) adminPhraseInput.value = '';
     // 归还焦点，键盘用户不迷失
@@ -553,7 +550,7 @@ const fmtAdminExp = (ms) => {
       store.state.gatewayKeys = store.state.gatewayKeys || {};
       delete store.state.gatewayKeys[gatewayId];
       store.notify();
-      closeKeyModal();
+      keyDraft = null; closeKeyModal(); restoreComposerDraft();
       toast(localeText(`管理员密钥已启用（有效期至 ${fmtAdminExp(r.exp)}）：请求会用管理员密钥发出，明文不落盘、不上屏`, `Admin key enabled (valid until ${fmtAdminExp(r.exp)}). Requests use the admin key; the plaintext is never saved or shown.`), 'ok', 5200);
       updateKeyBtn(); updateTransportBadge();
       refreshModels({ silent: true });
@@ -564,7 +561,7 @@ const fmtAdminExp = (ms) => {
     if (typed) store.state.gatewayKeys[gatewayId] = typed;
     else delete store.state.gatewayKeys[gatewayId];
     store.notify();
-    closeKeyModal();
+    keyDraft = null; closeKeyModal(); restoreComposerDraft();
     toast(store.state.apiKey ? 'API Key 已保存（仅存于本机浏览器）' : 'API Key 已清除', 'ok');
     updateKeyBtn(); updateTransportBadge();
     if (typed) refreshModels({ silent: true });
@@ -716,7 +713,6 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
   //（store.listableSessions 负责过滤，「＋ 新建」也会复用空草稿，不堆 invisible 记录）
   function renderSessions() {
     const box = $('#session-list'); box.innerHTML = '';
-    box.classList.toggle('sys-locked', inSystem());
     const list = store.listableSessions ? store.listableSessions() : store.sortedSessions();
     if (!list.length) {
       box.appendChild(el('div', 'sess-empty-hint', '还没有会话记录'));
@@ -802,8 +798,8 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
   }
   function switchToSession(id) {
     if (id === store.state.activeSessionId) return;
-    if (inSystem()) return toast('系统命令通道内不能进入其他会话：先在模型菜单选回普通模型', 'warn');
     if (getBusy()) return toast('请等待当前回合结束再切换会话', 'warn');
+    if (inSystem()) leaveSystemChannel(); // 退出 /system 通道，切到该会话最后使用的模型
     store.switchSession(id);
     agent.loadFiles(store.state.files);
     // 切换会话时重置懒加载窗口
@@ -813,8 +809,8 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     syncThinking(); syncCapLine();
   }
   $('#new-session').addEventListener('click', () => {
-    if (inSystem()) return toast('系统命令通道内不能新建会话：先在模型菜单选回普通模型', 'warn');
     if (getBusy()) return toast('请等待当前回合结束', 'warn');
+    if (inSystem()) leaveSystemChannel(); // 退出 /system 通道，切回进入前的模型
     // 当前已是空会话（没有消息、没有沙箱文件）：不重建视图，只提示——避免整页重绘闪一下
     const emptyNow = !(store.state.messages || []).length && !Object.keys(store.state.files || {}).length;
     if (emptyNow) { composer.focus(); return toast('已在新对话中', 'ok', 1800); }
@@ -1101,7 +1097,8 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       const headIsRouter = isSmartRouter(m.userModel);
       const headModel = m.model || store.state.model;
       let headName, headIcon;
-      if (headModel === '__system__') {
+      if (isOfflineModelId(headModel)) { headName = localModelLabel(store, OFFLINE_MODEL_DISPLAY_NAME); headIcon = LOCAL_PROVIDER_ICON_SVG; }
+      else if (headModel === '__system__') {
         headName = 'system-commands';
         headIcon = `<span class="sys-gear">${ICON.system || '⚙'}</span>`;
       } else if (headModel === 'Moderator') {
@@ -1329,7 +1326,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     const showThink = thinkOn && typeof m.reasoning === 'string' && !!m.reasoning.trim();
     if (live && noOutputYet && !thinkOn) {
       // 连接动画：请求已发出但首字未到（网关排队 / TTFB 慢），明确提示当前状态
-      html += `<div class="connect-line"><span class="connect-dot" aria-hidden="true"></span><span>正在连接 <b class="mono">${esc(modelDisplayName(m.model || store.state.model))}</b>，等待首个响应…</span></div>`;
+      html += `<div class="connect-line"><span class="connect-dot" aria-hidden="true"></span><span>正在连接 <b class="mono">${esc(isOfflineModelId(m.model || store.state.model) ? localModelLabel(store) : modelDisplayName(m.model || store.state.model))}</b>，等待首个响应…</span></div>`;
     }
     html += m.model === '__system__' ? sysReplyHtml(m.text) : renderMarkdown(m.text || '', { streaming: live });
     if (live && !noOutputYet && !toolMenuBusy) html += '<span class="cursor"></span>';
@@ -2400,6 +2397,11 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     }
     doSend();
   });
+  // API Key 核对完成后，把被拦下的原文放回输入框（输入框已被用户改动时不覆盖）
+  function restoreComposerDraft() {
+    const next = restorableComposerText(composer.value, composerDraftAwaitingKey); composerDraftAwaitingKey = null;
+    if (next != null) { composer.value = next; autoGrow(); composer.focus(); }
+  }
   function doSend() {
     const text = composer.value.trim();
     if (!text && !attachments.hasPending()) return;
@@ -2410,7 +2412,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       welcomeMotion.sync();
       return;
     }
-    if (!store.state.apiKey && !isOfflineModelId(store.state.model)) { openKeyModal(); toast('请先配置 TeamoRouter API Key', 'warn'); return; }
+    if (!store.state.apiKey && !isOfflineModelId(store.state.model)) { composerDraftAwaitingKey = text; openKeyModal(); toast('请先配置 TeamoRouter API Key（输入内容已保留，保存后自动放回）', 'warn'); return; }
     if (getBusy()) return;
     pendingSendOrigin = composer.getBoundingClientRect();
     composer.value = ''; autoGrow();

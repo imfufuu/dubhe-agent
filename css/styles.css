@@ -2440,9 +2440,9 @@ html[data-motion="off"] .edit-path-fold { transition: none !important; }
 .chip-win-h { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 26px; padding: 0 4px 0 10px; border-bottom: 1px solid var(--line); }
 .chip-win-t { font-family: var(--mono); font-size: var(--ui-fs-10px, 10px); font-weight: 650; letter-spacing: .08em; color: var(--fg-3); }
 .chip-win .chip-win-b { margin: 0; padding: 8px 10px; max-height: min(50vh, 420px); overflow: auto; white-space: pre-wrap; word-break: break-all; font-family: var(--mono); font-size: var(--ui-fs-11px, 11px); line-height: 1.55; color: var(--fg); background: transparent; border: 0; border-radius: 0; }
-.chip-win-stderr .chip-win-t { color: #b91c1c; }
-.chip-win-stderr .chip-win-b { color: #b91c1c; }
-[data-theme="dark"] .chip-win-stderr .chip-win-t, [data-theme="dark"] .chip-win-stderr .chip-win-b { color: #fca5a5; }
+/* STDERR 与 STDOUT 同色：不使用危险色（红色只留给真正的失败状态，由退出码 / 错误标记表达） */
+.chip-win-stderr .chip-win-t { color: var(--fg-3); }
+.chip-win-stderr .chip-win-b { color: var(--fg); }
 .chip-win-stdout .chip-win-b.tool-result-missing, .chip-win .tool-result-missing { color: var(--fg-3); font-style: italic; }
 .chip-win .chip-copy { flex-shrink: 0; }
 .chip-no-output { margin: 6px 0 0; padding: 8px 10px; border: 1px dashed var(--line); border-radius: 8px; color: var(--fg-3); background: var(--bg-soft); font-family: var(--mono); font-size: var(--ui-fs-11px, 11px); }

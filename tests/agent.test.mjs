@@ -8817,7 +8817,7 @@ test('本地 C++ 开关：关闭后两条工具表派生路径都不含 execute_
   assert.match(def.description, /godbolt\.org/, '工具描述必须如实说明远程模式会发送至 godbolt.org');
   const fsp = await import('node:fs');
   const html = fsp.readFileSync(new URL('../app.html', import.meta.url), 'utf8');
-  assert.match(html, /id="set-cpp"/);
+  assert.doesNotMatch(html, /id="set-cpp"/, "「禁用 C++」开关已删除，不应再有 UI 入口");
   assert.match(html, /C\+\+ 运行方式/);
   assert.match(html, /id="set-cpp-mode"/);
   assert.match(html, /connect-src 'self'/);
@@ -9167,7 +9167,7 @@ test('智能路由器对用户一律显示 smart_router：模型按钮 / 下拉�
   assert.match(ui, /headName = SMART_ROUTER_LABEL;/);
   assert.match(picker, /name = SMART_ROUTER_LABEL;/);
   assert.match(picker, /router-name">\$\{esc\(SMART_ROUTER_LABEL\)\}/);
-  assert.match(ui, /正在连接 <b class="mono">\$\{esc\(modelDisplayName\(m\.model \|\| store\.state\.model\)\)\}/);
+  assert.match(ui, /正在连接 <b class="mono">\$\{esc\(isOfflineModelId\(m\.model \|\| store\.state\.model\) \? localModelLabel\(store\) : modelDisplayName\(m\.model \|\| store\.state\.model\)\)\}/);
   assert.match(pop, /modelDisplayName\(headModel\)/);
 });
 
@@ -10153,7 +10153,7 @@ test('ui.js 第三刀：ui-markdown / ui-model-picker / ui-popovers / ui-command
   const mdV = await import('../js/ui-markdown.js?v=2026.10.25.1');
   assert.strictEqual(uiMod.renderMarkdown, mdV.renderMarkdown, 'ui.js 再导出同一个 renderMarkdown（旧 import 路径不变）');
   assert.strictEqual(uiMod.videoBlobUrl, mdV.videoBlobUrl);
-  assert.match(ui, /const \{ inSystem, isSystemIsolated, selectModel, chatModels, updateModelBtn, renderModelMenu, refreshModels, syncGateway \} = installModelPicker\(\{/);
+  assert.match(ui, /const \{ inSystem, isSystemIsolated, leaveSystemChannel, selectModel, chatModels, updateModelBtn, renderModelMenu, refreshModels, syncGateway \} = installModelPicker\(\{/);
   assert.match(ui, /renderFiles: \(\) => renderFiles\(\), updateStats, syncCapLine, syncWeb: \(\) => syncWeb\(\),/, 'renderFiles / syncWeb 定义在后，必须惰性注入');
   assert.match(ui, /const \{ hideTokPop, placeTokPop, showRouterPop, showTokBreak \} = installPopovers\(\{/);
   assert.match(ui, /const \{ handleSystemCommand \} = installSystemCommands\(\{/);

@@ -182,6 +182,7 @@ function ensureWorker() {
     const m = e.data || {};
     const p = pending.get(m.id);
     if (!p) return;
+    if (m.loading) { p.onProgress?.({ loading: true, ...m.loading }); return; } // 首次加载 core 的下载 / 初始化进度
     if (m.progress != null) { p.onProgress?.(m.progress); return; } // 进度（含 0%）不终结任务；曾用真值判断导致首帧进度被当成失败
     pending.delete(m.id);
     clearTimeout(p.timer);

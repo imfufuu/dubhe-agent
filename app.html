@@ -575,8 +575,7 @@
         <div class="set-row"><div class="set-lbl"><div class="set-title">长任务完成通知</div><div id="notifications-note" class="set-sub">固定：超过60秒且在后台；手动停止不通知</div></div><div class="set-ctl"><button id="set-notifications" class="mini-btn" type="button" aria-pressed="false">开启通知</button></div></div>
         <div class="set-row"><div class="set-lbl"><div class="set-title">代码沙箱</div><div class="set-sub">JS / Python / C++</div></div><div class="set-ctl"><label class="sw"><input type="checkbox" id="set-sandbox"/><span></span></label></div></div>
         <div class="set-row"><div class="set-lbl"><div class="set-title">自动清理未引用文件</div><div class="set-sub">默认关闭；开启后清理未被回答引用的新文件；internal/、uploads/ 始终保留</div></div><div class="set-ctl"><label class="sw"><input type="checkbox" id="set-cleanup-unreferenced"/><span></span></label></div></div>
-        <div class="set-row"><div class="set-lbl"><div class="set-title">C++ 工具</div><div class="set-sub">关闭后 execute_cpp 不可用；首用本地模式下载约30MB工具链</div></div><div class="set-ctl"><label class="sw"><input type="checkbox" id="set-cpp"/><span></span></label></div></div>
-        <div class="set-row" id="set-cpp-mode-row"><div class="set-lbl"><div class="set-title">C++ 运行方式</div><div id="set-cpp-mode-note" class="set-sub">远程（默认）：源码发送至 godbolt.org（Compiler Explorer）编译执行，需要网络。本地：在浏览器内用 Clang/LLD WASM 编译，源码、附带文件与 stdin 不离开本机。聊天仍走所选网关。</div></div><div class="set-ctl"><div class="seg" id="set-cpp-mode"><button type="button" data-v="remote">远程</button><button type="button" data-v="local">本地</button></div></div></div>
+                <div class="set-row" id="set-cpp-mode-row"><div class="set-lbl"><div class="set-title">C++ 运行方式</div><div id="set-cpp-mode-note" class="set-sub"><span data-cpp-mode="remote">远程：源码、附带文件与 stdin 发送至 godbolt.org（Compiler Explorer）编译执行，需要网络。</span><span data-cpp-mode="local" hidden>本地：在浏览器内用 Clang/LLD WASM 编译，源码不离开本机；首次使用下载约 30 MB 工具链。</span></div></div><div class="set-ctl"><div class="seg" id="set-cpp-mode"><button type="button" data-v="remote">远程</button><button type="button" data-v="local">本地</button></div></div></div>
         <div class="set-row"><div class="set-lbl"><div class="set-title">联网抓取（fetch_url）</div></div><div class="set-ctl"><label class="sw"><input type="checkbox" id="set-web"/><span></span></label></div></div>
         <div class="set-row"><div class="set-lbl"><div class="set-title">快速模式（Fast）</div><div class="set-sub">GPT 系列 · 2× 计费</div></div><div class="set-ctl"><label class="sw"><input type="checkbox" id="set-fast"/><span></span></label></div></div>
         <div class="set-row"><div class="set-lbl"><div class="set-title">深度思考</div></div><div class="set-ctl"><label class="sw"><input type="checkbox" id="set-thinking"/><span></span></label></div></div>
@@ -631,6 +630,7 @@
           <div class="set-ctl offline-model-actions">
             <button type="button" id="set-offline-model-choose" class="ghost-btn">选择 GGUF 文件</button>
             <button type="button" id="set-offline-model-cancel" class="mini-btn" hidden>取消</button>
+            <button type="button" id="set-offline-model-rename" class="mini-btn" hidden>重命名</button>
             <button type="button" id="set-offline-model-remove" class="mini-btn" hidden>删除本地模型</button>
           </div>
         </div>
@@ -673,6 +673,18 @@
   </div>
 </div>
 
+<div id="local-name-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="local-name-title">
+  <div class="modal-card">
+    <div class="modal-head"><h3 id="local-name-title">模型名称</h3></div>
+    <p class="modal-desc" id="local-name-desc">用于菜单与会话显示。1–64 个字符，只允许字母、数字、连字符（-）和点（.）。</p>
+    <input id="local-name-input" class="key-input mono" type="text" maxlength="64" spellcheck="false" autocomplete="off" aria-describedby="local-name-desc" />
+    <p id="local-name-error" class="share-note" role="alert" hidden></p>
+    <div class="modal-actions">
+      <button id="local-name-cancel" class="mini-btn" type="button">取消</button>
+      <button id="local-name-save" class="primary-btn" type="button">保存</button>
+    </div>
+  </div>
+</div>
 <div id="moderation-risk-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="moderation-risk-title">
  <div class="modal-card"><div class="modal-head"><h3 id="moderation-risk-title">关闭内容审核？</h3></div><p class="share-note">关闭后，普通对话的本地文本规则与默认网关 Jev 复核、图片本地检查及可选灰区远程复核均会停用；用户称谓仍始终只做本地审核。你需自行检查对话内容、保护敏感数据，并对使用和传播承担适用法律下的责任。关闭不改变网关或模型服务商的审核政策，也不代表内容安全。</p><label class="moderation-risk-check"><input id="moderation-risk-ack" type="checkbox">我已了解风险，会自行检查内容并承担使用责任</label><div class="modal-actions"><button id="moderation-risk-cancel" class="ghost-btn" type="button">保持开启</button><button id="moderation-risk-confirm" class="primary-btn" type="button" disabled>确认关闭审核</button></div></div>
 </div>
