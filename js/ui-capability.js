@@ -28,7 +28,7 @@ export function renderCapabilityTableHtml(preview) {
       return `<div class="cap-drop" data-tool="${esc(d.name)}" data-reason="${esc(d.reason)}"><span class="mono cap-tool">${esc(d.name)}</span><span class="cap-why">${esc(d.label || d.reason)}</span>${btn}</div>`;
     }).join('');
   } else {
-    list = '<div class="tok-hint cap-all-ok">✓ 当前开关下，全部工具均可用。</div>';
+    list = '<div class="tok-hint cap-all-ok">当前开关下，全部工具均可用。</div>';
   }
   return `${rows.join('')}${list}<div class="tok-hint">按当前开关态预览；实际请求使用同一份工具门控结果。</div>`;
 }

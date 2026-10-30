@@ -11,6 +11,7 @@ import { $, el, esc } from './ui-markdown.js?v=2026.10.25.1';
 import { FALLBACK_MODELS, isImageModel, providerOf, SMART_ROUTER_ID, PROVIDER_ORDER, SMART_ROUTER_PROVIDER, sortModelsInFamily, isFreeModel, supportsVision, supportsFastMode, IMAGE_MODELS, DEFAULT_IMAGE_MODEL, imageModelLabel } from './config.js?v=2026.10.25.1';
 import { isJevModel } from './jev.js';
 import { ICON, providerIcon } from './icons.js';
+import { LOCAL_PROVIDER_ICON_SVG } from './icons.js';
 import { ROUTER_ICON_SVG, isSmartRouter, SMART_ROUTER_LABEL, SMART_ROUTER_PROVIDER_LABEL } from './smartrouter.js?v=2026.10.25.1';
 import { fetchModels } from './api.js?v=2026.10.25.1';
 import { effectiveApiKey } from './adminkey.js';
@@ -28,7 +29,7 @@ export function installModelPicker({ store, agent, toast, getBusy, openKeyModal,
   const ddSearch = $('#model-search');
   // 网关仍可能返回已下线的福利档；本地兜底表删了也不够，这里再挡一层。
   const HIDDEN_MODELS = new Set(['glm-5.3-flash-free', 'deepseek-v4-flash-free', 'deepseek-flash-free']); // 后两者已从 FALLBACK_MODELS 删除，这里兜底防网关 /v1/models 再塞回来
-  const LOCAL_PROVIDER_ICON = '<svg class="p-icon local-provider-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="3.5" width="16" height="13" rx="2"/><path d="M2.5 20.5h19M9 16.5l-.7 4m6.4-4 .7 4"/><path d="M9 8h6m-6 3h3"/></svg>';
+  const LOCAL_PROVIDER_ICON = LOCAL_PROVIDER_ICON_SVG;
   // 对话模型列表：过滤掉生图模型（只能由主智能体通过 generate_image 工具调用，
   // 直接选中会绕过工具循环、破坏 Agent 特性；网关 /v1/models 里带它们时也照样隐藏）
   function localModelMetadata() {
@@ -202,9 +203,10 @@ export function installModelPicker({ store, agent, toast, getBusy, openKeyModal,
   // state.js 的 commit 对 __system__ 直接跳过 → 真实会话零写入，退出后原样恢复 ──
   let preSystem = null;
   const inSystem = () => store.state.model === '__system__';
-  function enterSystem() {
+  function enterSystem(prevModel) {
     if (preSystem) return;
-    preSystem = { messages: store.state.messages, checkpoints: store.state.checkpoints, files: store.state.files };
+    // 记住进入前的模型：新建 / 切换会话时要切回它（或会话自己的模型）
+    preSystem = { model: prevModel, messages: store.state.messages, checkpoints: store.state.checkpoints, files: store.state.files };
     store.state.messages = []; store.state.checkpoints = []; store.state.files = {};
     // 沙箱文件也要隔离：agent.fs 换成空的（真实文件随 preSystem 暂存，退出时恢复）
     try { agent.loadFiles({}); } catch { /* 忽略 */ }
@@ -228,8 +230,17 @@ export function installModelPicker({ store, agent, toast, getBusy, openKeyModal,
       b.disabled = sys;
       b.classList.toggle('sys-locked', sys);
     }
-    const list = $('#session-list');
-    if (list) list.classList.toggle('sys-locked', sys);
+  }
+  // 退出 /system 通道并恢复进入前的模型（新建、切换会话时调用；会话列表不再锁定）
+  function leaveSystemChannel() {
+    if (!preSystem) return false;
+    const back = preSystem.model && preSystem.model !== '__system__' ? preSystem.model : store.state.model;
+    store.state.model = back;
+    exitSystem();
+    store.notify();
+    applySystemLock();
+    updateModelBtn();
+    return true;
   }
   function selectModel(id) {
     if (!id) return;
@@ -240,8 +251,9 @@ export function installModelPicker({ store, agent, toast, getBusy, openKeyModal,
     if (id === '__system__') {
       if (preSystem) { closeMenu(); return; }
       if (getBusy()) { closeMenu(); return toast('请等待当前回合结束再进入系统命令通道', 'warn'); }
+      const prevModel = store.state.model;
       store.state.model = id;
-      enterSystem();
+      enterSystem(prevModel);
       store.notify();
       updateModelBtn(); closeMenu(); applySystemLock();
       toast('已进入 /system 隐藏通道：直接输入 /help 查看命令（真实会话不会被写入）', 'ok', 4200);
@@ -399,5 +411,5 @@ export function installModelPicker({ store, agent, toast, getBusy, openKeyModal,
   }
   $('#refresh-models').addEventListener('click', () => refreshModels());
 
-  return { inSystem, isSystemIsolated, selectModel, chatModels, updateModelBtn, renderModelMenu, refreshModels, syncGateway };
+  return { inSystem, isSystemIsolated, leaveSystemChannel, selectModel, chatModels, updateModelBtn, renderModelMenu, refreshModels, syncGateway };
 }

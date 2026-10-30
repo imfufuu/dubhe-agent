@@ -864,6 +864,7 @@ export const TOOL_CONTRACTS = Object.freeze({
   document_tool: contract({ sideEffect: 'filesystem', idempotent: false, timeoutMs: 70000, riskLevel: 'L2', verifyAfterRun: true, note: '本地 Worker 读写 DOCX/PPTX/PDF；保存为新输出，不上传原件' }),
   xlsx_tool: contract({ sideEffect: 'filesystem', idempotent: false, timeoutMs: 70000, riskLevel: 'L2', verifyAfterRun: true, note: '本地 Worker 检查或创建 XLSX 工作簿；公式不执行' }),
   knowledge_search: contract({ sideEffect: 'none', idempotent: true, timeoutMs: 12000, riskLevel: 'L0', note: '按需检索项目内置知识，无外部副作用' }),
+  checklist: contract({ sideEffect: 'none', idempotent: true, timeoutMs: 3000, riskLevel: 'L0', note: '系统内部任务清单，只更新回合内状态，无外部副作用' }),
   browser_sandbox: contract({ sideEffect: 'sandbox', idempotent: false, timeoutMs: 75000, riskLevel: 'L2', verifyAfterRun: true, note: '只运行沙箱 HTML 项目；本机 Chromium 调试/截图，不接受公网 URL 或 shell 命令' }),
   execute_javascript: contract({ sideEffect: 'sandbox', idempotent: false, timeoutMs: 600000, riskLevel: 'L2', verifyAfterRun: true, note: '代码可写沙箱文件；默认 30 秒，可按 timeout_sec 设置至 600 秒，需核验副作用' }),
   execute_python: contract({ sideEffect: 'sandbox', idempotent: false, timeoutMs: 600000, riskLevel: 'L2', verifyAfterRun: true, note: '用户代码默认 30 秒、可设至 600 秒；冷启动/装包另有 120 秒准备窗口' }),

@@ -107,7 +107,7 @@ test('TOOL_DEFS：generate_video 已登记，参数与文档一致', () => {
   assert.equal(def.parameters.properties.seconds.maximum, 30);
   assert.ok(def.parameters.properties.resolution.enum.includes('768p'));
   assert.equal(def.parameters.properties.model, undefined, '不暴露 model 参数，统一用设置里的模型');
-  assert.equal(TOOL_DEFS.length, 46);
+  assert.equal(TOOL_DEFS.length, 47);
 });
 
 test('generate_video 端到端（桩网关）：提交 → 轮询 → 下载 → 写入 outputs/，带幂等键', async () => {

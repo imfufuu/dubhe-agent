@@ -2440,9 +2440,9 @@ html[data-motion="off"] .edit-path-fold { transition: none !important; }
 .chip-win-h { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 26px; padding: 0 4px 0 10px; border-bottom: 1px solid var(--line); }
 .chip-win-t { font-family: var(--mono); font-size: var(--ui-fs-10px, 10px); font-weight: 650; letter-spacing: .08em; color: var(--fg-3); }
 .chip-win .chip-win-b { margin: 0; padding: 8px 10px; max-height: min(50vh, 420px); overflow: auto; white-space: pre-wrap; word-break: break-all; font-family: var(--mono); font-size: var(--ui-fs-11px, 11px); line-height: 1.55; color: var(--fg); background: transparent; border: 0; border-radius: 0; }
-.chip-win-stderr .chip-win-t { color: #b91c1c; }
-.chip-win-stderr .chip-win-b { color: #b91c1c; }
-[data-theme="dark"] .chip-win-stderr .chip-win-t, [data-theme="dark"] .chip-win-stderr .chip-win-b { color: #fca5a5; }
+/* STDERR 与 STDOUT 同色：不使用危险色（红色只留给真正的失败状态，由退出码 / 错误标记表达） */
+.chip-win-stderr .chip-win-t { color: var(--fg-3); }
+.chip-win-stderr .chip-win-b { color: var(--fg); }
 .chip-win-stdout .chip-win-b.tool-result-missing, .chip-win .tool-result-missing { color: var(--fg-3); font-style: italic; }
 .chip-win .chip-copy { flex-shrink: 0; }
 .chip-no-output { margin: 6px 0 0; padding: 8px 10px; border: 1px dashed var(--line); border-radius: 8px; color: var(--fg-3); background: var(--bg-soft); font-family: var(--mono); font-size: var(--ui-fs-11px, 11px); }
@@ -3179,3 +3179,18 @@ html[data-motion="off"] .empty-state h2[data-typing="true"]::after,
 /* generate_video：联网/生成折叠行内的视频预览（数据来自沙箱，不进消息存储） */
 .web-activity .web-video { flex-basis: 100%; margin-top: 6px; font-size: 11px; color: var(--fg-3); }
 .web-activity .web-video-player { display: block; width: 100%; max-width: min(420px, 100%); border-radius: 10px; border: 1px solid var(--line); background: var(--bg-soft); }
+
+/* ── 复杂任务清单卡片（checklist 工具，ui-toolflow.js syncChecklistBlock）── */
+.agent-checklist { margin: 6px 0 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg-soft); font-size: var(--ui-fs-12_5px, 12.5px); color: var(--fg-2); }
+.agent-checklist-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; font-weight: 600; color: var(--fg); }
+.agent-checklist-items { margin: 0; padding: 0; list-style: none; display: grid; gap: 5px; }
+.agent-checklist-items li { display: grid; grid-template-columns: 14px 1fr auto; align-items: center; gap: 8px; line-height: 1.5; }
+.ck-mark { width: 10px; height: 10px; border-radius: 50%; border: 1.5px solid var(--fg-3); box-sizing: border-box; justify-self: center; }
+.ck-in_progress .ck-mark { border-color: var(--fg); border-right-color: transparent; animation: ckSpin 1s linear infinite; }
+.ck-done .ck-mark { background: var(--fg-2); border-color: var(--fg-2); }
+.ck-failed .ck-mark { border-style: dashed; border-color: var(--fg); }
+.ck-done .ck-text { color: var(--fg-3); text-decoration: line-through; }
+.ck-state { font-size: 11px; color: var(--fg-3); white-space: nowrap; }
+.agent-checklist.incomplete .agent-checklist-head { color: var(--fg); }
+@keyframes ckSpin { to { transform: rotate(360deg); } }
+html:not([data-motion="on"]) .ck-in_progress .ck-mark { animation: none; }

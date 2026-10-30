@@ -9,6 +9,9 @@ import { isSmartRouter, SMART_ROUTER_LABEL, ROUTER_ICON_SVG } from './smartroute
 import { getLanguage, text } from './locale.js';
 const STYLE_URLS = ['../css/styles.css', '../assets/hljs/dubhe.css', '../assets/katex/katex.min.css', '../fonts/literary.css'];
 export const SHARE_CSS = `
+/* 分享图是静态快照：没有展开/折叠的交互状态，工具详情需常显（否则 .chip-detail 默认 0fr + hidden，导出后为空） */
+.tool-call-chip > .chip-detail { grid-template-rows: 1fr; opacity: 1; visibility: visible; }
+.tool-call-chip .chip-detail > .fold-inner { transform: none; }
 html,body{margin:0;min-height:100%;background:var(--bg);color:var(--fg)}body{display:block;height:auto;overflow:auto;font-family:var(--font);font-size:14px}
 .share-page{width:min(760px,100%);margin:auto;padding:32px 0 24px;box-sizing:border-box}.share-page .msg{max-width:100%;margin-bottom:24px;animation:none!important;opacity:1;transform:none;overflow:visible}
 .share-head{margin:0 28px 32px;border-bottom:1px solid var(--line);padding-bottom:20px;display:flex;gap:12px;align-items:center}.share-brand{width:32px;height:32px;flex:0 0 auto}.share-head h1{font-size:18px;line-height:1.4;margin:0;overflow-wrap:anywhere}.share-subtitle{font-family:var(--mono);font-size:10px;color:var(--fg-2);margin-top:5px}.share-footer{margin:28px 28px 0;border-top:1px solid var(--line);padding-top:18px;font-size:11px;color:var(--fg-2)}

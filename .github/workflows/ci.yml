@@ -54,6 +54,9 @@ jobs:
       - name: tests/wllama-abort-compat.test.mjs · Wllama 取消兼容
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/wllama-abort-compat.test.mjs
+      - name: tests/checklist.test.mjs · 复杂任务清单（闸门 / 卡片 / 接线）
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/checklist.test.mjs
       - name: tests/app-boot.mjs · 应用装配冒烟
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/app-boot.mjs

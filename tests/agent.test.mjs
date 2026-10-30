@@ -8817,7 +8817,7 @@ test('本地 C++ 开关：关闭后两条工具表派生路径都不含 execute_
   assert.match(def.description, /godbolt\.org/, '工具描述必须如实说明远程模式会发送至 godbolt.org');
   const fsp = await import('node:fs');
   const html = fsp.readFileSync(new URL('../app.html', import.meta.url), 'utf8');
-  assert.match(html, /id="set-cpp"/);
+  assert.doesNotMatch(html, /id="set-cpp"/, "「禁用 C++」开关已删除，不应再有 UI 入口");
   assert.match(html, /C\+\+ 运行方式/);
   assert.match(html, /id="set-cpp-mode"/);
   assert.match(html, /connect-src 'self'/);
@@ -9167,7 +9167,7 @@ test('智能路由器对用户一律显示 smart_router：模型按钮 / 下拉�
   assert.match(ui, /headName = SMART_ROUTER_LABEL;/);
   assert.match(picker, /name = SMART_ROUTER_LABEL;/);
   assert.match(picker, /router-name">\$\{esc\(SMART_ROUTER_LABEL\)\}/);
-  assert.match(ui, /正在连接 <b class="mono">\$\{esc\(modelDisplayName\(m\.model \|\| store\.state\.model\)\)\}/);
+  assert.match(ui, /正在连接 <b class="mono">\$\{esc\(isOfflineModelId\(m\.model \|\| store\.state\.model\) \? localModelLabel\(store\) : modelDisplayName\(m\.model \|\| store\.state\.model\)\)\}/);
   assert.match(pop, /modelDisplayName\(headModel\)/);
 });
 
@@ -9236,7 +9236,7 @@ test('analyze_video 工具：定义 / 契约 / 并行与访问表 / 执行路径
   assert.match(def.description, /不要传 model/);
   assert.match(def.description, /16MB/);
   assert.deepEqual(Object.keys(def.parameters.properties).sort(), ['path', 'prompt']);
-  assert.equal(TOOL_DEFS.length, 46, '46 工具（V1.9 新增 patch_apply / dom_inspect / chart_render；视频生成新增 generate_video）：工具目录与 XLSX 能力均登记到能力表和执行契约');
+  assert.equal(TOOL_DEFS.length, 47, '47 工具（V1.9 新增 patch_apply / dom_inspect / chart_render；视频生成新增 generate_video；复杂任务清单新增 checklist）：工具目录与 XLSX 能力均登记到能力表和执行契约');
   const c = ex.getToolContract('analyze_video');
   assert.equal(c.sideEffect, 'remote');
   assert.equal(c.external, true);
@@ -10153,7 +10153,7 @@ test('ui.js 第三刀：ui-markdown / ui-model-picker / ui-popovers / ui-command
   const mdV = await import('../js/ui-markdown.js?v=2026.10.25.1');
   assert.strictEqual(uiMod.renderMarkdown, mdV.renderMarkdown, 'ui.js 再导出同一个 renderMarkdown（旧 import 路径不变）');
   assert.strictEqual(uiMod.videoBlobUrl, mdV.videoBlobUrl);
-  assert.match(ui, /const \{ inSystem, isSystemIsolated, selectModel, chatModels, updateModelBtn, renderModelMenu, refreshModels, syncGateway \} = installModelPicker\(\{/);
+  assert.match(ui, /const \{ inSystem, isSystemIsolated, leaveSystemChannel, selectModel, chatModels, updateModelBtn, renderModelMenu, refreshModels, syncGateway \} = installModelPicker\(\{/);
   assert.match(ui, /renderFiles: \(\) => renderFiles\(\), updateStats, syncCapLine, syncWeb: \(\) => syncWeb\(\),/, 'renderFiles / syncWeb 定义在后，必须惰性注入');
   assert.match(ui, /const \{ hideTokPop, placeTokPop, showRouterPop, showTokBreak \} = installPopovers\(\{/);
   assert.match(ui, /const \{ handleSystemCommand \} = installSystemCommands\(\{/);
@@ -10226,7 +10226,7 @@ group('P6 修正：工具选择熵过高 → 两层下发（稳定核心前缀 +
 test('selectToolsForTurn：核心工具稳定前置；规则在首轮请求前路由并按组挂载；附件、近几轮用量与点名也生效', async () => {
   const ec = await import('../js/executionContext.js');
   const { TOOL_DEFS } = await import('../js/tools.js');
-  assert.deepEqual([...ec.CORE_TOOLS], ['execute_javascript', 'execute_python', 'execute_cpp', 'write_file', 'read_file', 'list_files', 'delete_file', 'copy_file', 'fetch_url', 'search_web', 'analyze_image', 'dispatch_subagent', 'knowledge_search', 'skill_library', 'tool_library']);
+  assert.deepEqual([...ec.CORE_TOOLS], ['execute_javascript', 'execute_python', 'execute_cpp', 'write_file', 'read_file', 'list_files', 'delete_file', 'copy_file', 'fetch_url', 'search_web', 'analyze_image', 'dispatch_subagent', 'knowledge_search', 'skill_library', 'tool_library', 'checklist']);
   const names = (r) => r.mounted.map((t) => t.name);
   const hello = ec.selectToolsForTurn({ allowed: TOOL_DEFS, text: '你好' });
   assert.deepEqual(names(hello), [...ec.CORE_TOOLS], '寒暄只带核心工具，且核心 schema 排在稳定前缀中');
@@ -10944,7 +10944,7 @@ test('能力登记处：TOOL_DEFS ↔ 登记表 ↔ execution.js 契约三方一
   same(reg.NETWORK_TOOL_NAMES, ['fetch_url', 'search_web', 'crawl_site', 'download_file', 'pull_github_project']);
   same(reg.READ_ONLY_TOOL_NAMES, ['skill_library', 'knowledge_search', 'read_file', 'list_files', 'search_files', 'get_current_time', 'regex', 'hash', 'codec', 'unicode', 'evaluate_expression', 'diff_text', 'dom_inspect', 'json_tool', 'csv_tool', 'date_calc', 'text_tool', 'convert_units', 'data_tool']);
   same(reg.HEAVY_TOOL_NAMES, ['document_tool', 'xlsx_tool', 'browser_sandbox', 'write_file', 'delete_file', 'copy_file', 'zip_files', 'unzip_file', 'convert_file', 'patch_apply', 'chart_render', 'execute_javascript', 'execute_python', 'execute_cpp', 'generate_image', 'generate_video', 'dispatch_subagent', 'fetch_url', 'run_git', 'analyze_image', 'render_mermaid', 'render_dot', 'execute_sql']);
-  assert.deepEqual([...reg.CORE_TOOL_NAMES], ['execute_javascript', 'execute_python', 'execute_cpp', 'write_file', 'read_file', 'list_files', 'delete_file', 'copy_file', 'fetch_url', 'search_web', 'analyze_image', 'dispatch_subagent', 'knowledge_search', 'skill_library', 'tool_library'], '稳定核心顺序末尾增加工具目录 Schema');
+  assert.deepEqual([...reg.CORE_TOOL_NAMES], ['execute_javascript', 'execute_python', 'execute_cpp', 'write_file', 'read_file', 'list_files', 'delete_file', 'copy_file', 'fetch_url', 'search_web', 'analyze_image', 'dispatch_subagent', 'knowledge_search', 'skill_library', 'tool_library', 'checklist'], '稳定核心顺序末尾增加工具目录 Schema');
   assert.deepEqual(Object.keys(reg.CAPABILITY_GATED_TOOL_GROUPS), ['invariantCore', 'webFetch', 'workerSearch', 'siteCrawler', 'fileDownload', 'codeSandbox', 'localBrowser', 'subagentSwarm']);
   assert.deepEqual([...reg.CAPABILITY_GATED_TOOL_GROUPS.codeSandbox], ['execute_javascript', 'execute_python', 'execute_cpp']);
   assert.deepEqual([...reg.CAPABILITY_GATED_TOOL_GROUPS.webFetch], ['fetch_url']);

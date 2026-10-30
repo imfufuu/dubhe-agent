@@ -11,7 +11,8 @@ const read = (path) => fs.readFileSync(new URL(path, import.meta.url), 'utf8');
 test('offline model menu uses LOCAL in the provider column and keeps only the muted-gray local badge', () => {
   const picker = read('../js/ui-model-picker.js');
   const css = read('../css/styles.css');
-  assert.match(picker, /const LOCAL_PROVIDER_ICON = '<svg class="p-icon local-provider-icon" viewBox="0 0 24 24"/);
+  assert.match(picker, /const LOCAL_PROVIDER_ICON = LOCAL_PROVIDER_ICON_SVG;/);
+  assert.match(read('../js/icons.js'), /export const LOCAL_PROVIDER_ICON_SVG = '<svg class="p-icon local-provider-icon" viewBox="0 0 24 24"/);
   assert.match(picker, /const isLocalGroup = groups\.get\(p\)\.some\(\(model\) => model\.localModel\)/);
   assert.match(picker, /isLocalGroup \? LOCAL_PROVIDER_ICON : providerIcon\(p\)/);
   assert.match(picker, /isLocalGroup \? 'LOCAL' : p/);

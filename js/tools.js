@@ -1,4 +1,5 @@
 import { retrieveSkill } from './skill-library.js';
+import { normalizeChecklist, checklistSummary } from './checklist.js';
 import { searchToolDirectory, formatToolDefinitionRead } from './tool-catalog.js';
 import { AUDIO_EXT_RE, normalizeAudioData } from './audio-format.js';
 import { retrieveKnowledge } from './knowledge.js?v=2026.10.25.1';
@@ -81,6 +82,7 @@ export const TOOL_DEFS = [
   { name: 'chart_render', description: '把沙箱 CSV 的一列标签与一列数值渲染为 SVG 柱状图（bar）或折线图（line），写入 out（默认 outputs/<原名>.svg）。数值列必须全部是有效数字；超过 200 行请先用 data_tool 聚合。', parameters: { type: 'object', properties: { path: { type: 'string', description: '沙箱内 CSV 文件' }, label: { type: 'string', description: '标签列名（表头）' }, value: { type: 'string', description: '数值列名（表头）' }, type: { type: 'string', description: 'bar 或 line，默认 bar' }, title: { type: 'string', description: '图表标题（可选）' }, out: { type: 'string', description: '输出 .svg 路径（可选）' } }, required: ['path', 'label', 'value'] } },
   { name: 'xlsx_tool', description: 'Browser-local XLSX workbook operations in a bounded Worker; it mounts together with document_tool for DOCX/PPTX/PDF workflows. Use action=create with data.sheets:[{name,rows:[["Item","Amount"],["A",12]]}] and out="outputs/report.xlsx"; values are written as literal text/numbers/booleans, never formulas. Use inspect with path to read cell values and formulas as untrusted data; does not evaluate formulas, follow external links, render formatting/charts, or preserve merged cells. Output paths must be new outputs/*.xlsx files unless overwrite=true.', parameters: { type: 'object', properties: { action: { type: 'string', enum: ['inspect','create'] }, path: { type: 'string' }, out: { type: 'string' }, data: { type: 'object', description: 'Workbook creation: {sheets:[{name?,rows:[[cellValue,...],...]}]}; numbers and booleans retain their cell types, strings remain literal.' }, offset: { type: 'integer' }, overwrite: { type: 'boolean' } }, required: ['action'] } },
   { name: 'knowledge_search', description: 'Search the bundled bilingual project knowledge for exact rendering grammar, tool/runtime details and product/file policies. No external search; retrieve only needed sections. 核心规则/实时能力优先于历史参考。', parameters: { type:'object', properties: { query:{type:'string',description:'Topic keywords / 关键词'}, topic:{type:'string',enum:['runtime','rendering'],description:'Optional topic filter'}, language:{type:'string',enum:['zh','en']}, offset:{type:'number',description:'Continue a long matched section at this character offset'} }, required:['query'] } },
+  { name: 'checklist', description: 'Task checklist for extremely complex multi-step work only (simple tasks do not use it). Create it BEFORE starting, with 3-12 concrete verifiable items; call again with the full list to update statuses as you go (pending / in_progress / done / failed). The turn cannot end while any item is not done. Do not repeat the checklist in your reply text; the UI shows it live. 仅用于极复杂的多步任务：开始前创建 3–12 个可验证项，执行中用完整列表重新调用更新状态；未全部 done 不得结束回合；不要在正文里重复清单。', parameters: { type:'object', properties: { items: { type:'array', maxItems: 30, description: 'Full checklist state (replaces the previous one)', items: { type:'object', properties: { id:{type:'string', description:'Short stable id, e.g. c1'}, text:{type:'string', description:'One concrete, verifiable step'}, status:{type:'string', enum:['pending','in_progress','done','failed']} }, required:['text','status'] } } }, required:['items'] } },
   {
     name: 'execute_javascript',
     description: '在隔离的 Web Worker 沙箱中执行 JavaScript（支持顶层 await）。有 console、files，以及 Node 风格垫片：require（fs→映射到 files / path / buffer / util / events / crypto[sha256·sha1·md5·hmac·随机] / os / process / assert / url / querystring / timers）、Buffer、process、document.createElement("canvas")（OffscreenCanvas，await canvas.toDataURL()）。联网开启且中继可用时 fetch（仅 GET，经中继，≤8 次 / ≤2MB 每次）与 importScripts（加载 CDN 库，如 jsDelivr UMD 包）可用，否则调用会报「沙箱内网络未开启」；没有真实 DOM、XMLHttpRequest、WebSocket、child_process / http 等 Node 原生模块。files 是无原型的字典对象（Object.create(null)：files.constructor 为 undefined，用 Object.keys(files) / "k" in files 判断），键=完整相对路径，例 files["files/a.txt"] = "hi"。它是会话文件系统的完整快照：此前 write_file / 其它工具 / 上一次沙箱写的文件都在里面；本次对 files 的新增、修改、delete 在执行结束后同步回会话文件系统，后续任何工具（read_file / text_tool / 下一次 execute_*）都能看到，结果末尾的 files_keys 列出同步后的键。不熟悉就先探测：typeof console、Object.keys(files)。失败后先探测环境，不要换一个 API 名再猜。首段代码必须完整可运行；长命令保留源码 path，小错误最小补丁再按 path 执行。return 值或最后表达式作为结果。默认代码执行超时 30 秒；可传 timeout_sec（1–600 秒）为本次运行单独设定，超时会强制终止 Worker。',
@@ -1073,12 +1075,19 @@ async function executeToolBody(outerName, outerArgs, ctx) {
         const out = cppRemote ? await runCppRemote(code, runOpts) : await runCpp(code, {
           ...runOpts,
           // 启动阶段（Worker 载入脚本、尚未开始下载）无字节数：progress:-1 表示不确定进度条；下载开始后由 onProgress 给出百分比。
-          onPhase: (phase) => { if (notes[phase]) emit({ status: 'running', lang: 'cpp', workerStage: phase, note: notes[phase], progress: phase === 'bootstrap' || phase === 'executing' ? -1 : null }); },
+          // 所有阶段都给进度条：有字节数时由 onProgress 给出百分比；其余阶段（启动 / 解压 / 编译 / 运行）为不确定条 -1，不再清空
+          onPhase: (phase) => { if (notes[phase]) emit({ status: 'running', lang: 'cpp', workerStage: phase, note: notes[phase], progress: -1 }); },
           onProgress: (p) => {
             const total = Number(p?.total) || 0;
             const loaded = Math.min(Number(p?.loaded) || 0, total || Number(p?.loaded) || 0);
-            const fraction = total > 0 ? Math.min(1, loaded / total) : 0;
             const mb = (n) => (n / 1048576).toFixed(1);
+            // 总字节未知（服务器未给 Content-Length 且无兜底值）时不能显示 0%：改用不确定条，并显示已下载量
+            if (!(total > 0)) {
+              emit({ status: 'running', lang: 'cpp', workerStage: 'loading-assets', progress: -1,
+                note: `按需加载本站 C++ 工具链…（已下载 ${mb(loaded)} MB）` });
+              return;
+            }
+            const fraction = Math.min(1, loaded / total);
             emit({ status: 'running', lang: 'cpp', workerStage: 'loading-assets', progress: fraction,
               note: `按需加载本站 C++ 工具链 ${Math.round(fraction * 100)}%（${mb(loaded)} / ${mb(total)} MB）` });
           },
@@ -1154,6 +1163,7 @@ async function executeToolBody(outerName, outerArgs, ctx) {
         return await runDocumentTool(outerName === 'xlsx_tool' ? { ...args, format: 'xlsx' } : args, { fs, signal: ctx.signal, onUi: emit });
       }
       case 'knowledge_search': return retrieveKnowledge(args, { signal: ctx.signal });
+      case 'checklist': return checklistSummary(normalizeChecklist(args && args.items));
       case 'list_files': {
         const list = fs.list();
         // size 已是真实字节数（data URL 按 base64 反推、文本按 UTF-8），不是字符串长度
@@ -1606,10 +1616,12 @@ async function executeToolBody(outerName, outerArgs, ctx) {
           let visionOut = 0;
           for (let i = 0; i < paths.length; i++) {
             const path = paths[i];
-            let dataUrl = '';
-            try { dataUrl = fs.read(path); } catch { return `analyze_image 失败：找不到 ${path}（现有图片：${listImgs().join('、') || '无'}）`; }
-            if (!/^data:image\//i.test(dataUrl) && !/^https?:\/\//i.test(dataUrl)) {
-              return `analyze_image 失败：${path} 不是图片 data URL（当前是文本文件？）。`;
+            let raw;
+            try { raw = fs.read(path); } catch { return `analyze_image 失败：找不到 ${path}（现有图片：${listImgs().join('、') || '无'}）`; }
+            // 沙箱里的图片可能是 data URL、纯 base64 文本或原始字节：统一解码为真实图片字节后再识图
+            const dataUrl = /^https?:\/\//i.test(String(raw)) ? String(raw) : sandboxImageDataUrl(raw);
+            if (!dataUrl) {
+              return `analyze_image 失败：${path} 不是可识别的图片（解码后不是 PNG/JPEG/WebP/GIF）。`;
             }
             emit({ status: 'running', note: `识图中（${visionModel} · ${i + 1}/${paths.length} · ${path}）…` });
             const pagePrompt = paths.length > 1
@@ -2017,7 +2029,22 @@ async function executeToolBody(outerName, outerArgs, ctx) {
         try {
           const done = await runConversion({
             bytes, mime, plan, opts,
-            onProgress: (p) => { const pct = Math.round(Number(p) || 0); if (pct !== lastPct && pct % 10 === 0) { lastPct = pct; emit({ status: 'running', note: convertProgressNote(pct + '%') }); } },
+            onProgress: (p) => {
+              const mb = (n) => (Number(n) / 1048576).toFixed(1);
+              // 首次加载 ffmpeg core（约 30 MB wasm）：下载字节进度 → 界面进度条；编译阶段为不确定条
+              if (p && typeof p === 'object' && p.loading) {
+                if (p.stage === 'init') { emit({ status: 'running', workerStage: 'loading-assets', progress: -1, note: 'ffmpeg 引擎加载中（编译 wasm）…' }); return; }
+                const total = Number(p.total) || 0;
+                const loaded = Number(p.loaded) || 0;
+                const frac = total > 0 ? Math.min(1, loaded / total) : -1;
+                emit({ status: 'running', workerStage: 'loading-assets', progress: frac,
+                  note: frac >= 0 ? `加载 ffmpeg 引擎 ${Math.round(frac * 100)}%（${mb(loaded)} / ${mb(total)} MB）` : `加载 ffmpeg 引擎…（已下载 ${mb(loaded)} MB）` });
+                return;
+              }
+              // 转换执行阶段：0–99 的百分比，同步给界面进度条（首帧 0% 也要显示）
+              const pct = Math.round(Number(p) || 0);
+              if (pct !== lastPct) { lastPct = pct; emit({ status: 'running', progress: pct / 100, note: convertProgressNote(pct + '%') }); }
+            },
           });
           fs.write(out, `data:${done.outMime};base64,${u8ToB64(done.bytes)}`);
           emit({ status: 'ok', fsChange: true, editedPath: out, note: `${fromExt || 'media'} → ${to} · ${done.mode}` });
@@ -2284,6 +2311,23 @@ ${to} · ${done.bytes.length} 字节${done.mode === 'ffmpeg' ? ' · ffmpeg.wasm�
     emit({ status: 'error', error: { message: msg } });
     return msg;
   }
+}
+
+// 沙箱文件 → 真实图片 data URL：支持 data:image/...、带或不带 data: 前缀的 base64 文本、Uint8Array 原始字节；
+// 解码后用文件头（magic bytes）判断真实格式，不依赖扩展名。无法识别时返回 null。
+export function sandboxImageDataUrl(content) {
+  if (content instanceof Uint8Array) {
+    const s = sniffImage(content);
+    return s.mime && /^image\//.test(s.mime) ? bytesToDataUrl(content, s.mime) : null;
+  }
+  const text = String(content ?? '');
+  if (/^data:image\//i.test(text)) return text;
+  const body = text.replace(/^data:[^,]*;base64,/i, '').replace(/\s+/g, '');
+  if (body.length < 16 || !/^[A-Za-z0-9+/]+={0,2}$/.test(body)) return null;
+  let bytes;
+  try { bytes = Uint8Array.from(atob(body), (c) => c.charCodeAt(0)); } catch { return null; }
+  const s = sniffImage(bytes);
+  return s.mime && /^image\//.test(s.mime) ? bytesToDataUrl(bytes, s.mime) : null;
 }
 
 function formatExecResult(lang, out) {

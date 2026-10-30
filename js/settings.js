@@ -1,6 +1,7 @@
 import { installModerationSetting } from './ui-moderation-setting.js';
 import { updateScriptCache } from './cache-update.js';
-import { syncOfflineModelAvailability, importOfflineModel, getOfflineModelStatus, removeOfflineModel } from './offline-model.js';
+import { syncOfflineModelAvailability, importOfflineModel, getOfflineModelStatus, removeOfflineModel, renameOfflineModel } from './offline-model.js';
+import { defaultLocalModelName, validateLocalModelName } from './local-model-name.js';
 import { MAX_SINGLE_GGUF_BYTES, OFFLINE_MODEL_CONTEXT_SIZE, OFFLINE_MODEL_DISPLAY_NAME, OFFLINE_MODEL_ID, formatByteSize, isOfflineModelId } from './offline-model-config.js';
 import { estimateGGUFMemory, formatGGUFMemoryWarning, formatParameterCount, readDeviceMemoryGB, readGGUFMetadata } from './gguf.js';
 import { isNetworkOffline } from './offline-network.js';
@@ -135,6 +136,12 @@ function renderOfflineModelUI(status = null) {
   }
   if (fileInput) fileInput.disabled = !supported || offlineModelBusy || offlineModelStatusChecking;
   if (cancelBtn) { cancelBtn.hidden = !offlineModelBusy; cancelBtn.disabled = !offlineModelBusy; cancelBtn.textContent = localeText('取消', 'Cancel'); }
+  const renameBtn = $('#set-offline-model-rename');
+  if (renameBtn) {
+    renameBtn.hidden = !available;
+    renameBtn.disabled = offlineModelBusy;
+    renameBtn.textContent = localeText('重命名', 'Rename');
+  }
   if (removeBtn) {
     removeBtn.hidden = !available;
     removeBtn.disabled = offlineModelBusy;
@@ -448,6 +455,7 @@ export function openSettingsModal({ store } = {}) {
   $('#set-thinking').checked = store.state.settings.thinking !== false;
   syncSeg('#set-reason', store.state.settings.reasoningLevel || 'medium');
   syncSeg('#set-cpp-mode', store.state.settings.cppMode === 'local' ? 'local' : 'remote');
+  syncCppModeNote(store.state.settings.cppMode === 'local' ? 'local' : 'remote');
   syncBudgetInputs(store);
   syncMultimodalSelects(store);
   $('#set-about-ver').textContent = APP_RELEASE;
@@ -819,6 +827,10 @@ export function mountSettings(store, { onRelayChanged, onKeySaved, onSettingChan
       renderOfflineModelUI();
       const riskText = localeText(formatGGUFMemoryWarning(memoryEstimate, 'zh'), formatGGUFMemoryWarning(memoryEstimate, 'en'));
       if (memoryEstimate.risk !== 'ok' && !window.confirm(`${riskText}\n\n${localeText('是否仍要把此模型复制到本机浏览器存储？', 'Continue copying this model into local browser storage anyway?')}`)) return;
+      // 导入前设置模型名称：默认取文件名格式化结果，可改，校验规则见 local-model-name.js
+      const chosenName = await askLocalModelName({ value: defaultLocalModelName(file.name) });
+      if (!chosenName) return;
+      parsedMetadata.displayName = chosenName;
       const current = await getOfflineModelStatus();
       if (current.available && !window.confirm(localeText(`将用「${parsedMetadata.displayName}」替换当前本地模型「${current.metadata?.displayName || OFFLINE_MODEL_DISPLAY_NAME}」？原模型会在新文件保存成功后删除。`, `Replace the current local model “${current.metadata?.displayName || 'Local GGUF'}” with “${parsedMetadata.displayName}”? The old model is removed only after the new file is saved.`))) return;
       await importOfflineModel(file, {
@@ -845,6 +857,20 @@ export function mountSettings(store, { onRelayChanged, onKeySaved, onSettingChan
       offlineModelPreviewMetadata = null;
       renderOfflineModelUI();
     }
+  });
+  // 已导入模型后仍可随时改名（只改元数据，不重写文件）
+  const offlineRenameButton = $('#set-offline-model-rename');
+  if (offlineRenameButton) offlineRenameButton.addEventListener('click', async () => {
+    if (!offlineModelStore?.state.offlineModelAvailable) return;
+    const current = offlineModelStore.state.offlineModelMetadata?.displayName || '';
+    const name = await askLocalModelName({ value: current });
+    if (!name || name === current) return;
+    try {
+      await renameOfflineModel(name);
+      await refreshOfflineModelUI(offlineModelStore);
+      offlineModelStore.notify();
+      toast(localeText(`模型已改名为「${name}」。`, `Model renamed to “${name}”.`), 'ok');
+    } catch (error) { toast(error?.message || String(error), 'err', 5000); }
   });
   const offlineCancelButton = $('#set-offline-model-cancel');
   if (offlineCancelButton) offlineCancelButton.addEventListener('click', () => offlineModelController?.abort());
@@ -946,6 +972,7 @@ export function mountSettings(store, { onRelayChanged, onKeySaved, onSettingChan
   // C++ 运行方式：远程（Compiler Explorer，默认）/ 本地（浏览器内 WASM）
   bindSeg('#set-cpp-mode', (v) => {
     store.state.settings.cppMode = v === 'local' ? 'local' : 'remote';
+    syncCppModeNote(store.state.settings.cppMode);
     store.notify();
     changed('cppMode', store.state.settings.cppMode);
   });
@@ -1228,4 +1255,47 @@ export function applyFontSize() {
   let v = 'medium';
   v = readLocal(FONT_SIZE_KEY) || 'medium';
   return applyFontSizeValue(v, { persist: false });
+}
+
+// 本地模型命名弹窗（#local-name-modal）：返回校验通过的名称；取消返回 null。
+function askLocalModelName({ value = '' } = {}) {
+  return new Promise((resolve) => {
+    const modal = $('#local-name-modal');
+    const input = $('#local-name-input');
+    const errorEl = $('#local-name-error');
+    const saveBtn = $('#local-name-save');
+    const cancelBtn = $('#local-name-cancel');
+    if (!modal || !input || !saveBtn || !cancelBtn) { resolve(null); return; }
+    input.value = String(value || '');
+    errorEl.hidden = true;
+    modal.classList.add('open');
+    setTimeout(() => { input.focus(); input.select(); }, 30);
+    const finish = (result) => {
+      modal.classList.remove('open');
+      saveBtn.removeEventListener('click', onSave);
+      cancelBtn.removeEventListener('click', onCancel);
+      input.removeEventListener('keydown', onKey);
+      resolve(result);
+    };
+    function onSave() {
+      const checked = validateLocalModelName(input.value);
+      if (!checked.ok) { errorEl.textContent = localeText(checked.error, 'Use 1–64 letters, digits, “-” or “.”.'); errorEl.hidden = false; input.focus(); return; }
+      finish(checked.value);
+    }
+    function onCancel() { finish(null); }
+    function onKey(e) {
+      if (e.key === 'Enter') { e.preventDefault(); onSave(); }
+      else if (e.key === 'Escape') { e.preventDefault(); onCancel(); }
+    }
+    saveBtn.addEventListener('click', onSave);
+    cancelBtn.addEventListener('click', onCancel);
+    input.addEventListener('keydown', onKey);
+  });
+}
+
+// C++ 运行方式说明：只显示当前模式的一段，减少设置页文本密度
+function syncCppModeNote(mode) {
+  document.querySelectorAll('#set-cpp-mode-note [data-cpp-mode]').forEach((el) => {
+    el.hidden = el.dataset.cppMode !== mode;
+  });
 }
