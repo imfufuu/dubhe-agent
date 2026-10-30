@@ -80,3 +80,61 @@ test('non-abort Wllama events pass through unchanged and patching is idempotent'
   runtime.onRecvMsg(event);
   assert.equal(runtime.lastEvent, event);
 });
+
+// ── 以下用真实 vendor 代码验证（上面的 FakeWllama 结构与真实运行时不一致，曾掩盖了补丁从未生效的问题）──
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { guardWllamaProxy } from '../js/wllama-abort-compat.js';
+
+async function loadRealProxyClass() {
+  const src = fs.readFileSync(new URL('../assets/vendor/wllama/wllama-3.8.1.js', import.meta.url), 'utf8');
+  const tmp = path.join(os.tmpdir(), `wllama-real-${process.pid}-${Math.random().toString(36).slice(2)}.mjs`);
+  fs.writeFileSync(tmp, `${src}\nexport { ProxyToWorker };\n`);
+  try { return (await import(tmp)).ProxyToWorker; } finally { fs.rmSync(tmp, { force: true }); }
+}
+
+function realProxy(ProxyToWorker) {
+  const p = Object.create(ProxyToWorker.prototype);
+  p.resources = { compat: null };
+  p.logger = { error() {}, warn() {}, log() {}, debug() {} };
+  p.resultQueue = []; p.taskQueue = [];
+  return p;
+}
+
+const numericAbort = { data: { verb: 'signal.abort', args: ['abort', 12345, '', undefined] } };
+
+test('real vendor: guardWllamaProxy patches the proxy prototype before the worker handler is bound', async () => {
+  const ProxyToWorker = await loadRealProxyClass();
+  const runtime = guardWllamaProxy({});
+  const proxy = realProxy(ProxyToWorker);
+  let rejected = null;
+  proxy.resultQueue.push({ resolve() {}, reject: (e) => { rejected = e; } });
+  const seen = [];
+  const onUnhandled = (e) => seen.push(String(e && e.message));
+  process.on('unhandledRejection', onUnhandled);
+  try {
+    runtime.proxy = proxy;
+    runtime.proxy.onRecvMsg(numericAbort);
+    await new Promise((r) => setTimeout(r, 30));
+    assert.deepEqual(seen, [], 'no window.rejection after the guard');
+    assert.match(String(rejected && rejected.message), /\(ABORT\) 12345/, 'pending inference must be rejected, not left spinning');
+  } finally { process.off('unhandledRejection', onUnhandled); }
+});
+
+test('real vendor: an incompatible proxy is refused loudly instead of silently running the broken handler', () => {
+  const runtime = guardWllamaProxy({});
+  assert.throws(() => { runtime.proxy = {}; }, /不兼容（缺少 onRecvMsg）/);
+});
+
+test('wiring: offline-model guards the runtime proxy instead of patching the exported class', () => {
+  const src = fs.readFileSync(new URL('../js/offline-model.js', import.meta.url), 'utf8');
+  assert.match(src, /guardWllamaProxy\(runtime\);/);
+  assert.doesNotMatch(src, /patchWllamaAbortMessageHandling\(wllamaModule\.Wllama\)/);
+});
+
+test('wiring: vendored Wllama still binds the worker handler after creating the proxy (guard assumptions)', () => {
+  const vendor = fs.readFileSync(new URL('../assets/vendor/wllama/wllama-3.8.1.js', import.meta.url), 'utf8');
+  assert.match(vendor, /this\.proxy = new ProxyToWorker\(/);
+  assert.match(vendor, /this\.worker\.onmessage = this\.onRecvMsg\.bind\(this\);/);
+});
