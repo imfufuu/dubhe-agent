@@ -1,5 +1,7 @@
 // Stable DOM fragments in persisted SSE order plus lightweight UI lifecycle helpers.
 import { displayParts, toolFamily, adjacentToolMessages } from './toolflow.js?v=2026.10.25.1';
+import { checklistComplete } from './checklist.js';
+import { text as localeText } from './locale.js';
 export function syncToolMenuCursor(chips, live) {
   if (!chips) return null;
   let cursor = chips.querySelector(':scope > .tool-menu-cursor');
@@ -102,7 +104,6 @@ export function renderToolChipDetail(chip) {
 
 
 import { $, $$, el, esc, videoBlobUrl } from './ui-markdown.js?v=2026.10.25.1';
-import { text as localeText } from './locale.js';
 import { ICON } from './icons.js';
 
 // 2026.10.21：知识库检索 = 独立消息块。检索中：英文进行时「Searching library」+ 与命令/文件行
@@ -333,4 +334,25 @@ export function hydrateWebVideos(node, readFile) {
     v.controls = true; v.preload = 'metadata'; v.src = url; v.className = 'web-video-player';
     box.appendChild(v);
   }
+}
+
+// 复杂任务清单卡片：消息头之后显示，随 m.checklist（最新一次 checklist 工具调用的状态）实时重绘。
+export function syncChecklistBlock(wrap, m) {
+  if (!wrap) return;
+  const list = Array.isArray(m?.checklist) ? m.checklist : [];
+  let block = wrap.querySelector(':scope > .agent-checklist');
+  if (!list.length) { block?.remove(); return; }
+  if (!block) {
+    block = wrap.ownerDocument.createElement('div');
+    block.className = 'agent-checklist';
+    const head = wrap.querySelector(':scope > .msg-head');
+    if (head) head.after(block); else wrap.prepend(block);
+  }
+  const esc = (v) => String(v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const label = { pending: localeText('待办', 'Pending'), in_progress: localeText('进行中', 'In progress'), done: localeText('已确认', 'Confirmed'), failed: localeText('失败，需处理', 'Failed') };
+  const done = list.filter((item) => item.status === 'done').length;
+  const complete = checklistComplete(list);
+  block.classList.toggle('incomplete', !complete);
+  block.innerHTML = `<div class="agent-checklist-head"><span>${esc(localeText('任务清单', 'Checklist'))}</span><span class="mono">${done}/${list.length}</span></div>`
+    + `<ol class="agent-checklist-items">${list.map((item) => `<li class="ck-${esc(item.status)}" title="${esc(label[item.status] || item.status)}"><span class="ck-mark" aria-hidden="true"></span><span class="ck-text">${esc(item.text)}</span><span class="ck-state">${esc(label[item.status] || item.status)}</span></li>`).join('')}</ol>`;
 }

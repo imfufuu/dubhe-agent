@@ -141,6 +141,7 @@ import {
 } from './executionContext.js?v=2026.10.25.1';
 import { createToolRunner } from './toolrunner.js?v=2026.10.25.1';
 import { finalizeTurn } from './turnfinalizer.js?v=2026.10.25.1';
+import { checklistBlocksEnd, checklistReminder, recordChecklistCall } from './checklist.js';
 import { formatAuditGoalsReport, auditBoundaryStatement } from './audit.js?v=2026.10.25.1';
 // P3：编辑直播预览保持独立模块，旧缓存组合下缺少它也不影响核心对话。
 import { buildFileEditPreview, formatEditPreviewNote, pathsOfEdits } from './editpreview.js?v=2026.10.25.1';
@@ -197,31 +198,8 @@ function formatToolTableNote(dropped, deferred, language = getLanguage()) {
   return parts.join('');
 }
 
-// 附件落盘文件名：去掉路径分隔与控制字符，避免越权写到 uploads/ 之外
-const safeName = (n) => String(n || 'file').replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '_').trim().slice(0, 120) || 'file';
-
-// 用户附件 → 沙箱 uploads/（文本写原文，图片写 data URL 以便编辑/打包下载）
-// 同名且内容相同则复用路径；内容不同则追加序号，避免覆盖上一轮上传
-export function copyAttachmentsToFS(fs, attachments = []) {
-  const written = [];
-  const taken = new Set(fs.list().map((f) => f.path));
-  for (const a of attachments || []) {
-    const content = a.kind === 'text' ? a.text : (a.dataUrl || a.text);
-    if (content == null || content === '') continue;
-    const base = `uploads/${safeName(a.name)}`;
-    let path = base;
-    if (taken.has(path) && fs.read(path) !== content) {
-      const dot = base.lastIndexOf('.');
-      for (let n = 2; taken.has(path); n++) {
-        path = dot > 0 ? `${base.slice(0, dot)}-${n}${base.slice(dot)}` : `${base}-${n}`;
-      }
-    }
-    fs.write(path, content);
-    taken.add(path);
-    written.push(path);
-  }
-  return written;
-}
+export { copyAttachmentsToFS } from './attachment-files.js';
+import { copyAttachmentsToFS } from './attachment-files.js';
 
 // ─── 子智能体运行器：独立上下文的迷你工具循环（不可再委派，防递归）────
 // （导出以供 tests/live-smoke.mjs 对真实 API 验证）
@@ -321,6 +299,7 @@ export function createAgent(store, hooks = {}) {
   let fs = baseFS; // 当前生效的 fs（回合内 = temp overlay；回合间 = baseFS）
   let abortController = null;
   let status = 'idle'; // idle | moderating | thinking | streaming | executing | done | error | cancelled
+  let turnChecklist = null, checklistNudges = 0; // 复杂任务清单（回合内）
 
   // UI 钩子统一经 emit 分发：钩子缺失或抛错都不得打断对话循环。
   // 线上教训：GitHub Pages 对 JS 子资源有 ~10 分钟缓存，浏览器可能拿到「新版 main.js +
@@ -561,6 +540,7 @@ export function createAgent(store, hooks = {}) {
         // P1 修正：七路预算的账本与预警每轮前置给模型（以前只在拦截之后才回传），剩余 ≤ 2 时明说怎么省
         formatBudgetForecast(nexusState && nexusState.budgetGov, { tools: turnTools }),
         formatBudgetNote(iteration, TOOL_LOOP_MAX),
+        checklistReminder(turnChecklist),
       ].filter((s) => s && String(s).trim()).join('\n\n'),
     });
     return [...layers.messages, ...compacted];
@@ -726,6 +706,8 @@ export function createAgent(store, hooks = {}) {
         subagentReports: [],
       };
       iterations = 0;
+      turnChecklist = null;
+      checklistNudges = 0;
       // ── P3 临时沙箱（ephemeral overlay）：Agent 写文件全部落在临时层 ──
       // 默认保留本轮全部新文件；只有设置开启自动清理时，才丢弃最终回答未引用的产物。
       tempFS = createTempFS(baseFS, { cleanupUnreferencedFiles: settings.cleanupUnreferencedFiles === true });
@@ -1309,6 +1291,7 @@ export function createAgent(store, hooks = {}) {
           });
           emit('onAssistantDone', assistantMsg);
 
+          if (!toolCalls.length && !signal.aborted && checklistBlocksEnd(turnChecklist, checklistNudges)) { checklistNudges++; continue; }
           // ── 无工具调用 → 回合结束（执行内核：回答 → 核验 → 提交）──
           if (!toolCalls.length) {
             const fin = finalizeExecutionTurn({
@@ -1390,6 +1373,7 @@ export function createAgent(store, hooks = {}) {
             telemetry.recordTool(call.name, Math.round(waveMs / Math.max(1, toolCalls.length)), { engine, ok: !isErr });
             syncFS();
             store.pushMessage({ role: 'tool', toolCallId: call.id, name: call.name, content: result });
+            if (call.name === 'checklist' && !isErr) turnChecklist = recordChecklistCall(store, assistantMsg.id, call.args);
             emit('onToolResult', call, result);
           }
           telemetry.subagentDispatches = turn.subagentReports.length;

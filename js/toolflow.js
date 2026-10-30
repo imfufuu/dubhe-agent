@@ -18,6 +18,8 @@ export function recordOutputTool(message, index) {
 export const WEB_TOOL_NAMES = new Set(['search_web', 'fetch_url', 'generate_image', 'generate_video']);
 export function toolFamily(call) {
   if (call?.name === 'write_file') return 'edited';
+  // 任务清单不进命令菜单：由消息内的清单卡片实时展示（ui-toolflow.js syncChecklistBlock）
+  if (call?.name === 'checklist') return 'checklist';
   if (WEB_TOOL_NAMES.has(call?.name)) return 'web';
   // 2026.10.21：知识库检索是独立消息块（进行中显示检索词的抛光行，完成后收起且不可展开），
   // 不再混进 Ran command 命令菜单。

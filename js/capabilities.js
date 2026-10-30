@@ -43,6 +43,7 @@ export const CAPABILITY_REGISTRY = Object.freeze({
   document_tool: R('invariantCore', 'fs-write', { heavy: true }),
   xlsx_tool: R('invariantCore', 'fs-write', { heavy: true }),
   knowledge_search: R('invariantCore', 'local', { core: 13, parallel: true, readOnly: true }),
+  checklist: R('invariantCore', 'local', { core: 16 }),
   // ── 文件系统（永远在）──
   write_file: R('invariantCore', 'fs-write', { core: 4, heavy: true }),
   read_file: R('invariantCore', 'fs-read', { core: 5, parallel: true, readOnly: true }),
