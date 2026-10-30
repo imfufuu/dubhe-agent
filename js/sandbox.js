@@ -431,13 +431,19 @@ function runInWorker(workerFile, payload, timeoutMs, {
 } = {}) {
   return new Promise((resolve) => {
     let settled = false, active = null, triedBlob = false, started = false;
-    let execTimer = null, attemptTimer = null;
+    let execTimer = null, attemptTimer = null, programStarted = false;
     const fetchAbort = new AbortController();
     const sourceURL = versionedURL;
     const canUseBlobFallback = allowBlobFallback === true && workerType !== 'module';
     const timeoutResult = (message) => finish({ ok: false, timedOut: true, logs: [], files: payload.files || {},
       error: { message } });
+    // 准备阶段（加载/编译）按「无进度」计时：每次收到阶段或进度消息就重新计时，只有连续静默才超时。
+    const armPrepTimer = () => {
+      clearTimeout(execTimer);
+      execTimer = setTimeout(() => timeoutResult(preExecutionTimeoutMessage || `编译准备超时（>${Math.round(preExecutionTimeoutMs / 1000)}s），沙箱已强制终止`), preExecutionTimeoutMs);
+    };
     const armProgramTimeout = () => {
+      programStarted = true;
       clearTimeout(execTimer);
       execTimer = setTimeout(() => timeoutResult(timeoutMessage || `执行超时（>${Math.round(timeoutMs / 1000)}s），沙箱已强制终止`), timeoutMs);
     };
@@ -493,9 +499,8 @@ function runInWorker(workerFile, payload, timeoutMs, {
         if (settled || active !== mine || mine.sent) return;
         mine.sent = true; started = true;
         clearTimeout(bootTimer); clearTimeout(attemptTimer); fetchAbort.abort(); onPhase?.('executing');
-        if (executionTimeoutPhase && preExecutionTimeoutMs > 0) {
-          execTimer = setTimeout(() => timeoutResult(preExecutionTimeoutMessage || `编译准备超时（>${Math.round(preExecutionTimeoutMs / 1000)}s），沙箱已强制终止`), preExecutionTimeoutMs);
-        } else armProgramTimeout();
+        if (executionTimeoutPhase && preExecutionTimeoutMs > 0) armPrepTimer();
+        else armProgramTimeout();
         let transfer = [];
         if (rpc && typeof MessageChannel === 'function') {
           const channel = new MessageChannel(); mine.port = channel.port1; transfer = [channel.port2];
@@ -518,9 +523,14 @@ function runInWorker(workerFile, payload, timeoutMs, {
         if (data?.__phase) {
           onPhase?.(data.__phase);
           if (executionTimeoutPhase && data.__phase === executionTimeoutPhase) armProgramTimeout();
+          else if (executionTimeoutPhase && preExecutionTimeoutMs > 0 && !programStarted) armPrepTimer();
           return;
         }
-        if (data?.__progress) { try { onProgress?.(data.__progress); } catch { /* 进度回调失败不影响执行 */ } return; }
+        if (data?.__progress) {
+          try { onProgress?.(data.__progress); } catch { /* 进度回调失败不影响执行 */ }
+          if (executionTimeoutPhase && preExecutionTimeoutMs > 0 && !programStarted) armPrepTimer();
+          return;
+        }
         if (data?.__log) { onOutput?.(data.__log); return; }
         if (!mine.sent || !data || typeof data.ok !== 'boolean') return;
         finish(data);
@@ -796,7 +806,7 @@ export async function runCpp(code, opts = {}) {
     allowBlobFallback: false,
     executionTimeoutPhase: 'program-start',
     preExecutionTimeoutMs: SANDBOX_CPP_PREPARATION_TIMEOUT_MS,
-    preExecutionTimeoutMessage: `本地 C++ 工具链加载/编译超时（>${SANDBOX_CPP_PREPARATION_TIMEOUT_MS / 1000}s），沙箱已强制终止`,
+    preExecutionTimeoutMessage: `本地 C++ 工具链 ${SANDBOX_CPP_PREPARATION_TIMEOUT_MS / 1000} 秒内无加载或编译进度，沙箱已强制终止`,
     timeoutMessage: `C++ 程序执行超时（>${Math.round(timeoutMs / 1000)}s），沙箱已强制终止`,
   });
   return { ...out, durationMs: Math.round(performance.now() - t0) };
