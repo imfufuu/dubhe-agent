@@ -3180,17 +3180,31 @@ html[data-motion="off"] .empty-state h2[data-typing="true"]::after,
 .web-activity .web-video { flex-basis: 100%; margin-top: 6px; font-size: 11px; color: var(--fg-3); }
 .web-activity .web-video-player { display: block; width: 100%; max-width: min(420px, 100%); border-radius: 10px; border: 1px solid var(--line); background: var(--bg-soft); }
 
-/* ── 复杂任务清单卡片（checklist 工具，ui-toolflow.js syncChecklistBlock）── */
-.agent-checklist { margin: 6px 0 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg-soft); font-size: var(--ui-fs-12_5px, 12.5px); color: var(--fg-2); }
-.agent-checklist-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; font-weight: 600; color: var(--fg); }
-.agent-checklist-items { margin: 0; padding: 0; list-style: none; display: grid; gap: 5px; }
-.agent-checklist-items li { display: grid; grid-template-columns: 14px 1fr auto; align-items: center; gap: 8px; line-height: 1.5; }
-.ck-mark { width: 10px; height: 10px; border-radius: 50%; border: 1.5px solid var(--fg-3); box-sizing: border-box; justify-self: center; }
-.ck-in_progress .ck-mark { border-color: var(--fg); border-right-color: transparent; animation: ckSpin 1s linear infinite; }
-.ck-done .ck-mark { background: var(--fg-2); border-color: var(--fg-2); }
-.ck-failed .ck-mark { border-style: dashed; border-color: var(--fg); }
-.ck-done .ck-text { color: var(--fg-3); text-decoration: line-through; }
-.ck-state { font-size: 11px; color: var(--fg-3); white-space: nowrap; }
-.agent-checklist.incomplete .agent-checklist-head { color: var(--fg); }
+/* ── 复杂任务清单：消息内摘要（一行，点击打开面板）+ 沙箱面板「任务」标签 ── */
+.agent-checklist { appearance: none; display: flex; align-items: center; gap: 8px; margin: 4px 0 8px; padding: 5px 10px; max-width: 100%; border: 1px solid var(--line); border-radius: 999px; background: var(--bg-soft); color: var(--fg-2); font: inherit; font-size: var(--ui-fs-12px, 12px); cursor: pointer; text-align: left; }
+.agent-checklist:hover { border-color: var(--fg-2); color: var(--fg); }
+.agent-checklist:focus-visible { outline: 2px solid var(--fg-2); outline-offset: 2px; }
+.ck-pill-mark { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid var(--fg-3); box-sizing: border-box; flex: none; }
+.agent-checklist.incomplete .ck-pill-mark { border-color: var(--fg); border-right-color: transparent; animation: ckSpin 1s linear infinite; }
+.agent-checklist:not(.incomplete) .ck-pill-mark { background: var(--fg-2); border-color: var(--fg-2); }
+.ck-pill-text { white-space: nowrap; }
+.ck-pill-text b { font-weight: 650; color: var(--fg); }
+.ck-pill-go { margin-left: auto; color: var(--fg-3); white-space: nowrap; }
+.panel-tab .tab-badge { display: inline-block; margin-left: 5px; padding: 0 5px; min-width: 16px; border-radius: 999px; background: var(--fg); color: var(--bg); font-size: 10px; line-height: 15px; text-align: center; }
+.panel-tab .tab-badge[hidden] { display: none; }
+.task-card { gap: 8px; }
+.task-progress { height: 4px; border-radius: 999px; background: var(--line); overflow: hidden; }
+.task-progress span { display: block; height: 100%; width: 0; background: var(--fg); border-radius: inherit; transition: width .35s cubic-bezier(.22,1,.36,1); }
+html:not([data-motion="on"]) .task-progress span { transition: none; }
+#tab-tasks .agent-checklist-items { margin: 4px 0 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+#tab-tasks .agent-checklist-items li { display: grid; grid-template-columns: 14px 1fr auto; align-items: start; gap: 8px; font-size: var(--ui-fs-12_5px, 12.5px); line-height: 1.5; color: var(--fg-2); }
+#tab-tasks .ck-mark { width: 10px; height: 10px; margin-top: 5px; border-radius: 50%; border: 1.5px solid var(--fg-3); box-sizing: border-box; justify-self: center; }
+#tab-tasks .ck-in_progress .ck-mark { border-color: var(--fg); border-right-color: transparent; animation: ckSpin 1s linear infinite; }
+#tab-tasks .ck-done .ck-mark { background: var(--fg-2); border-color: var(--fg-2); }
+#tab-tasks .ck-failed .ck-mark { border-style: dashed; border-color: var(--fg); }
+#tab-tasks .ck-done .ck-text { color: var(--fg-3); text-decoration: line-through; }
+#tab-tasks .ck-state { font-size: 11px; color: var(--fg-3); white-space: nowrap; }
+.task-empty { margin: 6px 0 0; color: var(--fg-3); font-size: 12px; line-height: 1.6; }
+.task-empty[hidden] { display: none; }
 @keyframes ckSpin { to { transform: rotate(360deg); } }
-html:not([data-motion="on"]) .ck-in_progress .ck-mark { animation: none; }
+html:not([data-motion="on"]) .agent-checklist.incomplete .ck-pill-mark, html:not([data-motion="on"]) #tab-tasks .ck-in_progress .ck-mark { animation: none; }

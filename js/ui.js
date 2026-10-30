@@ -10,7 +10,7 @@ import { installFeedback } from './ui-feedback.js';
 import { installSpeechInput } from './ui-speech.js';
 import { createToolPresentation, presentationCallSettled, turnToolResults } from './toolpresentation.js?v=2026.10.25.1';
 import { paintEditFoldContent, syncEditingFold, toggleEditingFold } from './ui-editpreview.js?v=2026.10.25.1';
-import { paintOrderedAssistant, renderToolChipDetail, paintCommandRows, paintKnowledgeFold, webGroupLabel, hasMediaTaskRunning, syncToolMenuCursor, ownerOfTool, paintVisibleTurn, activeToolOwner, persistTurnTiming, paintWebActivity, syncChecklistBlock } from './ui-toolflow.js?v=2026.10.25.1';
+import { paintOrderedAssistant, renderToolChipDetail, paintCommandRows, paintKnowledgeFold, webGroupLabel, hasMediaTaskRunning, syncToolMenuCursor, ownerOfTool, paintVisibleTurn, activeToolOwner, persistTurnTiming, paintWebActivity, syncChecklistBlock, installChecklistPanel } from './ui-toolflow.js?v=2026.10.25.1';
 import { classifyToolResult, toolResultFailed } from './toolwindows.js?v=2026.10.25.1';
 import { adjacentToolMessages, appendToolStream, toolFamily, commandRunFor } from './toolflow.js?v=2026.10.25.1';
 import { createRollbackFx } from './ui-rollback-fx.js?v=2026.10.25.1';
@@ -919,7 +919,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     else updateBackdrop();
   }
   $('#panel-toggle').addEventListener('click', () => setPanelCollapsed(!panel.classList.contains('collapsed')));
-  $('#panel-close')?.addEventListener('click', () => setPanelCollapsed(true));
+  $('#panel-close')?.addEventListener('click', () => setPanelCollapsed(true)); installChecklistPanel(store);
   const animatePanelTab = (pane) => {
     if (!pane || !motionAllowed(document)) return;
     pane.classList.remove('panel-tab-enter');
