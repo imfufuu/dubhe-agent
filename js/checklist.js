@@ -7,7 +7,10 @@
 
 import { text } from './locale.js';
 
-export const CHECKLIST_STATUSES = Object.freeze(['pending', 'in_progress', 'done', 'failed']);
+export const CHECKLIST_STATUSES = Object.freeze(['pending', 'in_progress', 'done', 'failed', 'skipped']);
+// 已关闭的状态：done（已确认）与 skipped（经说明不适用，如依赖的前提不成立）。两者都不再阻塞回合结束。
+const CLOSED_STATUSES = Object.freeze(['done', 'skipped']);
+const isClosed = (item) => CLOSED_STATUSES.includes(item && item.status);
 export const CHECKLIST_MAX_ITEMS = 30;
 export const CHECKLIST_TEXT_MAX = 200;
 // 模型过早结束时最多补催的次数；超过后回合照常结束，但清单上会保留未完成项（不静默掩盖）。
@@ -29,17 +32,17 @@ export function normalizeChecklist(items) {
 }
 
 export function checklistOpenItems(list) {
-  return (Array.isArray(list) ? list : []).filter((item) => item.status !== 'done');
+  return (Array.isArray(list) ? list : []).filter((item) => !isClosed(item));
 }
 
 // 至少一项，且全部 done 才算完成。
 export function checklistComplete(list) {
-  return Array.isArray(list) && list.length > 0 && list.every((item) => item.status === 'done');
+  return Array.isArray(list) && list.length > 0 && list.every(isClosed);
 }
 
 // 工具返回给模型的文字回执（同时供前端状态提示使用）。
 export function checklistSummary(list) {
-  const done = list.filter((item) => item.status === 'done').length;
+  const done = list.filter(isClosed).length;
   if (checklistComplete(list)) {
     return text(`清单已更新：${done}/${list.length} 项完成。全部确认无误，可以给出最终回答。`,
       `Checklist updated: ${done}/${list.length} done. All items confirmed; you may give the final answer.`);
@@ -65,6 +68,9 @@ export function checklistBlocksEnd(list, nudges) {
 // checklist 工具成功调用后：规范化并写入消息（前端卡片据此实时重绘），返回回合内清单。
 export function recordChecklistCall(store, messageId, args) {
   const list = normalizeChecklist(args && args.items);
-  store.updateMessage(messageId, { checklist: list.map((item) => ({ ...item })) });
+  const prev = (store.state.messages || []).find((m) => m && m.id === messageId);
+  // 创建时的项数只记一次：之后调整项目不会改写「已创建 N 项」的历史标记
+  const createdCount = prev && Number.isFinite(prev.checklistCreatedCount) ? prev.checklistCreatedCount : list.length;
+  store.updateMessage(messageId, { checklist: list.map((item) => ({ ...item })), checklistCreatedCount: createdCount });
   return list;
 }

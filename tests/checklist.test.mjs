@@ -67,7 +67,8 @@ test('wiring: agent loop gates turn end on open checklist items and resets per t
   const agent = read('js/agent.js');
   assert.match(agent, /if \(!toolCalls\.length && !signal\.aborted && checklistBlocksEnd\(turnChecklist, checklistNudges\)\) \{ checklistNudges\+\+; continue; \}/);
   assert.match(agent, /checklistReminder\(turnChecklist\),/);
-  assert.match(agent, /turnChecklist = recordChecklistCall\(store, assistantMsg\.id, call\.args\);/);
+  assert.match(agent, /turnChecklist = recordChecklistCall\(store, checklistOwnerId \|\|= assistantMsg\.id, call\.args\);/);
+  assert.match(agent, /checklistNudges = 0; checklistOwnerId = null;/);
   assert.match(agent, /iterations = 0;\s*turnChecklist = null;\s*checklistNudges = 0;/);
 });
 

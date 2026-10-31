@@ -337,31 +337,39 @@ export function hydrateWebVideos(node, readFile) {
 }
 
 // ── 复杂任务清单 ──────────────────────────────────────────────────────────
-// 完整清单放在沙箱面板的「任务」标签里（随 store 实时刷新）；消息内只保留一行摘要，点击即打开面板。
-const ckEsc = (v) => String(v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const ckLabel = () => ({ pending: localeText('待办', 'Pending'), in_progress: localeText('进行中', 'In progress'), done: localeText('已确认', 'Confirmed'), failed: localeText('失败，需处理', 'Failed') });
+// 完整清单放在沙箱面板「任务」标签（随 store 实时刷新）。消息内只在两个时点各出现一次：
+// 「已创建」（清单首次生成）与「已完成」（全部项目确认）。两枚标签静态渲染，之后的状态更新不再重复输出。
+const ckEsc = (v) => String(v).replace(/[&<>\"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;', "'": '&#39;' }[c]));
+const ckLabel = () => ({
+  pending: localeText('待办', 'Pending'), in_progress: localeText('进行中', 'In progress'), done: localeText('已完成', 'Done'),
+  failed: localeText('失败，需处理', 'Failed'), skipped: localeText('已跳过', 'Skipped'),
+});
+const ckClosed = (item) => item.status === 'done' || item.status === 'skipped';
 
-// 消息内摘要：挂在消息头之后，随 m.checklist 实时更新
 export function syncChecklistBlock(wrap, m) {
   if (!wrap) return;
   const list = Array.isArray(m?.checklist) ? m.checklist : [];
-  let pill = wrap.querySelector(':scope > .agent-checklist');
-  if (!list.length) { pill?.remove(); return; }
-  if (!pill) {
-    pill = wrap.ownerDocument.createElement('button');
+  wrap.querySelectorAll(':scope > .agent-checklist').forEach((n) => n.remove());
+  if (!list.length) return;
+  const doc = wrap.ownerDocument;
+  const stages = [{ key: 'created', text: localeText(`任务清单 · 已创建 ${m.checklistCreatedCount || list.length} 项`, `Checklist · ${m.checklistCreatedCount || list.length} items created`) }];
+  if (checklistComplete(list)) stages.push({ key: 'completed', text: localeText(`任务清单 · 已完成 ${list.length}/${list.length}`, `Checklist · ${list.length}/${list.length} completed`) });
+  const head = wrap.querySelector(':scope > .msg-head');
+  let anchor = head;
+  for (const stage of stages) {
+    const pill = doc.createElement('button');
     pill.type = 'button';
-    pill.className = 'agent-checklist';
+    pill.className = `agent-checklist ${stage.key === 'completed' ? 'is-complete' : 'is-created'}`;
     pill.dataset.openTasks = '1';
-    const head = wrap.querySelector(':scope > .msg-head');
-    if (head) head.after(pill); else wrap.prepend(pill);
+    pill.dataset.stage = stage.key;
+    pill.title = localeText('在沙箱面板的「任务」标签中查看', 'Open the Tasks tab in the sandbox panel');
+    pill.innerHTML = `<span class="ck-pill-mark" aria-hidden="true"></span><span class="ck-pill-text">${ckEsc(stage.text)}</span><span class="ck-pill-go">${ckEsc(localeText('在面板查看', 'View in panel'))} ›</span>`;
+    if (anchor) anchor.after(pill); else wrap.prepend(pill);
+    anchor = pill;
   }
-  const done = list.filter((item) => item.status === 'done').length;
-  pill.classList.toggle('incomplete', !checklistComplete(list));
-  pill.title = localeText('在沙箱面板的「任务」标签中查看', 'Open the Tasks tab in the sandbox panel');
-  pill.innerHTML = `<span class="ck-pill-mark" aria-hidden="true"></span><span class="ck-pill-text">${ckEsc(localeText('任务清单', 'Checklist'))} <b class="mono">${done}/${list.length}</b></span><span class="ck-pill-go">${ckEsc(localeText('在面板查看', 'View in panel'))} ›</span>`;
 }
 
-// 面板：完整清单（列表 + 进度条 + 标签徽标）。sig 未变时不重绘，流式期间保持轻量。
+// 面板：完整清单。sig 未变时不重绘，流式期间保持轻量。
 let lastPanelSig = '';
 export function paintChecklistPanel(list) {
   const pane = document.getElementById('tab-tasks');
@@ -370,23 +378,17 @@ export function paintChecklistPanel(list) {
   if (sig === lastPanelSig) return;
   lastPanelSig = sig;
   const items = Array.isArray(list) ? list : [];
-  const done = items.filter((item) => item.status === 'done').length;
+  const done = items.filter(ckClosed).length;
   const total = items.length;
   const label = ckLabel();
   const ol = pane.querySelector('#task-list');
   const empty = pane.querySelector('#task-empty');
   const count = pane.querySelector('#task-count');
   const fill = pane.querySelector('#task-progress-fill');
-  const badge = document.querySelector('[data-panel-tab="tasks"] .tab-badge');
-  if (ol) ol.innerHTML = items.map((item) => `<li class="ck-${ckEsc(item.status)}" title="${ckEsc(label[item.status] || item.status)}"><span class="ck-mark" aria-hidden="true"></span><span class="ck-text">${ckEsc(item.text)}</span><span class="ck-state">${ckEsc(label[item.status] || item.status)}</span></li>`).join('');
+  if (ol) ol.innerHTML = items.map((item) => `<li class="ck-${ckEsc(item.status)}"><span class="ck-mark" aria-hidden="true"></span><span class="ck-text">${ckEsc(item.text)}</span><span class="ck-state">${ckEsc(label[item.status] || item.status)}</span></li>`).join('');
   if (empty) empty.hidden = total > 0;
   if (count) count.textContent = total ? `${done}/${total}` : '—';
   if (fill) fill.style.width = total ? `${Math.round((done / total) * 100)}%` : '0%';
-  if (badge) {
-    const open = total > 0 && !checklistComplete(items);
-    badge.hidden = !open;
-    badge.textContent = open ? `${done}/${total}` : '';
-  }
 }
 
 function openTasksPanel() {

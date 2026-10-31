@@ -1329,7 +1329,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       html += `<div class="connect-line"><span class="connect-dot" aria-hidden="true"></span><span>正在连接 <b class="mono">${esc(isOfflineModelId(m.model || store.state.model) ? localModelLabel(store) : modelDisplayName(m.model || store.state.model))}</b>，等待首个响应…</span></div>`;
     }
     html += m.model === '__system__' ? sysReplyHtml(m.text) : renderMarkdown(m.text || '', { streaming: live });
-    if (live && !noOutputYet && !toolMenuBusy) html += '<span class="cursor"></span>';
+    if (live && !noOutputYet && !toolMenuBusy && String(m.text || '').trim()) { const tail = /<\/(p|li|h[1-6]|blockquote|td|th)>\s*$/.exec(html); html = tail ? html.slice(0, tail.index) + '<span class="cursor"></span>' + tail[0] : html + '<span class="cursor"></span>'; }
     // Cancellation is a tail after text AND tool/file output, never a prefix.
     const lengthCapped = /^(length|max_tokens|max_output_tokens)$/i.test(String(m.finishReason || ''));
     if (m.done && !m.cancelled && !String(m.text || '').trim() && !(m.toolCalls && m.toolCalls.length) && !m.error) {
