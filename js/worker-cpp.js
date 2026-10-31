@@ -9,6 +9,16 @@ const ASSET_TYPES = Object.freeze({
 const networkFetch = self.fetch.bind(self);
 // 压缩后的体积兜底值（服务器未返回 Content-Length 时用于估算进度）
 const FALLBACK_BYTES = Object.freeze({ 'clang.wasm': 15010669, 'lld.wasm': 8699033, 'sysroot.tar': 5677607 });
+const CPP_ASSET_CACHE = 'dubhe-cpp-runtime-v1';
+async function openAssetCache() {
+  try {
+    if (typeof caches === 'undefined') return null;
+    const cache = await caches.open(CPP_ASSET_CACHE);
+    // 清理旧版本缓存，避免占用空间
+    for (const key of await caches.keys()) if (key.startsWith('dubhe-cpp-runtime-') && key !== CPP_ASSET_CACHE) await caches.delete(key);
+    return cache;
+  } catch { return null; }
+}
 const downloadProgress = new Map();
 let lastProgressPost = 0;
 function reportDownload(name, loaded, total) {
@@ -50,12 +60,23 @@ self.fetch = async (input, init = {}) => {
   if (!mime) throw new TypeError('Local C++ worker requested an unapproved asset.');
 
   const compressedUrl = new URL(`${name}.gz`, url);
-  const response = await networkFetch(compressedUrl, { ...init, credentials: 'omit' });
+  // 工具链资源约 29 MB 且服务器返回 no-store：首次下载后写入 Cache API，之后直接读本地副本。
+  // 升级工具链时递增 CPP_ASSET_CACHE，旧缓存会被清理。
+  const cache = await openAssetCache();
+  let response = cache ? await cache.match(compressedUrl.href).catch(() => null) : null;
+  const fromCache = !!response;
+  if (!response) response = await networkFetch(compressedUrl, { ...init, credentials: 'omit' });
   if (!response.ok) return response;
   const encoding = String(response.headers.get('content-encoding') || '').toLowerCase();
   const declared = Number(response.headers.get('content-length'));
   const total = Number.isFinite(declared) && declared > 0 ? declared : FALLBACK_BYTES[name];
-  let body = response.body && countBytes(response.body, (loaded) => reportDownload(name, loaded, total));
+  let source = response.body;
+  if (!fromCache && cache && source && response.status === 200) {
+    const [forCache, forRun] = source.tee();
+    source = forRun;
+    cache.put(compressedUrl.href, new Response(forCache, { status: 200, headers: response.headers })).catch(() => {});
+  }
+  let body = source && countBytes(source, (loaded) => reportDownload(name, loaded, total));
   if (!encoding.includes('gzip')) {
     if (typeof DecompressionStream !== 'function') {
       throw new Error('此浏览器不支持 gzip 解压，无法加载本地 C++ 工具链。');

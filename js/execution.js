@@ -1147,7 +1147,9 @@ export function validateToolResultPost({
   const stateChanged = !!(fsBefore && fsAfter && fsBefore.digest !== fsAfter.digest);
   // 外部内容类工具（搜索 / 抓取 / 爬取 / 下载）的正文来自网页：标题、摘要、Worker 的「已回退」提示都可能含
   // 「不可用」「error」等字样。失败只认工具自己的失败前缀（如「search_web 失败：」），不再扫描正文。
-  const failureSignalled = !ok || (EXTERNAL_CONTENT_TOOLS.has(name)
+  // 结构化错误码（如 tool_library 返回的 TOOL_SEARCH_REQUIRED）也是失败：不能记为成功，否则会被幂等账本当作已完成而复用
+  const structuredFailure = /^\s*\{/.test(text) && /"code"\s*:\s*"TOOL_[A-Z_]+"/.test(text.slice(0, 300));
+  const failureSignalled = !ok || structuredFailure || (EXTERNAL_CONTENT_TOOLS.has(name)
     ? EXTERNAL_FAILURE_PREFIX_RE.test(text)
     : TOOL_FAILURE_TEXT_RE.test(text.slice(0, 160)));
 

@@ -336,23 +336,84 @@ export function hydrateWebVideos(node, readFile) {
   }
 }
 
-// 复杂任务清单卡片：消息头之后显示，随 m.checklist（最新一次 checklist 工具调用的状态）实时重绘。
+// ── 复杂任务清单 ──────────────────────────────────────────────────────────
+// 完整清单放在沙箱面板的「任务」标签里（随 store 实时刷新）；消息内只保留一行摘要，点击即打开面板。
+const ckEsc = (v) => String(v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const ckLabel = () => ({ pending: localeText('待办', 'Pending'), in_progress: localeText('进行中', 'In progress'), done: localeText('已确认', 'Confirmed'), failed: localeText('失败，需处理', 'Failed') });
+
+// 消息内摘要：挂在消息头之后，随 m.checklist 实时更新
 export function syncChecklistBlock(wrap, m) {
   if (!wrap) return;
   const list = Array.isArray(m?.checklist) ? m.checklist : [];
-  let block = wrap.querySelector(':scope > .agent-checklist');
-  if (!list.length) { block?.remove(); return; }
-  if (!block) {
-    block = wrap.ownerDocument.createElement('div');
-    block.className = 'agent-checklist';
+  let pill = wrap.querySelector(':scope > .agent-checklist');
+  if (!list.length) { pill?.remove(); return; }
+  if (!pill) {
+    pill = wrap.ownerDocument.createElement('button');
+    pill.type = 'button';
+    pill.className = 'agent-checklist';
+    pill.dataset.openTasks = '1';
     const head = wrap.querySelector(':scope > .msg-head');
-    if (head) head.after(block); else wrap.prepend(block);
+    if (head) head.after(pill); else wrap.prepend(pill);
   }
-  const esc = (v) => String(v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  const label = { pending: localeText('待办', 'Pending'), in_progress: localeText('进行中', 'In progress'), done: localeText('已确认', 'Confirmed'), failed: localeText('失败，需处理', 'Failed') };
   const done = list.filter((item) => item.status === 'done').length;
-  const complete = checklistComplete(list);
-  block.classList.toggle('incomplete', !complete);
-  block.innerHTML = `<div class="agent-checklist-head"><span>${esc(localeText('任务清单', 'Checklist'))}</span><span class="mono">${done}/${list.length}</span></div>`
-    + `<ol class="agent-checklist-items">${list.map((item) => `<li class="ck-${esc(item.status)}" title="${esc(label[item.status] || item.status)}"><span class="ck-mark" aria-hidden="true"></span><span class="ck-text">${esc(item.text)}</span><span class="ck-state">${esc(label[item.status] || item.status)}</span></li>`).join('')}</ol>`;
+  pill.classList.toggle('incomplete', !checklistComplete(list));
+  pill.title = localeText('在沙箱面板的「任务」标签中查看', 'Open the Tasks tab in the sandbox panel');
+  pill.innerHTML = `<span class="ck-pill-mark" aria-hidden="true"></span><span class="ck-pill-text">${ckEsc(localeText('任务清单', 'Checklist'))} <b class="mono">${done}/${list.length}</b></span><span class="ck-pill-go">${ckEsc(localeText('在面板查看', 'View in panel'))} ›</span>`;
+}
+
+// 面板：完整清单（列表 + 进度条 + 标签徽标）。sig 未变时不重绘，流式期间保持轻量。
+let lastPanelSig = '';
+export function paintChecklistPanel(list) {
+  const pane = document.getElementById('tab-tasks');
+  if (!pane) return;
+  const sig = JSON.stringify(list || []);
+  if (sig === lastPanelSig) return;
+  lastPanelSig = sig;
+  const items = Array.isArray(list) ? list : [];
+  const done = items.filter((item) => item.status === 'done').length;
+  const total = items.length;
+  const label = ckLabel();
+  const ol = pane.querySelector('#task-list');
+  const empty = pane.querySelector('#task-empty');
+  const count = pane.querySelector('#task-count');
+  const fill = pane.querySelector('#task-progress-fill');
+  const badge = document.querySelector('[data-panel-tab="tasks"] .tab-badge');
+  if (ol) ol.innerHTML = items.map((item) => `<li class="ck-${ckEsc(item.status)}" title="${ckEsc(label[item.status] || item.status)}"><span class="ck-mark" aria-hidden="true"></span><span class="ck-text">${ckEsc(item.text)}</span><span class="ck-state">${ckEsc(label[item.status] || item.status)}</span></li>`).join('');
+  if (empty) empty.hidden = total > 0;
+  if (count) count.textContent = total ? `${done}/${total}` : '—';
+  if (fill) fill.style.width = total ? `${Math.round((done / total) * 100)}%` : '0%';
+  if (badge) {
+    const open = total > 0 && !checklistComplete(items);
+    badge.hidden = !open;
+    badge.textContent = open ? `${done}/${total}` : '';
+  }
+}
+
+function openTasksPanel() {
+  const panel = document.getElementById('sandbox-panel');
+  if (panel?.classList.contains('collapsed')) document.getElementById('panel-toggle')?.click();
+  document.querySelector('[data-panel-tab="tasks"]')?.click();
+}
+
+let checklistPanelInstalled = false;
+// 启动时调用一次：订阅 store、绑定「任务」标签的显隐与摘要点击
+export function installChecklistPanel(store) {
+  if (checklistPanelInstalled || !store) return;
+  checklistPanelInstalled = true;
+  const latest = () => {
+    const messages = store.state.messages || [];
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (Array.isArray(messages[i]?.checklist) && messages[i].checklist.length) return messages[i].checklist;
+    }
+    return [];
+  };
+  store.subscribe(() => paintChecklistPanel(latest()));
+  document.querySelectorAll('[data-panel-tab]').forEach((b) => b.addEventListener('click', () => {
+    const pane = document.getElementById('tab-tasks');
+    if (pane) pane.hidden = b.dataset.panelTab !== 'tasks';
+  }));
+  document.addEventListener('click', (e) => {
+    if (e.target.closest?.('[data-open-tasks]')) openTasksPanel();
+  });
+  paintChecklistPanel(latest());
 }

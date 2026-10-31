@@ -65,3 +65,28 @@ export function patchWllamaAbortMessageHandling(WllamaClass) {
   prototype.onRecvMsg = guarded;
   return true;
 }
+
+/**
+ * Wllama 3.8.1 的 `onRecvMsg` / `abort` 定义在内部类 ProxyToWorker 上（未导出），
+ * 外层 Wllama 只在 loadModel() 时执行 `this.proxy = new ProxyToWorker(...)`，
+ * 随后 moduleInit() 才执行 `this.worker.onmessage = this.onRecvMsg.bind(this)`。
+ * 因此不能对导出的 Wllama 类打补丁（那样是无效的，且会静默失败），而要在 `proxy` 被赋值的瞬间，
+ * 给刚创建的 proxy 的原型打补丁——这早于 worker 的 onmessage 绑定。
+ * 若结构不兼容（找不到 onRecvMsg），直接抛错让加载失败并可见，而不是退回到会悬挂的原始实现。
+ */
+export function guardWllamaProxy(runtime) {
+  let proxy = null;
+  Object.defineProperty(runtime, 'proxy', {
+    configurable: true,
+    enumerable: true,
+    get() { return proxy; },
+    set(value) {
+      const proto = value && Object.getPrototypeOf(value);
+      if (!patchWllamaAbortMessageHandling({ prototype: proto })) {
+        throw new Error('本地模型运行时与 Wllama 版本不兼容（缺少 onRecvMsg），已停止加载。');
+      }
+      proxy = value;
+    },
+  });
+  return runtime;
+}

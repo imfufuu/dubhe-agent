@@ -186,6 +186,8 @@ export const TOOL_DEFS = [
         seconds: { type: 'integer', minimum: 4, maximum: 30, description: '时长（秒）。各模型范围不同：Seedance 2.5 为 4–30，其余多为 4–15；默认 5' },
         resolution: { type: 'string', enum: ['480p', '720p', '768p', '1080p', '2k', '4k'], description: '分辨率；须为当前模型支持的档位（如 Seedance 2.0 Fast 只支持 480p/720p）' },
         aspect_ratio: { type: 'string', enum: VIDEO_GEN_ASPECT_RATIOS, description: '画面比例，默认 16:9' },
+        end_image: { type: 'string', description: '可选：尾帧图片路径（沙箱内，如 uploads/end.png）。需同时给 input_image 作首帧；仅支持首尾帧的模型可用，否则网关会拒绝' },
+        audio: { type: 'boolean', description: '可选：是否生成音轨。用户要求无声时必须传 false（部分模型默认带环境音）；不传则用模型默认值。仅支持音频的模型生效' },
       },
       required: ['prompt'],
     },
@@ -208,6 +210,7 @@ export const TOOL_DEFS = [
         compare_paths: { type: 'array', items: { type: 'string' }, description: '可选：两张沙箱图片路径，做本地差分/对比，不调用生图' },
         reference_paths: { type: 'array', items: { type: 'string' }, description: '可选：沙箱内参考图路径数组（如 ["uploads/cat.png"]）；提供即进入编辑模式' },
         size: { type: 'string', enum: IMAGE_SIZES, description: `输出尺寸（宽x高像素），默认 ${'auto'} 由模型决定` },
+        aspect_ratio: { type: 'string', enum: ['1:1', '16:9', '9:16', '4:3', '3:4', '3:2', '2:3'], description: '可选：画面比例（与 size 二选一，优先使用本参数）' },
         quality: { type: 'string', enum: IMAGE_QUALITIES, description: '质量档位，默认 auto' },
         output_format: { type: 'string', enum: IMAGE_FORMATS, description: '输出格式，默认 png' },
         background: { type: 'string', enum: IMAGE_BACKGROUNDS, description: '背景：transparent 为透明底（png/webp 有效），默认 auto 由模型决定' },
@@ -262,7 +265,7 @@ export const TOOL_DEFS = [
       '对话模型本身是纯文本，不能直接看视频：必须调用本工具。' +
       `内部使用用户在设置里选定的视频识别模型（Gemini 系，默认 ${VIDEO_TOOL_MODEL}），不要传 model；也不要试图把视频拆帧后逐张 analyze_image。` +
       'path 省略时自动取用户最近上传的视频。单个视频 ≤ 16MB、建议 ≤ 3 分钟；更长的请让用户裁剪。' +
-      '返回完整结果（不截成摘要）；全文同时写入沙箱 internal/ocr/{文件名}.video.md，可用 read_file 再读。',
+      '返回完整结果（不截成摘要）；全文同时写入沙箱 internal/ocr/{去掉扩展名的文件名}.video.md（如 uploads/a.mp4 → internal/ocr/a.video.md），可用 read_file 再读。',
     parameters: {
       type: 'object',
       properties: {
@@ -283,7 +286,7 @@ export const TOOL_DEFS = [
       'mode=image（默认）会提取 PDF 内嵌文本层并把选定页渲染为图片，整批上传识图模型；mode=ocr 只提取内嵌文本层，不上传页面图片；mode=code 以精确保留代码字符、缩进和行号为目标识别源码页（需视觉模型，适合扫描版代码）。' +
       '不要用 read_file 读 PDF（那是 base64），也不要逐页调 analyze_image。' +
       'path 省略时自动取用户最近上传的 PDF。pages 可限制 image/code 模式的识图页数（默认前 8 页；文本层始终提取全部）。' +
-      '返回全文，不截成摘要；同时写入沙箱 internal/ocr/{文件名}.ocr.md，可用 read_file 再读。',
+      '返回全文，不截成摘要；同时写入沙箱 internal/ocr/{去掉扩展名的文件名}.ocr.md，可用 read_file 再读。',
     parameters: {
       type: 'object',
       properties: {
@@ -1384,6 +1387,23 @@ async function executeToolBody(outerName, outerArgs, ctx) {
           }
           imageDataUrl = content;
         }
+        let endImageUrl = '';
+        const endPath = args.end_image ? normalizeFsPath(String(args.end_image)) : '';
+        if (endPath) {
+          if (!imageDataUrl) {
+            const message = '尾帧需要同时提供首帧图（input_image）';
+            emit({ status: 'error', error: { message } });
+            return `视频调用在发起前失败：${message}`;
+          }
+          let content = '';
+          try { content = String(fs.read(endPath) || ''); } catch { content = ''; }
+          if (!/^data:image\//i.test(content)) {
+            const message = `沙箱中找不到尾帧图（需为图片）：${endPath}`;
+            emit({ status: 'error', error: { message } });
+            return `视频调用在发起前失败：${message}`;
+          }
+          endImageUrl = content;
+        }
         const plan = planVideoRequest({
           model: resolveVideoGenModel(ctx.videoGenModel), mode: args.mode,
           prompt, seconds: args.seconds, resolution: args.resolution, aspectRatio: args.aspect_ratio,
@@ -1399,7 +1419,7 @@ async function executeToolBody(outerName, outerArgs, ctx) {
         emit({ status: 'running', note: `提交视频任务（${plan.model} · ${plan.size} · ${plan.seconds}s）…` });
         let job;
         try {
-          job = await createVideoJob({ ...common, body: buildVideoBody(plan, prompt, imageDataUrl), idempotencyKey, timeoutMs: 60000 });
+          job = await createVideoJob({ ...common, body: buildVideoBody(plan, prompt, imageDataUrl, { endImageUrl, audio: typeof args.audio === 'boolean' ? args.audio : undefined }), idempotencyKey, timeoutMs: 60000 });
         } catch (err) {
           const message = `视频任务创建失败：${err.message || err}`;
           emit({ status: 'error', error: { message } });
@@ -1501,7 +1521,11 @@ async function executeToolBody(outerName, outerArgs, ctx) {
           return `图像调用在发起前失败：${message}`;
         }
         const format = IMAGE_FORMATS.includes(args.output_format) ? args.output_format : 'png';
-        const size = IMAGE_SIZES.includes(args.size) ? args.size : 'auto';
+        // 比例参数：aspect_ratio 或 size 填了 16:9 这类比例时，Nano Banana 原样传比例；其它网关换算为像素尺寸（16 的倍数）
+        const IMAGE_RATIO_PIXELS = { '1:1': '1024x1024', '16:9': '1536x864', '9:16': '864x1536', '4:3': '1024x768', '3:4': '768x1024', '3:2': '1536x1024', '2:3': '1024x1536' };
+        const ratioArg = String(args.aspect_ratio || (String(args.size || '').includes(':') ? args.size : '') || '').trim();
+        let size = IMAGE_SIZES.includes(args.size) ? args.size : 'auto';
+        if (ratioArg && IMAGE_RATIO_PIXELS[ratioArg]) size = nano ? ratioArg : IMAGE_RATIO_PIXELS[ratioArg];
         const quality = IMAGE_QUALITIES.includes(args.quality) ? args.quality : 'auto';
         const background = IMAGE_BACKGROUNDS.includes(args.background) ? args.background : 'auto';
         const count = [1, 2, 3, 4].includes(Number(args.n)) ? Number(args.n) : 1;

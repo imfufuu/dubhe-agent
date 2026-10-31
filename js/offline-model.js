@@ -6,7 +6,7 @@ import {
   WLLAMA_VERSION,
 } from './offline-model-config.js';
 import { estimateGGUFMemory, readDeviceMemoryGB, readGGUFMetadata } from './gguf.js';
-import { patchWllamaAbortMessageHandling } from './wllama-abort-compat.js';
+import { guardWllamaProxy } from './wllama-abort-compat.js';
 
 const MODEL_METADATA_FILE = 'dubhe-local-model.json';
 const MODEL_FILE_PREFIX = 'dubhe-local-model-';
@@ -370,13 +370,14 @@ async function createOfflineEngine() {
   const entryUrl = new URL(`../assets/vendor/wllama/wllama-${WLLAMA_VERSION}.js`, import.meta.url).href;
   const wasmUrl = new URL(`../assets/vendor/wllama/wllama-${WLLAMA_VERSION}.wasm`, import.meta.url).href;
   const wllamaModule = await import(entryUrl);
-  patchWllamaAbortMessageHandling(wllamaModule.Wllama);
   const { Wllama, LoggerWithoutDebug } = wllamaModule;
   const runtime = new Wllama({ default: wasmUrl }, {
     allowOffline: true,
     parallelDownloads: 1,
     logger: LoggerWithoutDebug,
   });
+  // 必须在 loadModel() 创建内部 proxy 时打补丁（见 guardWllamaProxy 注释）
+  guardWllamaProxy(runtime);
   // Wllama's compatibility worker can default to a CDN; this app keeps the runtime assets local.
   runtime.setCompat(null);
   return runtime;

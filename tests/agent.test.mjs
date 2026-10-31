@@ -3149,9 +3149,11 @@ test('沙箱输出被截断只在预算不足时发生（回归：历史轮次�
   const long = 'x'.repeat(20000);
   const msgs = [{ role: 'user', text: 'q' }, { role: 'assistant', text: 'a' }, { role: 'user', text: 'q2' }, { role: 'tool', toolCallId: 'c', name: 'execute_javascript', content: long }];
   const rich = compactMessages(msgs, 200000);
-  assert.equal(rich.messages[3].content.length, long.length, '预算富余时不得截断');
+  assert.equal(rich.messages.find((m) => m.role === 'tool').content.length, long.length, '预算富余时不得截断');
   const tight = compactMessages(msgs, 4000);
-  assert.ok(tight.messages[3].content.length < long.length, '预算紧张时才收紧历史工具结果');
+  const tightTool = tight.messages.find((m) => m.role === 'tool');
+  assert.ok(tightTool && tightTool.content.length < long.length, '预算紧张时才收紧工具结果');
+  assert.ok(tightTool.content.length > 1000, '当前回合工具结果不得被清空到几百字符（回归：整段吞空）');
 });
 test('导入会话在回合进行中必须先判忙再改 store（防半轮丢失）', async () => {
   const fsp = await import('node:fs');

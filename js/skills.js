@@ -343,12 +343,35 @@ export function distillSkill({ userText, toolNames, iterations, unrecoveredError
   };
 }
 
+// 近似去重：中文取二元组、英文/数字取单词，按 Jaccard 相似度比较任务描述。
+// 同一任务换种说法（如「生成视频 768p 无声」与「依据提示词生成视频-清晰度768p-无声」）应归并，而不是各存一条。
+const SKILL_NEAR_DUP_THRESHOLD = 0.45;
+export function skillTermSet(text) {
+  const t = String(text || '').toLowerCase();
+  const out = new Set();
+  for (const w of t.match(/[a-z0-9]+/g) || []) if (w.length > 1) out.add(w);
+  const cjk = (t.match(/[\u4e00-\u9fff]+/g) || []);
+  for (const run of cjk) for (let i = 0; i < run.length - 1; i++) out.add(run.slice(i, i + 2));
+  return out;
+}
+export function skillSimilarity(a, b) {
+  const A = skillTermSet(a), B = skillTermSet(b);
+  if (!A.size || !B.size) return 0;
+  let inter = 0;
+  for (const x of A) if (B.has(x)) inter++;
+  return inter / (A.size + B.size - inter);
+}
+
 export function rememberSkill(list, skill, cap = 8) {
   const cleanList = pruneLearnedSkills(list, { cap });
   if (!skill || !skill.id) return cleanList;
   if (!isValidSkillCandidate(skill.description || skill.id, { toolNames: ['a', 'b', 'c'], iterations: 3 })) {
     return cleanList;
   }
+  // 已有同一任务的沉淀（id 相同，或描述高度相似）：归并到已有条目，沿用其 id
+  const near = cleanList.find((s) => s && s.id !== skill.id && s.description
+    && skillSimilarity(s.description, skill.description || skill.id) >= SKILL_NEAR_DUP_THRESHOLD);
+  if (near) skill = { ...skill, id: near.id, description: near.description, body: near.body || skill.body };
   const prev = cleanList.find((s) => s && s.id === skill.id);
   let merged = skill;
   if (prev) {

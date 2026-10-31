@@ -87,3 +87,15 @@ test('stable prompt layer carries no per-second timestamp (cache-friendly)', () 
   assert.doesNotMatch(core, /Current time: \$\{now\.toISOString\(\)\}/);
   assert.doesNotMatch(core, /当前时间：\$\{now\.toISOString\(\)\}/);
 });
+
+test('wiring: checklist lives in the sandbox panel "任务" tab; message keeps a one-line summary that opens it', () => {
+  const app = read('app.html');
+  assert.match(app, /data-panel-tab="tasks"/);
+  assert.match(app, /id="tab-tasks"/);
+  assert.match(app, /id="task-list"/);
+  assert.match(read('js/ui.js'), /installChecklistPanel\(store\);/);
+  const tf = read('js/ui-toolflow.js');
+  assert.match(tf, /export function paintChecklistPanel/);
+  assert.match(tf, /pill\.dataset\.openTasks = '1'/);
+  assert.match(tf, /store\.subscribe\(\(\) => paintChecklistPanel\(latest\(\)\)\)/);
+});

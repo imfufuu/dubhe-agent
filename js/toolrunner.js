@@ -336,6 +336,8 @@ export function createToolRunner({ store, emit, getFs, runSubagent } = {}) {
     const rememberPure = (key, result, fsAfterDigest) => {
       const text = String(result == null ? '' : result);
       if (text.length > 24000) return;
+      // 失败结构（错误码 / 可重试）不得缓存，否则补做前置步骤后再次调用会被回放旧的报错
+      if (/"code"\s*:\s*"[A-Z_]+"|"retryable"\s*:\s*true/.test(text)) return;
       exec.pureResults.set(key, { text, fs: fsAfterDigest });
       while (exec.pureResults.size > 48) exec.pureResults.delete(exec.pureResults.keys().next().value);
     };

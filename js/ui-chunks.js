@@ -55,7 +55,6 @@ function revealAppendedText(block, previousText, currentText) {
 // root：正文容器；state：跨绘制快照（挂在 body 上）；animate：本轮是否为流式中
 export function revealChunks(root, state, animate) {
   const doc = root.ownerDocument;
-  const view = doc.defaultView;
   const blocks = [...root.children].filter((el) => !el.matches(SKIP));
   const previousBlocks = Number.isFinite(state.blocks) ? state.blocks : 0;
   const previousTexts = Array.isArray(state.texts) ? state.texts : [];
@@ -76,10 +75,11 @@ export function revealChunks(root, state, animate) {
   state.blocks = blocks.length;
   state.texts = currentTexts;
 
-  // 新块需等下一帧再加 .in，确保 opacity transition 能触发。
-  if (fresh.length && view && view.requestAnimationFrame) {
-    view.requestAnimationFrame(() => { for (const el of fresh) el.classList.add('in'); });
-  } else {
-    for (const el of fresh) el.classList.add('in');
+  // 新块必须立即显示到位：每次绘制都会整体重建 DOM，若依赖下一帧的 rAF 加 .in，
+  // 而该帧前又被新一轮绘制替换，块会永远停在 opacity:0（正文「被吞掉」）。
+  // 先强制一次回流让浏览器记录起始透明度，再同步加 .in，过渡仍然生效。
+  for (const el of fresh) {
+    void el.offsetWidth;
+    el.classList.add('in');
   }
 }

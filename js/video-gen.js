@@ -115,10 +115,13 @@ export function planVideoRequest({ model, mode, prompt, seconds, resolution, asp
 }
 
 // POST /v1/videos 的 JSON 请求体。seconds 按文档为字符串整数。
-export function buildVideoBody(plan, prompt, imageDataUrl) {
+export function buildVideoBody(plan, prompt, imageDataUrl, { endImageUrl = '', audio } = {}) {
   const body = { model: plan.model, prompt: String(prompt).trim(), seconds: String(plan.seconds), size: plan.size };
   // 文档：input_reference 为 {"image_url": URL 或 data URL}
   if (imageDataUrl) body.input_reference = { image_url: imageDataUrl };
+  // 模型专属扩展（OpenAPI video-openapi.json）：end_image_url 尾帧、audio 音轨开关；未指定则不发送，沿用模型默认
+  if (endImageUrl) body.end_image_url = endImageUrl;
+  if (typeof audio === 'boolean') body.audio = audio;
   return body;
 }
 

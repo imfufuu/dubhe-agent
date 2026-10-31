@@ -213,6 +213,33 @@ export function websiteDependencies(files, entries) {
 // ── 临时沙箱（ephemeral overlay）：任务期间 Agent 写的文件先落在临时层。
 //    默认回合结束后全部保留；只有用户在设置中显式开启自动清理，才会删除未被最终回答引用的产物。
 //    internal/ 与 uploads/ 始终保留；用户通过文件工具主动删除的既有文件照常删除。
+// 生成产物（outputs/<名称>-NNN.ext）提交时若与真实工作区已有同名文件内容不同，分配下一个空闲编号，绝不静默覆盖。
+function uniqueCommitPath(baseFS, path) {
+  const m = /^(outputs\/[^/]+?)-(\d+)\.([^./]+)$/.exec(path);
+  let stem, ext, n;
+  if (m) { stem = m[1]; n = Number(m[2]); ext = m[3]; }
+  else {
+    const dot = path.lastIndexOf('.');
+    if (!path.startsWith('outputs/') || dot <= path.lastIndexOf('/')) return path;
+    stem = path.slice(0, dot); ext = path.slice(dot + 1); n = 1;
+  }
+  let candidate = path;
+  for (let i = 0; i < 999 && baseFS.has(candidate); i++) {
+    n += 1;
+    candidate = m ? `${stem}-${String(n).padStart(3, '0')}.${ext}` : `${stem}-${n}.${ext}`;
+  }
+  return candidate;
+}
+
+// 目标已存在且内容不同：生成产物改用空闲编号；普通文件（用户主动覆盖）保持原路径
+function safeCommitTarget(baseFS, p, content) {
+  if (!baseFS.has(p)) return p;
+  let existing = null;
+  try { existing = baseFS.read(p); } catch { existing = null; }
+  if (existing === content) return p;
+  return uniqueCommitPath(baseFS, p);
+}
+
 export function createTempFS(baseFS, { cleanupUnreferencedFiles = false } = {}) {
   const ephemeral = {}; // 本轮临时写的文件
   const projectGroups = new Map();
@@ -334,7 +361,10 @@ export function createTempFS(baseFS, { cleanupUnreferencedFiles = false } = {}) 
       for (const [p, c] of Object.entries(ephemeral)) {
         // 白名单前缀（internal/ · uploads/）始终保留；用户未开启自动清理时所有文件都提交。
         if (!this.cleanupUnreferencedFiles || isAlwaysPersistedPath(p) || looksReferenced(p) || dependencies.has(p)) {
-          try { baseFS.write(p, c); committed.push(p); } catch { /* noop */ }
+          try {
+            const target = safeCommitTarget(baseFS, p, c);
+            baseFS.write(target, c); committed.push(target);
+          } catch { /* noop */ }
         } else {
           discarded.push(p);
         }
@@ -350,7 +380,7 @@ export function createTempFS(baseFS, { cleanupUnreferencedFiles = false } = {}) 
       const discarded = [];
       for (const [p, c] of Object.entries(ephemeral)) {
         if (!this.cleanupUnreferencedFiles || isAlwaysPersistedPath(p)) {
-          try { baseFS.write(p, c); committed.push(p); continue; } catch { /* 写不进去就按丢弃记 */ }
+          try { const target = safeCommitTarget(baseFS, p, c); baseFS.write(target, c); committed.push(target); continue; } catch { /* 写不进去就按丢弃记 */ }
         }
         discarded.push(p);
       }
@@ -431,13 +461,19 @@ function runInWorker(workerFile, payload, timeoutMs, {
 } = {}) {
   return new Promise((resolve) => {
     let settled = false, active = null, triedBlob = false, started = false;
-    let execTimer = null, attemptTimer = null;
+    let execTimer = null, attemptTimer = null, programStarted = false;
     const fetchAbort = new AbortController();
     const sourceURL = versionedURL;
     const canUseBlobFallback = allowBlobFallback === true && workerType !== 'module';
     const timeoutResult = (message) => finish({ ok: false, timedOut: true, logs: [], files: payload.files || {},
       error: { message } });
+    // 准备阶段（加载/编译）按「无进度」计时：每次收到阶段或进度消息就重新计时，只有连续静默才超时。
+    const armPrepTimer = () => {
+      clearTimeout(execTimer);
+      execTimer = setTimeout(() => timeoutResult(preExecutionTimeoutMessage || `编译准备超时（>${Math.round(preExecutionTimeoutMs / 1000)}s），沙箱已强制终止`), preExecutionTimeoutMs);
+    };
     const armProgramTimeout = () => {
+      programStarted = true;
       clearTimeout(execTimer);
       execTimer = setTimeout(() => timeoutResult(timeoutMessage || `执行超时（>${Math.round(timeoutMs / 1000)}s），沙箱已强制终止`), timeoutMs);
     };
@@ -493,9 +529,8 @@ function runInWorker(workerFile, payload, timeoutMs, {
         if (settled || active !== mine || mine.sent) return;
         mine.sent = true; started = true;
         clearTimeout(bootTimer); clearTimeout(attemptTimer); fetchAbort.abort(); onPhase?.('executing');
-        if (executionTimeoutPhase && preExecutionTimeoutMs > 0) {
-          execTimer = setTimeout(() => timeoutResult(preExecutionTimeoutMessage || `编译准备超时（>${Math.round(preExecutionTimeoutMs / 1000)}s），沙箱已强制终止`), preExecutionTimeoutMs);
-        } else armProgramTimeout();
+        if (executionTimeoutPhase && preExecutionTimeoutMs > 0) armPrepTimer();
+        else armProgramTimeout();
         let transfer = [];
         if (rpc && typeof MessageChannel === 'function') {
           const channel = new MessageChannel(); mine.port = channel.port1; transfer = [channel.port2];
@@ -518,9 +553,14 @@ function runInWorker(workerFile, payload, timeoutMs, {
         if (data?.__phase) {
           onPhase?.(data.__phase);
           if (executionTimeoutPhase && data.__phase === executionTimeoutPhase) armProgramTimeout();
+          else if (executionTimeoutPhase && preExecutionTimeoutMs > 0 && !programStarted) armPrepTimer();
           return;
         }
-        if (data?.__progress) { try { onProgress?.(data.__progress); } catch { /* 进度回调失败不影响执行 */ } return; }
+        if (data?.__progress) {
+          try { onProgress?.(data.__progress); } catch { /* 进度回调失败不影响执行 */ }
+          if (executionTimeoutPhase && preExecutionTimeoutMs > 0 && !programStarted) armPrepTimer();
+          return;
+        }
         if (data?.__log) { onOutput?.(data.__log); return; }
         if (!mine.sent || !data || typeof data.ok !== 'boolean') return;
         finish(data);
@@ -796,7 +836,7 @@ export async function runCpp(code, opts = {}) {
     allowBlobFallback: false,
     executionTimeoutPhase: 'program-start',
     preExecutionTimeoutMs: SANDBOX_CPP_PREPARATION_TIMEOUT_MS,
-    preExecutionTimeoutMessage: `本地 C++ 工具链加载/编译超时（>${SANDBOX_CPP_PREPARATION_TIMEOUT_MS / 1000}s），沙箱已强制终止`,
+    preExecutionTimeoutMessage: `本地 C++ 工具链 ${SANDBOX_CPP_PREPARATION_TIMEOUT_MS / 1000} 秒内无加载或编译进度，沙箱已强制终止`,
     timeoutMessage: `C++ 程序执行超时（>${Math.round(timeoutMs / 1000)}s），沙箱已强制终止`,
   });
   return { ...out, durationMs: Math.round(performance.now() - t0) };
