@@ -64,9 +64,22 @@ for (const rel of jsFiles) {
   }
 }
 if (process.argv.includes('--json')) console.log(JSON.stringify(findings, null, 1));
-else {
+else if (!process.argv.includes('--todo')) {
   const byFile = {};
   for (const f of findings) (byFile[f.file] ||= []).push(f);
   for (const [file, list] of Object.entries(byFile)) console.log(`${file}: ${list.length}`);
   console.log(`total unregistered CJK UI strings: ${findings.length}`);
+}
+
+// --todo：列出 text()/uiText() 首参中尚未登记到语言包的中文源文本（这些在非中英语言下会回退英文）
+if (process.argv.includes('--todo')) {
+  const pat = /(?:localeText|text|uiText|localizedText|messageLocaleText)\(\s*(['"`])((?:(?!\1).)*?)\1\s*,/g;
+  const todo = new Set();
+  for (const rel of jsFiles) {
+    for (const m of read(rel).matchAll(pat)) {
+      const s = m[2].trim();
+      if (CJK.test(s) && !registered.has(s)) todo.add(s);
+    }
+  }
+  console.log(JSON.stringify([...todo], null, 1));
 }
