@@ -208,6 +208,7 @@ export const TOOL_DEFS = [
         compare_paths: { type: 'array', items: { type: 'string' }, description: '可选：两张沙箱图片路径，做本地差分/对比，不调用生图' },
         reference_paths: { type: 'array', items: { type: 'string' }, description: '可选：沙箱内参考图路径数组（如 ["uploads/cat.png"]）；提供即进入编辑模式' },
         size: { type: 'string', enum: IMAGE_SIZES, description: `输出尺寸（宽x高像素），默认 ${'auto'} 由模型决定` },
+        aspect_ratio: { type: 'string', enum: ['1:1', '16:9', '9:16', '4:3', '3:4', '3:2', '2:3'], description: '可选：画面比例（与 size 二选一，优先使用本参数）' },
         quality: { type: 'string', enum: IMAGE_QUALITIES, description: '质量档位，默认 auto' },
         output_format: { type: 'string', enum: IMAGE_FORMATS, description: '输出格式，默认 png' },
         background: { type: 'string', enum: IMAGE_BACKGROUNDS, description: '背景：transparent 为透明底（png/webp 有效），默认 auto 由模型决定' },
@@ -262,7 +263,7 @@ export const TOOL_DEFS = [
       '对话模型本身是纯文本，不能直接看视频：必须调用本工具。' +
       `内部使用用户在设置里选定的视频识别模型（Gemini 系，默认 ${VIDEO_TOOL_MODEL}），不要传 model；也不要试图把视频拆帧后逐张 analyze_image。` +
       'path 省略时自动取用户最近上传的视频。单个视频 ≤ 16MB、建议 ≤ 3 分钟；更长的请让用户裁剪。' +
-      '返回完整结果（不截成摘要）；全文同时写入沙箱 internal/ocr/{文件名}.video.md，可用 read_file 再读。',
+      '返回完整结果（不截成摘要）；全文同时写入沙箱 internal/ocr/{去掉扩展名的文件名}.video.md（如 uploads/a.mp4 → internal/ocr/a.video.md），可用 read_file 再读。',
     parameters: {
       type: 'object',
       properties: {
@@ -283,7 +284,7 @@ export const TOOL_DEFS = [
       'mode=image（默认）会提取 PDF 内嵌文本层并把选定页渲染为图片，整批上传识图模型；mode=ocr 只提取内嵌文本层，不上传页面图片；mode=code 以精确保留代码字符、缩进和行号为目标识别源码页（需视觉模型，适合扫描版代码）。' +
       '不要用 read_file 读 PDF（那是 base64），也不要逐页调 analyze_image。' +
       'path 省略时自动取用户最近上传的 PDF。pages 可限制 image/code 模式的识图页数（默认前 8 页；文本层始终提取全部）。' +
-      '返回全文，不截成摘要；同时写入沙箱 internal/ocr/{文件名}.ocr.md，可用 read_file 再读。',
+      '返回全文，不截成摘要；同时写入沙箱 internal/ocr/{去掉扩展名的文件名}.ocr.md，可用 read_file 再读。',
     parameters: {
       type: 'object',
       properties: {
@@ -1501,7 +1502,11 @@ async function executeToolBody(outerName, outerArgs, ctx) {
           return `图像调用在发起前失败：${message}`;
         }
         const format = IMAGE_FORMATS.includes(args.output_format) ? args.output_format : 'png';
-        const size = IMAGE_SIZES.includes(args.size) ? args.size : 'auto';
+        // 比例参数：aspect_ratio 或 size 填了 16:9 这类比例时，Nano Banana 原样传比例；其它网关换算为像素尺寸（16 的倍数）
+        const IMAGE_RATIO_PIXELS = { '1:1': '1024x1024', '16:9': '1536x864', '9:16': '864x1536', '4:3': '1024x768', '3:4': '768x1024', '3:2': '1536x1024', '2:3': '1024x1536' };
+        const ratioArg = String(args.aspect_ratio || (String(args.size || '').includes(':') ? args.size : '') || '').trim();
+        let size = IMAGE_SIZES.includes(args.size) ? args.size : 'auto';
+        if (ratioArg && IMAGE_RATIO_PIXELS[ratioArg]) size = nano ? ratioArg : IMAGE_RATIO_PIXELS[ratioArg];
         const quality = IMAGE_QUALITIES.includes(args.quality) ? args.quality : 'auto';
         const background = IMAGE_BACKGROUNDS.includes(args.background) ? args.background : 'auto';
         const count = [1, 2, 3, 4].includes(Number(args.n)) ? Number(args.n) : 1;
