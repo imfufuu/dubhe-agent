@@ -299,7 +299,8 @@ export function paintWebActivity(node, { rows, label, icon, labels, stateText, r
     const text = stateText(r.status);
     if (st && st.textContent !== text) st.textContent = text;
     let det = li.querySelector(':scope > .web-result');
-    if (r.body) {
+    // 生成类工具（生图 / 生视频）不再提供「结果」菜单：提示词与视频预览已足够，结果文本不展示
+    if (r.body && !HIDE_ROW_NAME.has(r.name)) {
       if (!det) {
         det = el('div', 'web-result');
         det.dataset.call = r.id;

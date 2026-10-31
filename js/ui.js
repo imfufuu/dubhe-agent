@@ -1690,7 +1690,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
         const status = c.status === 'error' || (tm && toolResultFailed(body)) ? 'error'
           : (c.status === 'ok' || tm) ? 'ok' : 'running';
         const a = c.args && typeof c.args === 'object' ? c.args : {};
-        const summary = String(a.query || a.url || a.prompt || '').trim().slice(0, 140);
+        const fullArg = String(a.query || a.url || a.prompt || '').trim(), cut = /^generate_(image|video)$/.test(c.name) ? 256 : 140, summary = [...fullArg].length > cut ? [...fullArg].slice(0, cut).join('') + '…' : fullArg;
         const videoPath = c.name === 'generate_video' ? (/\[视频已生成\] (outputs\/[^\s]+\.mp4)/.exec(body) || [])[1] || '' : '';
         return { id: String(c.id), name: c.name, summary, status, body, videoPath };
       });
