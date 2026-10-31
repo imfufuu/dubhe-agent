@@ -209,7 +209,9 @@ test('the real tool runner forwards independent audio selection and preserves bi
   try { await executeTool(call.name, call.args, ctx); } finally { globalThis.fetch = old; }
   assert.equal(sent.model, AUDIO_MODELS[2].id); assert.equal(call.billing.audioCount, 1);
   const summary = summarizeTurnCost({ messages: [{ role: 'assistant', toolCalls: [call] }], toolCosts: [{ ...call.billing, id: call.id }] });
-  assert.equal(summary.visionCount, 1);
+  // 音视频分析单独成行：音频不再计入识图
+  assert.equal(summary.avCount, 1);
+  assert.equal(summary.visionCount, 0);
 });
 test('retired gate has no click or keyboard route; language changes use viewport anchoring', () => {
   const home = fs.readFileSync(new URL('../js/home.js', import.meta.url), 'utf8');

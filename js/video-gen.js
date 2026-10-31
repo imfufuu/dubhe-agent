@@ -125,6 +125,15 @@ export function buildVideoBody(plan, prompt, imageDataUrl, { endImageUrl = '', a
   return body;
 }
 
+// POST /v1/videos/quote 的请求体：字段与 /v1/videos 一致的生成参数，但 duration 为 "4s" 形式，并带上同一份媒体以保证报价对应。
+export function buildVideoQuoteBody(plan, imageDataUrl, { endImageUrl = '', audio } = {}) {
+  const body = { model: plan.model, duration: `${plan.seconds}s`, aspect_ratio: plan.aspectRatio, resolution: plan.resolution };
+  if (typeof audio === 'boolean') body.audio = audio;
+  if (imageDataUrl) body.image_url = imageDataUrl;
+  if (endImageUrl) body.end_image_url = endImageUrl;
+  return body;
+}
+
 export const VIDEO_TERMINAL_OK = 'completed';
 export const VIDEO_TERMINAL_FAIL = new Set(['failed', 'cancelled', 'canceled', 'expired']);
 

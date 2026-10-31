@@ -817,7 +817,7 @@ export function createStore(onChange) {
             id: uid(), role: m.role, text: m.text || '',
             content: typeof m.content === 'string' ? m.content : (m.content || ''),
             model: m.model, // 保留每条消息实际使用的模型（会话头展示用）
-            userModel: m.userModel, router: m.router, transport: m.transport, fastMode: m.fastMode,
+            userModel: m.userModel, router: m.router, transport: m.transport, fastMode: m.fastMode, gatewayId: m.gatewayId,
             jevUsage: m.jevUsage, budget: m.budget, webSearch: m.webSearch,
             toolCalls: m.toolCalls, toolCallId: m.toolCallId, name: m.name, usage: m.usage, ts: m.ts,
             tsEstimated: !!m.tsEstimated,

@@ -428,9 +428,11 @@
             <div class="files-card-meta"><span id="task-count" class="files-n mono">—</span></div>
           </div>
         </div>
-        <div class="task-progress" aria-hidden="true"><span id="task-progress-fill"></span></div>
-        <ol id="task-list" class="agent-checklist-items"></ol>
-        <p id="task-empty" class="task-empty">复杂任务开始时，Agent 会在这里列出清单并实时更新状态。</p>
+        <div class="task-body">
+          <div class="task-progress" aria-hidden="true"><span id="task-progress-fill"></span></div>
+          <ol id="task-list" class="agent-checklist-items"></ol>
+          <div id="task-empty" class="files-empty task-empty" hidden></div>
+        </div>
       </div>
     </div>
     <div id="tab-memory" class="panel-body" hidden>
@@ -634,6 +636,14 @@
         </div>
         <div class="set-row"><div class="set-lbl"><div class="set-sub" id="set-mm-note">—</div></div></div>
         <div class="set-row" id="row-image-review"><div class="set-lbl"><div class="set-title">灰区图片远程复核</div><div class="set-sub">本地拿不准时交 Gemini 3.5 Flash Lite 复核 · 每轮 ≤ 3 张</div></div><div class="set-ctl"><label class="sw"><input type="checkbox" id="set-image-review"/><span></span></label></div></div>
+      </section>
+
+      <section class="set-sec">
+        <h4>决策层</h4>
+        <div class="set-row">
+          <div class="set-lbl"><div class="set-title">决策模型（Jev）</div><div class="set-sub">路由与内容审核共用 · 仅 TeamoRouter · 按 systemone 计费</div></div>
+          <div class="set-ctl"><select id="set-decision-model" class="set-select" aria-label="决策模型（Jev）"></select></div>
+        </div>
       </section>
 
       <section class="set-sec offline-model-settings" id="set-offline-model-sec">

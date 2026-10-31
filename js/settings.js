@@ -11,8 +11,9 @@ import { text as localeText } from './locale.js';
 import { getOrCreateUserSalutation, validateUserSalutation, saveUserSalutation } from './user-salutation.js';
 import { getLanguage, onLanguageChange } from './locale.js';
 import { VIDEO_GEN_MENU, resolveVideoGenModel, videoMenuIdOf } from './video-gen.js';
+import { JEV_MODEL, JEV_VERSIONS, setActiveJevModel } from './jev.js';
 // 设置弹窗：API Key / 中继地址 / 主题 / 字号 / 沙箱 / 联网 / 快速 / 思考 / 识图·音视频解析模型 / 清空数据 / 关于
-import { APP_RELEASE, APP_VERSION, STORAGE_KEY, VISION_MODELS, VIDEO_MODELS, IMAGE_MODELS, DEFAULT_IMAGE_MODEL, isImageGenModel, imageModelLabel, resolveVisionModel, resolveVideoModel } from './config.js?v=2026.10.25.1';
+import { APP_RELEASE, APP_VERSION, STORAGE_KEY, VISION_MODELS, VIDEO_MODELS, IMAGE_MODELS, IMAGE_FAMILIES, imageFamilyOf, DEFAULT_IMAGE_MODEL, isImageGenModel, imageModelLabel, resolveVisionModel, resolveVideoModel } from './config.js?v=2026.10.25.1';
 import { DEFAULT_GATEWAY_ID, getGateway, validateGatewayApiKey, validateGatewayBaseUrl, gatewayModelListLabel, defaultModelForGateway } from './gateway-registry.js?v=2026.10.25.1';
 import { currentRelay, resetRelayProbe, RELAY_OVERRIDE_KEY } from './net.js';
 import { DEFAULT_TURN_BUDGET } from './execution.js?v=2026.10.25.1';
@@ -220,9 +221,13 @@ function syncMultimodalSelects(store) {
   // 视频生成模型：全局设置（settings.videoGenModel），不在目录内的值退回默认
   const vgen = resolveVideoGenModel(settings.videoGenModel);
   fillModelSelect($('#set-vgen-model'), VIDEO_GEN_MENU, videoMenuIdOf(vgen));
-  fillModelSelect($('#set-image-model'), IMAGE_MODELS, image);
+  // 生图菜单按模型家族展示；具体变体（写实/插画/4K 升采样…）由 Agent 的 generate_image 自动选择
+  fillModelSelect($('#set-image-model'), IMAGE_FAMILIES.map((f) => ({ id: f.id, label: f.label, tag: f.tag, note: f.note, tagEn: f.tagEn, noteEn: f.noteEn })), imageFamilyOf(image) || 'gpt-image-2');
   fillModelSelect($('#set-vision-model'), VISION_MODELS, vision);
   fillModelSelect($('#set-av-model'), VIDEO_MODELS, av);
+  // 决策层：Jev 版本（每轮路由判断 + 内容审核的 Jev 调用共用）
+  const decision = setActiveJevModel(settings.decisionModel || JEV_MODEL);
+  fillModelSelect($('#set-decision-model'), JEV_VERSIONS.map((v) => ({ id: v.id, label: v.label, tag: '决策', note: v.note, tagEn: 'Decision', noteEn: v.note })), decision);
   const note = $('#set-mm-note');
   if (note) {
     const vi = VISION_MODELS.find((m) => m.id === vision) || {};
@@ -989,13 +994,22 @@ export function mountSettings(store, { onRelayChanged, onKeySaved, onSettingChan
   // 生图模型：写进当前会话（与旧模型菜单里的行为一致），不是全局设置
   const imgSel = $('#set-image-model');
   if (imgSel) imgSel.addEventListener('change', () => {
-    const id = isImageGenModel(imgSel.value) ? imgSel.value : DEFAULT_IMAGE_MODEL;
+    const fam = IMAGE_FAMILIES.find((f) => f.id === imgSel.value);
+    const id = fam ? fam.defaultModel : DEFAULT_IMAGE_MODEL;
     store.state.imageModel = id;
     store.notify();
     syncMultimodalSelects(store);
     toast(`生图模型已切换为 ${imageModelLabel(id)}（由 Agent 的 generate_image 工具调用，随当前会话保存）`, 'ok');
   });
   bindModelSelect('#set-vision-model', 'visionModel', resolveVisionModel);
+  const decSel = $('#set-decision-model');
+  if (decSel) decSel.addEventListener('change', () => {
+    const id = setActiveJevModel(decSel.value);
+    store.state.settings.decisionModel = id;
+    store.notify();
+    syncMultimodalSelects(store);
+    toast(`决策模型已切换为 ${id}（每轮路由判断与内容审核使用）`, 'ok');
+  });
   const vgenSel = $('#set-vgen-model');
   if (vgenSel) vgenSel.addEventListener('change', () => {
     const id = resolveVideoGenModel(vgenSel.value);
@@ -1017,7 +1031,7 @@ export function mountSettings(store, { onRelayChanged, onKeySaved, onSettingChan
   // 语言切换：模型档位的 tag/note 有中英两版，切换后立刻重排（面板开着时也生效）
   onLanguageChange(() => {
     paintMotionNote();
-    for (const sel of ['#set-image-model', '#set-vision-model', '#set-av-model', '#set-vgen-model']) { const el = $(sel); if (el) el._lang = ''; }
+    for (const sel of ['#set-image-model', '#set-vision-model', '#set-av-model', '#set-vgen-model', '#set-decision-model']) { const el = $(sel); if (el) el._lang = ''; }
     syncMultimodalSelects(store);
     renderOfflineModelUI();
     renderManualModelList(store);

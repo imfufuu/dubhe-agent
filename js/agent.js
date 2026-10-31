@@ -1280,6 +1280,8 @@ export function createAgent(store, hooks = {}) {
             usage: usage.input != null || usage.output != null || usage.reasoning != null || usage.cached != null || usage.cacheCreation != null || usage.cacheCreation5m != null || usage.cacheCreation1h != null ? { ...usage } : undefined,
             jevUsage: iterations === 1 && turnPlan && turnPlan.usage ? { ...turnPlan.usage } : undefined,
             fastMode: !!settings.fastMode,
+            // 记录发送时的网关：历史消息按当时网关计价（官方 / TeamoRouter 折后价）
+            gatewayId: turn.gatewayId || undefined,
             thoughtHidden: !!(turn.thinking && !reasoning && (thinkingBlocks.length || usage.reasoning)),
             // 自学标记：该模型真实出现过「有思考但无可见正文」→ 模型菜单标「思考链已加密」
             ...(!!(turn.thinking && !reasoning && (thinkingBlocks.length || usage.reasoning)) ? (() => { try { store.state.observedHiddenThink = { ...(store.state.observedHiddenThink || {}), [model]: true }; } catch { /* 忽略 */ } return {}; })() : {}),

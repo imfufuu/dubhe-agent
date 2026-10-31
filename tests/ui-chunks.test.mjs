@@ -18,9 +18,9 @@ test('new paragraph fades in as a block; later appended text in the same paragra
   const first = root.firstElementChild;
   assert.equal(first.classList.contains('chunk'), true);
   assert.equal(first.querySelector('.chunk-tail'), null);
-  assert.equal(frames.length, 1);
-  frames.shift()();
+  // 新块同步加 .in（不依赖 rAF，避免被下一轮重绘吞掉，见 ui-chunks.js）
   assert.equal(first.classList.contains('in'), true);
+  assert.equal(frames.length, 0);
 
   root.innerHTML = '<p>First piece, then more streamed text.</p>';
   revealChunks(root, state, true);
@@ -49,17 +49,13 @@ test('streamed suffix spanning inline Markdown nodes is animated without losing 
 });
 
 test('a newly appended Markdown block gets the normal block animation, not a duplicate tail animation', () => {
-  const { dom, root, state, frames } = fixture('<p>One</p>');
+  const { dom, root, state } = fixture('<p>One</p>');
   revealChunks(root, state, true);
-  frames.shift()();
   root.innerHTML = '<p>One</p><p>Two</p>';
   revealChunks(root, state, true);
 
   assert.equal(root.children[1].classList.contains('chunk'), true);
   assert.equal(root.children[1].querySelector('.chunk-tail'), null);
-  assert.equal(root.children[1].classList.contains('in'), false);
-  assert.equal(frames.length, 1);
-  frames.shift()();
   assert.equal(root.children[1].classList.contains('in'), true);
   dom.window.close();
 });

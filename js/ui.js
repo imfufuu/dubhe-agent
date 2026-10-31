@@ -39,7 +39,7 @@ import { getOrCreateUserSalutation, buildWelcomeGreeting } from './user-salutati
 import { installShiftEnterGuard } from './composer-newline-guard.js';
 import { installWelcomeMotion } from './ui-welcome-motion.js?v=2026.10.25.1';
 import { paintReasoningBlocks } from './ui-reasoning-motion.js?v=2026.10.25.1';
-import { summarizeTurnCost, formatCcy } from './pricing.js';
+import { summarizeTurnCost, formatCcy, turnCostTitle, turnCostTipParts } from './pricing.js';
 import { installLanguageCostRefresh } from './ui-language-costs.js';
 import { createAssistantFootPainter } from './ui-foot.js?v=2026.10.25.1';
 import { settleTurnToolbars } from './ui-turn-toolbar.js?v=2026.10.25.1';
@@ -130,12 +130,9 @@ export function mountUI(store, agent) {
   const toolPresentation = createToolPresentation({
     readMessage: (id) => store.state.messages.find((m) => m.id === id),
     resultIds: () => new Set(toolResults().keys()),
-    schedule: (fn, ms) => {
-      const timer = { frame: null, timeout: null };
-      timer.frame = requestAnimationFrame(() => { timer.frame = null; timer.timeout = setTimeout(fn, ms); });
-      return timer;
-    },
-    cancel: (timer) => { if (timer.frame != null) cancelAnimationFrame(timer.frame); if (timer.timeout != null) clearTimeout(timer.timeout); },
+    // 只用 setTimeout：标签页隐藏时 requestAnimationFrame 会暂停，揭示计时器停住后正文会一直被延后，直到刷新。
+    schedule: (fn, ms) => setTimeout(fn, ms),
+    cancel: (timer) => clearTimeout(timer),
     onAdvance: (m) => {
       syncPresentationScope();
       const wrap = msgNodes.get(m.id);
@@ -1307,7 +1304,10 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       if (toolPresentation.deferred(m, store.state.messages)) { syncCancelledTail(wrap, m); settleTurnToolbars(msgList, store.state.messages); return; }
       m = toolPresentation.project(m);
     }
-    syncChecklistBlock(wrap, m); if (paintOrderedAssistant(wrap, m, {
+    // 清单胶囊只挂在顶层消息节点：多段消息的片段会继承整条消息的字段，不能各画一份
+    if (m._displayFragment) wrap.querySelectorAll(':scope > .agent-checklist').forEach((n) => n.remove());
+    else syncChecklistBlock(wrap, m);
+    if (paintOrderedAssistant(wrap, m, {
       paintPart: paintAssistant, paintMeta: paintTurnMeta, paintFoot, syncShell: syncAssistantShell,
       syncFolds: syncCompletedToolFolds,
       refreshActions: refreshActionVisibility,
@@ -1824,8 +1824,9 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
   function collectTurnCostInfo(m) {
     const msgs = store.state.messages || [];
     const idx = msgs.findIndex((x) => x.id === m.id);
+    const gatewayId = m.gatewayId || store.state.gatewayId || '';
     if (idx < 0) {
-      const c = summarizeTurnCost({ messages: [m], model: m.model || store.state.model, fastMode: !!(m.fastMode ?? store.state.settings.fastMode) });
+      const c = summarizeTurnCost({ messages: [m], model: m.model || store.state.model, fastMode: !!(m.fastMode ?? store.state.settings.fastMode), gatewayId });
       return { headMsg: m, turnDone: !!m.done, hasUsage: !!m.usage, summary: c };
     }
     let start = idx;
@@ -1865,6 +1866,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
           const mFound = /^\[(?:识图|视频识别|PDF 分析)完成\].*?模型 (\S+)/.exec(content);
           toolCosts.push({
             kind: 'vision',
+            media: tc.name === 'analyze_video' ? 'video' : undefined,
             model: mFound ? mFound[1] : (tc.name === 'analyze_video' ? 'gemini-3.8-flash' : 'deepseek-v4-flash-vision-exp'),
             usage: { input: tc.name === 'analyze_video' ? 4200 : 1600 * shot, output: Math.max(120, Math.ceil(outChars / 2)) },
             imageCount: shot,
@@ -1888,6 +1890,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       fastMode: !!(headMsg.fastMode ?? store.state.settings.fastMode),
       toolCosts,
       jevUsage: headMsg.jevUsage,
+      gatewayId: headMsg.gatewayId || gatewayId,
     });
     return { headMsg, turnDone: turnDone || (!!m.done && !getBusy()), hasUsage: hasAnyUsage, summary };
   }
@@ -1911,14 +1914,9 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     if (info.hasUsage) {
       const s = info.summary;
       const costReady = info.turnDone;
-      const costHtml = costReady ? ` · <span class="tok-cost" title="按模型官方列表价预估（含识图/生图/子智能体）">${esc(s.formatted)}</span>` : '';
+      const costHtml = costReady ? ` · <span class="tok-cost" title="${esc(turnCostTitle(s))}">${esc(s.formatted)}</span>` : '';
       const tipParts = [`本轮 API 用量：输入 ${s.inputTokens} tok / 输出 ${s.outputTokens} tok${s.reasoningTokens ? `（含推理 ${s.reasoningTokens} tok）` : ''}`];
-      if (costReady) {
-        tipParts.push(`官方定价预估：${s.formatted}`);
-        if (s.visionUsd > 0) tipParts.push(`含识图模型：${formatCcy(s.visionUsd)}`);
-        if (s.imageUsd > 0) tipParts.push(`含生图模型：${formatCcy(s.imageUsd)}`);
-        if (s.subagentUsd > 0) tipParts.push(`含子智能体：${formatCcy(s.subagentUsd)}`);
-      }
+      if (costReady) tipParts.push(...turnCostTipParts(s));
       parts.push(`<button type="button" class="tok-btn" title="${esc(tipParts.join(' · '))}">↑${s.inputTokens} ↓${s.outputTokens} tok${costHtml}</button>`);
     }
     const tr = (info.headMsg && info.headMsg.transport) || m.transport;
@@ -2278,7 +2276,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       messages: store.state.messages.map((m) => ({
         role: m.role, text: m.text, content: m.content, toolCalls: m.toolCalls,
         toolCallId: m.toolCallId, name: m.name, usage: m.usage, ts: m.ts, tsEstimated: !!m.tsEstimated, model: m.model,
-        userModel: m.userModel, router: m.router, transport: m.transport, fastMode: m.fastMode, jevUsage: m.jevUsage,
+        userModel: m.userModel, router: m.router, transport: m.transport, fastMode: m.fastMode, gatewayId: m.gatewayId, jevUsage: m.jevUsage,
         done: m.done !== false, cancelled: !!m.cancelled, interrupted: !!m.interrupted,
         reasoning: m.reasoning, reasoningMs: m.reasoningMs, reasoningLevel: m.reasoningLevel,
         durationMs: m.durationMs, thinkingBlocks: m.thinkingBlocks, thoughtHidden: m.thoughtHidden,

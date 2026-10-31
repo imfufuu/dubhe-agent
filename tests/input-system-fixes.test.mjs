@@ -91,8 +91,9 @@ test('system command completion controller is wired into the composer keydown/in
 
 test('C++ toolchain download reports byte progress through worker → sandbox → tool chip', () => {
   assert.match(workerCpp, /self\.postMessage\(\{ __progress: \{ phase: 'loading-assets', loaded: sumLoaded, total: sumTotal \} \}\)/);
-  assert.match(workerCpp, /countBytes\(response\.body/);
-  assert.match(sandbox, /if \(data\?\.__progress\) \{ try \{ onProgress\?\.\(data\.__progress\)/);
+  // 缓存分支会先 tee() 出一份写入 Cache，计数的是转发给解压流的那一份
+  assert.match(workerCpp, /countBytes\(source, \(loaded\)/);
+  assert.match(sandbox, /if \(data\?\.__progress\) \{\s*try \{ onProgress\?\.\(data\.__progress\)/);
   assert.match(sandbox, /onProgress: opts\.onProgress,/);
   assert.match(tools, /onProgress: \(p\) => \{/);
   assert.match(tools, /progress: fraction,/);

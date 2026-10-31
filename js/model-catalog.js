@@ -18,13 +18,15 @@ export const TEAMOROUTER_CONFIRMED_MODEL_IDS = Object.freeze([
   'claude-opus-4-6', 'claude-opus-4-7', 'claude-opus-4-8', 'claude-opus-5', 'claude-opus-5-5',
   'claude-sonnet-4-6', 'claude-sonnet-5', 'claude-sonnet-5-5',
   'deepseek-flash', 'deepseek-flash-1017', 'deepseek-v4-flash', 'deepseek-v4-pro', 'deepseek-v4-pro-260425',
-  'doubao-seed-2.0-lite', 'doubao-seed-2.1-pro',
+  'doubao-seed-2.0-lite', 'doubao-seed-2.1-lite', 'doubao-seed-2.1-pro',
   'gemini-3.1-pro-preview', 'gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-3.6-flash', 'gemini-3.7-flash', 'gemini-3.8-flash', 'gemini-4-argon',
   'glm-5.2', 'glm-5.3', 'glm-5.3-flash',
   'gpt-5.4', 'gpt-5.4-mini', 'gpt-5.5', 'gpt-5.6-luna', 'gpt-5.6-sol', 'gpt-5.6-terra',
+  'gpt-6.1-terra',
   'gpt-6-astra', 'gpt-6-luna', 'gpt-6-sol', 'gpt-6.1-sol',
   'grok-4.6', 'grok-4.7', 'kimi-k3', 'kimi-k3.1-pro',
   'mimo-v2.6-flash', 'mimo-v2.6-pro',
+  'minimax-m3.1-flash',
   'qwen3.7-flash', 'qwen3.7-max', 'qwen3.8-flash', 'qwen3.8-max',
 ]);
 export const MODEL_CATALOG = [
@@ -88,6 +90,13 @@ export const MODEL_CATALOG = [
   {"id":"qwen3.8-flash","provider":"Qwen","displayName":"Qwen3.8-Flash","channel":"chat","listPrice":{"currency":"USD","input":0.11908306,"output":0.401905329,"cached_input":0.014885383,"cached_input_explicit":0.014885383,"cache_write":0.186067282},"cheap":true,"contextWindow":1000000,"priceSource":"official","priceSourceUrl":"https://help.aliyun.com/zh/model-studio/qwen3-8-flash","priceNote":"阿里云百炼日本（东京）全球部署标准价：输入 ¥0.8、输出 ¥2.7、隐式/显式缓存命中 ¥0.1、显式缓存创建 ¥1.25，每百万 token。","priceNoteEn":"Alibaba Model Studio Japan (Tokyo) global deployment standard rate converted from CNY: $0.1191 input / $0.4019 output / $0.0149 implicit and explicit cache hit / $0.1861 explicit cache creation per 1M tokens."},
   {"id":"qwen3.7-max","provider":"Qwen","displayName":"Qwen3.7-Max","channel":"chat","listPrice":{"currency":"USD","input":1.786245907,"output":5.35873772,"cached_input":0.357249181,"cached_input_explicit":0.178624591,"cache_write":2.232807383},"contextWindow":1000000,"priceSource":"official","priceSourceUrl":"https://help.aliyun.com/zh/model-studio/qwen3-7-max","priceNote":"阿里云百炼华北2（北京）标准价：输入 ¥12、输出 ¥36、隐式缓存命中 ¥2.4、显式缓存命中 ¥1.2、显式缓存创建 ¥15，每百万 token；不同地域费率可能不同。","priceNoteEn":"Alibaba Model Studio North China 2 standard rate converted from CNY: $1.7862 input / $5.3587 output / $0.3572 implicit cache hit / $0.1786 explicit cache hit / $2.2328 explicit cache creation per 1M tokens; regional rates may differ."},
   {"id":"qwen3.7-flash","provider":"Qwen","displayName":"Qwen3.7-Flash","channel":"chat","listPrice":{"currency":"USD","input":0.029770765,"output":0.11908306,"cached_input":0.005954153,"cached_input_explicit":0.002977076,"cache_write":0.037213456},"cheap":true,"contextWindow":1000000,"priceSource":"official","priceSourceUrl":"https://help.aliyun.com/zh/model-studio/qwen3-7-flash","priceNote":"阿里云百炼华北2（北京）标准阶梯价（每百万 token）：≤32K 输入/输出 ¥0.2/¥0.8、隐式命中 ¥0.04、显式创建 ¥0.25/显式命中 ¥0.02；32K–256K ¥0.6/¥2.4、¥0.12、¥0.75/¥0.06；256K–1M ¥1.2/¥4.8、¥0.24、¥1.5/¥0.12。","priceNoteEn":"Alibaba Model Studio North China 2 standard tiers (USD/M, converted from CNY; input/output, implicit hit, explicit create/hit): ≤32K $0.0298/$0.1191, $0.0060, $0.0372/$0.0030; 32K–256K $0.0893/$0.3572, $0.0179, $0.1115/$0.0089; 256K–1M $0.1786/$0.7145, $0.0357, $0.2233/$0.0179."},
+  {"id":"doubao-seed-2.1-lite","provider":"Doubao","displayName":"Doubao Seed 2.1 Lite","channel":"chat","tags":["新增"],"listPrice":{"currency":"USD","input":0.11428571,"output":0.38571429,"cached_input":0.02285714},"cheap":true,"contextWindow":1048576,"priceSource":"gateway-report-2026-10-31"},
+  {"id":"gpt-6.1-terra","provider":"OpenAI","displayName":"GPT 6.1 Terra","channel":"chat","tags":["新增","通道偶发波动"],"listPrice":{"currency":"USD","input":0.171,"output":0.855,"cached_input":0.00855},"cheap":true,"contextWindow":1000000,"priceSource":"gateway-report-2026-10-31"},
+  {"id":"minimax-m3.1-flash","provider":"MiniMax","displayName":"MiniMax M3.1 Flash","channel":"chat","tags":["新增","通道不稳"],"listPrice":{"currency":"USD","input":0.075,"output":0.3,"cached_input":0.0075},"cheap":true,"contextWindow":1000000,"priceSource":"gateway-report-2026-10-31"},
+  {"id":"gemini-3-pro-image","provider":"Google","displayName":"Gemini 3 Pro Image","channel":"image","tags":["新增"],"listPrice":{"currency":"USD","input":0.948,"output":56.88}},
+  {"id":"gpt-image-2-4k-upscale","provider":"OpenAI","displayName":"GPT Image 2 4K Upscale","channel":"image","priceNote":"按张计费：1K/2K/4K 均为 $0.02/张","listPrice":{"currency":"USD","input":5.0,"output":30.0,"cached_input":1.25}},
+  {"id":"gpt-image-2.5-sunburst-4k-upscale","provider":"OpenAI","displayName":"GPT Image 2.5 Sunburst 4K Upscale","channel":"image","priceNote":"按张计费：1K/2K/4K 均为 $0.02/张","listPrice":{"currency":"USD","input":5.0,"output":30.0,"cached_input":1.25}},
+  {"id":"gpt-image-2.5-flare-4k-upscale","provider":"OpenAI","displayName":"GPT Image 2.5 Flare 4K Upscale","channel":"image","priceNote":"按张计费：1K/2K/4K 均为 $0.02/张","listPrice":{"currency":"USD","input":5.0,"output":30.0,"cached_input":1.25}},
 ];
 export const MODEL_CATALOG_BY_ID = new Map(MODEL_CATALOG.map(m => [m.id, m]));
 // A successful live response is authoritative. Do not union unavailable fallback IDs back into it.

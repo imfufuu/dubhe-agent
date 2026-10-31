@@ -4,7 +4,7 @@
 // ③ 两层本地都没把握（灰区）的图，才交给视觉模型（REMOTE_IMAGE_REVIEW_MODEL）按严格规则复核——命中即拦截，
 // 远程不可用（无 Key / 超时 / 网络）时退回本地阈值判定，不把网络抖动变成误拦。前两层随项目放在 assets/moderation/，在浏览器本地运行。
 
-import { askJev, noul, choice, score, noulOf, choiceOf, scoreOf, confidenceOf, JEV_MODEL, JEV_TIMEOUT_MS } from './jev.js';
+import { askJev, noul, choice, score, noulOf, choiceOf, scoreOf, confidenceOf, JEV_TIMEOUT_MS, getActiveJevModel } from './jev.js';
 import { analyzeImage } from './vision.js';
 import { DEFAULT_GATEWAY_ID, getGateway, defaultVisionModelForGateway } from './gateway-registry.js?v=2026.10.25.1';
 import { BLOCKING_TEXT, policyTextHeuristic } from './local-text-policy.js';
@@ -873,7 +873,7 @@ async function jevTextDecision(payload, { apiKey = '', signal, gatewayId = DEFAU
     categories,
     reason: categories.join(', '),
     source: 'jev',
-    model: r.model || JEV_MODEL,
+    model: r.model || getActiveJevModel(),
     unsafe,
     category,
     confidence,

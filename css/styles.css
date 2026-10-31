@@ -387,6 +387,8 @@ html { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
 .badge { font-size: var(--ui-fs-9px, 9px); font-weight: 700; letter-spacing: .06em; border: 1px solid var(--line-2); border-radius: 4px; padding: 1px 5px; color: var(--fg-2); }
 .badge.hot { color: #c2410c; border-color: #fdba74; }
 .badge.cheap { color: #15803d; border-color: #86efac; }
+.badge.model-tag { color: #4338ca; border-color: #a5b4fc; }
+[data-theme="dark"] .badge.model-tag { color: #c7d2fe; border-color: #4338ca; }
 [data-theme="dark"] .badge.hot { color: #fdba74; border-color: #c2410c; }
 [data-theme="dark"] .badge.cheap { color: #86efac; border-color: #15803d; }
 .dd-item.active .badge.hot, .dd-item.active .badge.cheap { border-color: var(--bg); color: var(--bg); }
@@ -663,8 +665,10 @@ html { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
 .msg { max-width: 760px; margin: 0 auto 16px; padding: 0 28px; overflow-x: hidden; max-width: min(760px, 100%); }
 /* 助手回复保持编辑式纯文本排版；只有用户消息保留气泡。 */
 .msg-assistant:not(.msg-collapsed) { padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
-/* 窄窗口（如 700×600）：助手正文不能贴着窗口边缘，恢复与 .msg 一致的水平留白。 */
-@media (max-width: 800px) { .msg-assistant:not(.msg-collapsed) { padding-inline: clamp(16px, 4vw, 24px); } }
+/* 助手正文不能贴着分割线（侧栏 / 面板）：按主区域的真实宽度留白，而不是视口宽度——
+   视口 900px 时侧栏展开，主区域可能只有 600px 多，视口判断会漏掉这种情况。 */
+.main { container-type: inline-size; }
+@container (max-width: 860px) { .msg-assistant:not(.msg-collapsed) { padding-inline: clamp(16px, 4vw, 24px); } }
 .msg-assistant .md-body { font-family: var(--chat-font, Georgia, serif); }
 .msg-assistant:has(+ .msg-assistant) { margin-bottom: 8px; }
 .msg-assistant.tools-continue { margin-bottom: 0; }
@@ -3206,8 +3210,12 @@ html:not([data-motion="on"]) .task-progress span { transition: none; }
 #tab-tasks .ck-failed .ck-mark { border-color: var(--fg); background: linear-gradient(45deg, transparent 42%, var(--fg) 42%, var(--fg) 58%, transparent 58%); }
 #tab-tasks .ck-done .ck-text, #tab-tasks .ck-skipped .ck-text { color: var(--fg-3); }
 #tab-tasks .ck-skipped .ck-text { text-decoration: line-through; text-decoration-color: var(--fg-3); }
-.task-empty { margin: 6px 0 0; color: var(--fg-3); font-size: 12px; line-height: 1.6; }
-.task-empty[hidden] { display: none; }
+/* 任务面板：内容与卡片边框保持留白；空状态复用文件 / 记忆面板的插画样式 */
+.task-card .task-body { display: flex; flex-direction: column; gap: 14px; padding: 16px 16px 18px; min-height: 0; }
+.task-card .task-progress { margin: 0; }
+.task-card #task-list { margin: 0; }
+.task-card #tab-tasks .agent-checklist-items li { padding-left: 0; padding-right: 0; }
+.task-card .task-body [hidden] { display: none !important; }
 @keyframes ckSpin { to { transform: rotate(360deg); } }
 html:not([data-motion="on"]) #tab-tasks .ck-in_progress .ck-mark { animation: none; }
 

@@ -8,7 +8,7 @@ import { mergeAvailableModels, MODEL_CATALOG_DATE } from './model-catalog.js?v=2
 import { uiText as localeText, onLanguageChange } from './locale.js';
 import { onCurrencyChange } from './currency.js';
 import { $, el, esc } from './ui-markdown.js?v=2026.10.25.1';
-import { FALLBACK_MODELS, isImageModel, providerOf, SMART_ROUTER_ID, PROVIDER_ORDER, SMART_ROUTER_PROVIDER, sortModelsInFamily, isFreeModel, supportsVision, supportsFastMode, IMAGE_MODELS, DEFAULT_IMAGE_MODEL, imageModelLabel } from './config.js?v=2026.10.25.1';
+import { FALLBACK_MODELS, isImageModel, providerOf, SMART_ROUTER_ID, PROVIDER_ORDER, SMART_ROUTER_PROVIDER, sortModelsInFamily, isFreeModel, supportsVision, supportsFastMode, IMAGE_MODELS, DEFAULT_IMAGE_MODEL, imageModelLabel, imageFamilyOf } from './config.js?v=2026.10.25.1';
 import { isJevModel } from './jev.js';
 import { ICON, providerIcon } from './icons.js';
 import { LOCAL_PROVIDER_ICON_SVG } from './icons.js';
@@ -189,6 +189,7 @@ export function installModelPicker({ store, agent, toast, getBusy, openKeyModal,
             : `<span class="dd-item-id mono">${esc(m.id)}</span>
               <span class="dd-item-badges">
                 ${hot ? `<span class="badge hot" title="${localeText('应用预设热门精选，非实时使用热度或质量实测排行', 'App-curated popular pick, not live usage popularity or benchmark rank')}">${localeText('热门', 'Popular')}</span>` : ''}
+                ${(Array.isArray(hit.tags) ? hit.tags : []).map((t) => `<span class="badge model-tag">${esc(t)}</span>`).join('')}
                 ${free ? '<span class="badge">FREE</span>' : (cheap ? `<span class="badge cheap" title="${esc(cheapBadgeTitle)}">${localeText('低价', 'Cheap')}</span>` : '')}
                 ${supportsVision(m.id) ? '<span class="badge vision" title="支持图片输入（多模态）"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg></span>' : ''}
               </span>`);
@@ -328,7 +329,8 @@ export function installModelPicker({ store, agent, toast, getBusy, openKeyModal,
       store.state.imageModel = want;
     }
     const sel = $('#set-image-model');
-    if (sel && sel.options.length && sel.value !== want) sel.value = want;
+    const fam = imageFamilyOf(want) || 'gpt-image-2';
+    if (sel && sel.options.length && sel.value !== fam) sel.value = fam;
   }
   const openMenu = () => {
     renderModelMenu();

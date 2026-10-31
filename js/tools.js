@@ -10,13 +10,13 @@ import { sandboxProject, sandboxBrowserRequest } from './localbrowser.js?v=2026.
 import { CODE_TOOL_NAMES as REG_CODE_TOOL_NAMES, LEGACY_TOOL_ALIASES as REG_LEGACY_TOOL_ALIASES } from './capabilities.js';
 import { runJavaScript, runPython, runCpp, runCppRemote, pythonAvailable, persistenceNote, isSafeFsPath, contentByteSize } from './sandbox.js';
 import { SANDBOX_STORAGE_CAP } from './storagefmt.js';
-import { generateImage, editImage, bytesToDataUrl, dataUrlToBytes, sniffImage, createVideoJob, getVideoJob, fetchVideoContent } from './api.js?v=2026.10.25.1';
-import { VIDEO_GEN_ASPECT_RATIOS, planVideoRequest, buildVideoBody, videoJobState, videoJobError, resolveVideoGenModel, VIDEO_POLL_INTERVAL_MS, VIDEO_MAX_WAIT_MS, VIDEO_SANDBOX_MAX_BYTES } from './video-gen.js';
+import { generateImage, editImage, bytesToDataUrl, dataUrlToBytes, sniffImage, createVideoJob, quoteVideoJob, getVideoJob, fetchVideoContent } from './api.js?v=2026.10.25.1';
+import { VIDEO_GEN_ASPECT_RATIOS, planVideoRequest, buildVideoBody, buildVideoQuoteBody, videoJobState, videoJobError, resolveVideoGenModel, VIDEO_POLL_INTERVAL_MS, VIDEO_MAX_WAIT_MS, VIDEO_SANDBOX_MAX_BYTES } from './video-gen.js';
 import { analyzeImage, analyzeVideo, analyzeAudio, VISION_TOOL_MODEL, VIDEO_TOOL_MODEL } from './vision.js';
 import { sanitizeSvgMarkup, svgSourceFromValue, svgDataUrl, extractSvgText } from './svg-safety.js';
 import { pdfToImages, pdfExtractText } from './pdfpages.js';
 import { SUBAGENTS } from './subagents.js';
-import { DEFAULT_IMAGE_MODEL, IMAGE_SIZES, IMAGE_QUALITIES, IMAGE_FORMATS, IMAGE_BACKGROUNDS, IMAGE_MODEL_IDS, resolveImageModel, resolveVisionModel, resolveVideoModel, resolveAudioModel } from './config.js?v=2026.10.25.1';
+import { DEFAULT_IMAGE_MODEL, IMAGE_STYLES, IMAGE_RESOLUTIONS, resolveImageVariant, IMAGE_SIZES, IMAGE_QUALITIES, IMAGE_FORMATS, IMAGE_BACKGROUNDS, IMAGE_MODEL_IDS, resolveImageModel, resolveVisionModel, resolveVideoModel, resolveAudioModel } from './config.js?v=2026.10.25.1';
 import { fetchPage, gitRun, relaySearch, relayCrawl, relayDownload, fileNameFromUrl, RELAY_FILE_MAX_BYTES } from './net.js';
 import { createZip, fileBytesFromValue } from './zip.js';
 import { planConversion, runConversion, convertProgressNote, MAX_CONVERT_INPUT } from './convert.js';
@@ -212,6 +212,8 @@ export const TOOL_DEFS = [
         size: { type: 'string', enum: IMAGE_SIZES, description: `输出尺寸（宽x高像素），默认 ${'auto'} 由模型决定` },
         aspect_ratio: { type: 'string', enum: ['1:1', '16:9', '9:16', '4:3', '3:4', '3:2', '2:3'], description: '可选：画面比例（与 size 二选一，优先使用本参数）' },
         quality: { type: 'string', enum: IMAGE_QUALITIES, description: '质量档位，默认 auto' },
+        style: { type: 'string', enum: IMAGE_STYLES, description: '可选：画面风格。realistic 写实 / illustration 插画 / pro 精细 / quality 高质 / fast 快速；默认 auto，由所选家族与描述自动决定' },
+        resolution: { type: 'string', enum: IMAGE_RESOLUTIONS, description: '可选：分辨率档。4K 会自动使用升采样变体（约 $0.02/张，比原生 4K 便宜）；默认 auto' },
         output_format: { type: 'string', enum: IMAGE_FORMATS, description: '输出格式，默认 png' },
         background: { type: 'string', enum: IMAGE_BACKGROUNDS, description: '背景：transparent 为透明底（png/webp 有效），默认 auto 由模型决定' },
         n: { type: 'integer', enum: [1, 2, 3, 4], description: '一次生成几张候选图（默认 1）；多张会全部写入沙箱 outputs/' },
@@ -1414,12 +1416,24 @@ async function executeToolBody(outerName, outerArgs, ctx) {
           return `视频调用在发起前失败：${plan.error}`;
         }
         const common = { apiKey: ctx.apiKey, signal: ctx.signal, ...gatewayRequestContext(ctx) };
+        const audioFlag = typeof args.audio === 'boolean' ? args.audio : undefined;
+        // 实时报价（免费）：POST /v1/videos/quote。报价失败不阻断提交，计费行标记为未计价
+        let quote = null;
+        try {
+          quote = await quoteVideoJob({ ...common, body: buildVideoQuoteBody(plan, imageDataUrl, { endImageUrl, audio: audioFlag }), timeoutMs: 20000 });
+        } catch { quote = null; }
+        const quotedUsd = quote ? Number(quote.quote) : NaN;
+        const billing = {
+          kind: 'video_gen', model: plan.model, seconds: plan.seconds,
+          costUsd: Number.isFinite(quotedUsd) ? quotedUsd : null,
+          estimated: !!(quote && quote.estimated),
+        };
         // 幂等键：本次调用内的重试沿用同一个 key，避免重复创建任务（重复计费）
         const idempotencyKey = `dubhe-video-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
         emit({ status: 'running', note: `提交视频任务（${plan.model} · ${plan.size} · ${plan.seconds}s）…` });
         let job;
         try {
-          job = await createVideoJob({ ...common, body: buildVideoBody(plan, prompt, imageDataUrl, { endImageUrl, audio: typeof args.audio === 'boolean' ? args.audio : undefined }), idempotencyKey, timeoutMs: 60000 });
+          job = await createVideoJob({ ...common, body: buildVideoBody(plan, prompt, imageDataUrl, { endImageUrl, audio: audioFlag }), idempotencyKey, timeoutMs: 60000 });
         } catch (err) {
           const message = `视频任务创建失败：${err.message || err}`;
           emit({ status: 'error', error: { message } });
@@ -1431,6 +1445,8 @@ async function executeToolBody(outerName, outerArgs, ctx) {
           emit({ status: 'error', error: { message } });
           return message;
         }
+        // 任务已受理：计费行随调用记录（报价为提交前的实时报价）
+        emit({ status: 'running', billing, note: billing.costUsd == null ? '视频任务已提交（未取得报价）' : `视频任务已提交（报价 $${billing.costUsd.toFixed(4)}${billing.estimated ? '，预估' : ''}）` });
         const started = Date.now();
         let state = videoJobState(job);
         let pollFails = 0;
@@ -1509,7 +1525,8 @@ async function executeToolBody(outerName, outerArgs, ctx) {
         // 会话菜单选定的生图模型优先：对话模型常在 args.model 里填 gpt-image-2，
         // 会把用户刚选的 Nano Banana 盖掉。args.model 只作纠错提示，不覆盖菜单。
         const session = resolveImageModel(ctx.imageModel || DEFAULT_IMAGE_MODEL, DEFAULT_IMAGE_MODEL);
-        const model = session.id;
+        // 家族/变体归并：Agent 按 style / resolution / size 自动选具体变体（如 4K 走升采样）
+        const model = resolveImageVariant(session.id, { style: args.style, resolution: args.resolution, size: args.size });
         const nano = /^gemini-|nano[-_ ]?banana/i.test(model);
         const imageRouteSupported = gatewayId === DEFAULT_GATEWAY_ID
           || (gatewayId === 'openai' && !nano)
@@ -1814,6 +1831,7 @@ async function executeToolBody(outerName, outerArgs, ctx) {
             fsChange: true,
             billing: {
               kind: 'vision',
+              media: 'video',
               model: videoModel,
               usage: { input: vIn, output: vOut },
               videoCount: 1,
@@ -1881,6 +1899,7 @@ async function executeToolBody(outerName, outerArgs, ctx) {
             fsChange: saved,
             billing: {
               kind: 'vision',
+              media: 'audio',
               model: audioModel,
               usage: { input: vIn, output: vOut },
               audioCount: 1,

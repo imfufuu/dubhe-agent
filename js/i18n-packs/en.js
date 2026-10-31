@@ -198,4 +198,9 @@ registerLanguagePack('en', {
   "，等待首个响应…": ", waiting for the first response…",
   "联网检索未成功": "Web search failed",
   "更早的消息": "Earlier messages",
+  "决策层": "Decision layer",
+  "决策模型（Jev）": "Decision model (Jev)",
+  "路由与内容审核共用 · 仅 TeamoRouter · 按 systemone 计费": "Shared by per-turn routing and content moderation · TeamoRouter only · billed per /v1/systemone",
+  "音视频分析": "Audio & video analysis",
+  "视频生成": "Video generation",
 });

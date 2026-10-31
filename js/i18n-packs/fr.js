@@ -197,4 +197,9 @@ registerLanguagePack('fr', {
   "，等待首个响应…": ", en attente de la première réponse…",
   "联网检索未成功": "Échec de la recherche web",
   "更早的消息": "Messages précédents",
+  "决策层": "Couche de décision",
+  "决策模型（Jev）": "Modèle de décision (Jev)",
+  "路由与内容审核共用 · 仅 TeamoRouter · 按 systemone 计费": "Utilisé pour le routage et la modération · TeamoRouter uniquement · facturé via /v1/systemone",
+  "音视频分析": "Analyse audio et vidéo",
+  "视频生成": "Génération vidéo",
 });

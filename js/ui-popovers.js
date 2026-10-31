@@ -114,10 +114,13 @@ export function installPopovers({ store }) {
     if (turnInfo && turnInfo.summary) {
       const s = turnInfo.summary;
       const headModel = (turnInfo.headMsg && turnInfo.headMsg.model) || store.state.model;
-      const rateBadge = priceBadgeFor(headModel, { fastMode: !!(turnInfo.headMsg && turnInfo.headMsg.fastMode) });
+      const gatewayId = s.gatewayId || (turnInfo.headMsg && turnInfo.headMsg.gatewayId) || store.state.gatewayId || '';
+      const rateBadge = priceBadgeFor(headModel, { fastMode: !!(turnInfo.headMsg && turnInfo.headMsg.fastMode), gatewayId });
       html += `<div class="tok-row total"><span>对话模型 (${esc(rateBadge || modelDisplayName(headModel))})</span><span>${esc(formatCcy(s.chatUsd))}</span></div>`;
       if (s.visionUsd > 0) html += `<div class="tok-row"><span>识图模型</span><span>${esc(formatCcy(s.visionUsd))}</span></div>`;
+      html += `<div class="tok-row"><span>音视频分析</span><span>${esc(formatCcy(s.avUsd || 0))}</span></div>`;
       if (s.imageUsd > 0) html += `<div class="tok-row"><span>生图模型</span><span>${esc(formatCcy(s.imageUsd))}</span></div>`;
+      html += `<div class="tok-row"><span>视频生成</span><span>${esc(formatCcy(s.videoGenUsd || 0))}</span></div>`;
       if (s.subagentUsd > 0) html += `<div class="tok-row"><span>子智能体</span><span>${esc(formatCcy(s.subagentUsd))}</span></div>`;
       html += `<div class="tok-row total"><span>本轮预估总价</span><span>${esc(s.formatted)}</span></div>`;
     }

@@ -4266,7 +4266,7 @@ test('buildSystemOneBody：严格按文档，不含聊天协议字段', async ()
     state: 'I was charged twice.',
     questions: { department: jev.choice('Which team?', { billing: 'charges', other: 'else' }) },
   });
-  assert.equal(body.model, 'jev');
+  assert.equal(body.model, 'jev-1.14.0');
   assert.equal(body.state, 'I was charged twice.');
   assert.equal(body.questions.department.type, 'choice');
   assert.equal('messages' in body, false);
@@ -4322,7 +4322,7 @@ test('askJev：POST /v1/systemone + Bearer，读 answers.choice / noul', async (
     assert.equal(calls.length, 1);
     assert.match(calls[0].url, /\/v1\/systemone$/);
     assert.equal(calls[0].headers.Authorization, 'Bearer sk-teamo-test');
-    assert.equal(calls[0].body.model, 'jev');
+    assert.equal(calls[0].body.model, 'jev-1.14.0');
     assert.equal('stream' in calls[0].body, false);
     assert.equal(calls[0].body.questions.need_search.type, 'noul');
     assert.equal(calls[0].body.questions.route.type, 'choice');
@@ -6099,8 +6099,8 @@ test('Req 3：全模型官方价格查询（识图与生图单独处理）与单
 
   // 新增国产模型使用供应商公开标准价；CNY 价目归一到 USD 内部口径，界面再按语言显示。
   const catalog = await import('../js/model-catalog.js');
-  assert.equal(catalog.TEAMOROUTER_CONFIRMED_MODEL_IDS.length, 51);
-  assert.equal(new Set(catalog.TEAMOROUTER_CONFIRMED_MODEL_IDS).size, 51, 'TeamoRouter 确认清单无重复');
+  assert.equal(catalog.TEAMOROUTER_CONFIRMED_MODEL_IDS.length, 54);
+  assert.equal(new Set(catalog.TEAMOROUTER_CONFIRMED_MODEL_IDS).size, 54, 'TeamoRouter 确认清单无重复');
   const mergedConfirmed = catalog.mergeAvailableModels([], [], true, { gatewayId: 'teamorouter' });
   for (const id of catalog.TEAMOROUTER_CONFIRMED_MODEL_IDS) {
     assert.ok(catalog.MODEL_CATALOG_BY_ID.has(id), `${id} 应有目录数据`);
@@ -6336,7 +6336,7 @@ test('Req 8：文本审核委托给 Jev（POST /v1/systemone），精准识别�
     assert.equal(bad.blocked, true);
     assert.ok(bad.categories.includes('drug_crime'));
     assert.ok(seenBodies[0].url.includes('/v1/systemone'));
-    assert.equal(seenBodies[0].body.model, 'jev');
+    assert.equal(seenBodies[0].body.model, 'jev-1.14.0');
 
     const safe = await mod.moderateText({ text: '帮我写一段关于秋日海边的散文', apiKey: 'sk-teamo-test' });
     assert.equal(safe.blocked, false);
@@ -6682,7 +6682,7 @@ test('2026.10.24：支持固定对话目录（DeepSeek 两个免费档继续下�
     assert.ok(fallbackIds.has(id), `FALLBACK_MODELS 缺少模型：${id}`);
   }
   const chatModels = cfg.FALLBACK_MODELS.filter((m) => m.id !== cfg.SMART_ROUTER_ID && !cfg.isImageModel(m.id));
-  assert.equal(chatModels.length, 51, '排除智能路由、识图/生图专用模型后应恰好包含用户确认的 51 个固定对话模型（不含 DeepSeek 免费档）');
+  assert.equal(chatModels.length, 54, '排除智能路由、识图/生图专用模型后应恰好包含用户确认的 54 个固定对话模型（不含 DeepSeek 免费档）');
   assert.ok(!fallbackIds.has('deepseek-v4-flash-free') && !fallbackIds.has('deepseek-flash-free'), 'DeepSeek 两个免费模型必须下架');
 
   // Claude 与 GPT 新模型热度与组内版本优先级排序验证
@@ -9248,7 +9248,7 @@ test('analyze_video 工具：定义 / 契约 / 并行与访问表 / 执行路径
   assert.match(tools, /const VIDEO_EXT_RE = \/\\\.\(mp4\|webm\|mov\|m4v\)\$\/i;/);
   assert.match(tools, /const VIDEO_MAX_BYTES = 16 \* 1024 \* 1024;/);
   assert.match(tools, /\[视频识别完成\] 模型 \$\{videoModel\} · 文件 \$\{path\} · 全文 \$\{text\.length\} 字已写入 \$\{outPath\}/);
-  assert.match(tools, /kind: 'vision',\s*model: videoModel,/, '计费事件带真实模型');
+  assert.match(tools, /kind: 'vision',\s*media: 'video',\s*model: videoModel,/, '计费事件带真实模型与音视频分类');
   // analyze_image / analyze_pdf use the selected gateway's vision model (TeamoRouter honors ctx.visionModel).
   assert.match(tools, /const visionModel = visionModelForContext\(ctx\);/);
   assert.match(tools, /defaultVisionModelForGateway\(gatewayId\)/);
@@ -11054,7 +11054,7 @@ test('Nano Banana 2.1（gemini-nano-banana-2.1，.34 实测 ID）是生图模型
   const pricing = await import('../js/pricing.js');
   assert.ok(c.IMAGE_MODELS.some((m) => m.id === 'gemini-nano-banana-2.1'));
   assert.ok(!c.IMAGE_MODELS.some((m) => m.id === 'nano-banana-2-1'), '.33 猜的 ID 不对，.34 用网关价目表 / 实测的 gemini-nano-banana-2.1');
-  assert.equal(c.IMAGE_MODELS.length, 5);
+  assert.equal(c.IMAGE_MODELS.length, 9);
   assert.ok(c.IMAGE_MODELS.every((m) => m.tag && m.label && m.note), '设置页下拉需要 label · tag');
   assert.equal(c.DEFAULT_IMAGE_MODEL, 'gpt-image-2');
   for (const id of ['gemini-nano-banana-2.1', 'nano-banana-2-1', 'nano-banana-2', 'gpt-image-3', 'dall-e-4', 'flux-2-pro', 'imagen-4']) assert.equal(c.isImageModel(id), true, id);
@@ -11078,9 +11078,9 @@ test('生图模型选择器迁到设置 → 多模态模型：模型菜单无 dd
   assert.ok(app.indexOf('id="set-image-model"') < app.indexOf('id="set-vision-model"'), '生图排在识图之前');
   const picker = fsp.readFileSync(new URL('../js/ui-model-picker.js', import.meta.url), 'utf8');
   assert.doesNotMatch(picker, /\.dd-foot|#image-model'/);
-  assert.match(picker, /const sel = \$\('#set-image-model'\);\s*if \(sel && sel\.options\.length && sel\.value !== want\) sel\.value = want;/);
+  assert.match(picker, /const sel = \$\('#set-image-model'\);\s*const fam = imageFamilyOf\(want\) \|\| 'gpt-image-2';\s*if \(sel && sel\.options\.length && sel\.value !== fam\) sel\.value = fam;/);
   const st = fsp.readFileSync(new URL('../js/settings.js', import.meta.url), 'utf8');
-  assert.match(st, /fillModelSelect\(\$\('#set-image-model'\), IMAGE_MODELS, image\);/);
+  assert.match(st, /fillModelSelect\(\$\('#set-image-model'\), IMAGE_FAMILIES\.map\(/);
   assert.match(st, /store\.state\.imageModel = id;\s*store\.notify\(\);/, '写进当前会话而不是全局 settings');
   assert.match(st, /随当前会话保存/);
   const css = fsp.readFileSync(new URL('../css/styles.css', import.meta.url), 'utf8');
