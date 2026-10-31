@@ -10,8 +10,8 @@ import { sandboxProject, sandboxBrowserRequest } from './localbrowser.js?v=2026.
 import { CODE_TOOL_NAMES as REG_CODE_TOOL_NAMES, LEGACY_TOOL_ALIASES as REG_LEGACY_TOOL_ALIASES } from './capabilities.js';
 import { runJavaScript, runPython, runCpp, runCppRemote, pythonAvailable, persistenceNote, isSafeFsPath, contentByteSize } from './sandbox.js';
 import { SANDBOX_STORAGE_CAP } from './storagefmt.js';
-import { generateImage, editImage, bytesToDataUrl, dataUrlToBytes, sniffImage, createVideoJob, getVideoJob, fetchVideoContent } from './api.js?v=2026.10.25.1';
-import { VIDEO_GEN_ASPECT_RATIOS, planVideoRequest, buildVideoBody, videoJobState, videoJobError, resolveVideoGenModel, VIDEO_POLL_INTERVAL_MS, VIDEO_MAX_WAIT_MS, VIDEO_SANDBOX_MAX_BYTES } from './video-gen.js';
+import { generateImage, editImage, bytesToDataUrl, dataUrlToBytes, sniffImage, createVideoJob, quoteVideoJob, getVideoJob, fetchVideoContent } from './api.js?v=2026.10.25.1';
+import { VIDEO_GEN_ASPECT_RATIOS, planVideoRequest, buildVideoBody, buildVideoQuoteBody, videoJobState, videoJobError, resolveVideoGenModel, VIDEO_POLL_INTERVAL_MS, VIDEO_MAX_WAIT_MS, VIDEO_SANDBOX_MAX_BYTES } from './video-gen.js';
 import { analyzeImage, analyzeVideo, analyzeAudio, VISION_TOOL_MODEL, VIDEO_TOOL_MODEL } from './vision.js';
 import { sanitizeSvgMarkup, svgSourceFromValue, svgDataUrl, extractSvgText } from './svg-safety.js';
 import { pdfToImages, pdfExtractText } from './pdfpages.js';
@@ -1416,12 +1416,24 @@ async function executeToolBody(outerName, outerArgs, ctx) {
           return `视频调用在发起前失败：${plan.error}`;
         }
         const common = { apiKey: ctx.apiKey, signal: ctx.signal, ...gatewayRequestContext(ctx) };
+        const audioFlag = typeof args.audio === 'boolean' ? args.audio : undefined;
+        // 实时报价（免费）：POST /v1/videos/quote。报价失败不阻断提交，计费行标记为未计价
+        let quote = null;
+        try {
+          quote = await quoteVideoJob({ ...common, body: buildVideoQuoteBody(plan, imageDataUrl, { endImageUrl, audio: audioFlag }), timeoutMs: 20000 });
+        } catch { quote = null; }
+        const quotedUsd = quote ? Number(quote.quote) : NaN;
+        const billing = {
+          kind: 'video_gen', model: plan.model, seconds: plan.seconds,
+          costUsd: Number.isFinite(quotedUsd) ? quotedUsd : null,
+          estimated: !!(quote && quote.estimated),
+        };
         // 幂等键：本次调用内的重试沿用同一个 key，避免重复创建任务（重复计费）
         const idempotencyKey = `dubhe-video-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
         emit({ status: 'running', note: `提交视频任务（${plan.model} · ${plan.size} · ${plan.seconds}s）…` });
         let job;
         try {
-          job = await createVideoJob({ ...common, body: buildVideoBody(plan, prompt, imageDataUrl, { endImageUrl, audio: typeof args.audio === 'boolean' ? args.audio : undefined }), idempotencyKey, timeoutMs: 60000 });
+          job = await createVideoJob({ ...common, body: buildVideoBody(plan, prompt, imageDataUrl, { endImageUrl, audio: audioFlag }), idempotencyKey, timeoutMs: 60000 });
         } catch (err) {
           const message = `视频任务创建失败：${err.message || err}`;
           emit({ status: 'error', error: { message } });
@@ -1433,6 +1445,8 @@ async function executeToolBody(outerName, outerArgs, ctx) {
           emit({ status: 'error', error: { message } });
           return message;
         }
+        // 任务已受理：计费行随调用记录（报价为提交前的实时报价）
+        emit({ status: 'running', billing, note: billing.costUsd == null ? '视频任务已提交（未取得报价）' : `视频任务已提交（报价 $${billing.costUsd.toFixed(4)}${billing.estimated ? '，预估' : ''}）` });
         const started = Date.now();
         let state = videoJobState(job);
         let pollFails = 0;
@@ -1817,6 +1831,7 @@ async function executeToolBody(outerName, outerArgs, ctx) {
             fsChange: true,
             billing: {
               kind: 'vision',
+              media: 'video',
               model: videoModel,
               usage: { input: vIn, output: vOut },
               videoCount: 1,
@@ -1884,6 +1899,7 @@ async function executeToolBody(outerName, outerArgs, ctx) {
             fsChange: saved,
             billing: {
               kind: 'vision',
+              media: 'audio',
               model: audioModel,
               usage: { input: vIn, output: vOut },
               audioCount: 1,

@@ -1446,6 +1446,11 @@ export function createVideoJob(opts) {
   return videoRequest('POST', '/v1/videos', opts);
 }
 
+// POST /v1/videos/quote：免费实时报价（美元），quote_id 10 分钟内有效。请求体字段与 /v1/videos 一致，但 duration 为 "4s" 形式。
+export function quoteVideoJob(opts) {
+  return videoRequest('POST', '/v1/videos/quote', { ...opts, timeoutMs: opts.timeoutMs || 20000 });
+}
+
 export function getVideoJob(id, opts = {}) {
   return videoRequest('GET', `/v1/videos/${encodeURIComponent(id)}`, { ...opts, timeoutMs: opts.timeoutMs || 30000 });
 }

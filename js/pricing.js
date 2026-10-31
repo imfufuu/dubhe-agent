@@ -4,6 +4,10 @@
 // 分层价格在 contextTier 中显式建模；DeepSeek 当前 off-peak 值为预估基准，peak 时段会更高。
 // 独立模块：不修改 config.js / api.js 的既有导出列表，避免 Pages 混版缓存下 ESM link 失败。
 import { getLanguage } from './locale.js';
+import {
+  TEAMOROUTER_GATEWAY_ID, TEAMOROUTER_TEXT_PRICING, TEAMOROUTER_FAST_PRICING,
+  TEAMOROUTER_GPT_IMAGE_PRICING, TEAMOROUTER_GEMINI_IMAGE_PRICING,
+} from './teamorouter-pricing.js';
 import { formatCurrency as formatCcy, formatRate, USD_TO_CNY_RATE } from './currency.js';
 export { formatCcy, formatRate };
 const cnyToUsd = (amountCny) => Number((Number(amountCny) / USD_TO_CNY_RATE).toFixed(9));
@@ -211,8 +215,66 @@ export function normalizeModelKey(modelId) {
   return { base, isFast };
 }
 
-/** 查询模型公开费率估价配置；价格来源由模型目录的来源标签标明。 */
-export function getModelPricing(modelId) {
+export const PRICE_SOURCE_OFFICIAL = 'official';
+export const PRICE_SOURCE_TEAMOROUTER = 'teamorouter';
+
+export function isTeamoRouterGateway(gatewayId) {
+  return String(gatewayId || '') === TEAMOROUTER_GATEWAY_ID;
+}
+
+/**
+ * TeamoRouter 折后价覆盖（来源：实测报告）。返回合并后的价目对象；没有对应条目时返回 null，调用方沿用官方价。
+ * 报告未列缓存写入价的文本模型，缓存写入按普通输入价计；报告未给出上下文分档，不套用官方长上下文加价。
+ */
+function teamorouterOverride(modelId, official) {
+  const { base, isFast } = normalizeModelKey(modelId);
+  if (!base) return null;
+  if (isFast) {
+    const f = TEAMOROUTER_FAST_PRICING[base];
+    if (!f) return null;
+    return {
+      ...(official || {}), id: base, kind: 'chat', input: f.input, output: f.output,
+      cachedInput: undefined, cacheCreation: undefined, cacheCreation1h: undefined,
+      contextTier: null, fastMultiplier: 1, isFast: true, priceSource: PRICE_SOURCE_TEAMOROUTER,
+    };
+  }
+  const tiers = TEAMOROUTER_GPT_IMAGE_PRICING[base];
+  if (tiers) {
+    return { ...(official || {}), id: base, label: base, kind: 'image', mode: 'tier', tiers: { ...tiers }, priceSource: PRICE_SOURCE_TEAMOROUTER };
+  }
+  const gem = TEAMOROUTER_GEMINI_IMAGE_PRICING[base];
+  if (gem) {
+    return {
+      ...(official || {}), id: base, label: official?.label || base, kind: 'image', mode: 'token',
+      input: gem.input, imageInput: gem.input, output: gem.output, priceSource: PRICE_SOURCE_TEAMOROUTER,
+    };
+  }
+  const t = TEAMOROUTER_TEXT_PRICING[base];
+  if (!t) return null;
+  const isVision = official?.kind === 'vision' || base.includes('vision');
+  return {
+    ...(official || {}), id: base, kind: isVision ? 'vision' : 'chat',
+    input: t.input, output: t.output, cachedInput: t.cachedInput,
+    cacheCreation: t.input, cacheCreation1h: t.input,
+    contextTier: null, fastMultiplier: 1, isFast: false,
+    defaultTokensPerImage: official?.defaultTokensPerImage ?? 1500,
+    priceSource: PRICE_SOURCE_TEAMOROUTER,
+  };
+}
+
+/**
+ * 查询模型费率估价配置。gatewayId 为 teamorouter 时优先使用报告折后价，否则（官方网关）使用官方报价。
+ * 价格来源由返回对象的 priceSource 标明。
+ */
+export function getModelPricing(modelId, { gatewayId = '' } = {}) {
+  const official = officialModelPricing(modelId);
+  if (!isTeamoRouterGateway(gatewayId)) return official;
+  const tr = teamorouterOverride(modelId, official);
+  return tr || official;
+}
+
+/** 官方报价表查询（不区分网关） */
+function officialModelPricing(modelId) {
   const { base, isFast } = normalizeModelKey(modelId);
   if (!base) return null;
   if (VISION_MODEL_PRICING[base]) return { ...VISION_MODEL_PRICING[base], kind: 'vision' };
@@ -254,17 +316,19 @@ export function getModelPricing(modelId) {
 
 /** 计算单次对话/推理模型调用的公开费率估算费用（USD） */
 export function estimateChatCost(modelId, usage, opts = {}) {
-  const p = getModelPricing(modelId);
+  const gatewayId = opts.gatewayId || '';
+  const p = getModelPricing(modelId, { gatewayId });
   if (!p || !usage) return null;
   if (p.kind === 'vision') {
     return estimateVisionCost({
       model: modelId,
       inputTokens: Number(usage.input ?? usage.prompt_tokens ?? usage.input_tokens ?? 0),
       outputTokens: Number(usage.output ?? usage.completion_tokens ?? usage.output_tokens ?? 0),
+      gatewayId,
     });
   }
   if (p.kind === 'image') {
-    return estimateImageCost({ model: modelId, usage });
+    return estimateImageCost({ model: modelId, usage, gatewayId });
   }
   const inputTok = Math.max(0, Number(usage.input ?? usage.prompt_tokens ?? usage.input_tokens ?? 0) || 0);
   const outputTok = Math.max(0, Number(usage.output ?? usage.completion_tokens ?? usage.output_tokens ?? 0) || 0);
@@ -338,6 +402,7 @@ export function estimateChatCost(modelId, usage, opts = {}) {
     cacheCreation1hRate,
     fast,
     freeTier: !!p.freeTier,
+    priceSource: p.priceSource || PRICE_SOURCE_OFFICIAL,
     costUsd,
     rateLabel: rateEstimateLabel('chat', inRate, outRate, `${fast ? (getLanguage() === 'en' ? ' (Fast 2×)' : '（Fast 2×）') : ''}${p.freeTier ? (getLanguage() === 'en' ? ' (gateway free tier)' : '（网关免费档）') : ''}${contextTierNote(p)}${cacheStorageNote}`),
   };
@@ -351,11 +416,13 @@ export function estimateVisionCost({
   imageCount = 1,
   textChars = 0,
   inputUnavailable = false,
+  gatewayId = '',
 } = {}) {
   const { base } = normalizeModelKey(model);
   // 识图 / 视频识别模型可在设置里换成 Gemini / Claude：没有专表时用对话价目表（同一模型的多模态输入按文本 token 计）
-  const p = VISION_MODEL_PRICING[base]
+  const officialP = VISION_MODEL_PRICING[base]
     || (MODEL_PRICING[base] ? { ...MODEL_PRICING[base], id: base, label: base, defaultTokensPerImage: 1100 } : VISION_MODEL_PRICING[VISION_MODEL_ID]);
+  const p = (isTeamoRouterGateway(gatewayId) && teamorouterOverride(base, officialP)) || officialP;
   const imgs = Math.max(1, Number(imageCount) || 1);
   const hasExact = (Number(inputTokens) > 0) || (Number(outputTokens) > 0);
   const inTok = hasExact
@@ -377,6 +444,7 @@ export function estimateVisionCost({
     inRate: p.input,
     outRate: p.output,
     costUsd,
+    priceSource: p.priceSource || PRICE_SOURCE_OFFICIAL,
     rateLabel: rateEstimateLabel('vision', p.input, p.output),
   };
 }
@@ -398,9 +466,11 @@ export function estimateImageCost({
   count = 1,
   referenceCount = 0,
   usage = null,
+  gatewayId = '',
 } = {}) {
   const { base } = normalizeModelKey(model);
-  const p = IMAGE_MODEL_PRICING[base] || getModelPricing(base) || IMAGE_MODEL_PRICING['gpt-image-2.5-sunburst'];
+  const officialP = IMAGE_MODEL_PRICING[base] || getModelPricing(base) || IMAGE_MODEL_PRICING['gpt-image-2.5-sunburst'];
+  const p = (isTeamoRouterGateway(gatewayId) && teamorouterOverride(base, officialP)) || officialP;
   const n = Math.max(1, Number(count) || 1);
   const refs = Math.max(0, Number(referenceCount) || 0);
 
@@ -414,6 +484,8 @@ export function estimateImageCost({
     const costUsd = (inTok * p.input + outTok * p.output) / 1e6;
     return {
       kind: 'image',
+    priceSource: p.priceSource || PRICE_SOURCE_OFFICIAL,
+      priceSource: p.priceSource || PRICE_SOURCE_OFFICIAL,
       model: p.id || base,
       label: p.label || base,
       mode: 'token',
@@ -498,8 +570,8 @@ function rateEstimateLabel(kind, input, output, extras = '', language = getLangu
 }
 
 /** 生成用于模型选择器或提示条的简短价格标签 */
-export function priceBadgeFor(modelId, { fastMode = false, language = getLanguage() } = {}) {
-  const p = getModelPricing(modelId);
+export function priceBadgeFor(modelId, { fastMode = false, language = getLanguage(), gatewayId = '' } = {}) {
+  const p = getModelPricing(modelId, { gatewayId });
   if (!p) return '';
   if (p.kind === 'vision') return `${language === 'en' ? 'Vision' : '识图'} ${formatRate(p.input, language)}/${formatRate(p.output, language)} /M`;
   if (p.kind === 'image') {
@@ -519,6 +591,43 @@ export function priceBadgeFor(modelId, { fastMode = false, language = getLanguag
  *   1) summarizeTurnCost(turnMessagesArray, { defaultModel, defaultImageModel, fastMode })
  *   2) summarizeTurnCost({ messages, model, fastMode, toolCosts, jevUsage })
  */
+/** 本轮费用悬浮提示（tok-cost 的 title）：按网关区分口径 */
+export function turnCostTitle(s) {
+  return isTeamoRouterGateway(s.gatewayId)
+    ? 'TeamoRouter 折后价预估（含识图/音视频分析/生图/视频生成/子智能体）'
+    : '按模型官方列表价预估（含识图/音视频分析/生图/视频生成/子智能体）';
+}
+
+/** 本轮费用明细行（消息 meta 悬浮提示用） */
+export function turnCostTipParts(s) {
+  const parts = [`${isTeamoRouterGateway(s.gatewayId) ? 'TeamoRouter 折后' : '官方定价'}预估：${s.formatted}`];
+  if (s.visionUsd > 0) parts.push(`含识图模型：${formatCcy(s.visionUsd)}`);
+  if (s.avUsd > 0) parts.push(`含音视频分析：${formatCcy(s.avUsd)}`);
+  if (s.imageUsd > 0) parts.push(`含生图模型：${formatCcy(s.imageUsd)}`);
+  if (s.videoGenUsd > 0) parts.push(`含视频生成：${formatCcy(s.videoGenUsd)}`);
+  if (s.subagentUsd > 0) parts.push(`含子智能体：${formatCcy(s.subagentUsd)}`);
+  return parts;
+}
+
+/**
+ * 视频生成计费：generate_video 提交前由 POST /v1/videos/quote 取得的美元报价（b.costUsd）。
+ * 报价接口失败时 costUsd 为 null，本行记为未计价（不计入总价，界面注明）。
+ */
+function videoGenCost(b) {
+  const hasQuote = b.costUsd != null && Number.isFinite(Number(b.costUsd));
+  const costUsd = hasQuote ? Number(b.costUsd) : 0;
+  return {
+    kind: 'video_gen',
+    model: b.model || 'video',
+    seconds: Number(b.seconds) || 0,
+    costUsd,
+    estimated: !!b.estimated,
+    unpriced: !hasQuote,
+    priceSource: PRICE_SOURCE_TEAMOROUTER,
+    rateLabel: hasQuote ? (getLanguage() === 'en' ? 'quoted by gateway' : '网关实时报价') : '',
+  };
+}
+
 export function summarizeTurnCost(arg1, opts = {}) {
   const isConfigObj = arg1 && typeof arg1 === 'object' && !Array.isArray(arg1) && !('role' in arg1);
   const list = isConfigObj
@@ -527,6 +636,8 @@ export function summarizeTurnCost(arg1, opts = {}) {
   const defaultModel = (isConfigObj ? arg1.model : opts.defaultModel) || 'claude-sonnet-5';
   const defaultImageModel = (isConfigObj ? arg1.imageModel : opts.defaultImageModel) || 'gpt-image-2.5-sunburst';
   const fastMode = !!(isConfigObj ? arg1.fastMode : opts.fastMode);
+  // 网关：每条 assistant 消息可带 gatewayId（发送时记录），缺省用回合级网关；官方网关为官方报价
+  const turnGatewayId = String((isConfigObj ? arg1.gatewayId : opts.gatewayId) || '');
   const explicitToolCosts = isConfigObj && Array.isArray(arg1.toolCosts) ? arg1.toolCosts : [];
   const explicitJevUsage = isConfigObj ? arg1.jevUsage : opts.jevUsage;
 
@@ -543,9 +654,13 @@ export function summarizeTurnCost(arg1, opts = {}) {
   let jevCostUsd = 0;
   let visionCostUsd = 0;
   let imageCostUsd = 0;
+  let avCostUsd = 0;
+  let videoGenCostUsd = 0;
   const chatModels = new Set();
   const visionItems = [];
   const imageItems = [];
+  const avItems = [];
+  const videoGenItems = [];
   const countedToolCallIds = new Set();
 
   for (const b of explicitToolCosts) {
@@ -559,9 +674,15 @@ export function summarizeTurnCost(arg1, opts = {}) {
         imageCount: b.imageCount || 1,
         textChars: b.textChars || 0,
         inputUnavailable: !!b.inputUnavailable,
+        gatewayId: turnGatewayId,
       });
-      visionCostUsd += vc.costUsd;
-      visionItems.push(vc);
+      if (b.media === 'video' || b.media === 'audio') {
+        avCostUsd += vc.costUsd;
+        avItems.push({ ...vc, media: b.media });
+      } else {
+        visionCostUsd += vc.costUsd;
+        visionItems.push(vc);
+      }
     } else if (b.kind === 'image_gen' || b.kind === 'image') {
       const ic = estimateImageCost({
         model: b.model || defaultImageModel,
@@ -570,9 +691,14 @@ export function summarizeTurnCost(arg1, opts = {}) {
         count: b.count || 1,
         referenceCount: b.referenceCount || 0,
         usage: (b.inputTokens || b.outputTokens) ? { input_tokens: b.inputTokens, output_tokens: b.outputTokens } : null,
+        gatewayId: turnGatewayId,
       });
       imageCostUsd += ic.costUsd;
       imageItems.push(ic);
+    } else if (b.kind === 'video_gen') {
+      const vg = videoGenCost(b);
+      videoGenCostUsd += vg.costUsd;
+      videoGenItems.push(vg);
     }
   }
 
@@ -585,8 +711,9 @@ export function summarizeTurnCost(arg1, opts = {}) {
     if (!m || m.role !== 'assistant') continue;
     const model = m.model || defaultModel;
     if (model === '__system__' || model === 'Moderator') continue;
+    const gw = String(m.gatewayId || turnGatewayId || '');
     if (m.usage && (m.usage.input != null || m.usage.output != null || m.usage.prompt_tokens != null || m.usage.completion_tokens != null)) {
-      const c = estimateChatCost(model, m.usage, { fastMode: !!(m.fastMode ?? fastMode) });
+      const c = estimateChatCost(model, m.usage, { fastMode: !!(m.fastMode ?? fastMode), gatewayId: gw });
       if (c) {
         hasChatUsage = true;
         inputTokens += c.inputTokens;
@@ -601,7 +728,7 @@ export function summarizeTurnCost(arg1, opts = {}) {
       }
     }
     if (m.subagentUsage && (m.subagentUsage.input || m.subagentUsage.output)) {
-      const sc = estimateChatCost(model, m.subagentUsage, { fastMode: !!(m.fastMode ?? fastMode) });
+      const sc = estimateChatCost(model, m.subagentUsage, { fastMode: !!(m.fastMode ?? fastMode), gatewayId: gw });
       if (sc) {
         hasChatUsage = true;
         inputTokens += sc.inputTokens;
@@ -614,7 +741,7 @@ export function summarizeTurnCost(arg1, opts = {}) {
       }
     }
     if (m.jevUsage && m.jevUsage.input) {
-      const jc = estimateChatCost('jev', m.jevUsage);
+      const jc = estimateChatCost('jev', m.jevUsage, { gatewayId: gw });
       if (jc) jevCostUsd += jc.costUsd;
     }
 
@@ -624,7 +751,7 @@ export function summarizeTurnCost(arg1, opts = {}) {
       const tContent = tm ? String(tm.content || '') : '';
       const b = tc.billing || tc.toolCost;
       if (b && b.kind === 'subagent') {
-        const sc = estimateChatCost(b.model || defaultModel, b.usage || {}, { fastMode: !!(b.fastMode ?? m.fastMode ?? fastMode) });
+        const sc = estimateChatCost(b.model || defaultModel, b.usage || {}, { fastMode: !!(b.fastMode ?? m.fastMode ?? fastMode), gatewayId: gw });
         if (sc) {
           hasChatUsage = true;
           inputTokens += sc.inputTokens;
@@ -645,10 +772,23 @@ export function summarizeTurnCost(arg1, opts = {}) {
           outputTokens: b.usage?.output ?? b.output ?? b.outputTokens ?? 0,
           imageCount: b.imageCount || 1,
           textChars: b.textChars || 0,
-        inputUnavailable: !!b.inputUnavailable,
+          inputUnavailable: !!b.inputUnavailable,
+          gatewayId: gw,
         });
-        visionCostUsd += Number(vc.costUsd) || 0;
-        visionItems.push(vc);
+        // 音视频分析（analyze_video / analyze_audio）单独成行，不计入识图
+        if (b.media === 'video' || b.media === 'audio') {
+          avCostUsd += Number(vc.costUsd) || 0;
+          avItems.push({ ...vc, media: b.media });
+        } else {
+          visionCostUsd += Number(vc.costUsd) || 0;
+          visionItems.push(vc);
+        }
+        continue;
+      }
+      if (b && b.kind === 'video_gen') {
+        const vg = videoGenCost(b);
+        videoGenCostUsd += vg.costUsd;
+        videoGenItems.push(vg);
         continue;
       }
       if (b && (b.kind === 'image' || b.kind === 'image_gen')) {
@@ -659,6 +799,7 @@ export function summarizeTurnCost(arg1, opts = {}) {
           count: b.count || 1,
           referenceCount: b.referenceCount || 0,
           usage: (b.inputTokens || b.outputTokens) ? { input_tokens: b.inputTokens, output_tokens: b.outputTokens } : null,
+          gatewayId: gw,
         });
         imageCostUsd += Number(ic.costUsd) || 0;
         imageItems.push(ic);
@@ -667,7 +808,7 @@ export function summarizeTurnCost(arg1, opts = {}) {
       if (tc.name === 'analyze_pdf' && (!tm || /^\[PDF 分析完成\]/.test(tContent))) {
         const shot = Number((/识图 (\d+) 页/.exec(tContent) || [])[1] || 0);
         if (!shot) continue;
-        const vc = estimateVisionCost({ model: VISION_MODEL_ID, imageCount: shot, textChars: tContent.length || 600 });
+        const vc = estimateVisionCost({ model: VISION_MODEL_ID, imageCount: shot, textChars: tContent.length || 600, gatewayId: gw });
         visionCostUsd += vc.costUsd;
         visionItems.push(vc);
         continue;
@@ -675,15 +816,15 @@ export function summarizeTurnCost(arg1, opts = {}) {
       if (tc.name === 'analyze_video' && (!tm || /^\[视频识别完成\]/.test(tContent))) {
         // 没拿到 usage 时按「1 分钟视频 ≈ 4200 tok」保守估一段 1 分钟
         const mFound = /^\[视频识别完成\] 模型 (\S+)/.exec(tContent);
-        const vc = estimateVisionCost({ model: mFound ? mFound[1] : 'gemini-3.8-flash', inputTokens: 4200, outputTokens: Math.max(200, Math.ceil((tContent.length || 600) * 0.85)), imageCount: 1 });
-        visionCostUsd += vc.costUsd;
-        visionItems.push(vc);
+        const vc = estimateVisionCost({ model: mFound ? mFound[1] : 'gemini-3.8-flash', inputTokens: 4200, outputTokens: Math.max(200, Math.ceil((tContent.length || 600) * 0.85)), imageCount: 1, gatewayId: gw });
+        avCostUsd += vc.costUsd;
+        avItems.push({ ...vc, media: 'video' });
         continue;
       }
       if (tc.name === 'analyze_svg' && (!tm || /^\[SVG 识图完成\]/.test(tContent))) {
         if (tm && !/^\[SVG 识图完成\]/.test(tContent)) continue;
         const mFound = /^\[SVG 识图完成\] 模型 (\S+)/.exec(tContent);
-        const vc = estimateVisionCost({ model: mFound ? mFound[1] : VISION_MODEL_ID, imageCount: 1, textChars: tContent.length || 600 });
+        const vc = estimateVisionCost({ model: mFound ? mFound[1] : VISION_MODEL_ID, imageCount: 1, textChars: tContent.length || 600, gatewayId: gw });
         visionCostUsd += vc.costUsd;
         visionItems.push(vc);
         continue;
@@ -696,6 +837,7 @@ export function summarizeTurnCost(arg1, opts = {}) {
           model: mFound ? mFound[1] : VISION_MODEL_ID,
           imageCount: count,
           textChars: tContent.length || 600,
+          gatewayId: gw,
         });
         visionCostUsd += vc.costUsd;
         visionItems.push(vc);
@@ -714,6 +856,7 @@ export function summarizeTurnCost(arg1, opts = {}) {
           count: n,
           referenceCount: refs,
           usage: tokMatch ? { input_tokens: Number(tokMatch[1]), output_tokens: Number(tokMatch[2]) } : null,
+          gatewayId: gw,
         });
         imageCostUsd += ic.costUsd;
         imageItems.push(ic);
@@ -722,23 +865,28 @@ export function summarizeTurnCost(arg1, opts = {}) {
   }
 
   if (explicitJevUsage && explicitJevUsage.input && jevCostUsd === 0) {
-    const jc = estimateChatCost('jev', explicitJevUsage);
+    const jc = estimateChatCost('jev', explicitJevUsage, { gatewayId: turnGatewayId });
     if (jc) jevCostUsd += jc.costUsd;
   }
 
   const incomplete = visionItems.some(v => v.inputUnavailable);
-  const totalCostUsd = chatCostUsd + subagentCostUsd + jevCostUsd + visionCostUsd + imageCostUsd;
-  const hasAny = hasChatUsage || visionItems.length > 0 || imageItems.length > 0 || jevCostUsd > 0;
+  const totalCostUsd = chatCostUsd + subagentCostUsd + jevCostUsd + visionCostUsd + imageCostUsd + avCostUsd + videoGenCostUsd;
+  const hasAny = hasChatUsage || visionItems.length > 0 || imageItems.length > 0 || avItems.length > 0 || videoGenItems.length > 0 || jevCostUsd > 0;
   if (!hasAny && !isConfigObj) return null;
 
+  const trTurn = isTeamoRouterGateway(turnGatewayId);
   const extraTags = [];
   if (visionItems.length) extraTags.push(`识图 ${formatCcy(visionCostUsd)}`);
+  if (avItems.length) extraTags.push(`音视频分析 ${formatCcy(avCostUsd)}`);
   if (imageItems.length) extraTags.push(`生图 ${formatCcy(imageCostUsd)}`);
+  if (videoGenItems.length) extraTags.push(`视频生成 ${formatCcy(videoGenCostUsd)}`);
   const badgeText = extraTags.length
     ? `≈ ${formatCcy(totalCostUsd)}（${extraTags.join(' + ')}）`
     : `≈ ${formatCcy(totalCostUsd)}`;
 
-  const tooltipLines = [`本轮官方预估总价：${formatCcy(totalCostUsd)}`];
+  const tooltipLines = [trTurn
+    ? `本轮 TeamoRouter 折后预估总价：${formatCcy(totalCostUsd)}`
+    : `本轮官方预估总价：${formatCcy(totalCostUsd)}`];
   if (incomplete) tooltipLines.push('音频输入用量未完整回传，以上费用不完整；以网关账单为准。');
   if (hasChatUsage) {
     const mName = [...chatModels].join(', ') || defaultModel;
@@ -750,10 +898,20 @@ export function summarizeTurnCost(arg1, opts = {}) {
     const vModels = [...new Set(visionItems.map((x) => x.model || VISION_MODEL_ID))].join(' / ');
     tooltipLines.push(`· 识图/视频/音频模型（${vModels}）：${formatCcy(visionCostUsd)}（共 ${imgs} 项 · ${visionItems[0].rateLabel || rateEstimateLabel('vision', 0.44, 1.32)}）`);
   }
+  if (avItems.length) {
+    const avModels = [...new Set(avItems.map((x) => x.model || VISION_MODEL_ID))].join(' / ');
+    tooltipLines.push(`· 音视频分析模型（${avModels}）：${formatCcy(avCostUsd)}（共 ${avItems.length} 项 · ${avItems[0].rateLabel || ''}）`);
+  }
   if (imageItems.length) {
     const imgs = imageItems.reduce((s, x) => s + (Number(x.count) || 1), 0);
     const imgModel = imageItems[0].model || defaultImageModel;
     tooltipLines.push(`· 生图模型（${imgModel}）：${formatCcy(imageCostUsd)}（共 ${imgs} 张 · ${imageItems[0].rateLabel || ''}）`);
+  }
+  if (videoGenItems.length) {
+    const vModels = [...new Set(videoGenItems.map((x) => x.model))].join(' / ');
+    const anyEstimated = videoGenItems.some((x) => x.estimated);
+    const anyUnpriced = videoGenItems.some((x) => x.unpriced);
+    tooltipLines.push(`· 视频生成模型（${vModels}）：${formatCcy(videoGenCostUsd)}（共 ${videoGenItems.length} 条 · ${trTurn ? 'POST /v1/videos/quote 实时报价' : '官方报价'}${anyEstimated ? ' · 预估' : ''}${anyUnpriced ? ' · 部分未取得报价' : ''}）`);
   }
 
   return {
@@ -772,13 +930,20 @@ export function summarizeTurnCost(arg1, opts = {}) {
     jevUsd: jevCostUsd,
     visionCostUsd,
     visionUsd: visionCostUsd,
+    avCostUsd,
+    avUsd: avCostUsd,
     imageCostUsd,
     imageUsd: imageCostUsd,
+    videoGenCostUsd,
+    videoGenUsd: videoGenCostUsd,
+    gatewayId: turnGatewayId,
     totalCostUsd,
     totalUsd: totalCostUsd,
     incomplete,
     formatted: incomplete ? '用量不完整' : formatCcy(totalCostUsd),
     visionCount: visionItems.length,
+    avCount: avItems.length,
+    videoGenCount: videoGenItems.length,
     imageCount: imageItems.length,
     badgeText,
     tooltip: tooltipLines.join('\n'),

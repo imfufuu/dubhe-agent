@@ -133,7 +133,7 @@ test('generate_video 端到端（桩网关）：提交 → 轮询 → 下载 →
     const out = await executeTool('generate_video',
       { prompt: '海边日落', seconds: 4, resolution: '480p', aspect_ratio: '16:9', input_image: 'uploads/ref.png' },
       { fs, apiKey: 'sk-teamo-test', videoGenModel: 'seedance-2-0-mini-text-to-video-basic', onUi: (p) => updates.push(p) });
-    const post = calls.find((c) => c.method === 'POST');
+    const post = calls.find((c) => c.method === 'POST' && c.u.endsWith('/v1/videos'));
     assert.ok(post, '应发出创建请求');
     assert.equal(post.body.model, 'seedance-2-0-mini-image-to-video-basic', '参考图 → 图生变体');
     assert.equal(post.body.seconds, '4');
@@ -143,6 +143,10 @@ test('generate_video 端到端（桩网关）：提交 → 轮询 → 下载 →
     assert.match(out, /^\[视频已生成\] outputs\/video-001\.mp4/);
     assert.match(fs.read('outputs/video-001.mp4'), /^data:video\/mp4;base64,/);
     assert.ok(updates.some((p) => p.status === 'ok' && p.video && p.video.path === 'outputs/video-001.mp4'));
+    // 提交前先实时报价（POST /v1/videos/quote，duration 为 "4s"）；报价 404 时不阻断生成，计费行标记未计价
+    const quoteCall = calls.find((c) => c.u.endsWith('/v1/videos/quote'));
+    assert.ok(quoteCall && quoteCall.method === 'POST' && quoteCall.body.duration === '4s', '提交前应报价');
+    assert.ok(updates.some((p) => p.billing && p.billing.kind === 'video_gen' && p.billing.costUsd === null), '报价失败时计费行记为未计价');
   } finally {
     globalThis.fetch = realFetch;
   }

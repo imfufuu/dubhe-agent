@@ -9248,7 +9248,7 @@ test('analyze_video 工具：定义 / 契约 / 并行与访问表 / 执行路径
   assert.match(tools, /const VIDEO_EXT_RE = \/\\\.\(mp4\|webm\|mov\|m4v\)\$\/i;/);
   assert.match(tools, /const VIDEO_MAX_BYTES = 16 \* 1024 \* 1024;/);
   assert.match(tools, /\[视频识别完成\] 模型 \$\{videoModel\} · 文件 \$\{path\} · 全文 \$\{text\.length\} 字已写入 \$\{outPath\}/);
-  assert.match(tools, /kind: 'vision',\s*model: videoModel,/, '计费事件带真实模型');
+  assert.match(tools, /kind: 'vision',\s*media: 'video',\s*model: videoModel,/, '计费事件带真实模型与音视频分类');
   // analyze_image / analyze_pdf use the selected gateway's vision model (TeamoRouter honors ctx.visionModel).
   assert.match(tools, /const visionModel = visionModelForContext\(ctx\);/);
   assert.match(tools, /defaultVisionModelForGateway\(gatewayId\)/);

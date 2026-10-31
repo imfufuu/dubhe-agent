@@ -200,4 +200,6 @@ registerLanguagePack('ko', {
   "决策层": "결정 계층",
   "决策模型（Jev）": "결정 모델 (Jev)",
   "路由与内容审核共用 · 仅 TeamoRouter · 按 systemone 计费": "턴 라우팅과 콘텐츠 검수에 공통 사용 · TeamoRouter 전용 · /v1/systemone 기준 과금",
+  "音视频分析": "오디오·영상 분석",
+  "视频生成": "영상 생성",
 });

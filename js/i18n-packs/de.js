@@ -200,4 +200,6 @@ registerLanguagePack('de', {
   "决策层": "Entscheidungsebene",
   "决策模型（Jev）": "Entscheidungsmodell (Jev)",
   "路由与内容审核共用 · 仅 TeamoRouter · 按 systemone 计费": "Für Routing und Moderation genutzt · nur TeamoRouter · abgerechnet über /v1/systemone",
+  "音视频分析": "Audio-/Videoanalyse",
+  "视频生成": "Videoerzeugung",
 });
