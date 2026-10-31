@@ -49,6 +49,7 @@ import { buildEditPreview, editFoldLabel, pathsOfEdits, PREVIEW_REFRESH_MS, find
 import { historyWindowStart, previousHistoryWindowStart, HISTORY_WINDOW_MAX_MESSAGES, HISTORY_WINDOW_MAX_CHARS } from './history.js?v=2026.10.25.1';
 import { installLightbox } from './ui-lightbox.js?v=2026.10.25.1';
 import { installFilesPanel } from './ui-files-panel.js?v=2026.10.25.1';
+import { sessionsEmptyState } from './sess-empty-art.js?v=2026.10.25.1';
 import { createMessageScrollManager } from './ui-message-scroll.js?v=2026.10.25.1';
 import { installAttachments } from './ui-attachments.js?v=2026.10.25.1';
 import { installCapabilityPanel } from './ui-capability.js?v=2026.10.25.1';
@@ -712,7 +713,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     const box = $('#session-list'); box.innerHTML = '';
     const list = store.listableSessions ? store.listableSessions() : store.sortedSessions();
     if (!list.length) {
-      box.appendChild(el('div', 'sess-empty-hint', '还没有会话记录'));
+      box.appendChild(sessionsEmptyState());
       return;
     }
     let lastSpan = '';
@@ -2551,7 +2552,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
           }
         }
       }
-      // 点服务商芯片 → 弹出路由详情（任务类型 / 难度 / 服务商 / 具体模型），复用 token 弹层的壳
+      // 点服务商芯片 → 弹出路由详情（服务商 / 具体模型；任务类型与难度属系统内部信息，不在对话区展示），复用 token 弹层的壳
       const headMsg = (wrap && wrap._msg) || (() => { const mid = wrap && wrap.dataset && wrap.dataset.id; return store.state.messages.find((mm) => mm.id === mid) || null; })();
       const realModel = (headMsg && headMsg.model) || (ri && ri.chosenModel) || '';
       showRouterPop(routerChip, ri, realModel);

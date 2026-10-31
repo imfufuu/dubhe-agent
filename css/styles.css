@@ -446,7 +446,9 @@ html { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
   padding: 7px 4px 2px; font-size: var(--ui-fs-10_5px, 10.5px); line-height: 1.2;
   color: var(--fg-3); font-weight: 700; letter-spacing: .06em;
 }
-.sess-empty-hint { font-size: var(--ui-fs-11_5px, 11.5px); color: var(--fg-3); line-height: 1.7; padding: 6px 8px; border: 1px dashed var(--line); border-radius: 9px; }
+.sess-empty.files-empty { padding: 18px 8px 22px; }
+.sess-empty .files-empty-art { width: 116px; margin-bottom: 8px; }
+.sess-empty .files-empty-text { font-size: var(--ui-fs-11_5px, 11.5px); max-width: 180px; }
 
 .mini-btn {
   min-height: 24px; line-height: 1.35;

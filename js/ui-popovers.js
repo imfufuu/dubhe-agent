@@ -82,8 +82,6 @@ export function installPopovers({ store }) {
     if (head) head.textContent = '智能路由';
     const provider = (ri && ri.chosenProvider) || providerOf(realModel) || '—';
     const rows = [
-      ['任务类型', ri ? ri.categoryLabel : '—'],
-      ['难度', ri ? ri.difficultyLabel : '—'],
       ['服务商', provider],
     ];
     let html = rows.map(([k, v]) => `<div class="tok-row"><span>${esc(k)}</span><span>${esc(v)}</span></div>`).join('');

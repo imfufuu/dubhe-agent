@@ -6643,10 +6643,10 @@ test('2026.9.30.6 八项体验与渲染升级（空状态隐藏最新输出、re
   assert.match(docsHtml, /\.doc-tabs \{ position: sticky/, '标签条应吸顶');
   assert.match(docsHtml, /<a class="nav-link nav-home" href="\.\/index\.html\?view=nav">首页<\/a>/);
   assert.match(docsHtml, /<button id="theme-toggle" class="nav-link" type="button">外观<\/button>\s*<a class="cta" href="\.\/app\.html">打开对话<\/a>/);
-  assert.equal((docsHtml.match(/class="nav-link doc-tab"/g) || []).length, 5, '五个分区标签（更新日志 / 用户协议 / 使用规范 / 服务条款 / 隐私政策）');
+  assert.equal((docsHtml.match(/class="nav-link doc-tab"/g) || []).length, 6, '六个分区标签（更新日志 / 用户协议 / 使用规范 / 服务条款 / 隐私政策 / 价目表）');
   assert.match(docsHtml, /<a class="nav-link doc-tab" href="#usage" data-page="usage">/, '使用规范为独立分区标签');
   assert.match(docsHtml, /<section class="page" id="page-usage">/, '使用规范是独立页面，不与用户协议混排');
-  assert.match(docsHtml, /var PAGES = \['changelog', 'agreement', 'usage', 'terms', 'privacy'\];/, 'hash 路由包含使用规范分区');
+  assert.match(docsHtml, /var PAGES = \['changelog', 'agreement', 'usage', 'terms', 'privacy', 'pricing'\];/, 'hash 路由包含使用规范与价目表分区');
   assert.doesNotMatch(homeJs, /function openGate\(\)|openGate\(\);/, '废除门页后，品牌图标不得再进入空门页');
   assert.match(homeJs, /openSite\(true\);\s*pinTop\(\);/, '品牌图标保持导航可见并回到顶部');
   assert.match(homeJs, /finishOpen\(true\)/, '默认和 ?view=nav 均直达导航');
