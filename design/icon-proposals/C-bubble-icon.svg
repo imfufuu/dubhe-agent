@@ -1,7 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Dubhe Agent 方案 C：星光对话">
-  <rect width="64" height="64" rx="14" fill="#ffffff"/>
-  <path d="M12 16 Q12 12 16 12 L48 12 Q52 12 52 16 L52 40 Q52 44 48 44 L30 44 L20 52 L21 44 L16 44 Q12 44 12 40 Z" fill="#0b0b0c"/>
-  <circle cx="22" cy="28" r="3.6" fill="#ffffff"/>
-  <circle cx="32" cy="28" r="3.6" fill="#ffffff"/>
-  <circle cx="42" cy="28" r="3.6" fill="#f5b83d"/>
-</svg>
