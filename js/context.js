@@ -89,19 +89,24 @@ const mapBefore = (msgs, at, fn) => msgs.map((m, i) => (i < at ? fn(m) : m));
 
 // 硬保证：单条巨型消息没有轮次边界可切时，二分收缩它本身，直到估算落入预算。
 // 保证 compactMessages 的返回值在任何输入下都不超过预算（上游不再被动 400）。
+// 早期工具结果在超预算时的保底长度：保留前后关键信息，而不是整段清空（之前会把最后一条工具结果截成空串）
+const FIT_TOOL_FLOOR = 2000;
 function fitBudget(msgs, budget) {
   if (!msgs.length || estimateTokens(msgs) <= budget) return msgs;
   const last = msgs.length - 1;
   const target = msgs[last];
-  const shrink = (cap) => msgs.map((m, i) => {
+  // 第一步：先把较早的工具结果压到保底长度（当前回合的多次工具输出都要保留一部分，而不是只剩最后一条）
+  const base = msgs.map((m, i) => (i < last && m.role === 'tool' ? truncTool(FIT_TOOL_FLOOR, { force: true })(m) : m));
+  const shrink = (cap) => base.map((m, i) => {
     if (i !== last) return m;
     if (m.role === 'tool') return truncTool(cap, { force: true })(m);
     return truncBody(cap)(m);
   });
   let lo = 0;
   let hi = String(target.role === 'tool' ? target.content : target.text || '').length;
+  // 第二步：仍超预算时，最后一条的保底为 FIT_TOOL_FLOOR 字符（尽力而为，不再整段清空）
   let best = shrink(0);
-  if (estimateTokens(best) > budget) return best; // 其余消息本身就超预算，已尽力
+  if (estimateTokens(best) > budget) return shrink(Math.min(hi, FIT_TOOL_FLOOR));
   while (hi - lo > 256) {
     const mid = Math.floor((lo + hi) / 2);
     if (estimateTokens(shrink(mid)) <= budget) lo = mid; else hi = mid;
@@ -143,7 +148,8 @@ export function compactMessages(msgs, budget, opts) {
   }
 
   // ④ 整轮丢弃：在 user 消息边界切分，绝不产生孤儿 tool 消息
-  let out = src.map(truncTool(200));
+  // 只压缩历史轮次：当前回合的工具结果保持完整（此前这里会把本轮所有工具输出截到 200 字符）
+  let out = mapBefore(src, at, truncTool(200));
   let droppedCount = 0;
   const droppedUsers = [];
   while (estimateTokens(out) > budget) {

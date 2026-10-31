@@ -213,6 +213,33 @@ export function websiteDependencies(files, entries) {
 // ── 临时沙箱（ephemeral overlay）：任务期间 Agent 写的文件先落在临时层。
 //    默认回合结束后全部保留；只有用户在设置中显式开启自动清理，才会删除未被最终回答引用的产物。
 //    internal/ 与 uploads/ 始终保留；用户通过文件工具主动删除的既有文件照常删除。
+// 生成产物（outputs/<名称>-NNN.ext）提交时若与真实工作区已有同名文件内容不同，分配下一个空闲编号，绝不静默覆盖。
+function uniqueCommitPath(baseFS, path) {
+  const m = /^(outputs\/[^/]+?)-(\d+)\.([^./]+)$/.exec(path);
+  let stem, ext, n;
+  if (m) { stem = m[1]; n = Number(m[2]); ext = m[3]; }
+  else {
+    const dot = path.lastIndexOf('.');
+    if (!path.startsWith('outputs/') || dot <= path.lastIndexOf('/')) return path;
+    stem = path.slice(0, dot); ext = path.slice(dot + 1); n = 1;
+  }
+  let candidate = path;
+  for (let i = 0; i < 999 && baseFS.has(candidate); i++) {
+    n += 1;
+    candidate = m ? `${stem}-${String(n).padStart(3, '0')}.${ext}` : `${stem}-${n}.${ext}`;
+  }
+  return candidate;
+}
+
+// 目标已存在且内容不同：生成产物改用空闲编号；普通文件（用户主动覆盖）保持原路径
+function safeCommitTarget(baseFS, p, content) {
+  if (!baseFS.has(p)) return p;
+  let existing = null;
+  try { existing = baseFS.read(p); } catch { existing = null; }
+  if (existing === content) return p;
+  return uniqueCommitPath(baseFS, p);
+}
+
 export function createTempFS(baseFS, { cleanupUnreferencedFiles = false } = {}) {
   const ephemeral = {}; // 本轮临时写的文件
   const projectGroups = new Map();
@@ -334,7 +361,10 @@ export function createTempFS(baseFS, { cleanupUnreferencedFiles = false } = {}) 
       for (const [p, c] of Object.entries(ephemeral)) {
         // 白名单前缀（internal/ · uploads/）始终保留；用户未开启自动清理时所有文件都提交。
         if (!this.cleanupUnreferencedFiles || isAlwaysPersistedPath(p) || looksReferenced(p) || dependencies.has(p)) {
-          try { baseFS.write(p, c); committed.push(p); } catch { /* noop */ }
+          try {
+            const target = safeCommitTarget(baseFS, p, c);
+            baseFS.write(target, c); committed.push(target);
+          } catch { /* noop */ }
         } else {
           discarded.push(p);
         }
@@ -350,7 +380,7 @@ export function createTempFS(baseFS, { cleanupUnreferencedFiles = false } = {}) 
       const discarded = [];
       for (const [p, c] of Object.entries(ephemeral)) {
         if (!this.cleanupUnreferencedFiles || isAlwaysPersistedPath(p)) {
-          try { baseFS.write(p, c); committed.push(p); continue; } catch { /* 写不进去就按丢弃记 */ }
+          try { const target = safeCommitTarget(baseFS, p, c); baseFS.write(target, c); committed.push(target); continue; } catch { /* 写不进去就按丢弃记 */ }
         }
         discarded.push(p);
       }

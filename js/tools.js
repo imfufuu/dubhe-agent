@@ -186,6 +186,8 @@ export const TOOL_DEFS = [
         seconds: { type: 'integer', minimum: 4, maximum: 30, description: '时长（秒）。各模型范围不同：Seedance 2.5 为 4–30，其余多为 4–15；默认 5' },
         resolution: { type: 'string', enum: ['480p', '720p', '768p', '1080p', '2k', '4k'], description: '分辨率；须为当前模型支持的档位（如 Seedance 2.0 Fast 只支持 480p/720p）' },
         aspect_ratio: { type: 'string', enum: VIDEO_GEN_ASPECT_RATIOS, description: '画面比例，默认 16:9' },
+        end_image: { type: 'string', description: '可选：尾帧图片路径（沙箱内，如 uploads/end.png）。需同时给 input_image 作首帧；仅支持首尾帧的模型可用，否则网关会拒绝' },
+        audio: { type: 'boolean', description: '可选：是否生成音轨。用户要求无声时必须传 false（部分模型默认带环境音）；不传则用模型默认值。仅支持音频的模型生效' },
       },
       required: ['prompt'],
     },
@@ -1385,6 +1387,23 @@ async function executeToolBody(outerName, outerArgs, ctx) {
           }
           imageDataUrl = content;
         }
+        let endImageUrl = '';
+        const endPath = args.end_image ? normalizeFsPath(String(args.end_image)) : '';
+        if (endPath) {
+          if (!imageDataUrl) {
+            const message = '尾帧需要同时提供首帧图（input_image）';
+            emit({ status: 'error', error: { message } });
+            return `视频调用在发起前失败：${message}`;
+          }
+          let content = '';
+          try { content = String(fs.read(endPath) || ''); } catch { content = ''; }
+          if (!/^data:image\//i.test(content)) {
+            const message = `沙箱中找不到尾帧图（需为图片）：${endPath}`;
+            emit({ status: 'error', error: { message } });
+            return `视频调用在发起前失败：${message}`;
+          }
+          endImageUrl = content;
+        }
         const plan = planVideoRequest({
           model: resolveVideoGenModel(ctx.videoGenModel), mode: args.mode,
           prompt, seconds: args.seconds, resolution: args.resolution, aspectRatio: args.aspect_ratio,
@@ -1400,7 +1419,7 @@ async function executeToolBody(outerName, outerArgs, ctx) {
         emit({ status: 'running', note: `提交视频任务（${plan.model} · ${plan.size} · ${plan.seconds}s）…` });
         let job;
         try {
-          job = await createVideoJob({ ...common, body: buildVideoBody(plan, prompt, imageDataUrl), idempotencyKey, timeoutMs: 60000 });
+          job = await createVideoJob({ ...common, body: buildVideoBody(plan, prompt, imageDataUrl, { endImageUrl, audio: typeof args.audio === 'boolean' ? args.audio : undefined }), idempotencyKey, timeoutMs: 60000 });
         } catch (err) {
           const message = `视频任务创建失败：${err.message || err}`;
           emit({ status: 'error', error: { message } });
