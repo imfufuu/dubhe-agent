@@ -1,16 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Dubhe">
-  <defs>
-    <linearGradient id="star" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#4a4a52"/>
-      <stop offset="0.45" stop-color="#1a1a1f"/>
-      <stop offset="1" stop-color="#050506"/>
-    </linearGradient>
-    <radialGradient id="dot" cx="0.35" cy="0.3" r="0.8">
-      <stop offset="0" stop-color="#FFE0A0"/>
-      <stop offset="0.55" stop-color="#F0A93E"/>
-      <stop offset="1" stop-color="#C97A12"/>
-    </radialGradient>
-  </defs>
-  <path d="M32 2 Q37 27 62 32 Q37 37 32 62 Q27 37 2 32 Q27 27 32 2 Z" fill="url(#star)"/>
-  <circle cx="53" cy="11" r="6" fill="url(#dot)"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Dubhe"><defs><linearGradient id="star" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3C3C47"/><stop offset="0.5" stop-color="#15151B"/><stop offset="1" stop-color="#000000"/></linearGradient><linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0.55"/><stop offset="0.45" stop-color="#FFFFFF" stop-opacity="0"/></linearGradient><radialGradient id="dot" cx="0.35" cy="0.3" r="0.8"><stop offset="0" stop-color="#FFE7B0"/><stop offset="0.55" stop-color="#F5A83A"/><stop offset="1" stop-color="#C77512"/></radialGradient></defs><path d="M32 2 Q37 27 62 32 Q37 37 32 62 Q27 37 2 32 Q27 27 32 2 Z" fill="url(#star)"/><path d="M32 2 Q37 27 62 32 Q37 37 32 62 Q27 37 2 32 Q27 27 32 2 Z" fill="url(#sheen)"/><circle cx="53" cy="11" r="6" fill="url(#dot)"/></svg>
