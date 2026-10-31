@@ -2900,7 +2900,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       const userAt = store.state.messages.findLastIndex((m) => m.role === 'user');
       const current = store.state.messages.slice(userAt + 1);
       const pending = unansweredUserTurn(store.state.messages); // 无答复即停止：消息回填输入框并撤下本轮（可撤销）
-      if (pending) { store.rollbackBeforeMessage(pending.id); if (pending.text && !composer.value.trim()) { composer.value = pending.text; autoGrow(); composer.focus(); } return refreshActionVisibility(); }
+      if (pending) { store.rollbackBeforeMessage(pending.id); rebuildMessages(); renderSessions(); updateStats(); if (pending.text && !composer.value.trim()) { composer.value = pending.text; autoGrow(); composer.focus(); } return refreshActionVisibility(); }
       const last = current.slice().reverse().find((m) => m.role === 'assistant' && (m.cancelled || !m.done));
       if (last) {
         const wrap = msgNodes.get(last.id);
