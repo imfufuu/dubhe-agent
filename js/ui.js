@@ -4,7 +4,7 @@ import { installCaretEffect } from './ui-caret.js';
 import { publicPlanHtml } from './ui-publicplan.js';
 import { installChoiceHandler } from './ui-choices.js?v=2026.10.25.1';
 import { installSharing } from './ui-share.js?v=2026.10.25.1';
-import { text as localeText, getLanguage, onLanguageChange } from './locale.js';
+import { uiText as localeText, getLanguage, onLanguageChange } from './locale.js';
 import { formatDate, formatDateTime, formatNumber, formatTime, pluralize, t } from './i18n.js?v=2026.10.25.1';
 import { installFeedback } from './ui-feedback.js';
 import { installSpeechInput } from './ui-speech.js';

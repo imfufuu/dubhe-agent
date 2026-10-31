@@ -1,4 +1,4 @@
-import { text as localizedText } from './locale.js';
+import { uiText as localizedText } from './locale.js';
 // ─── 工具详情窗口：按实际输出显示 COMMAND / STDOUT / STDERR ───────────────────
 // 有 stdout 才显示 STDOUT；有错误才显示 STDERR；无输出且无错误时在 COMMAND 下提示 No output。
 // 每个窗口右上角各一枚复制按钮，复制本窗口原文。

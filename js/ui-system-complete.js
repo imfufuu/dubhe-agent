@@ -2,7 +2,7 @@
 // 输入以 / 开头且处于 /system 通道时，在输入框上方显示候选（随输入实时过滤）。
 // 键位：↑/↓ 选择 · Tab 补全 · Enter 在「输入未完成」时补全、完成后发送 · Esc 关闭 · 鼠标点击补全。
 import { getSystemCommandSuggestions, isSameCommandText } from './system-command-complete.js';
-import { text as localeText } from './locale.js';
+import { uiText as localeText } from './locale.js';
 
 const MAX_ITEMS = 12;
 

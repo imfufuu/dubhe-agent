@@ -1,4 +1,4 @@
-import { text, onLanguageChange } from './locale.js';
+import { uiText as text, onLanguageChange } from './locale.js';
 export const MODERATION_ACK_VERSION = 'moderation-risk-v1';
 export function effectiveModeration(settings) { return settings?.contentModeration !== false || settings?.moderationRiskAccepted !== MODERATION_ACK_VERSION; }
 // 本地审核关闭时，「灰区图片远程复核」是审核自身的下游设置——此时它已无意义，直接隐藏而不是留一个

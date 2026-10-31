@@ -8,7 +8,7 @@ import { formatObservabilityReport, formatNexusAcceptanceReport } from './nexus.
 import { fmtSpan } from './ui-markdown.js?v=2026.10.25.1';
 import { modelDisplayName } from './smartrouter.js?v=2026.10.25.1';
 import { isAdminAlias } from './adminkey.js';
-import { text as localeText } from './locale.js';
+import { uiText as localeText } from './locale.js';
 
 export function installSystemCommands({ store, agent, toast, inSystem, isSystemIsolated, chatModels, selectModel, applyTheme, rebuildMessages, renderSessions, renderFiles, updateStats, scrollToBottom }) {
   // ── /system 隐藏通道：命令识别器（本地执行，不走网关）──

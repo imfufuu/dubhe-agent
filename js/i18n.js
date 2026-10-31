@@ -4,6 +4,13 @@ import { getLanguage, getIntlLocale, normalizeLanguage } from './locale.js';
 // 语言包：登记接口见 i18n-packs/registry.js（import 路径不带查询串，保证 registry 只有一份实例）
 import { languagePackEntry } from './i18n-packs/registry.js';
 import './i18n-packs/en.js';
+import './i18n-packs/ja.js';
+import './i18n-packs/es.js';
+import './i18n-packs/fr.js';
+import './i18n-packs/de.js';
+import './i18n-packs/ko.js';
+import './i18n-packs/ru.js';
+import './i18n-packs/ar.js';
 
 // Missing translations fall back in this order: selected language → English → original Chinese source.
 export const UI_TRANSLATION_FALLBACK = Object.freeze(['requested-language', 'English', 'original-source']);

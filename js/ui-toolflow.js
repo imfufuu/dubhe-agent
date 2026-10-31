@@ -1,7 +1,7 @@
 // Stable DOM fragments in persisted SSE order plus lightweight UI lifecycle helpers.
 import { displayParts, toolFamily, adjacentToolMessages } from './toolflow.js?v=2026.10.25.1';
 import { checklistComplete } from './checklist.js';
-import { text as localeText } from './locale.js';
+import { uiText as localeText } from './locale.js';
 export function syncToolMenuCursor(chips, live) {
   if (!chips) return null;
   let cursor = chips.querySelector(':scope > .tool-menu-cursor');

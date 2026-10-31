@@ -1,5 +1,5 @@
 // 英文语言包（界面文案）。由 scripts/i18n-audit.mjs 列出漏翻项后逐条登记。
-// 键为中文源文本（与源码/DOM 逐字一致），值为英文译文。ja/ko 等其它语言暂回落到英文。
+// 键为中文源文本（与源码/DOM 逐字一致），值为英文译文。其它语言包与本文件键一一对应。
 import { registerLanguagePack } from './registry.js';
 
 registerLanguagePack('en', {
