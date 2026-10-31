@@ -21,3 +21,13 @@ export function restorableComposerText(currentValue, draft) {
   if (!draft || String(currentValue || '').trim()) return null;
   return draft;
 }
+
+// 最后一条用户消息之后若没有任何助手答复（无正文、无思考、无工具调用），返回该用户消息（id/text）；否则 null。
+export function unansweredUserTurn(messages) {
+  const list = Array.isArray(messages) ? messages : [];
+  const at = list.findLastIndex((m) => m && m.role === 'user');
+  if (at < 0) return null;
+  const replied = list.slice(at + 1).some((m) => m && m.role === 'assistant'
+    && (String(m.text || '').trim() || String(m.reasoning || '').trim() || (m.toolCalls && m.toolCalls.length)));
+  return replied || typeof list[at].id === 'undefined' ? null : { id: list[at].id, text: String(list[at].text || '') };
+}

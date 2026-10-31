@@ -28,7 +28,7 @@ import { isOfflineModelId, OFFLINE_MODEL_DISPLAY_NAME } from './offline-model-co
 import { gatewayBase, gatewayChosenBy, setGatewayBase, otherGatewayBase } from './endpoint.js';
 import { estimateTokens } from './context.js';
 import { providerIcon, APP_LOGO, ICON, LOCAL_PROVIDER_ICON_SVG } from './icons.js';
-import { reasoningMarkdownSource, localModelLabel, keyDraftFrom, restorableComposerText } from './ui-draft.js';
+import { reasoningMarkdownSource, localModelLabel, keyDraftFrom, restorableComposerText, unansweredUserTurn } from './ui-draft.js';
 import { readThemePreference, writeThemePreference, THEME_STORAGE_KEY } from './theme.js';
 import { autoTitle } from './titler.js';
 import { pickSuggestionCards } from './suggestions.js';
@@ -2893,15 +2893,15 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       schedulePaint(owner);
     },
     // 用户点了「停止」：Agent 已把那条消息标成 cancelled+done，但视图不会自己重画 ——
-    // 停止前若首字还没到，屏上会一直留着「正在连接 xxx，等待首个响应…」和转圈。
-    // 这里显式重绘这一条（并收起未完成的工具芯片），保证停下就是停下。
+    // 停止前若首字还没到，屏上会一直留着「正在连接」和转圈；这里显式重绘这一条（并收起未完成的工具芯片）。
     onCancelled() {
       pendingPaints.clear(); toolPresentation.freeze(); presentationStopped = true;
       for (const node of $$('.edited-files', msgList)) if (node._previewTimer != null) { clearTimeout(node._previewTimer); node._previewTimer = null; }
       const userAt = store.state.messages.findLastIndex((m) => m.role === 'user');
       const current = store.state.messages.slice(userAt + 1);
-      const last = current.slice().reverse().find((m) => m.role === 'assistant' && m.cancelled)
-        || current.slice().reverse().find((m) => m.role === 'assistant' && !m.done);
+      const pending = unansweredUserTurn(store.state.messages); // 无答复即停止：消息回填输入框并撤下本轮（可撤销）
+      if (pending) { store.rollbackBeforeMessage(pending.id); if (pending.text && !composer.value.trim()) { composer.value = pending.text; autoGrow(); composer.focus(); } return refreshActionVisibility(); }
+      const last = current.slice().reverse().find((m) => m.role === 'assistant' && (m.cancelled || !m.done));
       if (last) {
         const wrap = msgNodes.get(last.id);
         if (wrap) paintAssistant(wrap, last);

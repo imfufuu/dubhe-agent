@@ -222,6 +222,30 @@ test('local inference passes the OPFS Blob array to Wllama 3.8.1 and never fetch
   } finally { globalThis.fetch = originalFetch; }
 });
 
+test('残留 proxy（上次加载失败）不得导致 “Module is already initialized”：加载前先 exit，失败后也释放', async () => {
+  const { streamOfflineModel } = await import('../js/offline-model.js');
+  let proxy = { stale: true };
+  let exits = 0;
+  let loadAttempts = 0;
+  const engine = {
+    isModelLoaded() { return !!proxy && false; },
+    get proxy() { return proxy; },
+    async loadModel() {
+      loadAttempts++;
+      if (proxy) throw new Error('Module is already initialized');
+      proxy = { fresh: true };
+      throw new Error('boom');
+    },
+    async exit() { exits++; proxy = null; },
+    async createChatCompletion() { return (async function* () { yield { choices: [{ delta: { content: 'ok' } }] }; })(); },
+  };
+  const modelFileProvider = async () => ({ file: new Blob(['x']), metadata: { fileName: 'residual.gguf' } });
+  await assert.rejects(streamOfflineModel({ messages: [] }, { engineProvider: async () => engine, modelFileProvider }), /boom/);
+  assert.equal(exits, 2, '加载前清掉残留 proxy，失败后再次释放');
+  assert.equal(proxy, null);
+  assert.equal(loadAttempts, 1);
+});
+
 test('local inference stop settles a stalled async iterator and tears down its worker as a fallback', async () => {
   const controller = new AbortController();
   let loaded = false, exits = 0;
