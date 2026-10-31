@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 80" role="img" aria-label="Dubhe Agent">
+  <rect x="0" y="8" width="64" height="64" rx="14" fill="#1b3a8c"/>
+  <g stroke="#ffffff" stroke-width="2.6" stroke-linejoin="round" fill="none" opacity="0.7" transform="translate(0 8)">
+    <path d="M15 22 L30 19 L32 36 L17 39 Z"/>
+    <path d="M30 19 L41 14 L50 23"/>
+  </g>
+  <g fill="#ffffff" transform="translate(0 8)">
+    <circle cx="15" cy="22" r="4.2"/>
+    <circle cx="30" cy="19" r="4.2"/>
+    <circle cx="32" cy="36" r="4.2"/>
+    <circle cx="17" cy="39" r="4.2"/>
+    <circle cx="41" cy="14" r="3.2"/>
+    <circle cx="50" cy="23" r="3.2"/>
+  </g>
+  <text x="80" y="46" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="34" font-weight="700" fill="#1b3a8c" letter-spacing="-0.5">Dubhe</text>
+  <text x="81" y="66" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="13" font-weight="600" fill="#6b6b73" letter-spacing="4">AGENT</text>
+</svg>
