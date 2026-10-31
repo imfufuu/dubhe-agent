@@ -1,5 +1,5 @@
 import { extractChoices, choiceOptions } from './choices.js';
-import { text as messageLocaleText } from './locale.js';
+import { uiText as messageLocaleText } from './locale.js';
 // ─── UI · Markdown / 消息片段渲染（P4 拆分：从 ui.js 模块级抽出，不依赖 mountUI 闭包）────────
 // 拥有：DOM 小工具（$ / $$ / el / esc）、安全链接与沙箱媒体（safeHref / safeImgSrc / sandboxPath / hydrateSandboxMedia）、
 //       编辑预览片段、choice / chart 围栏、代码高亮与 KaTeX、markdown-it 引擎（getMd）、renderMarkdown 及其围栏/行内码保护、
@@ -342,6 +342,8 @@ export function getMd() {
     if (typeof markdownit === 'undefined') { mdEngine = null; }
     else {
       const md = markdownit({ html: false, linkify: true, breaks: false, typographer: false });
+      // 只识别显式协议链接（http(s)://）；关闭模糊匹配，否则 report.md、index.html 等文件名会被当成域名
+      md.linkify.set({ fuzzyLink: false, fuzzyEmail: false });
       md.renderer.rules.link_open = (tokens, idx, options, env, self) => {
         const tok = tokens[idx];
         const href = safeHref(tok.attrGet('href'));

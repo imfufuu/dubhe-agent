@@ -5,7 +5,7 @@
 //   · 点文件名弹出的沙箱文件目录，快速切换预览的文件。
 import { ICON } from './icons.js';
 import { parseCsv } from './utiltools.js';
-import { text as localeText } from './locale.js';
+import { uiText as localeText } from './locale.js';
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 

@@ -1,4 +1,4 @@
-import { getLanguage, text, onLanguageChange } from './locale.js';
+import { getLanguage, uiText as text, onLanguageChange } from './locale.js';
 
 // Native SpeechRecognition is the sole microphone owner: requesting getUserMedia
 // here as well produces a second browser permission prompt on some engines.

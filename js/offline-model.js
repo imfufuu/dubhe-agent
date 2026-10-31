@@ -417,14 +417,24 @@ export async function streamOfflineModel({
     const modelKey = String(localModel.metadata?.fileName || localModel.file.name || `${localModel.file.size}:${localModel.metadata?.importedAt || ''}`);
     const isLoaded = typeof engine.isModelLoaded === 'function' && engine.isModelLoaded();
     if (!isLoaded || loadedModelKey !== modelKey) {
-      if (isLoaded) await withAbort(Promise.resolve().then(() => engine.exit?.()), signal, abandon);
+      // 残留的 proxy（上一次加载失败或被中止）会让 loadModel 报 “Module is already initialized”，
+      // 而 isModelLoaded() 因缺少 metadata 判为未加载；因此只要 proxy 存在就先 exit() 清空。
+      if (isLoaded || engine.proxy) await withAbort(Promise.resolve().then(() => engine.exit?.()), signal, abandon);
       // Wllama 3.8.1 accepts Blob[] directly; the OPFS File is passed locally, never as a URL.
-      await withAbort(Promise.resolve().then(() => engine.loadModel([localModel.file], {
-        n_ctx: OFFLINE_MODEL_CONTEXT_SIZE,
-        n_batch: 512,
-        n_threads: Math.max(1, Math.min(4, Math.floor(Number(globalThis.navigator?.hardwareConcurrency) / 2) || 2)),
-        warmup: false,
-      })), signal, abandon);
+      try {
+        await withAbort(Promise.resolve().then(() => engine.loadModel([localModel.file], {
+          n_ctx: OFFLINE_MODEL_CONTEXT_SIZE,
+          n_batch: 512,
+          n_threads: Math.max(1, Math.min(4, Math.floor(Number(globalThis.navigator?.hardwareConcurrency) / 2) || 2)),
+          warmup: false,
+        })), signal, abandon);
+      } catch (error) {
+        // 加载失败：立刻释放半初始化的 proxy，否则下一次发送必然报 “already initialized”
+        loadedModelKey = '';
+        // 中止路径已由 withAbort 的 abandon 回收 worker，这里不重复 exit
+        if (!signal?.aborted) { try { await Promise.resolve(engine.exit?.()).catch(() => {}); } catch { /* best effort */ } }
+        throw error;
+      }
       loadedModelKey = modelKey;
     }
     throwIfAborted(signal);

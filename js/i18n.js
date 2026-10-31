@@ -1,6 +1,16 @@
 import { UI_CATALOG } from './ui-catalog.js?v=2026.10.25.1';
 import { UI_STRINGS } from './ui-strings.js?v=2026.10.25.1';
 import { getLanguage, getIntlLocale, normalizeLanguage } from './locale.js';
+// 语言包：登记接口见 i18n-packs/registry.js（import 路径不带查询串，保证 registry 只有一份实例）
+import { languagePackEntry } from './i18n-packs/registry.js';
+import './i18n-packs/en.js';
+import './i18n-packs/ja.js';
+import './i18n-packs/es.js';
+import './i18n-packs/fr.js';
+import './i18n-packs/de.js';
+import './i18n-packs/ko.js';
+import './i18n-packs/ru.js';
+import './i18n-packs/ar.js';
 
 // Missing translations fall back in this order: selected language → English → original Chinese source.
 export const UI_TRANSLATION_FALLBACK = Object.freeze(['requested-language', 'English', 'original-source']);
@@ -38,7 +48,7 @@ export function t(key, params = {}, language = getLanguage()) {
   const lang = normalizeLanguage(language, 'zh');
   const source = String(key ?? '');
   const row = UI_CATALOG[source];
-  const template = row?.[lang] ?? row?.en ?? (lang === 'zh' ? source : (UI_STRINGS[source] ?? source));
+  const template = row?.[lang] ?? languagePackEntry(lang, source) ?? row?.en ?? (lang === 'zh' ? source : (languagePackEntry('en', source) ?? UI_STRINGS[source] ?? source));
   return interpolate(template, params, lang);
 }
 
@@ -53,6 +63,10 @@ export function translateUI(value, language = getLanguage()) {
   const localized = row?.[lang] ?? row?.en;
   if (localized != null) return raw.replace(key, localized);
 
+  const packed = languagePackEntry(lang, key);
+  if (packed != null) return raw.replace(key, packed);
+  const packedEn = languagePackEntry('en', key);
+  if (packedEn != null) return raw.replace(key, packedEn);
   const exact = Object.hasOwn(UI_STRINGS, key) ? UI_STRINGS[key] : null;
   if (exact) return raw.replace(key, exact);
   for (const [re, replacement] of EN_RULES) {

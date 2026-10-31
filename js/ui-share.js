@@ -2,7 +2,7 @@ import { ICON } from './icons.js';
 import { buildShareDocument } from './share-document.js?v=2026.10.25.1';
 import { captureShare } from './share-capture.js';
 import { createZip } from './zip.js';
-import { text, onLanguageChange } from './locale.js';
+import { uiText as text, onLanguageChange } from './locale.js';
 
 export function shareableMessages(messages) { return (messages || []).filter((m) => ['user', 'assistant'].includes(m?.role) && !m.transientModeration); }
 

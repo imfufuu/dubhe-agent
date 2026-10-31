@@ -1,7 +1,7 @@
 // Stable editing DOM: filenames, headers, existing lines and scroll position survive
 // parameter deltas. Only new/changed lines are patched; no per-delta innerHTML reset.
 import { editPreviewMeta, editPreviewFoot } from './ui-markdown.js?v=2026.10.25.1';
-import { text as localeText } from './locale.js';
+import { uiText as localeText } from './locale.js';
 
 const make = (tag, cls, text) => {
   const node = document.createElement(tag); node.className = cls;

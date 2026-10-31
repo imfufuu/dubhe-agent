@@ -1,6 +1,6 @@
 // Dubhe Agent · 固定状态能力行与设置页工具表预览。
 // 状态行只汇报模型 / 开关 / 线路；能力裁剪明细仅从设置页展开，避免在对话区制造告警胶囊。
-import { text as localeText } from './locale.js';
+import { uiText as localeText } from './locale.js';
 import { isSmartRouter, SMART_ROUTER_LABEL } from './smartrouter.js?v=2026.10.25.1';
 import { reasoningLevelLabel } from './reasoning.js?v=2026.10.25.1';
 import { getTransport } from './api.js?v=2026.10.25.1';

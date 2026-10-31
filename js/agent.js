@@ -299,7 +299,7 @@ export function createAgent(store, hooks = {}) {
   let fs = baseFS; // 当前生效的 fs（回合内 = temp overlay；回合间 = baseFS）
   let abortController = null;
   let status = 'idle'; // idle | moderating | thinking | streaming | executing | done | error | cancelled
-  let turnChecklist = null, checklistNudges = 0; // 复杂任务清单（回合内）
+  let turnChecklist = null, checklistNudges = 0, checklistOwnerId = null; // 复杂任务清单（回合内；只挂在首次创建的那条消息上）
 
   // UI 钩子统一经 emit 分发：钩子缺失或抛错都不得打断对话循环。
   // 线上教训：GitHub Pages 对 JS 子资源有 ~10 分钟缓存，浏览器可能拿到「新版 main.js +
@@ -707,7 +707,7 @@ export function createAgent(store, hooks = {}) {
       };
       iterations = 0;
       turnChecklist = null;
-      checklistNudges = 0;
+      checklistNudges = 0; checklistOwnerId = null;
       // ── P3 临时沙箱（ephemeral overlay）：Agent 写文件全部落在临时层 ──
       // 默认保留本轮全部新文件；只有设置开启自动清理时，才丢弃最终回答未引用的产物。
       tempFS = createTempFS(baseFS, { cleanupUnreferencedFiles: settings.cleanupUnreferencedFiles === true });
@@ -1373,7 +1373,7 @@ export function createAgent(store, hooks = {}) {
             telemetry.recordTool(call.name, Math.round(waveMs / Math.max(1, toolCalls.length)), { engine, ok: !isErr });
             syncFS();
             store.pushMessage({ role: 'tool', toolCallId: call.id, name: call.name, content: result });
-            if (call.name === 'checklist' && !isErr) turnChecklist = recordChecklistCall(store, assistantMsg.id, call.args);
+            if (call.name === 'checklist' && !isErr) turnChecklist = recordChecklistCall(store, checklistOwnerId ||= assistantMsg.id, call.args);
             emit('onToolResult', call, result);
           }
           telemetry.subagentDispatches = turn.subagentReports.length;

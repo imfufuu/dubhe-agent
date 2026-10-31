@@ -1,3 +1,4 @@
+import { getPackEntry } from './i18n-packs/store.js';
 // UI preference is global; session content is never translated or rewritten.
 export const LANGUAGE_KEY = 'dubhe-ui-language';
 export const SUPPORTED_LANGUAGES = Object.freeze(['zh', 'en', 'ja', 'es', 'fr', 'de', 'ko', 'ru', 'ar']);
@@ -35,6 +36,14 @@ export function getLanguage() { return languagePreference(); }
 export function text(zh, en, translations = {}) {
   const lang = getLanguage();
   return translations?.[lang] ?? (lang === 'en' ? en : zh);
+}
+// 界面文案：先查语言包（i18n-packs），再回退英文；非中英语言绝不回退到中文，避免漏翻时出现中文。
+// 提示词（发给模型的文本）仍使用 text()，保持原有的 zh/en 选择。
+export function uiText(zh, en, translations = {}) {
+  const lang = getLanguage();
+  if (lang === 'zh') return translations?.zh ?? zh;
+  if (lang === 'en') return translations?.en ?? en;
+  return translations?.[lang] ?? getPackEntry(lang, zh) ?? en ?? getPackEntry('en', zh) ?? zh;
 }
 // 切换包装器：由界面层注册（如整页渐白）。run 执行所有语言回调，必须且只能调用一次。
 let transition = (run) => run();

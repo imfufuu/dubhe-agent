@@ -9,7 +9,7 @@ import { ICON } from './icons.js';
 import { SANDBOX_STORAGE_CAP, sandboxQuotaLabel } from './storagefmt.js';
 import { pdfToImages } from './pdfpages.js';
 import { contentByteSize } from './sandbox.js';
-import { text as localeText } from './locale.js';
+import { uiText as localeText } from './locale.js';
 import { renderMarkdown } from './ui-markdown.js?v=2026.10.25.1';
 import { readableFileText } from './file-text.js';
 import { fvNoticeHtml, csvTableHtml, dualViewKind, DUAL_VIEW_MAX, viewModesHtml, applyViewMode, openFileSwitcher } from './ui-file-viewer.js';
