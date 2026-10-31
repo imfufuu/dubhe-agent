@@ -1,6 +1,19 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 80" role="img" aria-label="Dubhe Agent">
-  <path d="M32 6 Q37 31 62 36 Q37 41 32 66 Q27 41 2 36 Q27 31 32 6 Z" transform="translate(0 -4)" fill="#111111"/>
-  <circle cx="53" cy="15" r="6" transform="translate(0 -4)" fill="#E8A33D"/>
-  <text x="82" y="50" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="42" font-weight="800" fill="#111111" letter-spacing="-0.8">Dubhe</text>
-  <text x="84" y="72" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="14" font-weight="600" fill="#6b6b73" letter-spacing="4.5">AGENT</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 72" role="img" aria-label="Dubhe">
+  <defs>
+    <linearGradient id="star" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4a4a52"/>
+      <stop offset="0.45" stop-color="#1a1a1f"/>
+      <stop offset="1" stop-color="#050506"/>
+    </linearGradient>
+    <radialGradient id="dot" cx="0.35" cy="0.3" r="0.8">
+      <stop offset="0" stop-color="#FFE0A0"/>
+      <stop offset="0.55" stop-color="#F0A93E"/>
+      <stop offset="1" stop-color="#C97A12"/>
+    </radialGradient>
+  </defs>
+  <g transform="translate(0 4)">
+    <path d="M32 2 Q37 27 62 32 Q37 37 32 62 Q27 37 2 32 Q27 27 32 2 Z" fill="url(#star)"/>
+    <circle cx="53" cy="11" r="6" fill="url(#dot)"/>
+  </g>
+  <text x="76" y="62" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="44" font-weight="800" fill="#111111" letter-spacing="-0.8">Dubhe</text>
 </svg>
