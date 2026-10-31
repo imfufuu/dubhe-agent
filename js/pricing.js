@@ -31,6 +31,7 @@ export const MODEL_PRICING = {
   // OpenAI GPT（支持 Fast 模式 2x 官方价；272k 以上上下文阶梯计费）
   'gpt-6-astra':              { input: 10.0,  output: 50.0,  cachedInput: 1.0,   cacheCreation: 12.5,  fastMultiplier: 2.0, contextTier: true },
   'gpt-6.1-sol':              { input: 2.0,   output: 10.0,  cachedInput: 0.1,   cacheCreation: 2.5,   fastMultiplier: 2.0, contextTier: true },
+  'gpt-6.1-terra':            { input: 0.171, output: 0.855, cachedInput: 0.00855 },
   'gpt-6-sol':                { input: 2.0,   output: 10.0,  cachedInput: 0.2,   cacheCreation: 2.5,   fastMultiplier: 2.0, contextTier: true },
   'gpt-6-luna':               { input: 0.1,   output: 0.5,   cachedInput: 0.01,  cacheCreation: 0.125, fastMultiplier: 2.0, contextTier: true },
   'gpt-5.6-sol':              { input: 5.0,   output: 30.0,  cachedInput: 0.5,   cacheCreation: 6.25,  fastMultiplier: 2.0, contextTier: true },
@@ -66,6 +67,8 @@ export const MODEL_PRICING = {
     contextTier: { thresholdTokens: 32000, inputMultiplier: 1.5, outputMultiplier: 1.5, cachedInputMultiplier: 1.5,
       additionalTiers: [{ thresholdTokens: 128000, inputMultiplier: 3, outputMultiplier: 3, cachedInputMultiplier: 3 }] } },
   'doubao-seed-2.1-pro':      { input: cnyToUsd(6), output: cnyToUsd(30), cachedInput: cnyToUsd(1.2) },
+  // 2026-10-31 TeamoRouter 实测报告（网关标价，USD / 1M tokens）
+  'doubao-seed-2.1-lite':     { input: 0.11428571, output: 0.38571429, cachedInput: 0.02285714 },
 
   // Moonshot Kimi · official USD rates; cache writes billed separately at the same rate as input.
   'kimi-k3.1-pro':            { input: 2.0,   output: 10.0,  cachedInput: 0.2, cacheCreation: 2.0, cacheCreation1h: 4.0 },
@@ -77,6 +80,7 @@ export const MODEL_PRICING = {
   'mimo-v2.6-flash':          { input: 0.14,  output: 0.28,  cachedInput: 0.0028 },
 
   // MiniMax · 512k 以上上下文输入/输出均按 2x 标价
+  'minimax-m3.1-flash':       { input: 0.075, output: 0.3,   cachedInput: 0.0075 },
   'minimax-m3':               { input: 0.3,   output: 1.2,   cachedInput: 0.06, contextTier: { thresholdTokens: 512000, inputMultiplier: 2.0, outputMultiplier: 2.0, cachedInputMultiplier: 2.0 } },
 
   // Qwen / 通义千问 · official North China 2 standard CNY rates normalized at the display FX rate.
@@ -93,6 +97,8 @@ export const MODEL_PRICING = {
 
   // TypeSafe Jev（System One）
   'jev':                      { input: 0.042, output: 0.0 },
+  'jev-1.14.0':               { input: 0.042, output: 0.0 },
+  'jev-1.13.0':               { input: 0.042, output: 0.0 },
   'typesafe-ai/jev':          { input: 0.042, output: 0.0 },
 };
 
@@ -139,6 +145,48 @@ export const IMAGE_MODEL_PRICING = {
     output: 30.0,
     cachedInput: 1.25,
     tiers: { '1k': 0.06, '2k': 0.20, '4k': 0.25 },
+  },
+  // 4K 升采样变体：TeamoRouter 报告按张 $0.02（1K/2K/4K 同价），比原生 4K 便宜
+  'gpt-image-2-4k-upscale': {
+    id: 'gpt-image-2-4k-upscale',
+    label: 'GPT Image 2 4K Upscale',
+    mode: 'tier',
+    input: 5.0,
+    imageInput: 8.0,
+    output: 30.0,
+    cachedInput: 1.25,
+    tiers: { '1k': 0.02, '2k': 0.02, '4k': 0.02 },
+  },
+  'gpt-image-2.5-sunburst-4k-upscale': {
+    id: 'gpt-image-2.5-sunburst-4k-upscale',
+    label: 'GPT Image 2.5 Sunburst 4K Upscale',
+    mode: 'tier',
+    input: 5.0,
+    imageInput: 8.0,
+    output: 30.0,
+    cachedInput: 1.25,
+    tiers: { '1k': 0.02, '2k': 0.02, '4k': 0.02 },
+  },
+  'gpt-image-2.5-flare-4k-upscale': {
+    id: 'gpt-image-2.5-flare-4k-upscale',
+    label: 'GPT Image 2.5 Flare 4K Upscale',
+    mode: 'tier',
+    input: 5.0,
+    imageInput: 8.0,
+    output: 30.0,
+    cachedInput: 1.25,
+    tiers: { '1k': 0.02, '2k': 0.02, '4k': 0.02 },
+  },
+  // Gemini 3 Pro Image：报告价 input $0.948 / 图像输出 $56.88 per 1M tokens；每张输出 token 数报告未给出，沿用 Flash 估算值 1290（仅为估算）
+  'gemini-3-pro-image': {
+    id: 'gemini-3-pro-image',
+    label: 'Gemini 3 Pro Image',
+    mode: 'token',
+    input: 0.948,
+    imageInput: 0.948,
+    output: 56.88,
+    defaultInputTokens: 64,
+    defaultOutputTokensPerImage: 1290,
   },
   'gemini-3.1-flash-image': {
     id: 'gemini-3.1-flash-image',

@@ -83,9 +83,9 @@ test('reduced-motion popover is immediate and does not create animations', () =>
 test('live catalog snapshot includes TeamoRouter V4.1 Flash 1017 and evidence-based low-cost labels', async () => {
   const { MODEL_CATALOG, MODEL_CATALOG_BY_ID } = await import('../js/model-catalog.js');
   const { FALLBACK_MODELS, resolveModelAlias } = await import('../js/config.js');
-  assert.equal(MODEL_CATALOG.length,60);assert.equal(new Set(MODEL_CATALOG.map(m=>m.id)).size,60);
+  assert.equal(MODEL_CATALOG.length,67);assert.equal(new Set(MODEL_CATALOG.map(m=>m.id)).size,67);
   assert.deepEqual(MODEL_CATALOG.filter(m=>m.newlyListed).map(m=>m.id).sort(),['MiniMax-M3','claude-haiku-5-5','doubao-seed-2.0-lite','gemini-4-argon','grok-4.7','kimi-k3.1-pro','mimo-v2.6-flash','mimo-v2.6-pro']);
-  assert.equal(FALLBACK_MODELS.length,53);assert.equal(FALLBACK_MODELS.some(m=>m.id.startsWith('kimi')),true);
+  assert.equal(FALLBACK_MODELS.length,56);assert.equal(FALLBACK_MODELS.some(m=>m.id.startsWith('kimi')),true);
   for(const [id,provider] of [['doubao-seed-2.1-pro','Doubao'],['kimi-k3','Kimi'],['MiniMax-M3','MiniMax'],['qwen3.8-max','Qwen']]) {
     const model=MODEL_CATALOG_BY_ID.get(id);assert.equal(model?.provider,provider,id);assert.ok(FALLBACK_MODELS.some(m=>m.id===id),id+' offline fallback');
   }

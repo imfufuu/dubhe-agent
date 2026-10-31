@@ -126,16 +126,56 @@ export function sortModelsInFamily(models) {
 // 不可作为对话模型直接选择：统一由主智能体通过 generate_image 工具调用，
 // 保留 Agent 的工具循环特性（生成→写沙箱→可继续编辑/下载）。
 export const IMAGE_MODELS = [
-  { id: 'gpt-image-2',            label: 'GPT Image 2',            tag: '均衡 · 默认',  note: '均衡·默认', tagEn: 'Balanced · Default', noteEn: 'Balanced · default choice' },
-  { id: 'gpt-image-2.5-sunburst', label: 'GPT Image 2.5 Sunburst', tag: '写实',        note: '高质感写实', tagEn: 'Realistic', noteEn: 'High-fidelity realism' },
-  { id: 'gpt-image-2.5-flare',    label: 'GPT Image 2.5 Flare',    tag: '插画',        note: '风格化/插画', tagEn: 'Illustration', noteEn: 'Stylized illustration' },
-  { id: 'gemini-3.1-flash-image', label: 'Nano Banana 2',          tag: 'Gemini 原生', note: 'Gemini 3.1 Flash Image · 高质量文生图', tagEn: 'Gemini native', noteEn: 'Gemini 3.1 Flash Image · high-quality text-to-image' },
+  { id: 'gpt-image-2', family: 'gpt-image-2', role: 'default',            label: 'GPT Image 2',            tag: '均衡 · 默认',  note: '均衡·默认', tagEn: 'Balanced · Default', noteEn: 'Balanced · default choice' },
+  { id: 'gpt-image-2.5-sunburst', family: 'gpt-image-2.5', role: 'realistic', label: 'GPT Image 2.5 Sunburst', tag: '写实',        note: '高质感写实', tagEn: 'Realistic', noteEn: 'High-fidelity realism' },
+  { id: 'gpt-image-2.5-flare', family: 'gpt-image-2.5', role: 'illustration',    label: 'GPT Image 2.5 Flare',    tag: '插画',        note: '风格化/插画', tagEn: 'Illustration', noteEn: 'Stylized illustration' },
+  { id: 'gemini-3.1-flash-image', family: 'nano-banana', role: 'fast', label: 'Nano Banana 2',          tag: 'Gemini 原生', note: 'Gemini 3.1 Flash Image · 高质量文生图', tagEn: 'Gemini native', noteEn: 'Gemini 3.1 Flash Image · high-quality text-to-image' },
   // 网关 2026-10 新上的 nano-banana-2-1：名字不带 -image-，之前被当成对话模型混进模型菜单（.33 修）。与 Nano Banana 2 同走 Gemini generateContent。
   // 2026-10-08 实测（一次成功调用）：ID = gemini-nano-banana-2.1（网关价目表 /v1/models/pricing 同名），Gemini 原生 generateContent，
   // responseModalities IMAGE + imageConfig { aspectRatio, imageSize }；imageSize '512' 上游 503，1K 正常（44s，1120 输出 token ≈ $0.0097/图）。
-  { id: 'gemini-nano-banana-2.1', label: 'Nano Banana 2.1',        tag: 'Gemini 原生 · 新', note: 'Nano Banana 2.1 · 实测 1K 一张约 ¥0.07 / 44 秒（按 2026-10-23 中间价折算）；不支持 512，low 质量自动按 1K', tagEn: 'Gemini native · New', noteEn: 'Nano Banana 2.1 · measured ~$0.01 per 1K image in 44s; 512 unsupported, low quality falls back to 1K' },
+  { id: 'gemini-nano-banana-2.1', family: 'nano-banana', role: 'quality', label: 'Nano Banana 2.1',        tag: 'Gemini 原生 · 新', note: 'Nano Banana 2.1 · 实测 1K 一张约 ¥0.07 / 44 秒（按 2026-10-23 中间价折算）；不支持 512，low 质量自动按 1K', tagEn: 'Gemini native · New', noteEn: 'Nano Banana 2.1 · measured ~$0.01 per 1K image in 44s; 512 unsupported, low quality falls back to 1K' },
+  { id: 'gpt-image-2-4k-upscale', family: 'gpt-image-2', role: 'upscale', label: 'GPT Image 2 4K Upscale', tag: '4K 升采样', note: '4K 输出按张 $0.02（非升采样 4K 约 $0.0858/张）；画面特征以实测为准', tagEn: '4K upscale', noteEn: '4K output at $0.02/image (vs about $0.0858 for native 4K); look to be verified' },
+  { id: 'gpt-image-2.5-sunburst-4k-upscale', family: 'gpt-image-2.5', role: 'upscale-realistic', label: 'GPT Image 2.5 Sunburst 4K Upscale', tag: '写实 · 4K', note: '写实 4K 升采样，按张 $0.02（非升采样 4K 约 $0.0714/张）', tagEn: 'Realistic · 4K', noteEn: 'Realistic 4K upscale, $0.02/image (native 4K about $0.0714)' },
+  { id: 'gpt-image-2.5-flare-4k-upscale', family: 'gpt-image-2.5', role: 'upscale-illustration', label: 'GPT Image 2.5 Flare 4K Upscale', tag: '插画 · 4K', note: '插画 4K 升采样，按张 $0.02（非升采样 4K 约 $0.0572/张）', tagEn: 'Illustration · 4K', noteEn: 'Illustration 4K upscale, $0.02/image (native 4K about $0.0572)' },
+  { id: 'gemini-3-pro-image', family: 'nano-banana', role: 'pro', label: 'Gemini 3 Pro Image', tag: '精细 · Pro', note: 'Gemini 3 Pro Image · 按 Token 计费，质量档最高（耗时更长）', tagEn: 'Detailed · Pro', noteEn: 'Gemini 3 Pro Image · token billing, highest quality (slower)' },
 ];
 export const DEFAULT_IMAGE_MODEL = 'gpt-image-2';
+// 模型家族：菜单里每个家族只占一项，具体变体（写实/插画/4K 升采样/Pro）由 Agent 按需求自动选择。
+export const IMAGE_FAMILIES = Object.freeze([
+  { id: 'gpt-image-2', label: 'GPT Image 2', tag: '均衡 · 默认', note: '均衡 · 默认；4K 自动走升采样变体', tagEn: 'Balanced · Default', noteEn: 'Balanced default; 4K uses the upscale variant', defaultModel: 'gpt-image-2' },
+  { id: 'gpt-image-2.5', label: 'GPT Image 2.5', tag: '写实 / 插画', note: '写实或插画两个变体，由 Agent 按描述自动选；4K 走升采样', tagEn: 'Realistic / Illustration', noteEn: 'Realistic or illustration variant chosen by Agent; 4K uses upscale', defaultModel: 'gpt-image-2.5-sunburst' },
+  { id: 'nano-banana', label: 'Nano Banana', tag: 'Gemini 原生', note: 'Nano Banana 2 / 2.1 / 3 Pro 三档，由 Agent 按质量与速度需求选择', tagEn: 'Gemini native', noteEn: 'Nano Banana 2 / 2.1 / 3 Pro, chosen by quality and speed', defaultModel: 'gemini-3.1-flash-image' },
+]);
+export function imageFamilyOf(id) {
+  const key = String(id || '');
+  if (IMAGE_FAMILIES.some((f) => f.id === key)) return key;
+  const hit = IMAGE_MODELS.find((m) => m.id === key);
+  return hit ? hit.family : null;
+}
+const parseImagePixels = (s) => { const m = String(s || '').match(/^(\d{3,5})\s*x\s*(\d{3,5})$/i); return m ? Math.max(Number(m[1]), Number(m[2])) : 0; };
+/** 解析本次生图实际使用的变体：family（或其任一变体 ID）+ 风格/分辨率提示 → 具体模型 ID。
+ *  style: auto | realistic | illustration | pro | fast | quality；resolution: 1K | 2K | 4K 或像素尺寸。
+ *  4K 时 GPT 家族改走升采样变体（按张 $0.02，比原生 4K 便宜）。 */
+export function resolveImageVariant(familyOrModel, { style = 'auto', resolution = '', size = '' } = {}) {
+  const fam = imageFamilyOf(familyOrModel);
+  const def = IMAGE_FAMILIES.find((f) => f.id === fam);
+  if (!def) return DEFAULT_IMAGE_MODEL;
+  // 传入的是具体变体（如 gpt-image-2.5-flare）且未指定风格时，沿用该变体的角色
+  const hitVariant = IMAGE_MODELS.find((m) => m.id === String(familyOrModel || ''));
+  const roleStyle = hitVariant && String(style || 'auto').toLowerCase() === 'auto' ? String(hitVariant.role || '').replace(/^upscale-/, '') : '';
+  const st = roleStyle && roleStyle !== 'upscale' && roleStyle !== 'default' ? roleStyle : String(style || 'auto').toLowerCase();
+  const res = String(resolution || '').trim().toUpperCase();
+  const wants4k = res === '4K' || parseImagePixels(size) > 2048 || parseImagePixels(resolution) > 2048 || /upscale/.test(String(hitVariant?.role || ''));
+  if (fam === 'gpt-image-2') return wants4k ? 'gpt-image-2-4k-upscale' : 'gpt-image-2';
+  if (fam === 'gpt-image-2.5') {
+    const illus = /illus|anime|插画|卡通|动漫|绘画|漫画/.test(st);
+    if (wants4k) return illus ? 'gpt-image-2.5-flare-4k-upscale' : 'gpt-image-2.5-sunburst-4k-upscale';
+    return illus ? 'gpt-image-2.5-flare' : 'gpt-image-2.5-sunburst';
+  }
+  if (/pro|精细|最高/.test(st)) return 'gemini-3-pro-image';
+  if (/quality|2\.1|高质/.test(st)) return 'gemini-nano-banana-2.1';
+  return def.defaultModel;
+}
 // 识图模型（analyze_image / analyze_pdf 页图）与视频识别模型（analyze_video）：
 // 设置页只给几个「有特点」的选项——便宜 / 均衡 / 效果好——避免 40 多个模型全摆上去让人选不动。
 // 视频档位只收录 2026-10-06 用 11.5s 测试视频在网关实测能真正收到视频（usage 含 VIDEO modality）的模型；
@@ -174,6 +214,8 @@ export const DEFAULT_CHAT_MODEL = SMART_ROUTER_ID;
 // GPT Image：宽x高像素。Nano Banana 另认 16:9 / 1K / 2K 等（见 api.js nanoImageConfig）
 export const IMAGE_SIZES = ['auto', '1024x1024', '1536x1024', '1024x1536', '2048x2048', '16:9', '9:16', '4:3', '3:4', '1K', '2K', '4K'];
 export const IMAGE_QUALITIES = ['auto', 'low', 'medium', 'high'];
+export const IMAGE_STYLES = ['auto', 'realistic', 'illustration', 'pro', 'quality', 'fast'];
+export const IMAGE_RESOLUTIONS = ['auto', '1K', '2K', '4K'];
 export const IMAGE_FORMATS = ['png', 'jpeg', 'webp'];
 export const IMAGE_BACKGROUNDS = ['auto', 'transparent', 'opaque'];
 export function isImageGenModel(id) { return IMAGE_MODELS.some((m) => m.id === id); }
@@ -204,7 +246,7 @@ const IMAGE_MODEL_ALIASES = (() => {
     put(labelKey.replace(/^gpt image /, ''), m.id); // 2.5 sunburst（去掉品牌前缀）
     put(idKey.replace(/^gpt image /, ''), m.id);
     const tail = idKey.split(' ').filter(Boolean).pop();
-    if (tail && !/^[\d.]+$/.test(tail)) put(tail, m.id); // sunburst / flare（避免 2 撞车）
+    if (tail && !/^[\d.]+$/.test(tail) && !['image', 'upscale'].includes(tail)) put(tail, m.id); // sunburst / flare（避免 2 撞车）
   }
   // Nano Banana 2 口语别名（文档名 / 简称）
   put('nano banana', 'gemini-3.1-flash-image');

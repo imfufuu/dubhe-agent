@@ -387,6 +387,8 @@ html { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
 .badge { font-size: var(--ui-fs-9px, 9px); font-weight: 700; letter-spacing: .06em; border: 1px solid var(--line-2); border-radius: 4px; padding: 1px 5px; color: var(--fg-2); }
 .badge.hot { color: #c2410c; border-color: #fdba74; }
 .badge.cheap { color: #15803d; border-color: #86efac; }
+.badge.model-tag { color: #4338ca; border-color: #a5b4fc; }
+[data-theme="dark"] .badge.model-tag { color: #c7d2fe; border-color: #4338ca; }
 [data-theme="dark"] .badge.hot { color: #fdba74; border-color: #c2410c; }
 [data-theme="dark"] .badge.cheap { color: #86efac; border-color: #15803d; }
 .dd-item.active .badge.hot, .dd-item.active .badge.cheap { border-color: var(--bg); color: var(--bg); }

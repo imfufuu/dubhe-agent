@@ -16,7 +16,7 @@ import { analyzeImage, analyzeVideo, analyzeAudio, VISION_TOOL_MODEL, VIDEO_TOOL
 import { sanitizeSvgMarkup, svgSourceFromValue, svgDataUrl, extractSvgText } from './svg-safety.js';
 import { pdfToImages, pdfExtractText } from './pdfpages.js';
 import { SUBAGENTS } from './subagents.js';
-import { DEFAULT_IMAGE_MODEL, IMAGE_SIZES, IMAGE_QUALITIES, IMAGE_FORMATS, IMAGE_BACKGROUNDS, IMAGE_MODEL_IDS, resolveImageModel, resolveVisionModel, resolveVideoModel, resolveAudioModel } from './config.js?v=2026.10.25.1';
+import { DEFAULT_IMAGE_MODEL, IMAGE_STYLES, IMAGE_RESOLUTIONS, resolveImageVariant, IMAGE_SIZES, IMAGE_QUALITIES, IMAGE_FORMATS, IMAGE_BACKGROUNDS, IMAGE_MODEL_IDS, resolveImageModel, resolveVisionModel, resolveVideoModel, resolveAudioModel } from './config.js?v=2026.10.25.1';
 import { fetchPage, gitRun, relaySearch, relayCrawl, relayDownload, fileNameFromUrl, RELAY_FILE_MAX_BYTES } from './net.js';
 import { createZip, fileBytesFromValue } from './zip.js';
 import { planConversion, runConversion, convertProgressNote, MAX_CONVERT_INPUT } from './convert.js';
@@ -212,6 +212,8 @@ export const TOOL_DEFS = [
         size: { type: 'string', enum: IMAGE_SIZES, description: `输出尺寸（宽x高像素），默认 ${'auto'} 由模型决定` },
         aspect_ratio: { type: 'string', enum: ['1:1', '16:9', '9:16', '4:3', '3:4', '3:2', '2:3'], description: '可选：画面比例（与 size 二选一，优先使用本参数）' },
         quality: { type: 'string', enum: IMAGE_QUALITIES, description: '质量档位，默认 auto' },
+        style: { type: 'string', enum: IMAGE_STYLES, description: '可选：画面风格。realistic 写实 / illustration 插画 / pro 精细 / quality 高质 / fast 快速；默认 auto，由所选家族与描述自动决定' },
+        resolution: { type: 'string', enum: IMAGE_RESOLUTIONS, description: '可选：分辨率档。4K 会自动使用升采样变体（约 $0.02/张，比原生 4K 便宜）；默认 auto' },
         output_format: { type: 'string', enum: IMAGE_FORMATS, description: '输出格式，默认 png' },
         background: { type: 'string', enum: IMAGE_BACKGROUNDS, description: '背景：transparent 为透明底（png/webp 有效），默认 auto 由模型决定' },
         n: { type: 'integer', enum: [1, 2, 3, 4], description: '一次生成几张候选图（默认 1）；多张会全部写入沙箱 outputs/' },
@@ -1509,7 +1511,8 @@ async function executeToolBody(outerName, outerArgs, ctx) {
         // 会话菜单选定的生图模型优先：对话模型常在 args.model 里填 gpt-image-2，
         // 会把用户刚选的 Nano Banana 盖掉。args.model 只作纠错提示，不覆盖菜单。
         const session = resolveImageModel(ctx.imageModel || DEFAULT_IMAGE_MODEL, DEFAULT_IMAGE_MODEL);
-        const model = session.id;
+        // 家族/变体归并：Agent 按 style / resolution / size 自动选具体变体（如 4K 走升采样）
+        const model = resolveImageVariant(session.id, { style: args.style, resolution: args.resolution, size: args.size });
         const nano = /^gemini-|nano[-_ ]?banana/i.test(model);
         const imageRouteSupported = gatewayId === DEFAULT_GATEWAY_ID
           || (gatewayId === 'openai' && !nano)

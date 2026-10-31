@@ -11,7 +11,20 @@
 
 import { gatewayBase, setGatewayBase, otherGatewayBase, isNetworkError } from './endpoint.js';
 
-export const JEV_MODEL = 'jev';
+export const JEV_MODEL = 'jev-1.14.0';
+// 决策层可选版本（TeamoRouter 目录实测可用；1.13.0 保留给需要与旧版行为对照的场景）
+export const JEV_VERSIONS = Object.freeze([
+  { id: 'jev-1.14.0', label: 'Jev 1.14.0', note: '默认 · 最新校准' },
+  { id: 'jev-1.13.0', label: 'Jev 1.13.0', note: '上一版 · 可对照' },
+]);
+let activeJevModel = JEV_MODEL;
+/** 设置页切换决策模型版本；非法值回退到默认版本。 */
+export function setActiveJevModel(id) {
+  const v = String(id || '').trim();
+  activeJevModel = JEV_VERSIONS.some((x) => x.id === v) ? v : JEV_MODEL;
+  return activeJevModel;
+}
+export function getActiveJevModel() { return activeJevModel; }
 export const JEV_PATH = '/v1/systemone';
 export const JEV_TIMEOUT_MS = 8000;
 
@@ -33,7 +46,7 @@ export function score(instructions, levels) {
   return { type: 'score', instructions, criteria: levels };
 }
 
-export function buildSystemOneBody({ state, questions, model = JEV_MODEL }) {
+export function buildSystemOneBody({ state, questions, model = activeJevModel }) {
   // 文档硬约束：不要夹带聊天协议字段，否则 400
   return { model, state: String(state || ''), questions: questions || {} };
 }
@@ -115,7 +128,7 @@ export async function askJev({ apiKey, state, questions, signal, timeoutMs = JEV
     }
     const answers = json && (json.answers || (json.need_search || json.route ? json : null));
     if (!answers || typeof answers !== 'object') return { ok: false, reason: 'shape' };
-    return { ok: true, model: (json && json.model) || JEV_MODEL, answers, usage: json.usage || null };
+    return { ok: true, model: (json && json.model) || activeJevModel, answers, usage: json.usage || null };
   } catch (err) {
     if (err && err.name === 'AbortError') {
       if (signal && signal.aborted) throw err;
@@ -320,7 +333,7 @@ export async function moderateTextWithJev({ apiKey, text, signal, timeoutMs = JE
     ok: true,
     blocked,
     source: 'jev',
-    model: r.model || JEV_MODEL,
+    model: r.model || activeJevModel,
     unsafe,
     category,
     confidence,

@@ -636,6 +636,14 @@
         <div class="set-row" id="row-image-review"><div class="set-lbl"><div class="set-title">灰区图片远程复核</div><div class="set-sub">本地拿不准时交 Gemini 3.5 Flash Lite 复核 · 每轮 ≤ 3 张</div></div><div class="set-ctl"><label class="sw"><input type="checkbox" id="set-image-review"/><span></span></label></div></div>
       </section>
 
+      <section class="set-sec">
+        <h4>决策层</h4>
+        <div class="set-row">
+          <div class="set-lbl"><div class="set-title">决策模型（Jev）</div><div class="set-sub">路由与内容审核共用 · 仅 TeamoRouter · 按 systemone 计费</div></div>
+          <div class="set-ctl"><select id="set-decision-model" class="set-select" aria-label="决策模型（Jev）"></select></div>
+        </div>
+      </section>
+
       <section class="set-sec offline-model-settings" id="set-offline-model-sec">
         <h4 id="set-offline-model-heading">离线本地模型</h4>
         <input id="set-offline-model-file-input" type="file" accept=".gguf,application/octet-stream" hidden aria-label="选择本地 GGUF 模型文件"/>

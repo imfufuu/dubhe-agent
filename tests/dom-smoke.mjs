@@ -6,6 +6,7 @@
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+const { imageFamilyOf } = await import('../js/config.js');
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -666,7 +667,7 @@ console.log('\n⑰ 工具折叠 / 出参回填 / 识图路径回归');
         { id: 'empty-1', name: 'execute_javascript', args: { code: 'void 0' } },
         { id: 'read-1', name: 'read_file', args: { path: 'notes/source.md' } },
         { id: 'write-1', name: 'write_file', args: { path: 'notes/output.md', content: 'done' } },
-        { id: 'fail-1', name: 'fetch_url', args: { url: 'https://example.com/' } },
+        { id: 'fail-1', name: 'execute_javascript', args: { code: 'throw new Error("测试错误提示")' } },
       ],
     },
     { id: 'ui-fold-tool-know', role: 'tool', toolCallId: 'know-1', name: 'knowledge_search', content: '[知识检索结果] :::chart 围栏语法素材（系统提示词素材，不应出现在界面）' },
@@ -677,12 +678,13 @@ console.log('\n⑰ 工具折叠 / 出参回填 / 识图路径回归');
     { id: 'ui-fold-tool-empty', role: 'tool', toolCallId: 'empty-1', name: 'execute_javascript', content: '' },
     { id: 'ui-fold-tool-read', role: 'tool', toolCallId: 'read-1', name: 'read_file', content: 'source text' },
     { id: 'ui-fold-tool-write', role: 'tool', toolCallId: 'write-1', name: 'write_file', content: 'written' },
-    { id: 'ui-fold-tool-fail', role: 'tool', toolCallId: 'fail-1', name: 'fetch_url', content: '工具执行失败：测试错误提示' },
+    { id: 'ui-fold-tool-fail', role: 'tool', toolCallId: 'fail-1', name: 'execute_javascript', content: '工具执行失败：测试错误提示' },
   ];
   ui.rebuildMessages();
   const ran = $('.ran-commands');
   const explored = $('.explored-files');
   const rans = $$('.ran-commands'), allCommandChips = $$('.tool-call-chip');
+  // 合并规则 A（用户确认）：只合并相邻命令；读取/修改文件是时间线屏障，把命令切成两段
   ok('只有相邻同类命令合并，不能越过读取/修改文件', !!ran && rans.length === 2);
   ok('Ran Commands 计数按实际调用数统计', !!ran && ran.querySelector('.chip-name').textContent === 'Ran commands 4' && rans[1].querySelector('.chip-name').textContent === 'Ran command', ran && ran.querySelector('.chip-name').textContent);
   ok('analyze_image 不再作为命令 chip，图片路径进入 Explored Files', !!explored
@@ -773,10 +775,11 @@ console.log('\n⑱ 设置页字号 / 深度思考 / 本地会话数回归');
     ok('关闭设置后恢复默认保留模式', store.state.settings.cleanupUnreferencedFiles === false);
     ok('本地存储按 v2 实际显示会话数而非旧 key 的 0', $('#set-about-store').textContent.startsWith('3 个会话'), $('#set-about-store').textContent);
     const imgSel = $('#set-image-model');
-    ok('.33：设置页生图模型选择器与目录一致（5 项，含 gemini-nano-banana-2.1）', imgSel.options.length === 5 && [...imgSel.options].some((o) => o.value === 'gemini-nano-banana-2.1'), `实际 ${imgSel.options.length}`);
-    ok('设置页生图选择器显示当前会话的生图模型', imgSel.value === store.state.imageModel, `${imgSel.value} vs ${store.state.imageModel}`);
-    imgSel.value = 'gemini-nano-banana-2.1'; imgSel.dispatchEvent(new window.Event('change', { bubbles: true }));
-    ok('改生图模型写入当前会话 store.state.imageModel', store.state.imageModel === 'gemini-nano-banana-2.1', store.state.imageModel);
+    // 生图菜单按模型家族展示（GPT Image 2 / GPT Image 2.5 / Nano Banana）；变体由 Agent 自动选择
+    ok('设置页生图模型菜单按家族展示（3 项，含 nano-banana）', imgSel.options.length === 3 && [...imgSel.options].some((o) => o.value === 'nano-banana'), `实际 ${imgSel.options.length}`);
+    ok('设置页生图选择器显示当前会话所属家族', imgSel.value === imageFamilyOf(store.state.imageModel), `${imgSel.value} vs ${store.state.imageModel}`);
+    imgSel.value = 'nano-banana'; imgSel.dispatchEvent(new window.Event('change', { bubbles: true }));
+    ok('改生图家族写入会话的家族默认变体 store.state.imageModel', store.state.imageModel === 'gemini-3.1-flash-image', store.state.imageModel);
     imgSel.value = 'gpt-image-2'; imgSel.dispatchEvent(new window.Event('change', { bubbles: true }));
     window.localStorage.setItem('dubhe-fontsize', 'small');
     applyFontSize();
@@ -880,8 +883,13 @@ console.log('\n㉑ P8 单点依赖：失败态点「联网」胶囊 = 重置探�
     ui.syncWeb();
     const pill = $('#web-toggle');
     ok('失败态胶囊提示里写明「立即重新探测」与 TTL 秒数', /立即重新探测/.test(pill.title) && /秒后下次网页工具调用会自动重探/.test(pill.title), pill.title);
+    // 启动期探测走真实网络（沙箱里超时较慢），它们在 resetRelayProbe() 之后才结束，晚到的 false 会覆盖本次结果；
+    // 等它们超时耗尽（最长 ≈ 3.5s + 1.8s×候选数）再点击。
+    await new Promise((r) => setTimeout(r, 6000));
     click(pill);
-    await new Promise((r) => setTimeout(r, 60));
+    // 点击后探测会依次尝试候选中继，等到 relayOk 落定（最多 3 秒）再断言
+    for (let i = 0; i < 60 && store.state.relayOk !== true; i++) await new Promise((r) => setTimeout(r, 50));
+    await new Promise((r) => setTimeout(r, 300));
     ok('点击胶囊 → resetRelayProbe 生效（TTL 内仍然发起了 health 探测）', health.length >= 1, `health 调用 ${health.length} 次`);
     ok('探测成功后 store.relayOk=true、联网自动开启、胶囊点亮', store.state.relayOk === true && store.state.settings.webEnabled !== false && pill.classList.contains('on'));
     // 网关 5xx：错误框带切换按钮；点击后域名切换

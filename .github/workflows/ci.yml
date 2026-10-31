@@ -102,6 +102,9 @@ jobs:
       - name: tests/gateway-models.test.mjs · 网关模型目录与手动 ID 规则
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/gateway-models.test.mjs
+      - name: tests/image-variants.test.mjs · 生图家族 / 4K 升采样变体归并与决策层（Jev）版本
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/image-variants.test.mjs
       - name: tests/gguf.test.mjs · GGUF 元数据与内存估算
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/gguf.test.mjs
