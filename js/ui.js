@@ -1341,7 +1341,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     }
     body.innerHTML = html;
     // 正文新增字符淡入
-    revealChunks(body, body._chunk || (body._chunk = { revealed: 0 }), live && !m.done && document.documentElement.dataset.motion !== 'off');
+    revealChunks(body, body._chunk || (body._chunk = {}), live && !m.done && document.documentElement.dataset.motion !== 'off');
     body.classList.toggle('empty', !String(html || '').trim());
     hydrateSandboxMedia(body, agent.fs);
     bindFoldRows(body);
