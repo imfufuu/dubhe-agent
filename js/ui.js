@@ -1304,7 +1304,10 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       if (toolPresentation.deferred(m, store.state.messages)) { syncCancelledTail(wrap, m); settleTurnToolbars(msgList, store.state.messages); return; }
       m = toolPresentation.project(m);
     }
-    syncChecklistBlock(wrap, m); if (paintOrderedAssistant(wrap, m, {
+    // 清单胶囊只挂在顶层消息节点：多段消息的片段会继承整条消息的字段，不能各画一份
+    if (m._displayFragment) wrap.querySelectorAll(':scope > .agent-checklist').forEach((n) => n.remove());
+    else syncChecklistBlock(wrap, m);
+    if (paintOrderedAssistant(wrap, m, {
       paintPart: paintAssistant, paintMeta: paintTurnMeta, paintFoot, syncShell: syncAssistantShell,
       syncFolds: syncCompletedToolFolds,
       refreshActions: refreshActionVisibility,

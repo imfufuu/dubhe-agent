@@ -74,7 +74,9 @@ test('wiring: agent loop gates turn end on open checklist items and resets per t
 
 test('wiring: checklist tool call stays out of the command menu and the card is painted', () => {
   assert.match(read('js/toolflow.js'), /if \(call\?\.name === 'checklist'\) return 'checklist';/);
-  assert.match(read('js/ui.js'), /syncChecklistBlock\(wrap, m\); if \(paintOrderedAssistant/);
+  // 清单胶囊只在顶层消息节点绘制（片段会继承整条消息字段，不能各画一份）
+  assert.match(read('js/ui.js'), /else syncChecklistBlock\(wrap, m\);\s*if \(paintOrderedAssistant/);
+  assert.match(read('js/ui.js'), /if \(m\._displayFragment\) wrap\.querySelectorAll\(':scope > \.agent-checklist'\)/);
   assert.match(read('js/ui-toolflow.js'), /export function syncChecklistBlock/);
   assert.match(read('css/styles.css'), /\.agent-checklist \{/);
 });
@@ -99,4 +101,17 @@ test('wiring: checklist lives in the sandbox panel "任务" tab; message keeps a
   assert.match(tf, /export function paintChecklistPanel/);
   assert.match(tf, /pill\.dataset\.openTasks = '1'/);
   assert.match(tf, /store\.subscribe\(\(\) => paintChecklistPanel\(latest\(\)\)\)/);
+});
+
+test('任务面板：空状态复用文件面板插画，内容与边框保持留白', () => {
+  const html = read('app.html'), css = read('css/styles.css'), tf = read('js/ui-toolflow.js');
+  assert.match(html, /id="task-empty" class="files-empty task-empty" hidden/);
+  assert.match(tf, /const TASK_EMPTY_ART = `<svg class="files-empty-art task-empty-art"/);
+  assert.match(css, /\.task-card \.task-body \{[^}]*padding: 16px 16px 18px/);
+});
+
+test('助手消息留白按主区域宽度判定（侧栏展开的 900px 视口不贴分割线）', () => {
+  const css = read('css/styles.css');
+  assert.match(css, /\.main \{ container-type: inline-size; \}/);
+  assert.match(css, /@container \(max-width: 860px\) \{ \.msg-assistant:not\(\.msg-collapsed\) \{ padding-inline/);
 });

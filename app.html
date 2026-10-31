@@ -428,9 +428,11 @@
             <div class="files-card-meta"><span id="task-count" class="files-n mono">—</span></div>
           </div>
         </div>
-        <div class="task-progress" aria-hidden="true"><span id="task-progress-fill"></span></div>
-        <ol id="task-list" class="agent-checklist-items"></ol>
-        <p id="task-empty" class="task-empty">复杂任务开始时，Agent 会在这里列出清单并实时更新状态。</p>
+        <div class="task-body">
+          <div class="task-progress" aria-hidden="true"><span id="task-progress-fill"></span></div>
+          <ol id="task-list" class="agent-checklist-items"></ol>
+          <div id="task-empty" class="files-empty task-empty" hidden></div>
+        </div>
       </div>
     </div>
     <div id="tab-memory" class="panel-body" hidden>

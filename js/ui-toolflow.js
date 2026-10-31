@@ -370,6 +370,28 @@ export function syncChecklistBlock(wrap, m) {
   }
 }
 
+// 任务面板空状态插画：与文件 / 记忆面板同一套 SVG 结构与动画类（fe-*）
+const TASK_EMPTY_ART = `<svg class="files-empty-art task-empty-art" viewBox="0 0 160 112" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  <defs><linearGradient id="tkg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="currentColor" stop-opacity=".10"/><stop offset="1" stop-color="currentColor" stop-opacity="0"/></linearGradient></defs>
+  <ellipse cx="80" cy="98" rx="52" ry="7" fill="url(#tkg)"/>
+  <g class="fe-back" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" opacity=".5" transform="rotate(-5 80 60)">
+    <rect x="52" y="30" width="56" height="62" rx="6" fill="var(--bg)"/>
+  </g>
+  <g class="fe-stack" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round">
+    <rect x="48" y="36" width="64" height="62" rx="6" fill="var(--bg)"/>
+    <rect x="66" y="31" width="28" height="10" rx="3" fill="var(--bg)"/>
+    <circle cx="58" cy="54" r="3.2" stroke-opacity=".8"/><path d="M68 54h24" stroke-opacity=".5"/>
+    <circle cx="58" cy="68" r="3.2" stroke-opacity=".8"/><path d="M68 68h18" stroke-opacity=".5"/>
+    <path d="M55 82l3 3 5-6" stroke-opacity=".9"/><path d="M68 82h20" stroke-opacity=".5"/>
+  </g>
+  <g class="fe-drop" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M124 18l2.6 6.4 6.4 2.6-6.4 2.6L124 36l-2.6-6.4-6.4-2.6 6.4-2.6Z" fill="var(--bg)"/>
+  </g>
+  <g class="fe-sparks" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" opacity=".5">
+    <path d="M30 40v6M27 43h6"/><path d="M136 66v4M134 68h4"/><circle cx="26" cy="74" r="1.4" fill="currentColor" stroke="none"/>
+  </g>
+</svg>`;
+
 // 面板：完整清单。sig 未变时不重绘，流式期间保持轻量。
 let lastPanelSig = '';
 export function paintChecklistPanel(list) {
@@ -386,8 +408,21 @@ export function paintChecklistPanel(list) {
   const empty = pane.querySelector('#task-empty');
   const count = pane.querySelector('#task-count');
   const fill = pane.querySelector('#task-progress-fill');
+  const bodyEls = [pane.querySelector('.task-progress'), ol];
+  if (!total && empty) {
+    // 空状态：插画 + 一句说明（与文件 / 记忆面板一致），隐藏进度条与列表
+    if (empty.dataset.painted !== '1') {
+      empty.dataset.painted = '1';
+      empty.setAttribute('aria-label', localeText('暂无任务清单', 'No checklist yet'));
+      empty.innerHTML = `${TASK_EMPTY_ART}<p class="files-empty-text">${ckEsc(localeText('复杂任务开始时，Agent 会在这里列出清单并实时更新状态。', 'When a complex task starts, the agent lists its checklist here and updates its status in real time.'))}</p>`;
+    }
+    empty.hidden = false;
+    for (const el of bodyEls) if (el) el.hidden = true;
+  } else {
+    if (empty) empty.hidden = true;
+    for (const el of bodyEls) if (el) el.hidden = false;
+  }
   if (ol) ol.innerHTML = items.map((item) => `<li class="ck-${ckEsc(item.status)}"><span class="ck-mark" aria-hidden="true"></span><span class="ck-text">${ckEsc(item.text)}</span><span class="ck-state">${ckEsc(label[item.status] || item.status)}</span></li>`).join('');
-  if (empty) empty.hidden = total > 0;
   if (count) count.textContent = total ? `${done}/${total}` : '—';
   if (fill) fill.style.width = total ? `${Math.round((done / total) * 100)}%` : '0%';
 }
