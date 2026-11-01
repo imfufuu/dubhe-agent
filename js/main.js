@@ -18,6 +18,7 @@ import { installOfflineNetworkFence, isNetworkOffline, announceNetworkState } fr
 import { OFFLINE_MODEL_ID, isOfflineModelId } from './offline-model-config.js';
 import { syncOfflineModelAvailability } from './offline-model.js';
 import { bindJevDecisionVisibility } from './jev-decision-visibility.js';
+import { installProjectEntry } from './project-mode.js';
 
 installOfflineNetworkFence();
 
@@ -122,6 +123,7 @@ applyMotion();
 bindJevDecisionVisibility(store);
 bootStage('ui');
 ui = mountUI(store, agent);
+installProjectEntry({ store, agent });
 installDeviceControls();
 // 旧浏览器提示（.32）：缺 color-mix / :has 时样式会「有骨架、丢细节」，用户容易以为是加载失败；说清原因与版本建议，每个会话只提一次
 try {

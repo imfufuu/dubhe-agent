@@ -69,6 +69,9 @@ jobs:
       - name: tests/analyze-url.test.mjs · 分析工具直接接受外部链接，失败原因回传
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/analyze-url.test.mjs
+      - name: tests/project-mode.test.mjs · 项目模式纯逻辑与接线
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/project-mode.test.mjs
       - name: tests/human-check.test.mjs · 防人机（Worker 挑战 / 通行证 / 客户端透明）
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/human-check.test.mjs

@@ -1835,6 +1835,20 @@ export function createAgent(store, hooks = {}) {
       syncFS();
     },
 
+    // 项目模式（第 17 条）：直接读写永久沙箱 baseFS，不经过回合内的临时层；写入后同步到 store
+    sandboxWrite(path, content) {
+      baseFS.write(path, content);
+      syncFS();
+      store.notify();
+      return true;
+    },
+    sandboxRemove(path) {
+      baseFS.remove(path);
+      syncFS();
+      store.notify();
+      return true;
+    },
+
     fs,
   };
 }

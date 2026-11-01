@@ -1,0 +1,120 @@
+// 第 17 条（段 1）：项目模式的纯逻辑与接线检查——路径、语言、编辑器缩进/回车、资源管理器树、Agent 写回沙箱。
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import {
+  isWorkspacePath, workspaceEntries, isBinaryContent, languageOf, lineCol, lineCount,
+  indentEdit, enterEdit, validateName, joinPath, parentDir, explorerRows,
+} from '../js/project-core.js';
+import { createAgent } from '../js/agent.js';
+
+test('workspace paths reject traversal, absolute paths and internal folders', () => {
+  assert.equal(isWorkspacePath('src/app.js'), true);
+  assert.equal(isWorkspacePath('../x'), false);
+  assert.equal(isWorkspacePath('a/../b'), false);
+  assert.equal(isWorkspacePath('/etc/x'), false);
+  assert.equal(isWorkspacePath('a\\b'), false);
+  assert.equal(isWorkspacePath('internal/state.json'), false);
+  assert.equal(isWorkspacePath('.git/config'), false);
+  assert.equal(isWorkspacePath(''), false);
+});
+
+test('workspaceEntries lists only workspace files, sorted', () => {
+  const entries = workspaceEntries({ 'b.md': 'x', 'internal/k': 'y', 'a/z.py': 'zz', '../bad': 'q' });
+  assert.deepEqual(entries.map((e) => e.path), ['a/z.py', 'b.md']);
+  assert.equal(entries[0].size, 2);
+});
+
+test('binary detection and language mapping', () => {
+  assert.equal(isBinaryContent('data:image/png;base64,AAAA'), true);
+  assert.equal(isBinaryContent('ab\0cd'), true);
+  assert.equal(isBinaryContent('plain text'), false);
+  assert.equal(languageOf('src/Main.PY'), 'Python');
+  assert.equal(languageOf('x.cpp'), 'C++');
+  assert.equal(languageOf('Makefile'), 'Makefile');
+  assert.equal(languageOf('noext'), 'Text');
+  assert.equal(languageOf('.env'), 'Text');
+});
+
+test('line and column are 1-based and count lines correctly', () => {
+  assert.deepEqual(lineCol('ab\ncd', 0), { line: 1, col: 1 });
+  assert.deepEqual(lineCol('ab\ncd', 4), { line: 2, col: 2 });
+  assert.deepEqual(lineCol('ab\ncd', 99), { line: 2, col: 3 });
+  assert.equal(lineCount(''), 1);
+  assert.equal(lineCount('a\nb\n'), 3);
+});
+
+test('Tab with no selection inserts one indent unit at the caret', () => {
+  const r = indentEdit('abc', 1, 1);
+  assert.deepEqual(r, { value: 'a  bc', start: 3, end: 3 });
+});
+
+test('Tab over a selection indents whole lines and keeps the selection covering them', () => {
+  const r = indentEdit('a\nb', 0, 3);
+  assert.equal(r.value, '  a\n  b');
+  assert.equal(r.start, 2);
+  assert.equal(r.end, 7);
+});
+
+test('Shift+Tab removes at most one indent unit per line', () => {
+  const r = indentEdit('    a\n b', 0, 6, { dedent: true });
+  assert.equal(r.value, '  a\nb');
+  const tab = indentEdit('\tx', 0, 0, { dedent: true });
+  assert.equal(tab.value, 'x');
+});
+
+test('Enter keeps the current indentation and adds one level after an opener', () => {
+  assert.equal(enterEdit('  foo', 5, 5).value, '  foo\n  ');
+  const opened = enterEdit('if (x) {', 8, 8);
+  assert.equal(opened.value, 'if (x) {\n  ');
+  assert.equal(opened.start, opened.value.length);
+  assert.equal(enterEdit('def f():', 8, 8).value, 'def f():\n  ');
+});
+
+test('names are validated; joinPath and parentDir work for nested paths', () => {
+  assert.equal(validateName('  ok.js ').name, 'ok.js');
+  assert.equal(validateName('').ok, false);
+  assert.equal(validateName('..').ok, false);
+  assert.equal(validateName('a/b').ok, false);
+  assert.equal(joinPath('', 'a.js'), 'a.js');
+  assert.equal(joinPath('src', 'a.js'), 'src/a.js');
+  assert.equal(parentDir('src/lib/a.js'), 'src/lib');
+  assert.equal(parentDir('a.js'), '');
+});
+
+test('explorer rows put directories first and respect collapsed folders', () => {
+  const files = [{ path: 'src/a.js', size: 1 }, { path: 'src/lib/b.js', size: 1 }, { path: 'README.md', size: 1 }];
+  const open = explorerRows(files, new Set()).map((r) => r.path);
+  assert.deepEqual(open, ['src', 'src/lib', 'src/lib/b.js', 'src/a.js', 'README.md']);
+  const closed = explorerRows(files, new Set(['src'])).map((r) => r.path);
+  assert.deepEqual(closed, ['src', 'README.md']);
+});
+
+test('agent exposes sandboxWrite / sandboxRemove that write the persistent workspace and sync the store', () => {
+  const state = { files: {} };
+  let notified = 0;
+  const store = {
+    state,
+    notify() { notified++; },
+    save() {},
+    get messages() { return []; },
+  };
+  const agent = createAgent(store, {});
+  assert.equal(typeof agent.sandboxWrite, 'function');
+  assert.equal(typeof agent.sandboxRemove, 'function');
+  agent.sandboxWrite('src/hello.py', 'print(1)\n');
+  assert.equal(store.state.files['src/hello.py'], 'print(1)\n');
+  assert.ok(notified >= 1);
+  agent.sandboxRemove('src/hello.py');
+  assert.equal('src/hello.py' in store.state.files, false);
+  assert.throws(() => agent.sandboxWrite('../evil', 'x'), /非法路径/);
+});
+
+test('project mode is wired: entry button, main.js install call, and CSS', () => {
+  const html = readFileSync(new URL('../app.html', import.meta.url), 'utf8');
+  const main = readFileSync(new URL('../js/main.js', import.meta.url), 'utf8');
+  const css = readFileSync(new URL('../css/styles.css', import.meta.url), 'utf8');
+  assert.match(html, /id="open-project"/);
+  assert.match(main, /installProjectEntry\(\{ store, agent \}\)/);
+  assert.match(css, /\.pm-root \{/);
+});

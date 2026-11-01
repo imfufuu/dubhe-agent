@@ -3287,3 +3287,52 @@ html:lang(de) .tok-row > span { min-width: 0; overflow-wrap: anywhere; }
 /* ── 文稿扫描：全屏取景（第 18 条）── */
 .scan-modal.scan-fs-on .scan-video, .scan-modal.scan-fs-on .scan-canvas { max-height: calc(100dvh - 170px); }
 .scan-modal.scan-fs-on .scan-stage { min-height: 0; }
+
+/* ── 项目模式（第 17 条）：全屏代码工作区，参照 VS Code ───────────────────── */
+.pm-root { position: fixed; inset: 0; z-index: 9000; display: flex; flex-direction: column; background: var(--bg); color: var(--fg); font-size: 13px; }
+.pm-top { display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 12px; border-bottom: 1px solid var(--line); background: var(--sidebar-bg); flex: 0 0 auto; }
+.pm-brand { font-weight: 700; letter-spacing: .08em; font-size: 11px; color: var(--fg-2); }
+.pm-proj-name { font-weight: 600; }
+.pm-proj-count, .pm-st-pos, .pm-st-lang { color: var(--fg-3); font-size: 12px; }
+.pm-spacer { flex: 1 1 auto; }
+.pm-btn { height: 28px; padding: 0 12px; border-radius: 6px; border: 1px solid var(--line-2); background: transparent; color: var(--fg); cursor: pointer; font: inherit; }
+.pm-btn:hover:not(:disabled) { background: var(--bg-hover); }
+.pm-btn.primary { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.pm-btn:disabled { opacity: .45; cursor: default; }
+.pm-body { flex: 1 1 auto; display: flex; min-height: 0; }
+.pm-explorer { width: 240px; flex: 0 0 240px; display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--line); background: var(--sidebar-bg); }
+.pm-ex-head { display: flex; align-items: center; gap: 4px; padding: 8px 8px 6px 12px; font-size: 11px; letter-spacing: .06em; color: var(--fg-2); }
+.pm-ex-head > span { flex: 1 1 auto; }
+.pm-icon { width: 24px; height: 24px; border: 0; border-radius: 5px; background: transparent; color: var(--fg-2); cursor: pointer; font: inherit; font-size: 15px; line-height: 1; }
+.pm-icon:hover { background: var(--bg-hover); color: var(--fg); }
+.pm-tree { flex: 1 1 auto; overflow: auto; padding: 2px 4px 12px; }
+.pm-tree-row { display: flex; align-items: center; gap: 4px; min-height: 24px; padding-right: 4px; border-radius: 4px; cursor: pointer; white-space: nowrap; }
+.pm-tree-row:hover { background: var(--bg-hover); }
+.pm-tree-row.active { background: var(--conversation-card-hover); font-weight: 600; }
+.pm-tree-row.create { cursor: default; padding: 4px 6px; }
+.pm-tree-glyph { width: 10px; color: var(--fg-3); font-size: 10px; flex: 0 0 10px; }
+.pm-tree-name { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; }
+.pm-tree-empty { padding: 10px 12px; color: var(--fg-3); font-size: 12px; line-height: 1.6; white-space: normal; }
+.pm-dot { color: var(--fg-2); font-size: 9px; }
+.pm-row-acts { display: none; gap: 2px; }
+.pm-tree-row:hover .pm-row-acts, .pm-tab:hover .pm-mini { display: inline-flex; }
+.pm-mini { width: 18px; height: 18px; border: 0; border-radius: 4px; background: transparent; color: var(--fg-3); cursor: pointer; font: inherit; font-size: 12px; line-height: 1; padding: 0; }
+.pm-mini:hover { background: var(--bg-hover); color: var(--fg); }
+.pm-mini.danger:hover { color: #c0392b; }
+.pm-input { width: 100%; box-sizing: border-box; height: 24px; padding: 0 6px; border: 1px solid var(--line-2); border-radius: 4px; background: var(--bg); color: var(--fg); font: inherit; font-size: 12px; }
+.pm-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; position: relative; }
+.pm-tabs { display: flex; gap: 0; overflow-x: auto; min-height: 34px; border-bottom: 1px solid var(--line); background: var(--sidebar-bg); }
+.pm-tab { display: flex; align-items: center; gap: 6px; padding: 0 10px; min-width: 0; max-width: 220px; cursor: pointer; border-right: 1px solid var(--line); color: var(--fg-2); white-space: nowrap; }
+.pm-tab.active { background: var(--bg); color: var(--fg); box-shadow: inset 0 2px 0 var(--fg); }
+.pm-tab.gone .pm-tab-name { text-decoration: line-through; }
+.pm-tab-name { overflow: hidden; text-overflow: ellipsis; }
+.pm-editor { flex: 1 1 auto; min-height: 0; display: flex; overflow: hidden; background: var(--bg); }
+.pm-gutter { flex: 0 0 auto; min-width: 44px; box-sizing: border-box; padding: 10px 8px 10px 0; text-align: right; color: var(--fg-3); font: 13px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre; overflow: hidden; user-select: none; }
+.pm-text { flex: 1 1 auto; min-width: 0; margin: 0; padding: 10px 14px 10px 6px; border: 0; outline: none; resize: none; background: transparent; color: var(--fg); font: 13px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre; overflow: auto; tab-size: 2; }
+.pm-text[hidden] { display: none; }
+.pm-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--fg-3); pointer-events: none; }
+.pm-empty[hidden] { display: none; }
+.pm-status { display: flex; align-items: center; gap: 14px; height: 24px; padding: 0 12px; border-top: 1px solid var(--line); background: var(--sidebar-bg); font-size: 12px; color: var(--fg-2); flex: 0 0 auto; }
+.pm-st-msg { color: var(--fg); }
+.pm-st-dirty { color: var(--fg-2); }
+@media (max-width: 720px) { .pm-explorer { width: 170px; flex-basis: 170px; } .pm-status { display: none; } }
