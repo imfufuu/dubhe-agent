@@ -8943,7 +8943,8 @@ test('ui.js 拆分：文件面板 / 全屏预览 / 附件 / 图表各自成模�
   // 2026.10.29：联网/生成类折叠行（paintWebFold）与设置页视频模型接线后调到 176 KB。
   assert.ok(Buffer.byteLength(ui, 'utf8') < 176 * 1024, `ui.js 应小于 176 KB（当前 ${Buffer.byteLength(ui, 'utf8')} B）`);
   const agentSrcP4 = fsp.readFileSync(new URL('../js/agent.js', import.meta.url), 'utf8');
-  assert.ok(Buffer.byteLength(agentSrcP4, 'utf8') < 110 * 1024, `agent.js 应小于 110 KB（当前 ${Buffer.byteLength(agentSrcP4, 'utf8')} B）`);
+  // 2026.11.01：Jev 决策反馈闭环（回合结果回写 + 上一轮上下文，逻辑在 jev-feedback.js）接线后调到 116 KB。
+  assert.ok(Buffer.byteLength(agentSrcP4, 'utf8') < 116 * 1024, `agent.js 应小于 116 KB（当前 ${Buffer.byteLength(agentSrcP4, 'utf8')} B）`);
   for (const mod of ['toolrunner', 'turnfinalizer']) {
     const src = fsp.readFileSync(new URL(`../js/${mod}.js`, import.meta.url), 'utf8');
     assert.doesNotMatch(src, /from '\.\/agent\.js/, `${mod}.js 不得反向依赖 agent.js`);
@@ -11502,3 +11503,56 @@ for (const item of queue) {
   console.log(`  ✓ ${item.name}`);
 }
 console.log(`\n${passed} 项测试全部通过 ✅`);
+
+test('Jev 反馈闭环（端到端）：工具回合记 usedTools，重新生成记 regenerated，下一轮决策上下文带上一轮结果', async () => {
+  const planBodies = [];
+  const modelTurns = [
+    openaiToolTurn('call_1', 'fetch_url', JSON.stringify({ url: 'https://example.com/alpha' })),
+    openaiTextTurn('第一轮完成'),
+    openaiTextTurn('重新生成的回答'),
+    openaiTextTurn('第二轮完成'),
+  ];
+  const big = '正文'.repeat(20);
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, opts) => {
+    const u = String(url);
+    if (u.includes('/v1/systemone')) {
+      const body = JSON.parse(opts.body);
+      if (body.questions && body.questions.route) planBodies.push(body);
+      return new Response(JSON.stringify({ model: 'jev-1.14.0', answers: { route: { type: 'choice', choice: 'tools', confidence: 0.9 }, difficulty: { type: 'score', score: 2 } } }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    if (u.includes('/v1/chat/completions')) return modelTurns.shift();
+    if (u.includes('/api/health')) return new Response(JSON.stringify({ ok: true, relay: 'dubhe-cf-worker', version: '1.7.0', capabilities: ['fetch', 'search', 'crawl', 'file'] }), { status: 200, headers: { 'content-type': 'application/json' } });
+    if (u.includes('/api/fetch')) {
+      const target = new URL(u, 'http://x').searchParams.get('url');
+      return new Response(JSON.stringify({ url: target, text: `${target}\n${big}`, content_type: 'text/html', title: 'p' }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    throw new Error(`未预期的请求：${u}`);
+  };
+  try {
+    const store = createStore();
+    store.state.apiKey = 'sk-teamo-test';
+    store.state.model = 'gpt-5.6-sol';
+    store.state.settings.webEnabled = true; store.state.settings.autoReview = false;
+    store.state.settings.jevEnabled = true;
+    store.state.relayOk = true;
+    const agent = createAgent(store, {});
+    await agent.send('看看 example.com/alpha 说了什么');
+    const u1 = store.state.messages.find((m) => m.role === 'user');
+    assert.equal(u1.jev.outcome.usedTools, true, '工具回合记 usedTools');
+    assert.ok(u1.jev.summary, '决策摘要保留');
+    await agent.regenerate();
+    const u1b = store.state.messages.find((m) => m.role === 'user');
+    assert.equal(u1b.jev.outcome.regenerated, true, '重新生成记 regenerated');
+    assert.equal(u1b.jev.outcome.usedTools, true, '重新生成不丢失 usedTools');
+    assert.ok(u1b.jev.summary, '重新生成写回决策时不丢摘要');
+    await agent.send('继续');
+    assert.ok(planBodies.length >= 2, `第二轮应发起新的决策请求（实际 ${planBodies.length}）`);
+    const last = planBodies[planBodies.length - 1];
+    assert.match(last.state, /Previous turn: user said "看看 example\.com\/alpha 说了什么"/);
+    assert.match(last.state, /the agent used tools/);
+    assert.match(last.state, /asked to regenerate/);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});

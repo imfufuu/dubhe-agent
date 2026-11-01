@@ -204,7 +204,31 @@ export const TURN_QUESTIONS = {
   ]),
 };
 
-export function buildTurnState({ text, model, settings, attachments } = {}) {
+export const JEV_PREVIOUS_TEXT_MAX = 300;
+
+/**
+ * 决策反馈（第 5 项）：把一轮的真实结果合并到触发它的用户消息的 jev 字段上。
+ * 只追加 outcome，保留 summary / route 等已有字段；patch 里的布尔值覆盖旧值。
+ */
+export function mergeJevOutcome(jev, patch = {}) {
+  const base = jev && typeof jev === 'object' ? jev : {};
+  return { ...base, outcome: { ...(base.outcome || {}), ...patch } };
+}
+
+/** 上一轮的摘要（第 2 项）：用户原文（截断）+ 当时的路由结论 + 实际结果。 */
+export function describePreviousTurn(previous) {
+  if (!previous || typeof previous !== 'object') return '';
+  const text = String(previous.text || '').trim().slice(0, JEV_PREVIOUS_TEXT_MAX);
+  const bits = [];
+  if (previous.summary) bits.push(`Jev had predicted: ${previous.summary}`);
+  const o = previous.outcome || {};
+  if (o.usedTools) bits.push('the agent used tools');
+  if (o.regenerated) bits.push('the user asked to regenerate the answer');
+  if (o.stopped) bits.push('the user stopped the turn early');
+  return `Previous turn: user said "${text || '(empty)'}"${bits.length ? `; ${bits.join('; ')}` : ''}.`;
+}
+
+export function buildTurnState({ text, model, settings, attachments, previous } = {}) {
   const web = settings && settings.webEnabled !== false;
   const sandbox = settings && settings.sandboxEnabled !== false;
   const names = (attachments || []).map((a) => a && a.name).filter(Boolean).slice(0, 8);
@@ -214,6 +238,8 @@ export function buildTurnState({ text, model, settings, attachments } = {}) {
     body ? `User request:\n${body}` : 'User request: (empty, attachments only)',
   ];
   if (names.length) lines.push(`Attachments: ${names.join(', ')}`);
+  const prev = describePreviousTurn(previous);
+  if (prev) lines.push(prev);
   return lines.join('\n').slice(0, 6000);
 }
 
@@ -282,8 +308,8 @@ export function formatPlanNote(answers, { webEnabled, sandboxEnabled, thinking, 
   return lines.join('\n');
 }
 
-export async function planTurn({ apiKey, text, model, settings, attachments, signal, timeoutMs, now = Date.now() } = {}) {
-  const state = buildTurnState({ text, model, settings, attachments });
+export async function planTurn({ apiKey, text, model, settings, attachments, previous, signal, timeoutMs, now = Date.now() } = {}) {
+  const state = buildTurnState({ text, model, settings, attachments, previous });
   const key = planCacheKey(state, activeJevModel);
   // 缓存只存结论（answers）；提示正文每次都按当前设置重算，所以切换思考档位等设置仍然正确。
   const cached = planCacheGet(key, now);
