@@ -57,6 +57,9 @@ jobs:
       - name: tests/checklist.test.mjs · 复杂任务清单（闸门 / 卡片 / 接线）
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/checklist.test.mjs
+      - name: tests/reasoning-body.test.mjs · 流式思考块与正文不互相覆盖
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/reasoning-body.test.mjs
       - name: tests/i18n-packs.test.mjs · 语言包登记 / 覆盖 / 漏翻审计
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/i18n-packs.test.mjs

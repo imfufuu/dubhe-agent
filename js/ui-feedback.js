@@ -8,7 +8,7 @@ export function installFeedback({ store, agent, getBusy, root, toast }) {
     if (!target) return;
     const wrap = [...root.querySelectorAll('.msg[data-id]')].find((n) => n.dataset.id === String(target.id));
     const host = wrap?.querySelector('.msg-actions');
-    if (!host || !wrap.querySelector('.md-body')?.textContent?.trim()) return;
+    if (!host || !wrap.querySelector(':scope > .md-body')?.textContent?.trim()) return;
     let bar = host.querySelector('.feedback-actions');
     if (!bar) {
       bar = document.createElement('span'); bar.className = 'feedback-actions'; bar.dataset.feedbackFor = target.id;

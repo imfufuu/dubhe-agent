@@ -17,6 +17,7 @@ import { APP_RELEASE } from './config.js?v=2026.10.25.1';
 import { installOfflineNetworkFence, isNetworkOffline, announceNetworkState } from './offline-network.js';
 import { OFFLINE_MODEL_ID, isOfflineModelId } from './offline-model-config.js';
 import { syncOfflineModelAvailability } from './offline-model.js';
+import { bindJevDecisionVisibility } from './jev-decision-visibility.js';
 
 installOfflineNetworkFence();
 
@@ -118,6 +119,7 @@ bootStage('kernel');
 const agent = createAgent(store, hooks);
 applyFontSize();
 applyMotion();
+bindJevDecisionVisibility(store);
 bootStage('ui');
 ui = mountUI(store, agent);
 installDeviceControls();

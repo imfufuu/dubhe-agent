@@ -10,7 +10,7 @@ import { installFeedback } from './ui-feedback.js';
 import { installSpeechInput } from './ui-speech.js';
 import { createToolPresentation, presentationCallSettled, turnToolResults } from './toolpresentation.js?v=2026.10.25.1';
 import { paintEditFoldContent, syncEditingFold, toggleEditingFold } from './ui-editpreview.js?v=2026.10.25.1';
-import { paintOrderedAssistant, renderToolChipDetail, paintCommandRows, paintKnowledgeFold, webGroupLabel, hasMediaTaskRunning, syncToolMenuCursor, ownerOfTool, paintVisibleTurn, activeToolOwner, persistTurnTiming, paintWebActivity, syncChecklistBlock, installChecklistPanel } from './ui-toolflow.js?v=2026.10.25.1';
+import { exploringInFlight, paintOrderedAssistant, renderToolChipDetail, paintCommandRows, paintKnowledgeFold, webGroupLabel, hasMediaTaskRunning, syncToolMenuCursor, ownerOfTool, paintVisibleTurn, activeToolOwner, persistTurnTiming, paintWebActivity, syncChecklistBlock, installChecklistPanel } from './ui-toolflow.js?v=2026.10.25.1';
 import { classifyToolResult, toolResultFailed } from './toolwindows.js?v=2026.10.25.1';
 import { adjacentToolMessages, appendToolStream, toolFamily, commandRunFor } from './toolflow.js?v=2026.10.25.1';
 import { createRollbackFx } from './ui-rollback-fx.js?v=2026.10.25.1';
@@ -98,7 +98,7 @@ function turnPlainText(m, wrap) {
     return String((node ? node.innerText : x.text) || '').replace(/\n{3,}/g, '\n\n').trim();
   }).filter(Boolean);
   if (parts.length) return parts.join('\n\n');
-  return String(wrap?.querySelector('.md-body')?.innerText || m.text || '');
+  return String(wrap?.querySelector(':scope > .md-body')?.innerText || m.text || '');
 }
 
 export function mountUI(store, agent) {
@@ -1072,7 +1072,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
           <button class="act" data-act="copy" title="复制这条消息">${ICON.copy || ''}<span>复制</span></button>
         </div>
         </div>`;
-      bindFoldRows($('.md-body', wrap) || wrap);
+      bindFoldRows($(':scope > .md-body', wrap) || wrap);
       $$('.act', wrap).forEach((b) => b.addEventListener('click', () => {
         if (b.dataset.act === 'copy') {
           // 优先从已渲染的 DOM 取纯文本（浏览器自动解码 HTML 实体 / URI 编码，避免 %20/&amp; 等直接进入剪贴板）；
@@ -1314,7 +1314,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       refreshActions: refreshActionVisibility,
     })) { syncCancelledTail(wrap, m); syncAssistantShell(wrap); refreshActionVisibility(); settleTurnToolbars(msgList, store.state.messages); return; }
     wrap.classList.toggle('cancelled', !!m.cancelled);
-    const body = $('.md-body', wrap);
+    const body = $(':scope > .md-body', wrap); // 只取本消息正文：思考详情 .think-full-text 也带 md-body 类
     let html = publicPlanHtml(m.publicPlan);
     const noOutputYet = !m.text && !m.reasoning && !(m.toolCalls && m.toolCalls.length);
     // 光标/连接动画只属于「正在跑的这一条」。导入的历史回复没有 done 字段，
@@ -1639,7 +1639,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       const [lo] = turnRange(msgsAll, idxA);
       return `${msgsAll[lo]?.id || m.id}:${cls}:${first?.id || m.id}`;
     };
-    const paintPathFold = (cls, name, icon, one, many, afterEl, extractor = (msg) => pathsOf(msg, name)) => {
+    const paintPathFold = (cls, name, icon, one, many, afterEl, extractor = (msg) => pathsOf(msg, name), liveLabels = null) => {
       const paths = mergedPaths(name, extractor);
       let node = $(`.${cls}`, wrap);
       if (paths.length) {
@@ -1656,7 +1656,8 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
         } else if (node.previousElementSibling !== afterEl) {
           afterEl.after(node);
         }
-        const label = paths.length === 1 ? one : `${many} ${paths.length}`;
+        const exploring = !!liveLabels && getBusy() && exploringInFlight(cluster.length ? cluster : [m], store.state.messages);
+        const label = exploring ? (paths.length === 1 ? liveLabels[0] : `${liveLabels[1]} ${paths.length}`) : (paths.length === 1 ? one : `${many} ${paths.length}`);
         // Keep the reading header/list alive during output deltas; rebuilding them
         // would restart the text-polish animation on every streamed chunk.
         const pathSig = JSON.stringify(paths);
@@ -1673,7 +1674,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     };
     // 联网 / 生成类工具（搜索、抓取、生图、生视频）：与 Explored File(s) 同样的折叠行，逐条列出调用。
     // 只由同一簇的最后一条消息绘制（与路径折叠一致）；结果折在每行的「结果」里，不再逐条占用命令芯片。
-    const WEB_LABELS = { search_web: ['Searched for'], fetch_url: ['Fetched page'], generate_image: ['Generated image'], generate_video: ['Generated video'] };
+    const WEB_LABELS = { search_web: ['Searched for', 'Searching for'], fetch_url: ['Fetched page', 'Fetching page'], generate_image: ['Generated image', 'Generating image'], generate_video: ['Generated video', 'Generating video'] };
     const webIcon = (name) => ({ search_web: ICON.globe, fetch_url: ICON.globe, generate_image: ICON.image, generate_video: ICON.video })[name] || ICON.globe || '';
     const paintWebFold = (afterEl) => {
       let node = $('.web-activity', wrap);
@@ -1771,7 +1772,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       return $('.edited-files', wrap) || afterEl;
     };
     const afterKnowledge = paintKnowledgeFold(wrap, m, chips, { msgsAll, msgNodes, syncFileFold, syncAssistantShell, decodeRawJsonString });
-    const afterRead = paintPathFold('explored-files', 'read_file', ICON.file, 'Explored file', 'Explored files', afterKnowledge, pathsOfExplored);
+    const afterRead = paintPathFold('explored-files', 'read_file', ICON.file, 'Explored file', 'Explored files', afterKnowledge, pathsOfExplored, ['Exploring file', 'Exploring files']);
     const afterWeb = paintWebFold(afterRead);
     const currentTurn = idxA >= msgsAll.findLastIndex((x) => x.role === 'user' && !x.silent);
     const resultIds = new Set(toolResults(m.id).keys());
@@ -1798,7 +1799,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
   function syncAssistantShell(w) {
     if (!w || !w.classList.contains('msg-assistant')) return;
     const hasHead = !!$('.msg-head', w);
-    const bodyEl = $('.md-body', w);
+    const bodyEl = $(':scope > .md-body', w);
     // 流式分段：命令块被合并到后续消息后，原分段会变空——空分段隐藏，整条都空时与普通空壳一样折叠
     let hasFlow = false;
     for (const frag of w.querySelector(':scope > .assistant-flow')?.children || []) {
