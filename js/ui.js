@@ -46,7 +46,7 @@ import { settleTurnToolbars } from './ui-turn-toolbar.js?v=2026.10.25.1';
 import { relayAvailable, relaySupports, currentRelay, resetRelayProbe, relayState } from './net.js';
 // P3：编辑直播预览模块单独版本化；缺失时不影响核心对话。
 import { buildEditPreview, editFoldLabel, pathsOfEdits, PREVIEW_REFRESH_MS, findTurnTempCommit, discardedForFold, discardedFoldLabel, turnRange } from './editpreview.js?v=2026.10.25.1';
-import { historyWindowStart, previousHistoryWindowStart, HISTORY_WINDOW_MAX_MESSAGES, HISTORY_WINDOW_MAX_CHARS } from './history.js?v=2026.10.25.1';
+import { historyWindowStart, previousHistoryWindowStart, HISTORY_WINDOW_MAX_CHARS } from './history.js?v=2026.10.25.1';
 import { installLightbox } from './ui-lightbox.js?v=2026.10.25.1';
 import { installFilesPanel } from './ui-files-panel.js?v=2026.10.25.1';
 import { sessionsEmptyState } from './sess-empty-art.js?v=2026.10.25.1';
@@ -2039,7 +2039,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
   function renderLazySeam(skipped) {
     const btn = el('button', 'lazy-load-more', `${ICON.chevRight || ''}<span>更早的消息</span>`);
     btn.type = 'button';
-    btn.title = `加载更早的完整轮次（每段最多 ${formatNumber(LAZY_WINDOW)} 条可见消息 / ${formatNumber(LAZY_MAX_CHARS)} 字）`;
+    btn.title = `加载更早的消息（每段正文最多 ${formatNumber(LAZY_MAX_CHARS)} 字）`;
     const badge = el('span', 'lazy-load-count', skipped > 99 ? '99+' : String(skipped));
     badge.setAttribute('aria-hidden', 'true');
     btn.appendChild(badge);
@@ -2049,7 +2049,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       const firstMsg = msgList.querySelector('.msg-user, .msg-assistant');
       const anchorId = firstMsg ? firstMsg.dataset.id : null;
       const anchorOffset = firstMsg ? firstMsg.getBoundingClientRect().top : 0;
-      lazyLoadedFrom = previousHistoryWindowStart(store.state.messages, lazyLoadedFrom, LAZY_WINDOW, LAZY_MAX_CHARS);
+      lazyLoadedFrom = previousHistoryWindowStart(store.state.messages, lazyLoadedFrom, LAZY_MAX_CHARS);
       rebuildMessages();
       // 锚点回位
       requestAnimationFrame(() => {
@@ -2075,7 +2075,6 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
   }
 
   // ── 长会话分段加载 ─────────────────────────────────────────────
-  const LAZY_WINDOW = HISTORY_WINDOW_MAX_MESSAGES;
   const LAZY_MAX_CHARS = HISTORY_WINDOW_MAX_CHARS;
   let lazyLoadedFrom = 0;   // 已加载的消息数组起始下标
   let wrapLazyInit = false; // 标记 rebuildMessages 是否已做过首次窗口计算
@@ -2091,9 +2090,9 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     renderEmpty();
     // 收集可见消息（跳过 tool/silent）
     const visible = store.state.messages.filter((m) => m.role !== 'tool' && !m.silent);
-    // 首屏同时受可见消息数与字符数限制；history.js 只在完整用户轮次边界切分。
+    // 首屏按正文字数分段（每段不超过 HISTORY_WINDOW_MAX_CHARS）；history.js 在消息边界切分。
     if (!wrapLazyInit) {
-      lazyLoadedFrom = historyWindowStart(store.state.messages, LAZY_WINDOW, LAZY_MAX_CHARS);
+      lazyLoadedFrom = historyWindowStart(store.state.messages, LAZY_MAX_CHARS);
       wrapLazyInit = true;
     }
     // 如果还有更早的消息没渲染，顶部放"展开更早对话"按钮

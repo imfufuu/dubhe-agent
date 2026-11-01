@@ -752,48 +752,44 @@ test('importSession：非法数据返回 null 且不改变状态', () => {
   assert.equal(store.state.sessions.length, before);
 });
 
-group('长历史分页：完整轮次 + 消息数/字数双限');
-test('首屏从完整用户轮次边界开始，工具结果计入字数', async () => {
-  const { historyWindowStart, previousHistoryWindowStart, splitHistoryTurns } = await import('../js/history.js');
+group('长历史分页：按正文 4096 字分段，超出顺延');
+test('每段正文不超过 4096 字，超出的消息顺延到下一段', async () => {
+  const { historyWindowStart, previousHistoryWindowStart, HISTORY_WINDOW_MAX_CHARS } = await import('../js/history.js');
+  assert.equal(HISTORY_WINDOW_MAX_CHARS, 4096);
   const messages = [
-    { role: 'user', text: '问题一' }, { role: 'assistant', text: '答复一' },
-    { role: 'tool', content: '工具结果' },
-    { role: 'user', text: '问题二' }, { role: 'assistant', text: '答复二' },
-    { role: 'user', text: '问题三' }, { role: 'assistant', text: '答复三' },
-    { role: 'user', text: '问题四' }, { role: 'assistant', text: '答复四' },
+    { role: 'user', text: 'a'.repeat(2000) }, { role: 'assistant', text: 'b'.repeat(2000) },
+    { role: 'user', text: 'c'.repeat(2000) }, { role: 'assistant', text: 'd'.repeat(2000) },
   ];
-  const start = historyWindowStart(messages, 4, 1000);
-  assert.equal(start, 5, '最近 4 条可见消息正好是完整的两轮');
+  const start = historyWindowStart(messages);
+  assert.equal(start, 2, '末尾 c、d 共 4000 字未超限；再加 b 会超过 4096，从 c 开始');
   assert.equal(messages[start].role, 'user');
-  assert.equal(splitHistoryTurns(messages).length, 4);
-  const previous = previousHistoryWindowStart(messages, start, 4, 1000);
-  assert.equal(previous, 0, '更早一段继续向前加载时从完整轮次起点开始');
-  assert.equal(messages[previous].role, 'user');
+  assert.equal(previousHistoryWindowStart(messages, start), 0, '更早的一段（a、b 共 4000 字）从第一条开始');
 });
-test('字符预算也以完整轮次为界；最新单轮超限仍整体保留', async () => {
+test('工具调用参数与工具结果不计入正文字数', async () => {
   const { historyWindowStart } = await import('../js/history.js');
   const messages = [
-    { role: 'user', text: 'old question' }, { role: 'assistant', text: 'short answer' },
-    { role: 'user', text: 'q'.repeat(20) }, { role: 'assistant', text: 'a'.repeat(80) },
-    { role: 'tool', content: 'x'.repeat(40) },
-    { role: 'user', text: 'new question' }, { role: 'assistant', text: 'new answer' },
+    { role: 'user', text: '问题' }, { role: 'assistant', text: '答复' },
+    { role: 'tool', content: 'x'.repeat(9000) },
+    { role: 'assistant', text: '继续' },
   ];
-  const start = historyWindowStart(messages, 60, 100);
-  assert.equal(start, 5, '中间整轮加 tool 输出后超字数预算，应只显示最新轮');
-  const oversized = [{ role: 'user', text: 'Q'.repeat(300) }, { role: 'assistant', text: 'A'.repeat(300) }];
-  assert.equal(historyWindowStart(oversized, 60, 100), 0, '最新一轮超限也不能拆开或丢掉');
+  assert.equal(historyWindowStart(messages), 0, '9000 字工具输出不计入，短对话不切段');
 });
-
-test('2026.10.9.1：几条短消息（含中等工具输出）不触发「更早的消息」接缝', async () => {
-  const { historyWindowStart, HISTORY_WINDOW_MAX_MESSAGES, HISTORY_WINDOW_MAX_CHARS } = await import('../js/history.js');
-  assert.ok(HISTORY_WINDOW_MAX_MESSAGES >= 120, '消息数阈值应 ≥ 120');
-  assert.ok(HISTORY_WINDOW_MAX_CHARS >= 120000, '字数阈值应 ≥ 120000');
-  const short = [];
-  for (let i = 0; i < 12; i++) {
-    short.push({ role: 'user', text: `第 ${i + 1} 个问题` }, { role: 'assistant', text: '好的，这是简短回答。' });
-  }
-  short.splice(10, 0, { role: 'tool', content: 'y'.repeat(9000) });
-  assert.equal(historyWindowStart(short), 0, '十几轮短对话 + 一次 9000 字工具输出：默认阈值下不切窗口');
+test('切点不落在工具结果上（工具结果跟随其调用一起保留或裁掉）', async () => {
+  const { historyWindowStart } = await import('../js/history.js');
+  const messages = [
+    { role: 'user', text: 'U'.repeat(100) },
+    { role: 'assistant', text: 'X'.repeat(2000) },
+    { role: 'tool', content: 'T' },
+    { role: 'assistant', text: 'Y'.repeat(3000) },
+  ];
+  assert.equal(historyWindowStart(messages), 3, '窗口从 Y 开始；不能从工具结果开始留下孤立结果');
+});
+test('单条超过 4096 字的消息自成一段，且不被截断', async () => {
+  const { historyWindowStart, previousHistoryWindowStart } = await import('../js/history.js');
+  const oversized = [{ role: 'user', text: 'Q'.repeat(5000) }, { role: 'assistant', text: 'A'.repeat(5000) }];
+  assert.equal(historyWindowStart(oversized), 1, '最新一条超限仍完整保留，且不拖入更早的消息');
+  assert.equal(previousHistoryWindowStart(oversized, 1), 0, '更早的超长消息单独成段，向前加载时完整出现');
+  assert.equal(historyWindowStart([]), 0);
 });
 
 group('2026.10.9.1：图表 / Run command(s) / 设置与面板密度 / 暗色 AA / 能力抽屉 / 地图');
