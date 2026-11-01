@@ -3,6 +3,8 @@
 // 算法在 js/doc-scanner.js（纯函数）；这里只负责相机、UI 与产出 File[]。
 import { detectDocCorners, computeHomography, warpImageData, applyScanFilter, targetSizeForQuad } from './doc-scanner.js';
 import { jpegPagesToPdf } from './doc-scanner.js';
+import { createLiveDetector, liveSmoothQuad, LIVE_INTERVAL_MS } from './doc-scan-live.js';
+import { uiText } from './locale.js';
 
 const PREVIEW_EDGE = 980;
 const OUTPUT_EDGE = 2400;
@@ -78,6 +80,7 @@ export async function openScanner({ doc = document } = {}) {
         </div>
         <div class="photo-editor-head-right">
           <span class="photo-local-badge" title="取景、矫正、导出都在浏览器本地完成，不上传">仅本地处理</span>
+          <button class="ghost-btn scan-fs" type="button" data-r="fullscreen" aria-pressed="false">&nbsp;</button>
           <button class="photo-editor-close icon-btn" type="button" data-r="close" aria-label="关闭扫描（Esc）" title="关闭（Esc）"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
         </div>
       </header>
@@ -134,6 +137,9 @@ export async function openScanner({ doc = document } = {}) {
   const btnShoot = $('shoot');
   const btnPreview = $('toggle-preview');
   const btnReshoot = $('reshoot');
+  const btnFs = $('fullscreen');
+  btnFs.textContent = uiText('全屏', 'Fullscreen');
+  btnFs.title = uiText('全屏（取景角点在后台线程计算，不卡界面）', 'Fullscreen (live corner detection runs off the main thread)');
   requestAnimationFrame(() => requestAnimationFrame(() => modal.classList.add('open')));
 
   let stream = null;
@@ -146,6 +152,37 @@ export async function openScanner({ doc = document } = {}) {
   let preview = null;          // 预览渲染结果 canvas
   const pages = [];            // {canvas, name}
   let raf = 0;
+  // 取景角点：节流检测（Worker），结果是视频像素坐标；只用于画线，拍摄后仍以冻结帧为准
+  const liveDetector = createLiveDetector({ doc });
+  let liveQuad = null; let liveSize = null; let liveTimer = 0; let lastLiveHitAt = 0;
+  const LIVE_STALE_MS = 1500;
+  const tickLive = async () => {
+    if (phase !== 'live' || !cameraReady) return;
+    const hit = await liveDetector.detect(video).catch(() => null);
+    if (phase !== 'live') return;
+    const now = Date.now();
+    if (hit) {
+      liveQuad = liveSmoothQuad(liveQuad, hit.quad);
+      liveSize = { w: hit.sourceWidth, h: hit.sourceHeight };
+      lastLiveHitAt = now;
+      drawOverlay();
+    } else if (liveQuad && now - lastLiveHitAt > LIVE_STALE_MS) {
+      liveQuad = null; drawOverlay();
+    }
+  };
+  const syncFullscreen = () => {
+    const on = doc.fullscreenElement === modal;
+    modal.classList.toggle('scan-fs-on', on);
+    btnFs.textContent = on ? uiText('退出全屏', 'Exit fullscreen') : uiText('全屏', 'Fullscreen');
+    btnFs.setAttribute('aria-pressed', String(on));
+    requestAnimationFrame(() => drawOverlay());
+  };
+  const toggleFullscreen = () => {
+    if (doc.fullscreenElement) { doc.exitFullscreen?.().catch(() => {}); return; }
+    modal.requestFullscreen?.().catch(() => { setHint(uiText('当前环境不允许全屏，已保持窗口模式', 'Fullscreen is not allowed here; staying in window mode')); });
+  };
+  btnFs.addEventListener('click', toggleFullscreen);
+  doc.addEventListener('fullscreenchange', syncFullscreen);
 
   const setHint = (t, footer = '') => {
     hint.textContent = t;
@@ -191,11 +228,16 @@ export async function openScanner({ doc = document } = {}) {
     video.srcObject = stream;
     await video.play().catch(() => { /* 自动播放策略下点了按钮才播 */ });
     syncCameraReady();
+    if (!liveTimer) liveTimer = win.setInterval(() => { tickLive(); }, LIVE_INTERVAL_MS);
     if (!cameraReady) setHint('摄像头已连接，正在等待画面…', '请保持此窗口打开；画面就绪后即可拍摄。');
   };
 
   const stop = () => {
     raf && cancelAnimationFrame(raf); raf = 0;
+    if (liveTimer) { win.clearInterval(liveTimer); liveTimer = 0; }
+    liveDetector.dispose();
+    doc.removeEventListener('fullscreenchange', syncFullscreen);
+    if (doc.fullscreenElement === modal) doc.exitFullscreen?.().catch(() => {});
     if (stream) for (const t of stream.getTracks()) { try { t.stop(); } catch { /* 已停止 */ } }
     stream = null;
     modal.classList.add('closing');
@@ -220,7 +262,20 @@ export async function openScanner({ doc = document } = {}) {
     overlay.width = w; overlay.height = h;
     const g = overlay.getContext('2d');
     g.clearRect(0, 0, w, h);
-    if (phase === 'live' || !quad || !still) return;
+    if (phase === 'live') {
+      if (liveQuad && liveSize) {
+        const m = scannerDisplayMetrics(video.getBoundingClientRect(), wr, liveSize.w, liveSize.h);
+        if (m.sx && m.sy) {
+          const pts = liveQuad.map((p) => scannerImageToOverlay(p, m));
+          g.lineWidth = 2; g.setLineDash([8, 6]); g.strokeStyle = '#a78bfa'; g.fillStyle = 'rgba(167,139,250,.10)';
+          g.beginPath();
+          pts.forEach((p, i) => (i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y)));
+          g.closePath(); g.fill(); g.stroke(); g.setLineDash([]);
+        }
+      }
+      return;
+    }
+    if (!quad || !still) return;
     const disp = displayScale();
     if (!disp.sx || !disp.sy) return;
     const pts = quad.map((p) => scannerImageToOverlay(p, disp));
@@ -301,6 +356,7 @@ export async function openScanner({ doc = document } = {}) {
     phase = 'live';
     if (stage) stage.dataset.phase = 'live';
     video.hidden = false; canvas.hidden = true; still = null; quad = null; preview = null;
+    liveQuad = null; liveSize = null;
     previewShown = false; syncPreviewPanel();
     btnShoot.textContent = '拍摄';
     btnShoot.disabled = !cameraReady;

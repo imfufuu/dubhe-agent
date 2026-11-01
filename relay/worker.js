@@ -25,7 +25,7 @@
  *   · CORS 全开供静态站点直连；公开部署建议再用 Cloudflare Rate Limiting 限流
  */
 
-const WORKER_VERSION = '1.7.1';
+const WORKER_VERSION = '1.8.0';
 const UA = `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0 Safari/537.36 Dubhe-Agent-Relay/${WORKER_VERSION}`;
 const MAX_FETCH_BYTES = 4_000_000;
 const MAX_FILE_BYTES = 16 * 1024 * 1024; // /api/file：与前端视频附件上限一致；Worker 128MB 内存，16MB 一次性缓冲安全
@@ -43,7 +43,7 @@ const DDG_TIMEOUT_MS = 6_000;
 const CRAWL_TIMEOUT_MS = 7_000;
 const CORS = {
   'access-control-allow-origin': '*',
-  'access-control-allow-methods': 'GET, OPTIONS',
+  'access-control-allow-methods': 'GET, POST, OPTIONS',
   'access-control-allow-headers': '*',
   'access-control-max-age': '86400',
 };
@@ -603,6 +603,78 @@ function fileNameFromUrl(u, contentType) {
   return name;
 }
 
+// ── 防人机（可选）：Cloudflare Turnstile 按需挑战 + HMAC 短期通行证 ─────
+// 只有同时配置 TURNSTILE_SECRET 与 TURNSTILE_SITE_KEY 才生效；未配置时所有路由保持原样。
+// 流程：受保护接口在缺少有效通行证时返回 403 + challenge=turnstile → 客户端弹出 Turnstile →
+// POST /api/human/verify 校验令牌 → 签发 30 分钟的 HMAC 通行证 → 客户端以 x-dubhe-human 头重试。
+const HUMAN_PASS_TTL_S = 30 * 60;
+const HUMAN_HEADER = 'x-dubhe-human';
+const HUMAN_GATED_PATHS = new Set(['/api/search', '/api/crawl', '/api/file', '/api/fetch']);
+const TURNSTILE_VERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
+
+function humanConfigured(env) {
+  return !!(env && env.TURNSTILE_SECRET && env.TURNSTILE_SITE_KEY);
+}
+
+function humanKey(env) {
+  return crypto.subtle.importKey('raw', new TextEncoder().encode(String(env.TURNSTILE_SECRET)), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign', 'verify']);
+}
+
+function b64urlEncode(bytes) {
+  let bin = '';
+  for (const b of new Uint8Array(bytes)) bin += String.fromCharCode(b);
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function b64urlDecode(text) {
+  const std = String(text).replace(/-/g, '+').replace(/_/g, '/');
+  const bin = atob(std + '='.repeat((4 - (std.length % 4)) % 4));
+  return Uint8Array.from(bin, (c) => c.charCodeAt(0));
+}
+
+async function issueHumanPass(env, nowS = Math.floor(Date.now() / 1000)) {
+  const exp = nowS + HUMAN_PASS_TTL_S;
+  const sig = await crypto.subtle.sign('HMAC', await humanKey(env), new TextEncoder().encode(`human:${exp}`));
+  return { pass: `${exp}.${b64urlEncode(sig)}`, exp };
+}
+
+async function checkHumanPass(env, token, nowS = Math.floor(Date.now() / 1000)) {
+  const m = /^(\d{9,12})\.([A-Za-z0-9_-]{20,128})$/.exec(String(token || ''));
+  if (!m) return false;
+  const exp = Number(m[1]);
+  if (!(exp > nowS)) return false;
+  try {
+    return await crypto.subtle.verify('HMAC', await humanKey(env), b64urlDecode(m[2]), new TextEncoder().encode(`human:${exp}`));
+  } catch {
+    return false;
+  }
+}
+
+async function handleHumanVerify(request, env) {
+  if (!humanConfigured(env)) return json({ error: '未启用人机验证' }, 404);
+  let token = '';
+  try {
+    const body = await request.json();
+    token = String(body && body.token || '');
+  } catch { token = ''; }
+  if (!token || token.length > 2048) return json({ error: '缺少验证令牌' }, 400);
+  const form = new FormData();
+  form.append('secret', env.TURNSTILE_SECRET);
+  form.append('response', token);
+  const ip = request.headers.get('cf-connecting-ip');
+  if (ip) form.append('remoteip', ip);
+  let verdict = {};
+  try {
+    const r = await fetch(TURNSTILE_VERIFY_URL, { method: 'POST', body: form });
+    verdict = await r.json().catch(() => ({}));
+  } catch (err) {
+    return json({ error: `人机验证服务不可达：${err && err.message ? err.message : err}` }, 502);
+  }
+  if (!verdict.success) return json({ error: '人机验证未通过，请重试', codes: verdict['error-codes'] || [] }, 403);
+  const issued = await issueHumanPass(env);
+  return json({ ok: true, pass: issued.pass, exp: issued.exp, ttl_s: HUMAN_PASS_TTL_S });
+}
+
 function json(obj, status = 200, extra = {}) {
   return new Response(JSON.stringify(obj), {
     status,
@@ -617,7 +689,17 @@ export default {
     if (request.method === 'OPTIONS') {
       return new Response(null, { status: 204, headers: CORS });
     }
+    if (request.method === 'POST' && url.pathname === '/api/human/verify') return handleHumanVerify(request, env);
     if (request.method !== 'GET') return json({ error: '只允许 GET 请求' }, 405);
+    if (url.pathname === '/api/human/config') {
+      const on = humanConfigured(env);
+      return json({ required: on, siteKey: on ? String(env.TURNSTILE_SITE_KEY) : '', verifyPath: '/api/human/verify', ttl_s: HUMAN_PASS_TTL_S });
+    }
+    if (HUMAN_GATED_PATHS.has(url.pathname) && humanConfigured(env)) {
+      if (!await checkHumanPass(env, request.headers.get(HUMAN_HEADER))) {
+        return json({ error: '需要先完成人机验证', challenge: 'turnstile', siteKey: String(env.TURNSTILE_SITE_KEY), verifyPath: '/api/human/verify' }, 403);
+      }
+    }
     if (url.pathname === '/api/health') {
       // Keep this legacy health identifier stable for clients that inspect metadata.
       return json({ ok: true, relay: 'dubhe-cf-worker', version: WORKER_VERSION, capabilities: ['fetch', 'search', 'crawl', 'file'], limits: { file_bytes: MAX_FILE_BYTES } });

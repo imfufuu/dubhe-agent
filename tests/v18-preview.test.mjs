@@ -225,7 +225,8 @@ test('提示词三层齐声禁止瞎猜应用内围栏语法：先 knowledge_sea
   assert.match(en, /Never guess app-internal ::: fence grammar/);
   assert.match(en, /fall back to plain Markdown tables\/lists/);
   const { formatRuntime } = await import('../js/prompt.js');
-  assert.match(formatRuntime({ now: new Date(), language: 'zh' }), /输出:::chart\/map\/flow\/mind\/font围栏块前先检索对应精确语法，禁止凭记忆猜写/);
+  // 第 12 条：通用规则（不再逐条列举围栏名），要求先用围栏名调用 knowledge_search
+  assert.match(formatRuntime({ now: new Date(), language: 'zh' }), /输出任何:::围栏或Markdown扩展.{0,60}先用围栏名调用knowledge_search/);
   assert.match(formatRuntime({ now: new Date(), language: 'en' }), /never guess fence syntax from memory/i);
   const { compactOutputSpec } = await import('../js/config.js');
   assert.match(compactOutputSpec('zh'), /禁止凭记忆猜写/);

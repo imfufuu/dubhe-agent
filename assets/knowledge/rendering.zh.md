@@ -129,3 +129,16 @@ Pandoc 风格围栏容器可写 `::: {.notice #intro}`，容器内容，最后�
 ```
 
 也接受 `mindmap`、`mind-map`、`思维导图`、`脑图`。标题是中心主题；无标题时可用正文首行作为根节点。节点文字较长会截短，图形由本地内联 SVG 绘制。不要把架构图误写成不支持的 `:::mermaid` 围栏；复杂 Mermaid/DOT 图需要明确调用对应工具，而不是假定普通 Markdown 会自动渲染 Mermaid。
+
+## 渐变、动效文字、微交互卡片与颜色围栏
+关键词：渐变、动效、动效文字、闪光、发光、波浪、打字机、霓虹、彩虹、卡片、悬停、微交互、自定义动效、颜色、:::gradient、:::fx、:::card、:::color、gradient、fx、animation、shimmer、glow、wave、typewriter、neon、rainbow、card、hover、motion
+
+以下都是“开头一行 + 正文 + 单独结束行 `:::`”的块级围栏，围栏要单独占行。正文继续渲染 Markdown。
+
+- 渐变文字：`:::gradient 预设 [角度]`，正文，`:::`。预设有 sunset（日落）、ocean（海洋）、aurora（极光）、forest（森林）、gold（金色）、neon（霓虹）、candy（糖果）、mono（墨色 / 灰度）。也可以直接给 2 到 4 个颜色：`:::gradient #ff7a18 #af002d 45`，角度可省略。
+- 动效文字：`:::fx 效果名`，正文，`:::`。效果名有 shimmer（闪光）、glow（发光）、wave（波浪）、typewriter（打字机）、neon（霓虹）、rainbow（彩虹）。适合标题、海报文案、短句，不要用于整段长正文。
+- 自定义动效：`:::fx custom`。第一段写 CSS（只作用于本块，仅允许白名单属性，禁止 url()、@import、变量、转义以及 `<` `>`），然后单独一行写 `===`，再写正文。
+- 微交互卡片：`:::card lift`（上浮）、`:::card tilt`（倾斜）、`:::card ripple`（涟漪）、`:::card glow`（发光），正文，`:::`。悬停或点击时触发。
+- 文字颜色：`:::color #rrggbb`，正文，`:::`。颜色会做对比度检查，对比度不足时自动向中性灰调整，保证可读。
+
+选择建议：标题和海报文案用渐变或动效文字；卡片式的要点用微交互卡片；正文本身保持普通 Markdown，不要整段套动效。

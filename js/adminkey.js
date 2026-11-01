@@ -262,6 +262,10 @@ export function effectiveApiKey(raw) {
   return unlocked;
 }
 export function lockAdminKey() { unlocked = null; unlockedExp = 0; }
+// 暗号「本页面会话内只需输入一次」：校验通过后在内存里记住（刷新页面即失效，与口令的生命周期一致）。
+// 暗号不是机密（只防误填），这里省掉的是重复输入，不削弱口令校验与有效期。
+let phraseVerifiedThisSession = false;
+export function adminPhraseVerified() { return phraseVerifiedThisSession; }
 
 /**
  * 用输入的口令解封管理员密钥。
@@ -281,7 +285,10 @@ export async function unlockAdminKey(input, opts = {}) {
   const sealed = b64ToBytes(bundle.sealed);
   const tag = await hmacSha256(macKey, sealed);
   if (!ctEqual(tag, b64ToBytes(bundle.tag))) { lockAdminKey(); return { ok: false, reason: 'bad-password' }; }
-  if (!(await verifyAdminPhrase(opts.phrase))) { lockAdminKey(); return { ok: false, reason: 'bad-phrase' }; }
+  if (!opts.skipPhrase) {
+    if (!(await verifyAdminPhrase(opts.phrase))) { lockAdminKey(); return { ok: false, reason: 'bad-phrase' }; }
+    phraseVerifiedThisSession = true;
+  }
   const ks = await keystream(encKey, sealed.length);
   const plain = new Uint8Array(sealed.length);
   for (let i = 0; i < sealed.length; i++) plain[i] = sealed[i] ^ ks[i];

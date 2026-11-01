@@ -397,6 +397,7 @@ store.state.settings.webEnabled = false;
 store.state.settings.jevEnabled = false;
 globalThis.fetch = async (url) => {
   if (String(url).includes('/api/sandbox-web/health')) return new Response('{}', { status: 404 });
+  if (String(url).includes('/api/local/session')) return new Response('{}', { status: 404 }); // 冒烟环境无本机中继
   if (/\/api\/health(?:\?|$)/.test(String(url))) {
     return new Response(JSON.stringify({ ok: true, relay: 'test-relay', capabilities: ['fetch'] }), {
       status: 200, headers: { 'content-type': 'application/json' },

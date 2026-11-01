@@ -38,6 +38,11 @@ export const CAPABILITY_REGISTRY = Object.freeze({
   execute_python: R('codeSandbox', 'exec', { core: 2, heavy: true, tags: ['code'] }),
   execute_cpp: R('codeSandbox', 'exec', { core: 3, heavy: true, tags: ['code'] }),
   browser_sandbox: R('localBrowser', 'exec', { heavy: true, tags: ['code'] }),
+  // ── 本机能力（本地 server.py 回环监听时可用；每次 run_shell / 写删都需用户确认）──
+  run_shell: R('localMachine', 'exec', { heavy: true }),
+  take_screenshot: R('localMachine', 'fs-write', { heavy: true, tags: ['image'] }),
+  local_desktop: R('localMachine', 'exec', { heavy: true }),
+  local_files: R('localMachine', 'fs-write'),
   skill_library: R('invariantCore', 'local', { core: 14, parallel: true, readOnly: true }),
   tool_library: R('invariantCore', 'local', { core: 15 }),
   document_tool: R('invariantCore', 'fs-write', { heavy: true }),
@@ -103,7 +108,7 @@ export const LEGACY_TOOL_ALIASES = Object.freeze({
   qr_code: { tool: 'data_tool', kind: 'qr', parallel: false, readOnly: false },
 });
 
-export const CAPABILITY_GROUPS = Object.freeze(['invariantCore', 'webFetch', 'workerSearch', 'siteCrawler', 'fileDownload', 'codeSandbox', 'localBrowser', 'subagentSwarm']);
+export const CAPABILITY_GROUPS = Object.freeze(['invariantCore', 'webFetch', 'workerSearch', 'siteCrawler', 'fileDownload', 'codeSandbox', 'localBrowser', 'localMachine', 'subagentSwarm']);
 export const CAPABILITY_KINDS = Object.freeze(['local', 'fs-read', 'fs-write', 'exec', 'network', 'remote', 'cost', 'memory', 'render']);
 
 /** kind → execution.js 契约里允许的 sideEffect（测试据此做三方一致性校验） */

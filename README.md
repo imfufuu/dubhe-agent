@@ -500,7 +500,28 @@ python3 server.py --no-git             # 只留抓取
 python3 server.py --workspace ~/code   # 换工作区（git 的根，越界一律拒绝）
 ```
 
-本地 `server.py` 提供 `GET /api/health`、`GET /api/fetch`、`POST /api/git`；新 Worker 另提供 `GET /api/search` 与 `GET /api/crawl`。前端按 health capabilities 探测具体能力，不会把 Worker 新路由误打到旧版本地 relay 的 404。
+本地 `server.py` 提供 `GET /api/health`、`GET /api/fetch`、`POST /api/git`；新 Worker 另提供 `GET /api/search` 与 `GET /api/crawl`。
+
+### 本机能力（shell / 截图 / 本机文件）
+
+仅当 `server.py` 监听回环地址（默认 `127.0.0.1`）时启用；`--no-local` 可彻底关闭。
+
+```bash
+python3 server.py                                  # 默认：工作区 + 用户主目录 可访问
+python3 server.py --local-root D:\projects          # 可重复指定，限定允许的根目录
+```
+
+- `run_shell`：在本机执行一条命令。Windows 优先 Git Bash（`Program Files\Git\bin\bash.exe`），其次 PATH 中的 bash（排除 WSL 启动器），最后 PowerShell；可用 `DUBHE_SHELL` 指定。超时会结束整棵进程树。
+- `take_screenshot`：整屏截图存入沙箱 `outputs/`，之后可用 `analyze_image` 读图。Windows 用 .NET 截屏，macOS 用 `screencapture`；Linux 按会话选工具：X11 优先 `scrot`、其次 ImageMagick `import`、再 `gnome-screenshot`，Wayland 优先 `grim`（wlroots）、再 `gnome-screenshot`。没有图形会话（`DISPLAY` 与 `WAYLAND_DISPLAY` 都为空）时直接报错。
+- `local_files`：list / stat / read / write / mkdir / move / delete。拒绝 `.ssh`、`.aws`、`.netrc` 等敏感路径，路径经 realpath 后必须落在允许根目录内。
+- `local_desktop`：桌面交互，由 `local_desktop.py` 实现。只读：`info`（屏幕与会话）、`windows`（有标题的窗口）、`processes`（按内存排前 40）、`clipboard_read`。会改变桌面、**每次需用户确认**：`focus`（按标题切换窗口）、`clipboard_write`、`open`（网址，或允许根内的文件/文件夹）、`mouse_move`、`click`（左/右/中，可双击）、`scroll`、`key`（如 `ctrl+shift+t`、`alt+f4`）、`type`（任意 Unicode 文本，经剪贴板粘贴并尽量恢复原剪贴板）。
+  - Windows（优先）：PowerShell + user32。参数经 `DUBHE_ARGS` 环境变量传入，脚本内不拼接用户文本。
+  - macOS：`osascript`、`pbcopy`/`pbpaste`、`ps`；鼠标与双击需要 `brew install cliclick`；暂不支持滚轮。
+  - Linux X11：需 `xdotool`、`wmctrl`（窗口）、`xclip`（剪贴板）。`sudo apt install xdotool wmctrl xclip`。
+  - Linux Wayland：只支持 `info`、`processes`、`clipboard_*`（需 `wl-clipboard`）。窗口枚举与模拟输入受 Wayland 协议限制，明确拒绝并提示切换到 X11 会话。
+
+每个进程启动时生成随机 token，只通过同源 `/api/local/session` 下发；所有 `/api/local/*`（除 session）都要求该 token，并校验 Host 为回环名、拒绝跨站请求。`run_shell`、以及本机文件的写 / 建目录 / 移动 / 删除，**每次都需要用户确认**，不受顶栏档位与自动审批影响。
+前端按 health capabilities 探测具体能力，不会把 Worker 新路由误打到旧版本地 relay 的 404。
 
 安全边界：
 

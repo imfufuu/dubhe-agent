@@ -13,8 +13,17 @@
   GET  /api/fetch?url=  →  抓取单页并抽取正文（mode=text|raw，禁止指向内网地址）
                         搜索与同源站点爬取由可选的 Cloudflare Worker 提供；本地中继不提供搜索路由
   POST /api/git         →  在 ./workspace/ 里执行 git 子命令（白名单、不经 shell、禁交互凭据提示）
+  GET  /api/local/session  →  本机能力会话（平台、shell、允许根目录）及每进程 token（仅同源可读）
+  POST /api/local/shell    →  在本机执行 shell 命令（Windows 优先 Git Bash，其次 PowerShell）  [需 token]
+  GET  /api/local/screenshot → 抓取整个屏幕为 PNG（base64）                                      [需 token]
+  POST /api/local/fs       →  本机文件 list/stat/read/write/mkdir/move/delete，限定在允许根目录内  [需 token]
+  POST /api/local/desktop  →  桌面交互：info/windows/processes/clipboard_*/focus/open/mouse_move/click/scroll/key/type  [需 token]
+本机能力只在回环地址监听时启用（--no-local 可关闭）；Host 必须是回环名，防 DNS 重绑定。
 """
+import base64
+import hmac
 import html as htmlmod
+import secrets
 import http.client
 import shutil
 import ipaddress
@@ -65,6 +74,16 @@ GIT_DENIED_ARGS = {
     "--alternates", "--config", "-c ", "--output", "--upload-pack", "--repo", "--exec",
 }
 GIT_DENIED_SUBSTR = ("ext::", "filter-branch", "credential", "daemon", "serve", "fsck --")
+# 本机能力（local_relay.py）：仅回环监听时启用；token 每进程随机生成，只经同源 session 端点下发
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import local_relay as LR  # noqa: E402
+import local_desktop as LD  # noqa: E402
+
+LOCAL_ENABLED = False
+LOCAL_TOKEN = secrets.token_urlsafe(32)
+LOCAL_FS = None
+LOCAL_HOSTS = {"127.0.0.1", "localhost", "[::1]"}
+LOCAL_BODY_LIMIT = 8 * 1024 * 1024
 ALLOW_HEADERS = {"authorization", "x-api-key", "anthropic-version", "content-type"}
 TIMEOUT = 620  # TeamoRouter 官方最长支持 600s
 
@@ -140,12 +159,34 @@ class GuardedRedirectHandler(urllib.request.HTTPRedirectHandler):
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
+class BinaryContentError(ValueError):
+    """上游是二进制内容（图片/PDF/压缩包/音视频等）。按文本解码会损坏字节，因此拒绝返回正文。"""
+
+    def __init__(self, ctype):
+        super().__init__(ctype or "未知类型")
+        self.ctype = ctype or ""
+
+
+_TEXTUAL_MARKERS = ("json", "xml", "javascript", "ecmascript", "x-www-form-urlencoded", "yaml", "csv")
+
+
+def looks_textual(ctype, data):
+    """Content-Type 明确时以它为准；缺失或模糊时，前 4KB 含 NUL 字节即视为二进制。"""
+    base = str(ctype or "").split(";")[0].strip().lower()
+    if base:
+        return base.startswith("text/") or base.endswith("+json") or base.endswith("+xml") \
+            or any(marker in base for marker in _TEXTUAL_MARKERS)
+    return b"\x00" not in bytes(data[:4096])
+
+
 def http_get_text(url, limit=MAX_FETCH_BYTES, timeout=FETCH_TIMEOUT):
     req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "*/*", "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8"})
     opener = urllib.request.build_opener(GuardedRedirectHandler)
     with opener.open(req, timeout=timeout) as res:  # noqa: S310 - 目标与每一跳重定向都经过 guard_public_http_url
         ctype = res.headers.get("Content-Type", "")
         data = res.read(limit + 1)
+        if not looks_textual(ctype, data):
+            raise BinaryContentError(ctype)
         return res.status, ctype, data[:limit].decode("utf-8", "replace")
 
 
@@ -315,6 +356,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 "ok": True, "service": "dubhe-agent-local-relay",
                 "fetch": True,
                 "git": bool(GIT_ENABLED) and shutil.which("git") is not None,
+                "local": bool(LOCAL_ENABLED),
+                "platform": LR.os_name(),
                 "workspace": WORKSPACE,
                 "time": int(time.time()),
             })
@@ -322,7 +365,84 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self._fetch(qs)
         if route == "/api/git":
             return self._git(method, qs)
+        if route.startswith("/api/local/"):
+            return self._local_api(method, route)
         return self._json(404, {"error": f"unknown api route {route}"})
+
+    # ── 本机能力：shell / 截图 / 本机文件 ──────────────────────────────
+    def _local_guard(self, method, route):
+        """返回 True 表示放行。顺序：功能开关 → Host 回环名（防 DNS 重绑定）→ 跨站拒绝 → token。"""
+        if not LOCAL_ENABLED:
+            self._json(404, {"error": "本机能力未启用（服务未监听回环地址，或使用了 --no-local）"})
+            return False
+        host = (self.headers.get("Host") or "").strip().lower()
+        hostname = host[: host.index("]") + 1] if host.startswith("[") else host.rsplit(":", 1)[0] if ":" in host else host
+        if hostname not in LOCAL_HOSTS:
+            self._json(403, {"error": "host mismatch"})
+            return False
+        if (self.headers.get("Sec-Fetch-Site") or "").lower() == "cross-site":
+            self._json(403, {"error": "cross-site request refused"})
+            return False
+        if route == "/api/local/session" and method == "GET":
+            return True
+        token = self.headers.get("X-Dubhe-Local-Token") or ""
+        if not hmac.compare_digest(token.encode("utf-8"), LOCAL_TOKEN.encode("utf-8")):
+            self._json(401, {"error": "本机能力 token 缺失或无效（请刷新页面）"})
+            return False
+        return True
+
+    def _read_local_body(self):
+        try:
+            n = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            raise LR.LocalError("Content-Length 非法")
+        if n > LOCAL_BODY_LIMIT:
+            raise LR.LocalError("请求体过大")
+        if n <= 0:
+            return {}
+        try:
+            body = json.loads(self.rfile.read(n).decode("utf-8") or "{}")
+        except (ValueError, UnicodeDecodeError):
+            raise LR.LocalError("请求体不是合法 JSON")
+        if not isinstance(body, dict):
+            raise LR.LocalError("请求体必须是 JSON 对象")
+        return body
+
+    def _local_api(self, method, route):
+        if not self._local_guard(method, route):
+            return
+        try:
+            if route == "/api/local/session" and method == "GET":
+                return self._json(200, {
+                    "ok": True,
+                    "token": LOCAL_TOKEN,
+                    "platform": LR.shell_info(),
+                    "fs": LOCAL_FS.describe(),
+                    "screenshot": LR.screenshot_available(),
+                    "desktop": LD.desktop_summary(),
+                })
+            if route == "/api/local/shell" and method == "POST":
+                body = self._read_local_body()
+                cwd = LOCAL_FS.resolve(body.get("cwd") or LOCAL_FS.roots[0])
+                if not os.path.isdir(cwd):
+                    raise LR.LocalError("cwd 不是目录")
+                return self._json(200, LR.run_shell(body.get("command"), cwd, body.get("timeout_s")))
+            if route == "/api/local/screenshot" and method == "GET":
+                data = LR.take_screenshot()
+                return self._json(200, {"mime": "image/png", "base64": base64.b64encode(data).decode("ascii"), "bytes": len(data)})
+            if route == "/api/local/fs" and method == "POST":
+                body = self._read_local_body()
+                return self._json(200, {"ok": True, "result": LR.fs_action(LOCAL_FS, body.get("action"), body)})
+            if route == "/api/local/desktop" and method == "POST":
+                body = self._read_local_body()
+                if str(body.get("action") or "") == "open":
+                    return self._json(200, LD.open_target(body.get("target"), fs_resolve=lambda raw: LOCAL_FS.resolve(raw)))
+                return self._json(200, LD.run_desktop(str(body.get("action") or ""), body))
+            return self._json(404, {"error": f"unknown local route {method} {route}"})
+        except LR.LocalError as exc:
+            return self._json(400, {"error": str(exc)})
+        except OSError as exc:
+            return self._json(400, {"error": f"本机操作失败：{exc}"})
 
     def _sandbox_asset(self):
         try:
@@ -442,6 +562,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             status, ctype, body = http_get_text(url, limit)
         except urllib.error.HTTPError as exc:
             return self._json(502, {"error": f"上游返回 HTTP {exc.code}", "url": url})
+        except BinaryContentError as exc:
+            return self._json(415, {"error": f"目标是二进制文件（{exc.ctype}），不是网页正文；fetch_url 不能无损保存二进制。请改用 download_file 下载。", "url": url, "content_type": exc.ctype})
         except Exception as exc:  # DNS / 超时 / TLS
             return self._json(502, {"error": f"抓取失败：{type(exc).__name__}: {exc}", "url": url})
         truncated = len(body) >= limit
@@ -609,12 +731,23 @@ if __name__ == "__main__":
     parser.add_argument("--allow-browser", action="store_true", help="可信非本机监听下启用本地沙箱 Chromium（不要暴露到公网）")
     parser.add_argument("--no-browser", action="store_true", help="关闭本地沙箱网页运行/调试")
     parser.add_argument("--no-git", action="store_true", help="彻底关闭 /api/git（只留静态与代理）")
+    parser.add_argument("--no-local", action="store_true", help="关闭本机 shell / 截图 / 文件能力（/api/local/*）")
+    parser.add_argument(
+        "--local-root", action="append", default=None,
+        help="本机文件与 shell 允许的根目录，可重复指定；默认 = 工作区 + 用户主目录",
+    )
     parser.add_argument(
         "--host",
         default="127.0.0.1",
         help="监听地址（默认 127.0.0.1 仅本机；代理无鉴权，暴露到局域网请显式 --host 0.0.0.0）",
     )
     args = parser.parse_args()
+    # Windows 控制台默认 cp936/cp1252 时，非 ASCII 输出会抛 UnicodeEncodeError；统一改为 UTF-8 且替换无法编码的字符
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
     port = args.port or args.pos_port or 8787
     if args.workspace:
         WORKSPACE = os.path.abspath(args.workspace)
@@ -623,17 +756,27 @@ if __name__ == "__main__":
     BROWSER_REMOTE_TRUSTED = args.allow_browser
     BROWSER_ENABLED = not args.no_browser and (loopback or args.allow_browser)
     os.makedirs(WORKSPACE, exist_ok=True)
+    LOCAL_ENABLED = not args.no_local and loopback
+    if LOCAL_ENABLED:
+        roots = args.local_root or [WORKSPACE, os.path.expanduser("~")]
+        LOCAL_FS = LR.LocalFS(roots)
     print(
-        f"◐ Dubhe Agent serving on http://{args.host}:{port}  (proxy → https://{UPSTREAM_HOST})\n"
-        f"  工作区 {WORKSPACE} · /api/fetch on · /api/git {'on' if GIT_ENABLED else 'off'}\n"
-        "  网页搜索/站点爬取需配置 Cloudflare Worker（本中继仅提供 /api/fetch 与 /api/git）"
+        f"Dubhe Agent serving on http://{args.host}:{port}  (proxy -> https://{UPSTREAM_HOST})\n"
+        f"  工作区 {WORKSPACE} · /api/fetch on · /api/git {'on' if GIT_ENABLED else 'off'} · "
+        f"本机能力 {'on (' + LR.os_name() + ')' if LOCAL_ENABLED else 'off'}\n"
+        "  网页搜索/站点爬取需配置 Cloudflare Worker（本中继仅提供 /api/fetch、/api/git 与本机能力）"
     )
+    if LOCAL_ENABLED:
+        print("  本机文件根目录：" + "; ".join(LOCAL_FS.roots))
     if not loopback and not args.allow_git and not args.no_git:
-        print("  ⚠ 非本机监听：/api/git 已自动关闭（要开请加 --allow-git）")
+        print("  ! 非本机监听：/api/git 已自动关闭（要开请加 --allow-git）；本机能力同样关闭")
     import signal
     def stop_signal(*_):
         raise KeyboardInterrupt
-    signal.signal(signal.SIGTERM, stop_signal)
+    try:
+        signal.signal(signal.SIGTERM, stop_signal)  # Windows 上也可用，但个别宿主环境会抛错
+    except (ValueError, OSError, AttributeError):
+        pass
     with Server((args.host, port), Handler) as httpd:
         try:
             httpd.serve_forever()

@@ -22,6 +22,7 @@ import { CODE_TOOL_NAMES as REG_CODE_TOOL_NAMES } from './capabilities.js';
 import { streamChat, createToolCallAccumulator, createThinkingTracker, getTransport, isEmptyAssistantMessage } from './api.js?v=2026.10.25.1';
 import { TOOL_DEFS, executeTool } from './tools.js';
 import { probeLocalBrowser, localBrowserAvailable } from './localbrowser.js?v=2026.10.25.1';
+import { probeLocalMachine, localMachineAvailable, LOCAL_MACHINE_TOOLS } from './localmachine.js';
 import { recordOutputText, recordOutputTool } from './toolflow.js?v=2026.10.25.1';
 import { relayAvailable, relaySupports, relayState } from './net.js';
 import { createFS, createTempFS } from './sandbox.js';
@@ -462,6 +463,7 @@ export function createAgent(store, hooks = {}) {
       crawlEnabled: relaySupports('crawl'),
       fileEnabled: relaySupports('file'),
       localBrowserEnabled: localBrowserAvailable(),
+      localMachineEnabled: localMachineAvailable(),
       sandboxEnabled: store.state.settings.sandboxEnabled !== false,
       canDispatch,
     });
@@ -656,6 +658,7 @@ export function createAgent(store, hooks = {}) {
         if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
       }
       if (!offlineOnly) {
+        try { await probeLocalMachine({ signal }); } catch (err) { if (signal?.aborted) throw err; }
         try { await probeLocalBrowser({ signal }); }
         catch (err) { if (err.name !== 'AbortError') console.warn('[Dubhe] local browser health', err); }
       }
@@ -676,6 +679,7 @@ export function createAgent(store, hooks = {}) {
       legacyTools = toolsFor(settings.sandboxEnabled, { localCpp: settings.localCppEnabled !== false })
         .filter((t) => {
           if (t.name === 'browser_sandbox') return localBrowserAvailable();
+          if (LOCAL_MACHINE_TOOLS.includes(t.name)) return localMachineAvailable();
           if (t.name === 'fetch_url') return relayOk && settings.webEnabled !== false;
           if (t.name === 'search_web') return relayOk && settings.webEnabled !== false && relaySupports('search');
           if (t.name === 'crawl_site') return relayOk && settings.webEnabled !== false && relaySupports('crawl');
@@ -740,6 +744,7 @@ export function createAgent(store, hooks = {}) {
       resumeInfo = prevRecord ? resumeExecutionState(prevRecord) : null;
       userCapabilityOverrides = store.state.settings.capabilityConstraints || {};
       capabilities = buildCapabilityConstraints({
+        localMachineEnabled: localMachineAvailable(),
         relayOk,
         webEnabled: settings.webEnabled !== false,
         sandboxEnabled: settings.sandboxEnabled !== false,
@@ -1382,7 +1387,7 @@ export function createAgent(store, hooks = {}) {
             telemetry.recordTool(call.name, Math.round(waveMs / Math.max(1, toolCalls.length)), { engine, ok: !isErr });
             syncFS();
             store.pushMessage({ role: 'tool', toolCallId: call.id, name: call.name, content: result });
-            if (call.name === 'checklist' && !isErr) turnChecklist = recordChecklistCall(store, checklistOwnerId ||= assistantMsg.id, call.args);
+            if (call.name === 'checklist' && !isErr) turnChecklist = recordChecklistCall(store, checklistOwnerId ||= assistantMsg.id, call.args, call.id);
             emit('onToolResult', call, result);
           }
           telemetry.subagentDispatches = turn.subagentReports.length;
@@ -1647,6 +1652,7 @@ export function createAgent(store, hooks = {}) {
       file: webOn && relaySupports('file'),
       localCpp: settings.localCppEnabled !== false,
       browser: !offlineOnly && localBrowserAvailable(),
+      localMachine: localMachineAvailable(),
     }, TOOL_DEFS);
     let allowed = wl.allowed;
     let dropped = wl.dropped;

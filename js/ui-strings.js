@@ -118,7 +118,7 @@ export const UI_STRINGS = {
   "消息输入框": "Message",
   "你出想法，Duhbe来实现": "Ideas in. Software out.",
   "输入消息，可粘贴或拖入附件…": "Ideas in. Software out.",
-  "输入消息，Enter 发送 / Shift+Enter 换行，可拖入或粘贴附件…": "Ideas in. Software out.",
+  "输入消息，Enter 换行，点击发送按钮发送，可拖入或粘贴附件…": "Ideas in. Software out.",
   "发送 (Enter)": "Send (Enter)",
   "发送": "Send",
   "内容由AI生成，请仔细甄别 ·": "AI-generated content. Verify important information ·",

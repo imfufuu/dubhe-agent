@@ -14,6 +14,7 @@
 // 当前选中的 relay endpoints 包；初始指向同源，探测成功后替换为公共 relay 地址
 import { readLocal } from './legacy-keys.js';
 import { isNetworkOffline } from './offline-network.js';
+import { fetchRelay } from './human-check.js';
 
 let RELAY = { base: '', fetch: '/api/fetch', git: '/api/git', health: '/api/health' };
 let activeRelay = null; // { base, label, endpoints, capabilities }
@@ -220,7 +221,7 @@ async function relayFeatureJson(feature, params, signal) {
     if (value !== undefined && value !== null && value !== '') query.set(name, String(value));
   }
   try {
-    const res = await fetch(`${endpoint}?${query.toString()}`, {
+    const res = await fetchRelay(`${endpoint}?${query.toString()}`, {
       signal,
       headers: { Accept: 'application/json' },
     });
@@ -292,7 +293,7 @@ export async function relayDownload({ url = '', maxBytes = RELAY_FILE_MAX_BYTES,
   const candidate = ok ? featureRelays.file : null;
   if (candidate) {
     try {
-      const res = await fetch(`${candidate.endpoints.file}?url=${encodeURIComponent(target)}&max=${limit}`, { signal });
+      const res = await fetchRelay(`${candidate.endpoints.file}?url=${encodeURIComponent(target)}&max=${limit}`, { signal });
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
         return { ok: false, error: `中继拉取失败（HTTP ${res.status}）：${j.error || res.statusText || '未知原因'}`, status: res.status };
@@ -367,7 +368,7 @@ export async function fetchPage({ url, mode = 'text', maxBytes = 2000000, signal
 
   if (await relayAvailable(signal)) {
     try {
-      const res = await fetch(`${RELAY.fetch}?url=${encodeURIComponent(u)}&mode=${want}&max=${Math.min(Number(maxBytes) || 0 || 2000000, 4000000)}`, { signal, headers: { Accept: 'application/json' } });
+      const res = await fetchRelay(`${RELAY.fetch}?url=${encodeURIComponent(u)}&mode=${want}&max=${Math.min(Number(maxBytes) || 0 || 2000000, 4000000)}`, { signal, headers: { Accept: 'application/json' } });
       status = res.status;
       if (res.ok) {
         const j = await res.json();

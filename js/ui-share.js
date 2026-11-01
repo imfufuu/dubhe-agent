@@ -35,6 +35,24 @@ export function installSharing({ store, agent, getBusy, root, toast }) {
   let selected = new Set(), openedSession = '', exporting = false, abort, opener, lastArtifact = null;
 
   let hintShown = false;
+  // 导出进度条：阶段与分块完成时更新；msg 完成后隐藏。fraction 为 null 时隐藏。
+  const setProgress = (fraction) => {
+    const status = $('share-status');
+    let bar = status?.parentElement?.querySelector(':scope > .share-progress') || null;
+    if (!bar && status) {
+      bar = document.createElement('div');
+      bar.className = 'share-progress'; bar.hidden = true; bar.setAttribute('role', 'progressbar');
+      bar.setAttribute('aria-valuemin', '0'); bar.setAttribute('aria-valuemax', '100');
+      bar.innerHTML = '<i></i>';
+      status.before(bar);
+    }
+    if (!bar) return;
+    bar.hidden = fraction == null;
+    if (fraction == null) return;
+    const pct = Math.max(0, Math.min(1, fraction));
+    bar.querySelector('i').style.width = `${(pct * 100).toFixed(1)}%`;
+    bar.setAttribute('aria-valuenow', String(Math.round(pct * 100)));
+  };
   const status = (msg, kind = '') => {
     const el = $('share-status');
     if (!el) return;
@@ -77,12 +95,8 @@ export function installSharing({ store, agent, getBusy, root, toast }) {
       return true;
     } catch { return false; }
   }
-  // iOS / 内嵌浏览器：优先走系统分享面板（可直接存到「文件」或发给自己）。
-  async function shareOrFallback(blob, filename) {
-    const file = new File([blob], filename, { type: blob.type || 'application/octet-stream' });
-    if (typeof navigator.canShare === 'function' && navigator.canShare({ files: [file] }) && typeof navigator.share === 'function') {
-      try { await navigator.share({ files: [file], title: filename }); return 'shared'; } catch (err) { if (err && err.name === 'AbortError') return 'cancelled'; }
-    }
+  // 导出完成后直接由浏览器自动下载（不做「共享」）；下载不可用时才回退到新标签页或手动链接。
+  async function deliverFile(blob, filename) {
     if (!DOWNLOAD_UNSUPPORTED && tryDownload(blob, filename)) return 'downloaded';
     if (blob.type === 'text/html') {
       const url = URL.createObjectURL(blob);
@@ -173,38 +187,56 @@ export function installSharing({ store, agent, getBusy, root, toast }) {
     const name = String(title).replace(/[\\/:*?"<>|\x00-\x1f]/g, '_').slice(0, 70) || 'Dubhe-Agent';
     const options = { messages, selected: chosen, fs, title, tools: $('share-tools').checked, reasoning: $('share-reasoning').checked, interactive: format === 'html' };
     abort = new AbortController(); const mine = abort; exporting = true; hintShown = false; update();
+    setProgress(0.05);
     status(format === 'html' ? text('正在生成离线 HTML…', 'Building offline HTML…') : text('正在渲染长图（消息多时需要几秒）…', 'Rendering the long image (a few seconds for long turns)…'), 'busy');
     try {
       const html = await buildShareDocument(options);
       if (mine.signal.aborted) return;
+      setProgress(format === 'html' ? 0.9 : 0.3);
       if (format === 'html') {
         const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
-        const how = await shareOrFallback(blob, name + '.html');
+        const how = await deliverFile(blob, name + '.html');
         offerArtifact(blob, name + '.html');
+        setProgress(1);
         status(how === 'manual'
           ? text('已生成，但浏览器没有交付文件：用下面的链接另存为。', 'Generated, but the browser did not save it: use the link below.')
-          : how === 'shared' ? text('已交给系统分享面板。', 'Handed to the system share sheet.')
           : how === 'opened' ? text('已在新的标签页打开，可用浏览器「另存为」保存。', 'Opened in a new tab; use Save As in the browser.')
-          : text('分享文件已导出。', 'Share file exported.'), how === 'manual' ? 'warn' : 'ok');
+          : text('离线 HTML 已自动下载。', 'Offline HTML downloaded automatically.'), how === 'manual' ? 'warn' : 'ok');
       } else {
-        const parts = await captureShare(html, { signal: mine.signal }); if (mine.signal.aborted) return;
+        const parts = await captureShare(html, {
+          signal: mine.signal,
+          // 阶段进度占前 30%，分块渲染占后 65%，写文件收尾 5%
+          onStage: (stage) => {
+            if (stage === 'renderer') setProgress(0.1);
+            else if (stage === 'frame') setProgress(0.18);
+            else if (stage === 'fonts') setProgress(0.24);
+            else if (stage === 'images') setProgress(0.3);
+          },
+          onPart: (done, total) => setProgress(0.3 + 0.65 * (done / Math.max(1, total))),
+        });
+        if (mine.signal.aborted) return;
+        setProgress(0.97);
         if (parts.length === 1) {
-          const how = await shareOrFallback(parts[0], name + '.png');
+          const how = await deliverFile(parts[0], name + '.png');
           offerArtifact(parts[0], name + '.png');
+          setProgress(1);
           status(how === 'manual' ? text('长图已生成，但浏览器没有交付文件：用下面的链接另存为。', 'Image generated, but the browser did not save it: use the link below.')
             : how === 'opened' ? text('已在新的标签页打开图片，可长按或另存为保存。', 'Opened in a new tab; long-press or Save As to keep it.')
-            : text('分享长图已导出。', 'Share image exported.'), how === 'manual' ? 'warn' : 'ok');
+            : text('长图已自动下载。', 'Long image downloaded automatically.'), how === 'manual' ? 'warn' : 'ok');
         } else {
           const entries = await Promise.all(parts.map(async (b, i) => ({ name: `${name}-${String(i + 1).padStart(2, '0')}.png`, bytes: new Uint8Array(await b.arrayBuffer()) })));
           const zip = new Blob([createZip(entries)], { type: 'application/zip' });
-          await shareOrFallback(zip, name + '-images.zip');
+          const how = await deliverFile(zip, name + '-images.zip');
           offerArtifact(zip, name + '-images.zip');
-          status(text(`内容较长，已拆成 ${parts.length} 张长图（ZIP），没有截断。`, `Split into ${parts.length} complete long images (ZIP); nothing was truncated.`), 'ok');
+          setProgress(1);
+          status(how === 'manual'
+            ? text(`内容较长，已拆成 ${parts.length} 张长图（ZIP）：用下面的链接另存为。`, `Split into ${parts.length} long images (ZIP): use the link below to save.`)
+            : text(`内容较长，已拆成 ${parts.length} 张长图（ZIP）并自动下载，没有截断。`, `Split into ${parts.length} complete long images (ZIP) and downloaded automatically; nothing was truncated.`), how === 'manual' ? 'warn' : 'ok');
         }
       }
     } catch (err) {
       if (err.name !== 'AbortError') status(text('导出失败：', 'Export failed: ') + (err.message || err), 'err');
-    } finally { exporting = false; update(); }
+    } finally { exporting = false; setProgress(null); update(); }
   };
 
   $('share-png').addEventListener('click', () => runExport('png'));

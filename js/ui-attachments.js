@@ -13,7 +13,7 @@ const $ = (sel, root = document) => root.querySelector(sel);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const el = (tag, cls, html) => { const n = document.createElement(tag); if (cls) n.className = cls; if (html != null) n.innerHTML = html; return n; };
 
-export function installAttachments({ composer, toast, safeImgSrc, fmtSize }) {
+export function installAttachments({ composer, toast, safeImgSrc, fmtSize, onChange = () => {} }) {
   // ── 附件（按钮 / 拖拽 / 粘贴）────────────────────────────────────────
   // 图片 MIME 白名单：覆盖主流浏览器可直接显示的全部光栅/矢量格式（PNG/JPEG/GIF/WEBP/BMP/ICO/TIFF/AVIF/APNG/HEIC/HEIF/SVG）
   // DeepSeek 视觉接口只接受 JPEG/PNG/GIF/WEBP；其它格式发图前在 analyze_image 里统一转成 PNG/JPEG。
@@ -266,6 +266,7 @@ export function installAttachments({ composer, toast, safeImgSrc, fmtSize }) {
   }
 
   function renderAttachChips() {
+    onChange();
     attachChips.innerHTML = '';
     attachChips.style.display = pending.length ? '' : 'none';
     for (const a of pending) {

@@ -9,15 +9,21 @@ export function fitPhotoSize(width, height, maxEdge = 4096) {
   return { width: Math.max(1, Math.round(w * scale)), height: Math.max(1, Math.round(h * scale)), scale };
 }
 
-/** Fit a source bitmap into the editor's measured stage without distorting or upscaling it. */
-export function fitPhotoDisplaySize(width, height, availableWidth, availableHeight) {
+/**
+ * Fit a source bitmap into the editor's measured stage without distorting it.
+ * 默认不放大（小图保持 1:1）；编辑器舞台传 allowUpscale，使裁剪后的小图撑满可视区域。
+ */
+export function fitPhotoDisplaySize(width, height, availableWidth, availableHeight, { allowUpscale = false } = {}) {
   const w = Math.max(1, Number(width) || 1);
   const h = Math.max(1, Number(height) || 1);
   const maxW = Math.max(1, Number(availableWidth) || 1);
   const maxH = Math.max(1, Number(availableHeight) || 1);
-  const scale = Math.min(1, maxW / w, maxH / h);
+  const scale = Math.min(allowUpscale ? Infinity : 1, maxW / w, maxH / h);
   return { width: Math.max(1, Math.round(w * scale)), height: Math.max(1, Math.round(h * scale)), scale };
 }
+
+// 新框选需要至少这么多像素的位移才替换原选区（屏幕坐标近似，按画布像素使用）
+const CROP_CREATE_THRESHOLD = 6;
 
 export function cropRectFromDrag(x1, y1, x2, y2, width, height, minSize = 12) {
   const maxW = Math.max(1, Number(width) || 1);
@@ -302,7 +308,7 @@ export function openPhotoEditor(file, options = {}) {
       const px = (name) => Number.parseFloat(style && style[name]) || 0;
       const availableWidth = Math.max(1, (stage.clientWidth || rect.width || canvas.width) - px('paddingLeft') - px('paddingRight'));
       const availableHeight = Math.max(1, (stage.clientHeight || rect.height || canvas.height) - px('paddingTop') - px('paddingBottom'));
-      const fitted = fitPhotoDisplaySize(canvas.width, canvas.height, availableWidth, availableHeight);
+      const fitted = fitPhotoDisplaySize(canvas.width, canvas.height, availableWidth, availableHeight, { allowUpscale: true });
       const width = `${fitted.width}px`, height = `${fitted.height}px`;
       canvasWrap.style.width = width; canvasWrap.style.height = height;
       canvas.style.width = width; canvas.style.height = height;
@@ -397,18 +403,22 @@ export function openPhotoEditor(file, options = {}) {
       state.dragHandle = handle;
       state.dragStart = p;
       state.dragInitial = state.selection ? { ...state.selection } : null;
-      if (state.dragType === 'create') state.selection = null;
+      // 「新框选」先保留原选区：只有真正拖动超过阈值才替换，误触外部不会丢掉已选区域
+      state.dragMoved = false;
       canvas.style.cursor = state.dragType === 'move' ? 'move' : state.dragType === 'resize' ? `${handle}-resize` : 'crosshair';
       event.preventDefault();
       canvas.setPointerCapture?.(event.pointerId);
       state.drawing = true;
-      if (state.dragType === 'create') state.selection = { x: p.x, y: p.y, width: 0, height: 0 };
       drawSelection();
     };
     const updateCropDrag = (p) => {
       const start = state.dragStart;
       if (!start || !state.dragType) return;
       if (state.dragType === 'create') {
+        if (!state.dragMoved) {
+          if (Math.hypot(p.x - start.x, p.y - start.y) < CROP_CREATE_THRESHOLD) return;
+          state.dragMoved = true;
+        }
         state.selection = cropRectFromDrag(start.x, start.y, p.x, p.y, canvas.width, canvas.height, 1);
       } else if (state.dragType === 'move' && state.dragInitial) {
         const initial = state.dragInitial;
@@ -549,6 +559,8 @@ export function openPhotoEditor(file, options = {}) {
       if (state.crop && state.dragStart) {
         if (cancelled) state.selection = state.dragInitial ? { ...state.dragInitial } : null;
         else updateCropDrag(point(event));
+        // 新框选未越过阈值（只是点了一下外部）：恢复原选区
+        if (state.dragType === 'create' && !state.dragMoved) state.selection = state.dragInitial ? { ...state.dragInitial } : null;
       }
       if (state.draw && strokeQueue.length) flushStroke();
       state.drawing = false;

@@ -11,14 +11,14 @@ const languages = [
     id: 'rendering-zh',
     title: '客户端渲染语法参考',
     file: 'assets/knowledge/rendering.zh.md',
-    tags: 'rendering markdown syntax Markdown 表格 合并单元格 colspan rowspan KaTeX chart flow mind image HTML fence format',
+    tags: 'rendering markdown syntax Markdown 表格 合并单元格 colspan rowspan KaTeX chart flow mind image HTML fence format 渐变 动效 微交互 颜色 gradient fx card color motion',
   },
   {
     language: 'en',
     id: 'rendering-en',
     title: 'Client rendering syntax reference',
     file: 'assets/knowledge/rendering.en.md',
-    tags: 'rendering markdown syntax table merged cells colspan rowspan KaTeX chart flow mind image HTML fence format 中文 合并单元格',
+    tags: 'rendering markdown syntax table merged cells colspan rowspan KaTeX chart flow mind image HTML fence format 中文 合并单元格 gradient fx card color motion 渐变 动效',
   },
 ];
 

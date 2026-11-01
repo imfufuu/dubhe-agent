@@ -591,7 +591,7 @@ test('convert_file：三条通路计划、ffmpeg 参数、注册表/契约/挂�
   assert.equal(String.fromCharCode(wav[0], wav[1], wav[2], wav[3]), 'RIFF');
   const { TOOL_DEFS } = await import('../js/tools.js');
   assert.ok(TOOL_DEFS.some((t) => t.name === 'convert_file' && /ffmpeg\.wasm/.test(t.description)));
-  assert.equal(TOOL_DEFS.length, 47, '含新增的 tool_library 与 xlsx_tool；V1.9 再增 patch_apply / dom_inspect / chart_render；视频生成增 generate_video；复杂任务清单增 checklist');
+  assert.equal(TOOL_DEFS.length, 51, '含新增的 tool_library 与 xlsx_tool；V1.9 再增 patch_apply / dom_inspect / chart_render；视频生成增 generate_video；复杂任务清单增 checklist；本机桌面 local_desktop');
   const caps = await import('../js/capabilities.js');
   assert.ok(caps.CAPABILITY_REGISTRY.convert_file, '能力登记');
   assert.ok(caps.TOOL_MOUNT_RULES.convert_file, '按需挂载规则（no-rule 会全量下发）');
@@ -835,8 +835,12 @@ test('暖纸色编辑对话、助手无回复卡片、用户气泡保留及编�
   assert.match(css, /\.app:has\(#sandbox-panel:not\(\.collapsed\)\) \.messages \{ padding-inline: clamp\(28px, 3\.5vw, 48px\); \}/, '停靠面板展开时，助手消息与两侧分割线都保持间距');
   const newlineGuard = read('../js/composer-newline-guard.js');
   assert.match(newlineGuard, /if \(value\.startsWith\(probe\.prefix\)[\s\S]*?\/\^\\n\{2,\}\$\/u\.test\(inserted\)/, 'Shift+Enter 若在单次输入中插入多个换行，只保留一个');
-  assert.match(composerUi, /if \(e\.shiftKey\) \{ shiftEnterGuard\.capture\(\); return; \}/, '空输入 Shift+Enter 仍交给浏览器输入一个换行');
-  assert.doesNotMatch(composerUi, /e\.shiftKey && !composer\.value\.trim\(\)/, '空输入 Shift+Enter 不会被吞掉');
+  // 2026.11：Enter 只换行，发送只能点按钮（不再回车发送）
+  assert.match(composerUi, /if \(e\.key !== 'Enter' \|\| e\.isComposing\) return;[\s\S]{0,120}?shiftEnterGuard\.capture\(\);/, 'Enter 交给浏览器换行（守卫记录插入点）');
+  assert.doesNotMatch(composerUi, /composer\.addEventListener\('keydown'[\s\S]{0,400}doSend\(\)/, '键盘 Enter 不再触发 doSend');
+  assert.match(composerUi, /function syncSendButton\(\) \{[\s\S]*?sendBtn\.disabled = !getBusy\(\) && !\(composer\.value\.trim\(\)[\s\S]*?hasPending\(\)\)/, '空输入且无附件时发送按钮禁用；运行中始终可用');
+  assert.match(css, /#send-btn \{[^}]*border-radius: 50%/, '发送按钮为圆形，与输入框弧度一致');
+  assert.match(css, /#send-btn:disabled \{[^}]*cursor: not-allowed/);
   assert.match(css, /\.msg-user \.bubble \{[^}]*max-width: 100%/);
   assert.doesNotMatch(css, /\.msg-user \.bubble \{[^}]*max-width: 82%/, '用户气泡不施加窄于消息容器的额外宽度上限');
   assert.match(css, /\.composer \{[^}]*transition:[^}]*border-radius/);
@@ -894,7 +898,7 @@ test('管理员 API Key 弹窗仅对 TeamoRouter 管理员别名显示暗号输�
   assert.match(app, /id="key-admin-phrase"[^>]*type="text"[^>]*inputmode="text"/);
   assert.doesNotMatch(app.match(/<input id="key-admin-phrase"[^>]*>/)?.[0] || '', /type="password"/, 'Chinese admin phrases must allow normal IME text composition');
   assert.match(ui, /isAdminAlias\(keyInput\.value\.trim\(\)\).*DEFAULT_GATEWAY_ID/);
-  assert.match(ui, /unlockAdminKey\(typed, \{ phrase \}\)/);
+  assert.match(ui, /unlockAdminKey\(typed, \{ phrase, skipPhrase: adminPhraseVerified\(\) \}\)/);
   assert.equal(translateUI('管理员暗号', 'en'), 'Admin phrase');
   assert.match(admin, /ADMIN_PASSWORD_BODY = 10/);
   assert.match(admin, /reason: 'bad-phrase'/);

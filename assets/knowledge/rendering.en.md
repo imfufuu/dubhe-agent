@@ -129,3 +129,16 @@ A mind map uses `:::mind Title` or `:::diagram mind Title`. Write a nested bulle
 ```
 
 Aliases include `mindmap`, `mind-map`, `思维导图`, and `脑图`. The title is the root topic; if omitted, the first plain-text line can become the root. Long labels are shortened in the drawing, which is generated as local inline SVG. Do not use an assumed `:::mermaid` fence: complex Mermaid/DOT diagrams need the corresponding tool explicitly; ordinary Markdown does not automatically render Mermaid.
+
+## Gradient, motion text, micro-interaction cards and colour fences
+Keywords: gradient, motion, animation, fx, shimmer, glow, wave, typewriter, neon, rainbow, card, hover, tilt, ripple, custom motion, colour, color, :::gradient, :::fx, :::card, :::color
+
+Each of these is a block fence: an opening line, the body, and a closing line that is only `:::`. The fence must sit on its own line. The body is still rendered as Markdown.
+
+- Gradient text: `:::gradient preset [angle]`, body, `:::`. Presets: sunset, ocean, aurora, forest, gold, neon, candy, mono (greyscale). You can also pass 2 to 4 colours directly, for example `:::gradient #ff7a18 #af002d 45`; the angle is optional.
+- Motion text: `:::fx name`, body, `:::`. Names: shimmer, glow, wave, typewriter, neon, rainbow. Use it for titles, poster lines and short phrases, not for long running text.
+- Custom motion: `:::fx custom`. The first part is CSS that applies only to this block. Only whitelisted properties are allowed; `url()`, `@import`, variables, escapes, `<` and `>` are rejected. Then a single `===` line, then the body.
+- Micro-interaction cards: `:::card lift`, `:::card tilt`, `:::card ripple` or `:::card glow`, body, `:::`. They react on hover or click.
+- Text colour: `:::color #rrggbb`, body, `:::`. The colour is checked for contrast; if it is too low it is shifted towards neutral grey so the text stays readable.
+
+Guidance: use gradient or motion text for titles and posters, micro-interaction cards for highlighted points, and keep ordinary body text as plain Markdown.

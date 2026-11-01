@@ -36,6 +36,12 @@ jobs:
       - name: tests/sandbox_server_checks.py · 本地网页项目与 API 安全边界
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/sandbox_server_checks.py
+      - name: tests/local_relay_checks.py · 本机能力（shell / 截图 / 文件）护栏自检
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/local_relay_checks.py
+      - name: tests/local_desktop_checks.py · 本机桌面交互（键位 / 参数 / 平台命令构造 / Linux 会话检查）
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/local_desktop_checks.py
       - name: tests/agent.test.mjs · 主单测
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/agent.test.mjs
@@ -57,6 +63,18 @@ jobs:
       - name: tests/checklist.test.mjs · 复杂任务清单（闸门 / 卡片 / 接线）
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/checklist.test.mjs
+      - name: tests/share-download.test.mjs · 长图 / HTML 导出：自动下载与进度条
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/share-download.test.mjs
+      - name: tests/analyze-url.test.mjs · 分析工具直接接受外部链接，失败原因回传
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/analyze-url.test.mjs
+      - name: tests/human-check.test.mjs · 防人机（Worker 挑战 / 通行证 / 客户端透明）
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/human-check.test.mjs
+      - name: tests/doc-scan-live.test.mjs · 文稿扫描实时取景角点（节流 / Worker / 全屏入口）
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/doc-scan-live.test.mjs
       - name: tests/reasoning-body.test.mjs · 流式思考块与正文不互相覆盖
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/reasoning-body.test.mjs
@@ -66,6 +84,9 @@ jobs:
       - name: tests/auto-review.test.mjs · 自动审批层（codex-auto-review）触发 / 请求 / 失败回落
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/auto-review.test.mjs
+      - name: tests/localmachine.test.mjs · 本机能力（shell / 截图 / 本机文件）登记、门控、风险与强制确认
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/localmachine.test.mjs
       - name: tests/jev-plan.test.mjs · Jev 回合等待上限（3s fail-open）与结论缓存（TTL / 容量 / 计费）
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/jev-plan.test.mjs

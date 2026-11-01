@@ -41,6 +41,25 @@ location.reload();
 
 Search 响应包含 provider、fallback/warning、标题、URL、摘要和来源。Crawl 响应按页返回标题、描述、正文、深度、截断状态及失败项。Crawler 只跟随同源 HTTP(S) 文本链接，跳过常见二进制扩展；**不执行 JavaScript、不渲染浏览器、不遵循 robots.txt、不处理登录态，也不是通用全网爬虫**。
 
+## 可选防人机（Cloudflare Turnstile）
+
+公开部署的中继可以开启防人机，防止脚本批量消耗搜索、抓取与文件拉取额度。默认关闭，**只有同时配置两项才生效**：
+
+```bash
+cd relay
+wrangler secret put TURNSTILE_SECRET        # Turnstile 站点的 Secret Key（服务端，不要放进仓库）
+wrangler deploy --var TURNSTILE_SITE_KEY:0x4AAAA...   # Site Key（公开，可写进 wrangler.toml 的 [vars]）
+```
+
+启用后：
+
+- `/api/search`、`/api/crawl`、`/api/file`、`/api/fetch` 在缺少有效通行证时返回 `403`，并带 `challenge: "turnstile"`。
+- 应用端会自动弹出 Turnstile 验证框；通过后 Worker 签发 30 分钟的 HMAC 通行证（`x-dubhe-human` 头），期间无需再次验证。
+- `/api/health`、`/api/human/config` 不受影响；`/api/human/verify`（POST）负责校验令牌。
+- 通行证用 `TURNSTILE_SECRET` 做 HMAC 签名，密钥轮换后旧通行证自动失效。
+
+未配置两项密钥时，行为与此前完全相同。
+
 ## 可选 SearXNG
 
 无需部署自带搜索索引。若已有启用 JSON 格式的 SearXNG 实例，在 Cloudflare Worker 的 Settings → Variables 中设置 `SEARXNG_URL`（HTTPS 基址，例如 `https://search.example.org`）。Worker 会请求 `/search?q=…&format=json&language=all`；实例必须允许 JSON 输出。未配置、超时、格式错误或无有效结果时回退 DuckDuckGo HTML，并把降级原因写进响应。搜索词会发送给所选上游搜索服务；不要提交密码、密钥或个人敏感信息作为查询。
