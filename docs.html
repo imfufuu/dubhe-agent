@@ -554,7 +554,18 @@
       }
     }
 
-    function show(name, scrollReset) {
+    // 锚点落点：分区正文开头（位于 sticky 导航与分区标签条之下），而不是页面顶部的标题区。
+    // 用 offsetTop 逐级累加得到文档坐标，不受入场动画 transform 的影响。
+    function bodyTop(el) {
+      var y = 0;
+      for (var n = el; n; n = n.offsetParent) y += n.offsetTop;
+      var bar = document.querySelector('.nav'), tabs = document.querySelector('.doc-tabs');
+      var off = (bar ? bar.offsetHeight : 0) + (tabs ? tabs.offsetHeight : 0) + 12;
+      return Math.max(0, y - off);
+    }
+
+    // scroll：false 不滚动；'smooth' / 'instant' 滚动到该分区正文开头
+    function show(name, scroll) {
       if (PAGES.indexOf(name) < 0) name = 'changelog';
       var links = document.querySelectorAll('.nav-link[data-page]');
       for (var i = 0; i < links.length; i++) {
@@ -569,7 +580,7 @@
       if (cur) {
         revealWithin(cur);
         // 过渡进行中要瞬间归位：平滑滚动会和新状态快照错位，化开效果就散了
-        if (scrollReset) window.scrollTo({ top: 0, behavior: inVt ? 'instant' : 'smooth' });
+        if (scroll) window.scrollTo({ top: bodyTop(cur), behavior: scroll === 'instant' || inVt ? 'instant' : 'smooth' });
       }
     }
 
@@ -610,8 +621,15 @@
       try { inVt = true; document.startViewTransition(function () { mutate(); inVt = false; }); }
       catch (e) { inVt = false; mutate(); }
     }
-    window.addEventListener('hashchange', function () { swapWithTransition(function () { show(fromHash(), true); }); });
-    show(fromHash(), false);
+    window.addEventListener('hashchange', function () { swapWithTransition(function () { show(fromHash(), 'smooth'); }); });
+    show(fromHash(), location.hash ? 'instant' : false);
+    // 字体等加载完成后高度可能变化：带锚点进入时再定位一次到正文开头
+    window.addEventListener('load', function () {
+      var h = fromHash();
+      if (PAGES.indexOf(h) >= 0 && document.getElementById('page-' + h)) {
+        window.scrollTo({ top: bodyTop(document.getElementById('page-' + h)), behavior: 'instant' });
+      }
+    });
 
     // ── 滚动后导航描边（与主页 .nav.scrolled 一致）──
     var nav = document.querySelector('.nav');

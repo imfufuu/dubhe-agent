@@ -6,6 +6,19 @@
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+
+// 隔离外网：启动期的中继探测（net.js relayAvailable）会对真实的 *.workers.dev 发 /api/health。
+// 若线上中继可达（如 GitHub Actions runner），探测会在测试中途异步成功，与下方手动设置 relayOk 的断言竞争，
+// 导致 CI 稳定失败；沙箱里外网不通则一直失败、测试通过。这里统一让健康检查以「网络不可达」结束，
+// 结果与本地沙箱一致且不依赖外网。只拦截 /api/health，其余 fetch 保持原样。
+{
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (input, init) => {
+    const url = String(input && input.url ? input.url : input);
+    if (/\/api\/health(?:\?|$)/.test(url)) return Promise.reject(new TypeError('fetch failed: offline (dom-smoke)'));
+    return realFetch(input, init);
+  };
+}
 const { imageFamilyOf } = await import('../js/config.js');
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
