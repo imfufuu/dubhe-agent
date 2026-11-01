@@ -8,6 +8,7 @@ import {
   validateName, joinPath, parentDir, explorerRows, isWorkspacePath, PROJECT_RENDER_LINE_CAP,
 } from './project-core.js';
 import { runJavaScript, runPython, runCpp } from './sandbox.js';
+import { AI_ACTIONS, actionById, actionAvailability, buildAiPrompt } from './project-ai.js';
 import {
   runnerFor, cppSources, parseDiagnostics, lineStartIndex, runSummary, RUNNER_LABEL,
 } from './project-run.js';
@@ -46,7 +47,9 @@ export function openProjectMode({ store, agent }) {
     running: false,
     controller: null,
     diags: [],         // 最近一次运行的问题 [{file,line,col,severity,message}]
+    aiOpen: false,
   };
+  let closing = false;
   let timer = 0;
   const root = h('div', { class: 'pm-root', role: 'dialog', 'aria-modal': 'true', 'aria-label': T('项目模式', 'Project mode') });
   const explorerBody = h('div', { class: 'pm-tree', role: 'tree' });
@@ -69,6 +72,7 @@ export function openProjectMode({ store, agent }) {
   const btnRun = h('button', { class: 'pm-btn primary run', type: 'button', title: T('运行当前文件（Ctrl+Enter）', 'Run current file (Ctrl+Enter)'), onclick: () => runActive() }, T('▶ 运行', '▶ Run'));
   const btnStop = h('button', { class: 'pm-btn', type: 'button', hidden: true, title: T('停止运行', 'Stop'), onclick: () => stopRun() }, T('■ 停止', '■ Stop'));
   const btnOut = h('button', { class: 'pm-btn', type: 'button', title: T('显示 / 隐藏输出面板', 'Show / hide output panel'), onclick: () => setOutOpen(!state.outOpen) }, T('输出', 'Output'));
+  const btnAi = h('button', { class: 'pm-btn', type: 'button', 'aria-pressed': 'false', title: T('AI 助手：基于当前文件、选区与报错（代码为主，AI 为辅）', 'AI assistant: current file, selection and problems (code first, AI assists)'), onclick: () => setAiOpen(!state.aiOpen) }, T('✦ AI', '✦ AI'));
   const outSum = h('div', { class: 'pm-out-sum' });
   const outProbs = h('div', { class: 'pm-probs' });
   const outLines = h('div', { class: 'pm-out-lines', role: 'log', 'aria-live': 'polite' });
@@ -82,13 +86,41 @@ export function openProjectMode({ store, agent }) {
     h('div', { class: 'pm-out-body' }, [outSum, outProbs, outLines]),
   ]);
 
+  const aiStatus = h('span', { class: 'pm-ai-status' });
+  const aiCtx = h('div', { class: 'pm-ai-ctx' });
+  const aiQuick = h('div', { class: 'pm-ai-quick' }, AI_ACTIONS.filter((a) => a.id !== 'custom').map((a) => h('button', {
+    type: 'button', class: 'pm-chip', 'data-action': a.id, title: T(a.label, a.labelEn),
+    onclick: () => sendAi(a.id, aiInput.value),
+  }, T(a.label, a.labelEn))));
+  const aiInput = h('textarea', { class: 'pm-ai-input', rows: '3', placeholder: T('告诉 AI 要做什么（Enter 换行，点“发送”提交）', 'Tell the AI what to do (Enter for a new line, click Send)'), 'aria-label': T('给 AI 的指令', 'Instruction for the AI') });
+  const aiSend = h('button', { class: 'pm-btn primary', type: 'button', onclick: () => sendAi('custom', aiInput.value) }, T('发送', 'Send'));
+  const aiReply = h('div', { class: 'pm-ai-reply', role: 'log', 'aria-live': 'polite' });
+  const aiPanel = h('aside', { class: 'pm-ai', hidden: true, 'aria-label': T('AI 助手', 'AI assistant') }, [
+    h('div', { class: 'pm-ai-head' }, [
+      h('span', { class: 'pm-ai-title' }, T('AI 助手', 'AI assistant')),
+      aiStatus,
+      h('span', { class: 'pm-spacer' }),
+      h('button', { class: 'pm-mini', type: 'button', 'aria-label': T('收起 AI 助手', 'Hide AI assistant'), onclick: () => setAiOpen(false) }, '×'),
+    ]),
+    aiCtx,
+    aiQuick,
+    aiInput,
+    h('div', { class: 'pm-ai-foot' }, [
+      h('span', { class: 'pm-ai-hint' }, T('修改直接写入工作区，编辑器会自动刷新', 'Edits go straight to the workspace; the editor refreshes')),
+      aiSend,
+    ]),
+    h('div', { class: 'pm-ai-label' }, T('最近回复', 'Latest reply')),
+    aiReply,
+  ]);
+  aiInput.addEventListener('input', () => renderAi());
+
   root.append(
     h('header', { class: 'pm-top' }, [
       h('span', { class: 'pm-brand' }, 'DUBHE'),
       projName,
       projCount,
       h('span', { class: 'pm-spacer' }),
-      btnRun, btnStop, btnOut,
+      btnRun, btnStop, btnOut, btnAi,
       btnSave,
       btnClose,
     ]),
@@ -101,6 +133,7 @@ export function openProjectMode({ store, agent }) {
     ]),
     h('footer', { class: 'pm-status' }, [statusLang, statusPos, statusDirty, h('span', { class: 'pm-spacer' }), statusMsg]),
   );
+  root.querySelector('.pm-body').append(aiPanel);
   root.querySelector('.pm-status').before(outPanel);
   (document.body || document.documentElement).appendChild(root);
 
@@ -132,6 +165,7 @@ export function openProjectMode({ store, agent }) {
     renderTree();
     renderTabs();
     renderHeader();
+    if (state.aiOpen) renderAi();
   }
 
   function renderHeader() {
@@ -141,9 +175,18 @@ export function openProjectMode({ store, agent }) {
   }
 
   // ── 资源管理器 ──
-  function renderTree() {
+  let treeKey = '';
+  function renderTree({ force = false } = {}) {
     const entries = workspaceEntries(files());
     const rows = explorerRows(entries, state.collapsed);
+    const editing = !!(state.creating || state.renaming);
+    // 正在输入文件名时不重建（否则输入框被替换，内容与焦点丢失）；列表没有变化也不重建（否则轮询会打断点击）
+    const key = JSON.stringify([
+      rows.map((r) => [r.path, r.depth, r.type]), [...state.collapsed], state.active, state.selected,
+      state.tabs.filter((t) => t.dirty).map((t) => t.path), !!state.creating, state.renaming,
+    ]);
+    if (!force && (editing || key === treeKey)) return;
+    treeKey = key;
     explorerBody.replaceChildren();
     if (state.creating) explorerBody.append(createRow());
     if (!rows.length && !state.creating) {
@@ -178,7 +221,7 @@ export function openProjectMode({ store, agent }) {
         labelNode,
         !isRenaming && !isDir && tab && tab.dirty ? h('span', { class: 'pm-dot', title: T('未保存', 'Unsaved') }, '●') : null,
         !isRenaming ? h('span', { class: 'pm-row-acts' }, [
-          h('button', { type: 'button', class: 'pm-mini', title: T('重命名', 'Rename'), 'aria-label': T('重命名', 'Rename'), onclick: (e) => { e.stopPropagation(); state.renaming = row.path; renderTree(); } }, '✎'),
+          h('button', { type: 'button', class: 'pm-mini', title: T('重命名', 'Rename'), 'aria-label': T('重命名', 'Rename'), onclick: (e) => { e.stopPropagation(); state.renaming = row.path; renderTree({ force: true }); } }, '✎'),
           h('button', { type: 'button', class: 'pm-mini danger', title: T('删除', 'Delete'), 'aria-label': T('删除', 'Delete'), onclick: (e) => { e.stopPropagation(); removePath(row.path, isDir); } }, '×'),
         ]) : null,
       ]);
@@ -194,10 +237,11 @@ export function openProjectMode({ store, agent }) {
       'aria-label': T('新文件名', 'New file name'),
     });
     input.addEventListener('keydown', (e) => {
+      if (e.isComposing || e.keyCode === 229) return; // 输入法候选确认时的回车不提交
       if (e.key === 'Enter') { e.preventDefault(); commitCreate(input.value); }
-      if (e.key === 'Escape') { e.preventDefault(); state.creating = null; renderTree(); }
+      if (e.key === 'Escape') { e.preventDefault(); state.creating = null; renderTree({ force: true }); }
     });
-    input.addEventListener('blur', () => { setTimeout(() => { if (state.creating) { state.creating = null; renderTree(); } }, 0); });
+    input.addEventListener('blur', () => { setTimeout(() => { if (state.creating) { state.creating = null; renderTree({ force: true }); } }, 0); });
     queueMicrotask(() => input.focus());
     return h('div', { class: 'pm-tree-row create' }, [input]);
   }
@@ -205,8 +249,9 @@ export function openProjectMode({ store, agent }) {
   function renameInput(row) {
     const input = h('input', { class: 'pm-input', type: 'text', value: row.name, 'aria-label': T('重命名', 'Rename') });
     input.addEventListener('keydown', (e) => {
+      if (e.isComposing || e.keyCode === 229) return;
       if (e.key === 'Enter') { e.preventDefault(); commitRename(row.path, input.value); }
-      if (e.key === 'Escape') { e.preventDefault(); state.renaming = ''; renderTree(); }
+      if (e.key === 'Escape') { e.preventDefault(); state.renaming = ''; renderTree({ force: true }); }
     });
     input.addEventListener('click', (e) => e.stopPropagation());
     queueMicrotask(() => { input.focus(); input.select(); });
@@ -215,7 +260,7 @@ export function openProjectMode({ store, agent }) {
 
   function startCreate() {
     state.creating = { dir: state.selected && !files()[state.selected] ? state.selected : parentDir(state.selected) };
-    renderTree();
+    renderTree({ force: true });
   }
 
   function commitCreate(raw) {
@@ -238,11 +283,11 @@ export function openProjectMode({ store, agent }) {
     const check = validateName(raw);
     if (!check.ok) return flash(check.error);
     const to = joinPath(parentDir(from), check.name);
-    if (to === from) return renderTree();
+    if (to === from) return renderTree({ force: true });
     if (!isWorkspacePath(to) || Object.prototype.hasOwnProperty.call(files(), to)) return flash(T('目标名称不可用', 'Name not available'));
     const snap = files();
     const content = snap[from];
-    if (typeof content !== 'string') return renderTree(); // 目录重命名暂不支持，保持原状
+    if (typeof content !== 'string') return renderTree({ force: true }); // 目录重命名暂不支持，保持原状
     try {
       agent.sandboxWrite(to, content);
       agent.sandboxRemove(from);
@@ -364,6 +409,7 @@ export function openProjectMode({ store, agent }) {
   }
 
   function updateStatus() {
+    if (state.aiOpen) renderAi();
     const tab = current();
     statusLang.textContent = tab ? languageOf(tab.path) : '';
     const pos = lineCol(textarea.value, textarea.selectionEnd);
@@ -429,6 +475,82 @@ export function openProjectMode({ store, agent }) {
     renderHeader();
     updateStatus();
     flash(T(`已保存 ${tab.path}`, `Saved ${tab.path}`));
+  }
+
+  // ── 段 3：AI 辅助（代码为主，AI 为辅）──
+  function setAiOpen(open) {
+    state.aiOpen = !!open;
+    aiPanel.hidden = !state.aiOpen;
+    btnAi.setAttribute('aria-pressed', String(state.aiOpen));
+    if (state.aiOpen) renderAi();
+  }
+
+  function selectionInfo() {
+    const s = textarea.selectionStart;
+    const e = textarea.selectionEnd;
+    if (textarea.hidden || s === e) return null;
+    const lo = Math.min(s, e);
+    const hi = Math.max(s, e);
+    const v = textarea.value;
+    return { text: v.slice(lo, hi), startLine: lineCol(v, lo).line, endLine: lineCol(v, hi).line };
+  }
+
+  function agentBusy() {
+    try { return ['moderating', 'connecting', 'thinking', 'streaming', 'executing'].includes(agent.getStatus()); }
+    catch { return false; }
+  }
+
+  function lastAssistantText() {
+    const list = (store.state && store.state.messages) || [];
+    for (let i = list.length - 1; i >= 0; i--) {
+      if (list[i] && list[i].role === 'assistant' && list[i].text) return String(list[i].text);
+    }
+    return '';
+  }
+
+  function renderAi() {
+    const tab = current();
+    const sel = selectionInfo();
+    const busy = agentBusy();
+    aiCtx.textContent = tab
+      ? `${tab.path} · ${lineCount(tab.value)} ${T('行', 'lines')}${sel ? ` · ${T('选中', 'selected')} ${sel.endLine - sel.startLine + 1} ${T('行', 'lines')}` : ''}`
+      : T('还没有打开文件：先在左侧选一个文件', 'No file open: pick one in the explorer');
+    aiStatus.textContent = busy ? T('处理中…', 'Working…') : T('空闲', 'Idle');
+    aiStatus.classList.toggle('busy', busy);
+    aiSend.disabled = busy || !aiInput.value.trim();
+    for (const btn of aiQuick.querySelectorAll('button')) {
+      const ok = actionAvailability(btn.dataset.action, { hasFile: !!tab, diagnosticsCount: state.diags.length }).ok;
+      btn.disabled = busy || !ok;
+    }
+    const last = lastAssistantText();
+    aiReply.textContent = last
+      ? (last.length > 1600 ? `${last.slice(0, 1600)}…` : last)
+      : T('还没有 AI 回复。结果会出现在这里；完整对话在主界面。', 'No reply yet. Results appear here; the full conversation is in the main window.');
+  }
+
+  function sendAi(action, instruction = '') {
+    const tab = current();
+    const spec = actionById(action);
+    if (!spec) return;
+    const text = String(instruction || '').trim();
+    if (action === 'custom' && !text) return flash(T('先写一条指令', 'Write an instruction first'));
+    if (action !== 'custom' && !tab) return flash(T('先打开一个文件', 'Open a file first'));
+    if (agentBusy()) return flash(T('Agent 还在处理上一条任务', 'The agent is still working on the previous task'));
+    if (action === 'fix' && !state.diags.length) return flash(T('当前没有报错', 'No problems to fix'));
+    if (tab && tab.dirty) saveActive(); // 让 AI 看到的就是编辑器里的最新内容
+    const prompt = buildAiPrompt({
+      action,
+      path: tab ? tab.path : '',
+      content: tab ? tab.value : '',
+      selection: selectionInfo(),
+      diagnostics: state.diags,
+      instruction: text,
+    });
+    try { agent.send(prompt, []); }
+    catch (err) { return flash(T(`发送失败：${err.message}`, `Send failed: ${err.message}`)); }
+    aiInput.value = '';
+    flash(T('已发送给 Agent，结果会出现在这里', 'Sent. The result will appear here'));
+    renderAi();
   }
 
   // ── 段 2：编译 / 运行 ──
@@ -583,15 +705,18 @@ export function openProjectMode({ store, agent }) {
   document.addEventListener('keydown', onKey, true);
 
   function close() {
+    if (closing) return;
     const dirty = state.tabs.filter((t) => t.dirty);
     if (dirty.length) {
       const win = document.defaultView;
       if (win && typeof win.confirm === 'function' && !win.confirm(T(`还有 ${dirty.length} 个文件未保存，仍要关闭？`, `${dirty.length} file(s) unsaved. Close anyway?`))) return;
     }
+    closing = true;
     clearInterval(timer);
     document.removeEventListener('keydown', onKey, true);
-    root.remove();
     if (active === instance) active = null;
+    root.classList.add('pm-leaving');
+    setTimeout(() => root.remove(), 200);
   }
 
   const instance = {

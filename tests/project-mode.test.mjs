@@ -118,3 +118,22 @@ test('project mode is wired: entry button, main.js install call, and CSS', () =>
   assert.match(main, /installProjectEntry\(\{ store, agent \}\)/);
   assert.match(css, /\.pm-root \{/);
 });
+
+test('regression: the 900ms poll must not rebuild the tree while a name is being edited', () => {
+  const src = readFileSync(new URL('../js/project-mode.js', import.meta.url), 'utf8');
+  // renderTree 必须有 force 开关，且在编辑中或树未变化时跳过重建（否则输入框会被销毁、焦点丢失）。
+  assert.match(src, /function renderTree\(\s*\{\s*force\s*(?:=\s*false\s*)?\}/);
+  assert.match(src, /state\.creating|state\.renaming|editing/);
+});
+
+test('IME: Enter during composition does not commit create/rename', () => {
+  const src = readFileSync(new URL('../js/project-mode.js', import.meta.url), 'utf8');
+  const guards = src.match(/e\.isComposing \|\| e\.keyCode === 229/g) || [];
+  assert.ok(guards.length >= 2, `expected IME guards on create and rename, found ${guards.length}`);
+});
+
+test('project-ai module is wired into the project window', () => {
+  const src = readFileSync(new URL('../js/project-mode.js', import.meta.url), 'utf8');
+  assert.match(src, /from '\.\/project-ai\.js'/);
+  assert.match(src, /agent\.send\(/);
+});
