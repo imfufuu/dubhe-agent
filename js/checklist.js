@@ -52,6 +52,11 @@ export function checklistSummary(list) {
     `Checklist updated: ${done}/${list.length} done. Open: ${open}. Do not end the turn until every item is confirmed.`);
 }
 
+// 用户中止后：仍标为「进行中」的项已不再执行，改回「待办」（未完成、未失败）；已完成 / 已跳过 / 失败的项保持原样。
+export function interruptChecklist(list) {
+  return (Array.isArray(list) ? list : []).map((item) => (item && item.status === 'in_progress' ? { ...item, status: 'pending' } : item));
+}
+
 // 每轮 ephemeral 提醒：只在存在未完成项时发送，避免无谓占用上下文。
 export function checklistReminder(list) {
   if (!Array.isArray(list) || !list.length || checklistComplete(list)) return '';

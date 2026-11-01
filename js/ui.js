@@ -1337,8 +1337,6 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       html += lengthCapped
         ? '<div class="trunc-note">输出在长度上限前结束，未收到可见正文。请点击「重新生成」重试。</div>'
         : '<div class="trunc-note">模型未返回可见答复。请点击「重新生成」重试。</div>';
-    } else if (m.done && !m.cancelled && lengthCapped) {
-      html += '<div class="trunc-note">输出碰到长度上限，未写完。再说「继续」或点重新生成。</div>';
     }
     body.innerHTML = html;
     // 正文新增字符淡入

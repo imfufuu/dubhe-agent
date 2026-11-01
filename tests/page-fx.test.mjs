@@ -230,13 +230,12 @@ test('installPageFx bypasses animation when reduced motion is requested and reta
   dom.window.close();
 });
 
-test('docs hash router has a same-document transition path with an instant scroll reset', () => {
+test('docs hash router switches instantly without a whole-page view transition', () => {
+  // 整页 View Transition 的快照交叉淡化会让新旧分区叠印，且标签条与正文之间的空隙会露出旧内容；分区切换改为瞬时换页。
   const docs = read('../docs.html');
-  assert.match(docs, /document\.startViewTransition\(function \(\) \{ mutate\(\); inVt = false; \}\)/);
-  assert.match(docs, /window\.addEventListener\('hashchange',[\s\S]*?swapWithTransition/);
-  assert.match(docs, /behavior: scroll === 'instant' \|\| inVt \? 'instant' : 'smooth'/);
-  assert.match(pageFxCss, /::view-transition-old\(root\)/);
-  assert.match(pageFxCss, /::view-transition-new\(root\)/);
+  assert.equal(/startViewTransition/.test(docs), false, '文档页不再使用整页 View Transition');
+  assert.match(docs, /window\.addEventListener\('hashchange', function \(\) \{ show\(fromHash\(\), 'instant'\); \}\);/);
+  assert.match(docs, /behavior: scroll === 'instant' \? 'instant' : 'smooth'/);
 });
 
 test('docs anchors land at the start of the section body, not the page top', () => {

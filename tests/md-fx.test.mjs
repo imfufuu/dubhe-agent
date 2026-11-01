@@ -109,3 +109,23 @@ test('懒加载索引：各字族存在且分片文件都已入库', async () =>
   assert.ok(faces.length > 600, `分片数 ${faces.length}`);
   for (const f of faces) assert.ok(fs.existsSync(path.join(root, 'assets/fonts-lazy', f.url)), f.url);
 });
+
+test('占位符没有对应块时不抛异常（挂载界面时整页无法打开的回归）', () => {
+  // 文本里偶然出现的私用区占位符（如 \uE000ALIGN0\uE000、\uE000FOLD3\uE000、\uE000CHART2\uE000）曾让
+  // alignAt / foldAt / chartAt 读取 undefined 的属性而抛错，挂载时一条历史消息即可让界面打不开。
+  for (const tok of ['\uE000ALIGN0\uE000', '\uE000FOLD3\uE000', '\uE000FONT1\uE000', '\uE000COLOR2\uE000',
+    '\uE000FXB4\uE000', '\uE000CHART2\uE000', '\uE000DIAGRAM5\uE000', '\uE000FILE6\uE000', '\uE000IC7\uE000', '\uE000CHOICE8\uE000']) {
+    assert.doesNotThrow(() => renderMarkdown(`前缀 ${tok} 后缀`), tok);
+    assert.doesNotMatch(String(renderMarkdown(`前缀 ${tok} 后缀`)), /\uE000/, `${tok} 不应以原样输出到页面`);
+  }
+  assert.match(renderMarkdown('正常段落'), /正常段落/);
+});
+
+test('已删除「输出碰到长度上限，未写完」提示（界面与所有语言包）', async () => {
+  const fs = (await import('node:fs')).default;
+  const phrase = '输出碰到长度上限';
+  const ui = fs.readFileSync(new URL('../js/ui.js', import.meta.url), 'utf8');
+  assert.equal(ui.includes(phrase), false);
+  const packs = fs.readdirSync(new URL('../js/i18n-packs/', import.meta.url));
+  for (const f of packs) assert.equal(fs.readFileSync(new URL(`../js/i18n-packs/${f}`, import.meta.url), 'utf8').includes(phrase), false, f);
+});
