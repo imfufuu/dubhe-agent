@@ -3283,3 +3283,7 @@ html:lang(de) .tok-row > span { min-width: 0; overflow-wrap: anywhere; }
 .human-check-widget{min-height:66px;display:flex;justify-content:center}
 .human-check-cancel{align-self:flex-end;border:1px solid var(--line,rgba(127,127,127,.3));background:var(--bg-soft,transparent);color:inherit;border-radius:8px;padding:6px 14px;cursor:pointer;font:inherit;font-size:13px}
 .human-check-cancel:hover{background:var(--bg-hover,rgba(127,127,127,.12))}
+
+/* ── 文稿扫描：全屏取景（第 18 条）── */
+.scan-modal.scan-fs-on .scan-video, .scan-modal.scan-fs-on .scan-canvas { max-height: calc(100dvh - 170px); }
+.scan-modal.scan-fs-on .scan-stage { min-height: 0; }
