@@ -713,11 +713,7 @@ html[data-motion="off"] .sess-empty-art * { animation: none !important; }
   box-shadow: var(--conversation-shadow);
 }
 .msg-user .bubble p { margin: 0; }
-/* 用户气泡里的代码块 / 行内代码：用文字色的半透明叠色做底，不再与气泡同色而看不清 */
-.msg-user .bubble.md-body pre { background: color-mix(in srgb, var(--chat-user-text) 8%, transparent); border-color: color-mix(in srgb, var(--chat-user-text) 20%, transparent); }
-.msg-user .bubble.md-body pre:hover { border-color: color-mix(in srgb, var(--chat-user-text) 32%, transparent); }
 .msg-user .bubble.md-body code { background: color-mix(in srgb, var(--chat-user-text) 10%, transparent); border-color: color-mix(in srgb, var(--chat-user-text) 20%, transparent); }
-.msg-user .bubble.md-body pre code { background: none; border: none; }
 .msg-user .bubble.md-body a { color: var(--chat-user-text); text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; }
 .msg-user .bubble.md-body a:hover { color: var(--chat-user-text); }
 /* 各链接状态（:link/:visited/:focus/:active）同样锁定为气泡文字色，并同步填充色与下划线色，防止被其它样式覆盖后与气泡同色 */

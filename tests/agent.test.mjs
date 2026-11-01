@@ -4976,7 +4976,7 @@ test('代码块语言在左侧、复制始终可见；用户气泡反色链接',
   const ui = readUiSource();
   assert.match(hl, /\.code-head/);
   assert.match(hl, /\.copy-code \{[\s\S]*opacity:\s*1/);
-  assert.match(hl, /\.msg-user \.bubble\.md-body a \{ color: var\(--bg\)/);
+  assert.match(hl, /\.msg-user \.bubble\.md-body a \{ color: var\(--chat-user-text\)/, '用户气泡链接用气泡文字色（主题无关）');
   assert.match(html, /assets\/hljs\/highlight\.min\.js/);
   assert.match(ui, /bubble md-body/);
   assert.match(ui, /Explored file/);
@@ -5088,10 +5088,10 @@ test('用户气泡表格不用 --bg-soft（避免白底白字），代码块相�
   const hl = fsp.readFileSync(new URL('../assets/hljs/dubhe.css', import.meta.url), 'utf8');
   assert.match(hl, /\.msg-user \.bubble\.md-body tbody tr:nth-child\(even\)/);
   assert.equal(/\.msg-user[\s\S]{0,400}nth-child\(even\)[\s\S]{0,80}var\(--bg-soft\)/.test(hl), false, '斑马纹不能再用页面底色');
-  assert.match(hl, /color-mix\(in srgb, var\(--bg\)/);
-  assert.match(hl, /\[data-theme="light"\] \.msg-user \.bubble\.md-body \.hljs-keyword/);
+  assert.match(hl, /color-mix\(in srgb, var\(--chat-user-text\)/, '用户气泡叠色统一相对气泡文字色');
+  // 浅色主题的用户气泡是浅底：不得再出现白字（#f4f4f4）语法色块
+  assert.equal(/\[data-theme="light"\] \.msg-user \.bubble\.md-body \.hljs[\s\S]{0,40}#f4f4f4/.test(hl), false, '浅色主题用户气泡不能用亮色文字');
   assert.match(hl, /\[data-theme="dark"\] \.msg-user \.bubble\.md-body \.hljs-keyword/);
-  assert.match(hl, /#c4b5fd/, '浅色主题黑气泡用亮色 token');
   assert.match(hl, /#6d28d9/, '深色主题浅气泡用深色 token');
   assert.match(hl, /\.msg-user \.bubble\.md-body \.code-block \{\s*background:\s*transparent/);
   assert.match(hl, /\.msg-user \.bubble\.md-body pre code/);
