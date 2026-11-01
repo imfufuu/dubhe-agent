@@ -20,6 +20,7 @@
 // 不能证明「真实性」（事件是否真由指定执行环境产生，需硬件远程证明，本架构不做此声明）。
 
 import { sha256Hex, GENESIS_TURN_DIGEST } from './nexus.js';
+import { LOCAL_MACHINE_TOOLS } from './localmachine.js';
 
 // ── 0. 策略版本（一次执行的审计记录必须记录这些版本，否则无法归因退化来源）──
 export const EXECUTION_KERNEL_VERSION = '2.3.0';
@@ -590,6 +591,7 @@ export function buildCapabilityConstraints({
   webEnabled = false,
   sandboxEnabled = true,
   localCppEnabled = true,
+  localMachineEnabled = false,
   canDispatch = false,
   overrides = null,
 } = {}) {
@@ -604,6 +606,8 @@ export function buildCapabilityConstraints({
     sandbox: { enabled: !!sandboxEnabled, localCpp: !!localCppEnabled, ...base.sandbox, ...(ov.sandbox || {}) },
     dispatch: { enabled: !!canDispatch, ...base.dispatch, ...(ov.dispatch || {}) },
     filesystem: { ...base.filesystem, ...(ov.filesystem || {}) },
+    // 本机能力（shell / 截图 / 本机文件）：只在本地 server.py 回环监听时为 true
+    localMachine: { enabled: !!localMachineEnabled, ...(ov.localMachine || {}) },
   };
 }
 
@@ -691,6 +695,13 @@ export function checkCapabilityConstraints({ name = '', args = {}, capabilities 
   const a = args && typeof args === 'object' ? args : {};
   const names = new Set((Array.isArray(toolNames) ? toolNames : []).map(toolNameOf).filter(Boolean));
 
+  if (LOCAL_MACHINE_TOOLS.includes(name) && caps.localMachine?.enabled !== true) {
+    return {
+      allowed: false, decision: 'deny', constraintId: 'capability-local-machine-off',
+      reason: `本机能力未启用（${name} 需要本地 server.py 在回环地址上运行）`,
+      recovery: '请在本机运行 python3 server.py（Windows 用 python server.py），不要加 --no-local；或改用沙箱内的工具',
+    };
+  }
   if (['fetch_url', 'search_web', 'crawl_site', 'download_file', 'pull_github_project'].includes(name)) {
     if (!caps.web.enabled) {
       return {
@@ -897,6 +908,9 @@ export const TOOL_CONTRACTS = Object.freeze({
   crawl_site: contract({ sideEffect: 'network', idempotent: true, retryPolicy: 'once', timeoutMs: 60000, riskLevel: 'L2', external: true, note: '严格限制同源、页数与深度的只读抓取' }),
   download_file: contract({ sideEffect: 'network', idempotent: true, retryPolicy: 'once', timeoutMs: 120000, riskLevel: 'L2', external: true, verifyAfterRun: true, note: '经中继 /api/file 跨域拉取 ≤16MB 文件写入沙箱 uploads/' }),
   pull_github_project: contract({ sideEffect: 'network', idempotent: false, retryPolicy: 'never', timeoutMs: 120000, riskLevel: 'L2', external: true, verifyAfterRun: true, note: '经 GitHub API 与中继 /api/file 读取公开仓库 ZIP（≤16MB），安全解压后写入沙箱；无历史、不覆盖' }),
+  run_shell: contract({ sideEffect: 'sandbox', idempotent: false, retryPolicy: 'never', timeoutMs: 610000, riskLevel: 'L3', requiresConfirmation: true, note: '在用户本机执行 shell 命令（Windows：Git Bash / PowerShell；经本地中继 /api/local/shell）；每次都需用户确认，超时会结束整棵进程树' }),
+  take_screenshot: contract({ sideEffect: 'filesystem', idempotent: true, retryPolicy: 'once', timeoutMs: 70000, riskLevel: 'L1', note: '抓取整个屏幕为 PNG 写入沙箱 outputs/；屏幕内容可能含隐私，结果仅用于当前任务' }),
+  local_files: contract({ sideEffect: 'filesystem', idempotent: false, retryPolicy: 'never', timeoutMs: 30000, riskLevel: 'L1', note: '本机文件 list/stat/read 只读；write / mkdir / move / delete 在风险分级中升级并需确认；仅限允许根目录（默认主目录）内' }),
   run_git: contract({ sideEffect: 'filesystem', idempotent: false, timeoutMs: 30000, riskLevel: 'L2', external: true, verifyAfterRun: true, note: '远端操作（clone/push/pull）跨系统边界时升为 L3' }),
   search_files: contract({ idempotent: true, retryPolicy: 'backoff', timeoutMs: 8000, riskLevel: 'L1' }),
   diff_text: contract({ idempotent: true, timeoutMs: 5000, riskLevel: 'L1' }),
@@ -1458,6 +1472,25 @@ export function classifyToolRisk({ name = '', args = null, contract: contractDef
     requiresConfirmation = true;
     reasons.push('删除文件（不可自动恢复，仅能从检查点回滚）');
   }
+  if (name === 'run_shell') {
+    level = 'L3';
+    irreversible = true;
+    requiresConfirmation = true;
+    reasons.push('在本机执行 shell 命令（可修改或删除任意文件，不可自动恢复）');
+  }
+  if (name === 'local_files') {
+    const act = String(a.action || '').toLowerCase();
+    if (act === 'write') {
+      level = maxRisk(level, 'L2');
+      reasons.push(`写入本机文件 ${a.path || ''}`);
+    }
+    if (['move', 'delete'].includes(act)) {
+      level = 'L3';
+      irreversible = true;
+      requiresConfirmation = true;
+      reasons.push(`本机文件${act === 'move' ? '移动' : '删除'}（不可自动恢复）`);
+    }
+  }
   if (name === 'remember') {
     const action = String(a.action || '').toLowerCase();
     if (action === 'purge') {
@@ -1562,6 +1595,13 @@ export const CONFIRMATION_DECISIONS = Object.freeze({
   TIMEOUT: 'timeout',
 });
 export const GUARD_MODES = Object.freeze(['observe', 'strict', 'strict-l2']);
+
+/** 本机能力的操作是否必须经过人工确认（不受档位与自动审批影响）：shell 一律确认；本机文件的写 / 建目录 / 移动 / 删除确认。 */
+export function localMachineMustConfirm(name, args) {
+  if (name === 'run_shell') return true;
+  if (name === 'local_files') return ['write', 'mkdir', 'move', 'delete'].includes(String((args && args.action) || '').toLowerCase());
+  return false;
+}
 
 export function guardRequiresConfirmation({ guard = 'observe', risk = null } = {}) {
   if (!risk) return false;

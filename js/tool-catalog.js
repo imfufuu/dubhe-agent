@@ -1,6 +1,9 @@
 // Compact tool catalog: one short human-readable line per capability. Full JSON
 // schemas stay out of the prompt until a tool is selected or explicitly read.
 export const TOOL_SUMMARIES = Object.freeze({
+  run_shell: ['在用户本机执行 shell 命令（仅本地服务，需确认）。', 'Run a shell command on the user machine (local server only; needs confirmation).'],
+  take_screenshot: ['截取本机整屏为 PNG 存入沙箱（仅本地服务）。', 'Capture the full local screen as PNG into the sandbox (local server only).'],
+  local_files: ['列出 / 读取 / 写入本机文件（限允许根目录，写删需确认）。', 'List, read, or write local files under allowed roots (writes need confirmation).'],
   browser_sandbox: ['在本地 Chromium 中启动并检查 Agent 项目页面。', 'Start and inspect Agent project pages in local Chromium.'],
   skill_library: ['搜索并读取按需加载的操作指南，不执行文档内容。', 'Search and read one on-demand workflow guide; does not execute it.'],
   document_tool: ['本地检查或生成 DOCX/PPTX，并检查、编辑 PDF。', 'Inspect or create DOCX/PPTX and inspect or edit PDFs locally.'],
@@ -50,6 +53,9 @@ export const TOOL_SUMMARIES = Object.freeze({
 });
 
 const TOOL_KEYWORDS = Object.freeze({
+  run_shell: 'shell 命令 终端 bash powershell 脚本 terminal command',
+  take_screenshot: '截图 截屏 屏幕 screenshot screen',
+  local_files: '本机 电脑 文件 目录 读取 写入 桌面 local file folder',
   browser_sandbox: '浏览器 页面 网站 截图 chromium preview debug',
   skill_library: '技能 指南 skill guide workflow 文档音频',
   document_tool: 'word docx pptx pdf 文档 合同 简历 演示 幻灯片',

@@ -12,7 +12,7 @@ import { captureEditPreviewBase, captureEditPreviewSnapshot } from './editprevie
 import { PARALLEL_TOOL_NAMES, NETWORK_TOOL_NAMES, TOOL_MOUNT_GROUPS, TOOL_MOUNT_GROUP_BY_TOOL } from './capabilities.js';
 import { executeTool } from './tools.js';
 import { findSubagent } from './subagents.js';
-import {
+import { localMachineMustConfirm,
   EXECUTION_STATES, CONFIRMATION_DECISIONS,
   validateToolCallPre, validateToolResultPost, classifyToolRisk, summarizeArgs, fsDigest,
   guardRequiresConfirmation, formatConfirmationRequest, formatConfirmationDecision,
@@ -108,6 +108,12 @@ export function toolAccessSet(call) {
     case 'analyze_audio': case 'analyze_video': return { reads: a.path ? strList(a.path) : [ACCESS_ANY], writes: [] };
     case 'fetch_url': return { reads: [], writes: strList(a.save_path) };
     case 'browser_sandbox': return { reads: [ACCESS_ANY], writes: [ACCESS_ANY] };
+    case 'run_shell': return { reads: [ACCESS_ANY], writes: [ACCESS_ANY] };
+    case 'take_screenshot': return { reads: [], writes: a.path ? strList(a.path) : [ACCESS_ANY] };
+    case 'local_files': {
+      const mutating = ['write', 'mkdir', 'move', 'delete'].includes(String(a.action || ''));
+      return mutating ? { reads: [], writes: [ACCESS_ANY] } : { reads: [ACCESS_ANY], writes: [] };
+    }
     case 'download_file': return { reads: [], writes: a.path ? strList(a.path) : [ACCESS_ANY] };
     case 'pull_github_project': return { reads: [], writes: a.path ? strList(a.path) : [ACCESS_ANY] };
     default:
@@ -579,7 +585,9 @@ export function createToolRunner({ store, emit, getFs, runSubagent } = {}) {
       const guardMode = exec.effectiveGuard || 'observe';
       const sessionAllowedBySettings = approval === 'allow-session';
       const needHumanConfirm = !autoReviewAllowed
-        && (autoReviewForcesConfirm || guardRequiresConfirmation({ guard: guardMode, risk }));
+        && (autoReviewForcesConfirm || guardRequiresConfirmation({ guard: guardMode, risk }))
+        // 本机 shell / 本机文件写删：无论档位与自动审批都必须人工确认（fail-closed；&& 优先于 ||，既有语义不变）
+        || localMachineMustConfirm(call.name, call.args);
       if (needHumanConfirm && !sessionAllowedBySettings && !exec.confirmGate.isSessionAllowed(call.name)) {
         const request = formatConfirmationRequest({
           name: call.name, args: call.args,

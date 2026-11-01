@@ -648,6 +648,7 @@ export function computeCapabilityVector({
   crawlEnabled = false,
   fileEnabled = false,
   localBrowserEnabled = false,
+  localMachineEnabled = false,
   sandboxEnabled = true,
   canDispatch = false,
 } = {}) {
@@ -662,6 +663,7 @@ export function computeCapabilityVector({
   const fileDownloadActive = Boolean(webFetchActive && fileEnabled);
   const codeSandboxActive = Boolean(s);
   const localBrowserActive = Boolean(s && localBrowserEnabled);
+  const localMachineActive = Boolean(localMachineEnabled);
   const subagentSwarmActive = Boolean(d);
   const disabledToolGroups = [];
   const disabledTools = [];
@@ -681,6 +683,10 @@ export function computeCapabilityVector({
     disabledToolGroups.push('localBrowser(unavailable)');
     disabledTools.push(...CAPABILITY_GATED_TOOL_GROUPS.localBrowser);
   }
+  if (!localMachineActive) {
+    disabledToolGroups.push('localMachine(unavailable)');
+    disabledTools.push(...CAPABILITY_GATED_TOOL_GROUPS.localMachine);
+  }
   if (!subagentSwarmActive) {
     disabledToolGroups.push('subagentSwarm(tier-single)');
     disabledTools.push(...CAPABILITY_GATED_TOOL_GROUPS.subagentSwarm);
@@ -693,6 +699,7 @@ export function computeCapabilityVector({
     ...(fileDownloadActive ? CAPABILITY_GATED_TOOL_GROUPS.fileDownload : []),
     ...(codeSandboxActive ? CAPABILITY_GATED_TOOL_GROUPS.codeSandbox : []),
     ...(localBrowserActive ? CAPABILITY_GATED_TOOL_GROUPS.localBrowser : []),
+    ...(localMachineActive ? CAPABILITY_GATED_TOOL_GROUPS.localMachine : []),
     ...(subagentSwarmActive ? CAPABILITY_GATED_TOOL_GROUPS.subagentSwarm : []),
   ];
   return {
@@ -704,6 +711,7 @@ export function computeCapabilityVector({
     fileDownloadActive,
     codeSandboxActive,
     localBrowserActive,
+    localMachineActive,
     subagentSwarmActive,
     enabledTools,
     disabledTools,

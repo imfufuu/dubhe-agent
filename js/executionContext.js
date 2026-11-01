@@ -49,6 +49,8 @@ const CAPABILITY_TOOLS = Object.freeze([
 ]);
 
 // 只在中继（本地服务）可用、且不依赖具体能力位的工具：中继不在就必须摘掉
+import { LOCAL_MACHINE_TOOLS } from './localmachine.js';
+
 export const RELAY_DEPENDENT_TOOLS = Object.freeze(['fetch_url', 'search_web', 'crawl_site', 'download_file', 'pull_github_project']);
 
 // 受沙箱能力位管辖的工具（与 js/tools.js 的 CODE_TOOL_NAMES 必须一致；有单测钉住）
@@ -187,6 +189,7 @@ export function deriveToolWhitelist(ctx, allTools = []) {
     if (name === 'dispatch_subagent' && !bits.dispatch) { dropped.push({ name, reason: 'capability-dispatch-off' }); continue; }
     if (SANDBOX_GATED_TOOLS.includes(name) && !bits.sandbox) { dropped.push({ name, reason: 'capability-sandbox-off' }); continue; }
     if (name === 'browser_sandbox' && ctx?.capability?.constraints?.sandbox?.browser !== true) { dropped.push({ name, reason: 'local-browser-unavailable' }); continue; }
+    if (LOCAL_MACHINE_TOOLS.includes(name) && ctx?.capability?.constraints?.localMachine?.enabled !== true) { dropped.push({ name, reason: 'local-machine-unavailable' }); continue; }
     if (name === 'execute_cpp' && ctx && ctx.capability && ctx.capability.constraints && ctx.capability.constraints.sandbox
         && ctx.capability.constraints.sandbox.localCpp === false) { dropped.push({ name, reason: 'local-cpp-off' }); continue; }
     allowed.push(tool);
@@ -207,6 +210,7 @@ export const DROP_REASON_LABEL = Object.freeze({
   'capability-sandbox-off': '顶栏「沙箱」已关',
   'local-cpp-off': '本地 C++ 已关',
   'local-browser-unavailable': '需本机 server.py 与 Playwright/Chromium',
+  'local-machine-unavailable': '本机能力未启用（需本地 server.py 回环运行）',
   'offline-local-only': '离线/本地模型仅允许本地工具',
   'no-tool-name': '工具定义缺少名称',
 });
@@ -222,6 +226,7 @@ export const DROP_REASON_FIX = Object.freeze({
   'capability-sandbox-off': Object.freeze({ kind: 'sandbox-on', label: '打开沙箱' }),
   'local-cpp-off': Object.freeze({ kind: 'settings', label: '打开设置' }),
   'local-browser-unavailable': Object.freeze({ kind: 'settings', label: '本地浏览器需运行服务' }),
+  'local-machine-unavailable': Object.freeze({ kind: 'settings', label: '本机能力需运行服务' }),
 });
 
 export function describeDropReason(reason) {
@@ -244,7 +249,7 @@ export function formatDroppedTools(dropped, { max = 16 } = {}) {
  */
 export function deriveToolWhitelistFromBits({
   relay = false, web = false, sandbox = true, dispatch = false,
-  search = false, crawl = false, file = false, localCpp = true, browser = false,
+  search = false, crawl = false, file = false, localCpp = true, browser = false, localMachine = false,
 } = {}, allTools = []) {
   const ctx = {
     capability: {
@@ -252,6 +257,7 @@ export function deriveToolWhitelistFromBits({
       constraints: {
         web: { search: search === true, crawl: crawl === true, file: file === true },
         sandbox: { localCpp: localCpp !== false, browser: browser === true },
+        localMachine: { enabled: localMachine === true },
       },
     },
   };

@@ -500,7 +500,23 @@ python3 server.py --no-git             # 只留抓取
 python3 server.py --workspace ~/code   # 换工作区（git 的根，越界一律拒绝）
 ```
 
-本地 `server.py` 提供 `GET /api/health`、`GET /api/fetch`、`POST /api/git`；新 Worker 另提供 `GET /api/search` 与 `GET /api/crawl`。前端按 health capabilities 探测具体能力，不会把 Worker 新路由误打到旧版本地 relay 的 404。
+本地 `server.py` 提供 `GET /api/health`、`GET /api/fetch`、`POST /api/git`；新 Worker 另提供 `GET /api/search` 与 `GET /api/crawl`。
+
+### 本机能力（shell / 截图 / 本机文件）
+
+仅当 `server.py` 监听回环地址（默认 `127.0.0.1`）时启用；`--no-local` 可彻底关闭。
+
+```bash
+python3 server.py                                  # 默认：工作区 + 用户主目录 可访问
+python3 server.py --local-root D:\projects          # 可重复指定，限定允许的根目录
+```
+
+- `run_shell`：在本机执行一条命令。Windows 优先 Git Bash（`Program Files\Git\bin\bash.exe`），其次 PATH 中的 bash（排除 WSL 启动器），最后 PowerShell；可用 `DUBHE_SHELL` 指定。超时会结束整棵进程树。
+- `take_screenshot`：整屏截图存入沙箱 `outputs/`，之后可用 `analyze_image` 读图。Windows 用 .NET 截屏，macOS 用 `screencapture`，Linux 需 `gnome-screenshot` / `grim` / `scrot` 之一。
+- `local_files`：list / stat / read / write / mkdir / move / delete。拒绝 `.ssh`、`.aws`、`.netrc` 等敏感路径，路径经 realpath 后必须落在允许根目录内。
+
+每个进程启动时生成随机 token，只通过同源 `/api/local/session` 下发；所有 `/api/local/*`（除 session）都要求该 token，并校验 Host 为回环名、拒绝跨站请求。`run_shell`、以及本机文件的写 / 建目录 / 移动 / 删除，**每次都需要用户确认**，不受顶栏档位与自动审批影响。
+前端按 health capabilities 探测具体能力，不会把 Worker 新路由误打到旧版本地 relay 的 404。
 
 安全边界：
 

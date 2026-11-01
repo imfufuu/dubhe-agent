@@ -6,6 +6,7 @@ import { retrieveKnowledge } from './knowledge.js?v=2026.10.25.1';
 import { text, getLanguage } from './locale.js';
 import { prepareCommandArgs, retainCommandSource, commandRepairNote } from './commandsource.js?v=2026.10.25.1';
 import { sandboxProject, sandboxBrowserRequest } from './localbrowser.js?v=2026.10.25.1';
+import { localShell, localScreenshot, localFsRequest, clipLocalOutput } from './localmachine.js';
 // ─── Agent 工具集：定义 + 执行调度 ─────────────────────────────────────
 import { CODE_TOOL_NAMES as REG_CODE_TOOL_NAMES, LEGACY_TOOL_ALIASES as REG_LEGACY_TOOL_ALIASES } from './capabilities.js';
 import { runJavaScript, runPython, runCpp, runCppRemote, pythonAvailable, persistenceNote, isSafeFsPath, contentByteSize } from './sandbox.js';
@@ -425,6 +426,53 @@ export const TOOL_DEFS = [
       ref: { type: 'string', description: '可选：分支、tag 或 commit SHA；缺省读取 GitHub 默认分支' },
       path: { type: 'string', description: '可选：沙箱中的目标目录；默认 uploads/github/<owner>/<repo>' },
     }, required: ['url'] },
+  },
+  {
+    name: 'run_shell',
+    description:
+      '在用户本机执行一条 shell 命令，返回退出码、stdout、stderr。Windows 优先 Git Bash，其次 PowerShell；macOS / Linux 用 bash 或 sh。' +
+      '仅当本地 server.py 在回环地址运行时可用。每次执行都需要用户确认。超时（默认 60 秒，最长 600 秒）会结束整棵进程树；输出超过 48KB 会截断。',
+    parameters: {
+      type: 'object',
+      properties: {
+        command: { type: 'string', description: '要执行的命令（单行或多行脚本）' },
+        cwd: { type: 'string', description: '可选：工作目录，必须位于允许的本机根目录内；默认为工作区' },
+        timeout_s: { type: 'number', description: '可选：超时秒数，默认 60，最长 600' },
+      },
+      required: ['command'],
+    },
+  },
+  {
+    name: 'take_screenshot',
+    description:
+      '截取用户本机整个屏幕为 PNG，保存到沙箱 outputs/，之后可用 analyze_image 读图。仅本地 server.py 运行时可用。截图可能包含隐私内容，只用于当前任务。',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: '可选：沙箱保存路径（默认 outputs/screenshot-时间戳.png）' },
+      },
+    },
+  },
+  {
+    name: 'local_files',
+    description:
+      '操作用户本机文件。只能访问允许的根目录（默认：工作区与用户主目录），拒绝 .ssh、.aws、.netrc 等敏感路径。' +
+      'action：list 列目录 / stat 查看信息 / read 读取（文本；二进制请用 encoding=base64，并可用 sandbox_path 存入沙箱）/ ' +
+      'write 写文件（已存在需 overwrite=true）/ mkdir / move / delete（删除目录需 recursive=true）。write、mkdir、move、delete 每次需用户确认。',
+    parameters: {
+      type: 'object',
+      properties: {
+        action: { type: 'string', enum: ['list', 'stat', 'read', 'write', 'mkdir', 'move', 'delete'], description: '操作类型' },
+        path: { type: 'string', description: '本机路径：绝对路径，或相对于工作区的路径；list 省略时列出工作区' },
+        content: { type: 'string', description: 'write：文件内容（encoding=base64 时为 base64）' },
+        encoding: { type: 'string', enum: ['text', 'base64'], description: '读写编码，默认 text' },
+        dest: { type: 'string', description: 'move：目标路径' },
+        overwrite: { type: 'boolean', description: 'write：是否覆盖已有文件' },
+        recursive: { type: 'boolean', description: 'delete：删除非空目录时必须为 true' },
+        sandbox_path: { type: 'string', description: 'read：可选，把读到的文件存入沙箱该路径（如 uploads/photo.png）' },
+      },
+      required: ['action'],
+    },
   },
   {
     name: 'run_git',
@@ -1286,6 +1334,98 @@ async function executeToolBody(outerName, outerArgs, ctx) {
         }
         emit({ status: 'ok', fsChange: !!r.savedTo, note: `${r.status || ''} ${(r.chars / 1024).toFixed(1)}K${r.savedTo ? ` → ${r.savedTo}` : ''}` });
         return `[抓取完成] ${r.url}（HTTP ${r.status || '?'} · ${r.contentType || '未知类型'} · ${r.chars} 字符${r.savedTo ? ` · 全文已存 ${r.savedTo}${persistenceNote(fs, r.savedTo)}` : ''}）${r.note ? `\n说明：${r.note}` : ''}\n\n${r.preview}`;
+      }
+      case 'run_shell': {
+        const command = String(args.command || '');
+        if (!command.trim()) { emit({ status: 'error', error: { message: 'command 为空' } }); return 'run_shell 失败：command 不能为空'; }
+        emit({ status: 'running', note: `本机 shell：${command.slice(0, 60)}` });
+        let r;
+        try {
+          r = await localShell({ command, cwd: args.cwd || undefined, timeout_s: args.timeout_s }, { signal: ctx.signal });
+        } catch (err) {
+          if (err && (err.name === 'AbortError' || ctx.signal && ctx.signal.aborted)) throw err;
+          emit({ status: 'error', error: { message: err.message } });
+          return `run_shell 失败：${err.message}`;
+        }
+        const status = r.timedOut ? '超时（已结束进程树）' : `退出码 ${r.exitCode}`;
+        emit({ status: r.timedOut ? 'error' : 'ok', note: `${status} · ${r.durationMs} ms` });
+        const out = clipLocalOutput(r.stdout);
+        const errOut = clipLocalOutput(r.stderr, 16 * 1024);
+        const parts = [`[本机 shell · ${r.shell} · cwd ${r.cwd}] ${status} · ${r.durationMs} ms`];
+        if (out.text) parts.push(`--- stdout ---\n${out.text}`);
+        if (errOut.text) parts.push(`--- stderr ---\n${errOut.text}`);
+        if (!out.text && !errOut.text) parts.push('（无输出）');
+        return parts.join('\n');
+      }
+      case 'take_screenshot': {
+        emit({ status: 'running', note: '截取屏幕' });
+        let r;
+        try {
+          r = await localScreenshot({ signal: ctx.signal });
+        } catch (err) {
+          if (err && (err.name === 'AbortError' || ctx.signal && ctx.signal.aborted)) throw err;
+          emit({ status: 'error', error: { message: err.message } });
+          return `take_screenshot 失败：${err.message}`;
+        }
+        let path = args.path ? normalizeFsPath(String(args.path)) : `outputs/screenshot-${Date.now()}.png`;
+        if (!isSafeFsPath(path)) { emit({ status: 'error', error: { message: 'path 非法' } }); return 'take_screenshot 失败：path 必须是沙箱相对路径'; }
+        const taken = new Set(fs.list().map((f) => f.path));
+        if (taken.has(path)) {
+          const dot = path.lastIndexOf('.');
+          const stem = dot > path.lastIndexOf('/') ? path.slice(0, dot) : path;
+          const ext = dot > path.lastIndexOf('/') ? path.slice(dot) : '';
+          for (let n = 2; taken.has(path); n++) path = `${stem}-${n}${ext}`;
+        }
+        try { fs.write(path, `data:image/png;base64,${r.base64}`); } catch (err) {
+          emit({ status: 'error', error: { message: err.message } });
+          return `take_screenshot 失败：写入 ${path} 出错：${err.message}`;
+        }
+        const sizeKb = Math.round((r.bytes || 0) / 1024);
+        emit({ status: 'ok', fsChange: true, note: `${sizeKb} KB → ${path}` });
+        return `[截图完成] 整屏 PNG ${sizeKb} KB → ${path}${persistenceNote(fs, path)}。可用 analyze_image 读取。`;
+      }
+      case 'local_files': {
+        const action = String(args.action || '').toLowerCase();
+        emit({ status: 'running', note: `本机文件 ${action}${args.path ? ` ${String(args.path).slice(0, 60)}` : ''}` });
+        let r;
+        try {
+          r = await localFsRequest({
+            action, path: args.path, content: args.content, encoding: args.encoding, dest: args.dest,
+            overwrite: args.overwrite === true, recursive: args.recursive === true,
+          }, { signal: ctx.signal });
+        } catch (err) {
+          if (err && (err.name === 'AbortError' || ctx.signal && ctx.signal.aborted)) throw err;
+          emit({ status: 'error', error: { message: err.message } });
+          return `local_files 失败：${err.message}`;
+        }
+        const result = r.result || {};
+        if (action === 'list') {
+          const rows = (result.entries || []).map((e) => `${e.type === 'dir' ? '[dir] ' : '      '}${e.name}${e.type === 'file' ? `  (${e.size} B)` : ''}`);
+          emit({ status: 'ok', note: `${rows.length} 项` });
+          return `[本机目录] ${result.path}（${rows.length} 项${result.truncated ? '，已截断' : ''}）\n${rows.join('\n') || '（空）'}`;
+        }
+        if (action === 'read') {
+          if (result.encoding === 'base64') {
+            if (!args.sandbox_path) {
+              emit({ status: 'ok', note: `${result.size} B（二进制）` });
+              return `[本机文件] ${result.path}（${result.size} B，二进制，未展示内容；如需进入沙箱请传 sandbox_path）`;
+            }
+            const sp = normalizeFsPath(String(args.sandbox_path));
+            if (!isSafeFsPath(sp)) { emit({ status: 'error', error: { message: 'sandbox_path 非法' } }); return 'local_files 失败：sandbox_path 必须是沙箱相对路径'; }
+            try { fs.write(sp, `data:application/octet-stream;base64,${result.content}`); } catch (err) {
+              emit({ status: 'error', error: { message: err.message } });
+              return `local_files 失败：写入沙箱 ${sp} 出错：${err.message}`;
+            }
+            emit({ status: 'ok', fsChange: true, note: `${result.size} B → ${sp}` });
+            return `[本机文件] ${result.path}（${result.size} B）已存入沙箱 ${sp}${persistenceNote(fs, sp)}`;
+          }
+          const c = clipLocalOutput(result.content, 48 * 1024);
+          emit({ status: 'ok', note: `${result.size} B` });
+          return `[本机文件] ${result.path}（${result.size} B）\n${c.text}`;
+        }
+        const mutated = ['write', 'mkdir', 'move', 'delete'].includes(action);
+        emit({ status: 'ok', fsChange: false, note: action });
+        return `[本机${mutated ? '写入' : '信息'}] ${action} 完成：${JSON.stringify(result)}`;
       }
       case 'download_file': {
         const url = String(args.url || '').trim();
