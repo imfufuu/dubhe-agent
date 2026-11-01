@@ -1848,6 +1848,9 @@ export function createAgent(store, hooks = {}) {
       store.notify();
       return true;
     },
+    // 项目模式运行代码时的沙箱文件系统（运行器会把程序写出的文件回写到这里）
+    sandboxFS() { return baseFS; },
+    sandboxCommit() { syncFS(); store.notify(); return true; },
 
     fs,
   };

@@ -7,6 +7,10 @@ import {
   workspaceEntries, isBinaryContent, languageOf, lineCol, lineCount, indentEdit, enterEdit,
   validateName, joinPath, parentDir, explorerRows, isWorkspacePath, PROJECT_RENDER_LINE_CAP,
 } from './project-core.js';
+import { runJavaScript, runPython, runCpp } from './sandbox.js';
+import {
+  runnerFor, cppSources, parseDiagnostics, lineStartIndex, runSummary, RUNNER_LABEL,
+} from './project-run.js';
 
 const POLL_MS = 900;
 let active = null; // 同一时间只开一个项目窗口
@@ -38,6 +42,10 @@ export function openProjectMode({ store, agent }) {
     selected: '',      // 资源管理器里选中的路径（新建文件时作为目录参考）
     lastSnap: null,
     status: '',
+    outOpen: false,
+    running: false,
+    controller: null,
+    diags: [],         // 最近一次运行的问题 [{file,line,col,severity,message}]
   };
   let timer = 0;
   const root = h('div', { class: 'pm-root', role: 'dialog', 'aria-modal': 'true', 'aria-label': T('项目模式', 'Project mode') });
@@ -45,7 +53,8 @@ export function openProjectMode({ store, agent }) {
   const tabsBar = h('div', { class: 'pm-tabs', role: 'tablist' });
   const gutter = h('div', { class: 'pm-gutter', 'aria-hidden': 'true' });
   const textarea = h('textarea', { class: 'pm-text', spellcheck: 'false', autocapitalize: 'off', autocorrect: 'off', 'aria-label': T('代码编辑器', 'Code editor') });
-  const editorWrap = h('div', { class: 'pm-editor' }, [gutter, textarea]);
+  const marks = h('div', { class: 'pm-marks', 'aria-hidden': 'true' });
+  const editorWrap = h('div', { class: 'pm-editor' }, [gutter, textarea, marks]);
   const emptyNote = h('div', { class: 'pm-empty' });
   const statusLang = h('span', { class: 'pm-st-lang' });
   const statusPos = h('span', { class: 'pm-st-pos' });
@@ -57,6 +66,21 @@ export function openProjectMode({ store, agent }) {
   const btnNew = h('button', { class: 'pm-icon', type: 'button', title: T('新建文件', 'New file'), 'aria-label': T('新建文件', 'New file'), onclick: () => startCreate() }, '+');
   const btnRefresh = h('button', { class: 'pm-icon', type: 'button', title: T('刷新', 'Refresh'), 'aria-label': T('刷新', 'Refresh'), onclick: () => { state.lastSnap = null; sync(); } }, '↻');
   const btnClose = h('button', { class: 'pm-btn', type: 'button', title: T('关闭（Esc）', 'Close (Esc)'), onclick: () => close() }, T('关闭', 'Close'));
+  const btnRun = h('button', { class: 'pm-btn primary run', type: 'button', title: T('运行当前文件（Ctrl+Enter）', 'Run current file (Ctrl+Enter)'), onclick: () => runActive() }, T('▶ 运行', '▶ Run'));
+  const btnStop = h('button', { class: 'pm-btn', type: 'button', hidden: true, title: T('停止运行', 'Stop'), onclick: () => stopRun() }, T('■ 停止', '■ Stop'));
+  const btnOut = h('button', { class: 'pm-btn', type: 'button', title: T('显示 / 隐藏输出面板', 'Show / hide output panel'), onclick: () => setOutOpen(!state.outOpen) }, T('输出', 'Output'));
+  const outSum = h('div', { class: 'pm-out-sum' });
+  const outProbs = h('div', { class: 'pm-probs' });
+  const outLines = h('div', { class: 'pm-out-lines', role: 'log', 'aria-live': 'polite' });
+  const outPanel = h('section', { class: 'pm-out', hidden: true, 'aria-label': T('输出与问题', 'Output and problems') }, [
+    h('div', { class: 'pm-out-head' }, [
+      h('span', { class: 'pm-out-title' }, T('输出 · 问题', 'OUTPUT · PROBLEMS')),
+      h('span', { class: 'pm-spacer' }),
+      h('button', { type: 'button', class: 'pm-mini', title: T('清空', 'Clear'), 'aria-label': T('清空输出', 'Clear output'), onclick: () => clearOutput() }, '⌫'),
+      h('button', { type: 'button', class: 'pm-mini', title: T('隐藏', 'Hide'), 'aria-label': T('隐藏输出', 'Hide output'), onclick: () => setOutOpen(false) }, '×'),
+    ]),
+    h('div', { class: 'pm-out-body' }, [outSum, outProbs, outLines]),
+  ]);
 
   root.append(
     h('header', { class: 'pm-top' }, [
@@ -64,6 +88,7 @@ export function openProjectMode({ store, agent }) {
       projName,
       projCount,
       h('span', { class: 'pm-spacer' }),
+      btnRun, btnStop, btnOut,
       btnSave,
       btnClose,
     ]),
@@ -76,6 +101,7 @@ export function openProjectMode({ store, agent }) {
     ]),
     h('footer', { class: 'pm-status' }, [statusLang, statusPos, statusDirty, h('span', { class: 'pm-spacer' }), statusMsg]),
   );
+  root.querySelector('.pm-status').before(outPanel);
   (document.body || document.documentElement).appendChild(root);
 
   // ── 数据 ──
@@ -352,6 +378,7 @@ export function openProjectMode({ store, agent }) {
     tab.dirty = tab.value !== tab.saved;
     updateGutter();
     updateStatus();
+    renderMarks();
     renderTabs();
     renderTree();
     renderHeader();
@@ -369,7 +396,7 @@ export function openProjectMode({ store, agent }) {
   });
   textarea.addEventListener('keyup', updateStatus);
   textarea.addEventListener('click', updateStatus);
-  textarea.addEventListener('scroll', () => { gutter.scrollTop = textarea.scrollTop; });
+  textarea.addEventListener('scroll', () => { gutter.scrollTop = textarea.scrollTop; renderMarks(); });
 
   function applyEdit(edit) {
     const tab = current();
@@ -404,6 +431,140 @@ export function openProjectMode({ store, agent }) {
     flash(T(`已保存 ${tab.path}`, `Saved ${tab.path}`));
   }
 
+  // ── 段 2：编译 / 运行 ──
+  function setOutOpen(open) {
+    state.outOpen = !!open;
+    outPanel.hidden = !state.outOpen;
+    btnOut.setAttribute('aria-pressed', String(state.outOpen));
+    if (state.outOpen) renderMarks();
+  }
+
+  function setRunning(running) {
+    state.running = running;
+    btnRun.disabled = running;
+    btnStop.hidden = !running;
+  }
+
+  function clearOutput() {
+    state.diags = [];
+    outLines.replaceChildren();
+    outProbs.replaceChildren();
+    outSum.textContent = T('暂无输出。点击「运行」执行当前文件，或按 Ctrl+Enter。', 'No output yet. Click Run or press Ctrl+Enter.');
+    renderMarks();
+  }
+
+  function appendOutLine(log) {
+    const level = log && log.level === 'error' ? 'error' : log && log.level === 'warn' ? 'warn' : 'log';
+    const el = h('div', { class: `pm-line ${level}`, text: String(log?.text ?? log ?? '').replace(/\n$/, '') });
+    outLines.append(el);
+    while (outLines.childElementCount > 2000) outLines.firstElementChild.remove();
+    outLines.scrollTop = outLines.scrollHeight;
+  }
+
+  function renderProblems() {
+    outProbs.replaceChildren();
+    for (const d of state.diags) {
+      outProbs.append(h('button', {
+        type: 'button', class: `pm-prob ${d.severity}`, title: d.file,
+        onclick: () => gotoLine(d.file, d.line, d.col),
+      }, [
+        h('span', { class: 'pm-prob-loc', text: `${d.file}:${d.line}:${d.col}` }),
+        h('span', { class: 'pm-prob-msg', text: d.message }),
+      ]));
+    }
+  }
+
+  function renderMarks() {
+    marks.replaceChildren();
+    const tab = current();
+    if (!tab || !state.diags.length || textarea.hidden) return;
+    const lh = lineHeight();
+    for (const d of state.diags) {
+      if (d.file !== tab.path) continue;
+      marks.append(h('div', {
+        class: `pm-mark ${d.severity}`, title: d.message,
+        style: `top:${10 + (d.line - 1) * lh - textarea.scrollTop}px`,
+      }));
+    }
+  }
+
+  function lineHeight() {
+    const v = parseFloat(getComputedStyle(textarea).lineHeight);
+    return Number.isFinite(v) && v > 0 ? v : 20;
+  }
+
+  function gotoLine(file, line, col = 1) {
+    if (!tabOf(file)) openFile(file);
+    const tab = tabOf(file);
+    if (!tab) return flash(T(`无法打开 ${file}`, `Cannot open ${file}`));
+    if (state.active !== file) { state.active = file; showTab(tab); renderTabs(); renderTree(); }
+    const start = lineStartIndex(textarea.value, line);
+    const pos = Math.min(start + Math.max(0, col - 1), textarea.value.length);
+    textarea.focus();
+    textarea.setSelectionRange(pos, pos);
+    textarea.scrollTop = Math.max(0, (line - 6) * lineHeight());
+    gutter.scrollTop = textarea.scrollTop;
+    renderMarks();
+    updateStatus();
+  }
+
+  function stopRun() {
+    if (state.controller) state.controller.abort();
+  }
+
+  async function runActive() {
+    if (state.running) return flash(T('已有任务在运行', 'A run is already in progress'));
+    const tab = current();
+    if (!tab) return flash(T('先打开一个文件', 'Open a file first'));
+    const lang = runnerFor(tab.path);
+    if (!lang) return flash(T('只能运行 JS、Python、C++ 文件', 'Only JS, Python and C++ files can run'));
+    if (tab.dirty) saveActive();
+    const code = tab.value;
+    const path = tab.path;
+    const controller = new AbortController();
+    state.controller = controller;
+    state.diags = [];
+    setRunning(true);
+    setOutOpen(true);
+    clearOutput();
+    outSum.textContent = T(`${RUNNER_LABEL[lang]} · 运行中…`, `${RUNNER_LABEL[lang]} · running…`);
+    outLines.replaceChildren();
+    const onLog = (log) => appendOutLine(log);
+    const fsObj = agent.sandboxFS();
+    let out;
+    try {
+      if (lang === 'javascript') {
+        out = await runJavaScript(code, fsObj, { signal: controller.signal, onOutput: onLog });
+      } else if (lang === 'python') {
+        out = await runPython(code, fsObj, (p) => {
+          if (typeof p === 'string') outSum.textContent = `${RUNNER_LABEL[lang]} · ${p}`;
+        }, [], { signal: controller.signal, onOutput: onLog });
+      } else {
+        out = await runCpp(code, { mainPath: path, files: cppSources(files(), path), signal: controller.signal });
+      }
+    } catch (err) {
+      out = { ok: false, logs: [], error: { message: String(err?.message || err) } };
+    }
+    state.controller = null;
+    setRunning(false);
+    // 运行器可能写出了文件（回写到 fsObj）：同步到 store，侧栏与 Agent 随之可见
+    try { agent.sandboxCommit(); } catch { /* 同步失败不影响输出 */ }
+    state.lastSnap = null;
+    sync();
+    // 结果：用运行器返回的完整日志替换流式输出，并补上未出现在日志里的错误信息
+    outLines.replaceChildren();
+    const logs = Array.isArray(out.logs) ? out.logs : [];
+    for (const log of logs.slice(-2000)) appendOutLine(log);
+    const msg = out.error && out.error.message ? String(out.error.message) : '';
+    if (msg && !logs.some((l) => String(l?.text ?? '').includes(msg))) appendOutLine({ level: 'error', text: msg });
+    state.diags = parseDiagnostics(out, { activePath: path });
+    outSum.textContent = runSummary(out, lang);
+    renderProblems();
+    renderMarks();
+    if (!state.diags.length && out.ok) flash(T('运行成功', 'Run succeeded'));
+    else if (state.diags.length) flash(T(`${state.diags.length} 个问题，点击输出面板中的条目可跳转`, `${state.diags.length} problem(s); click one in the output panel to jump`));
+  }
+
   function flash(message) {
     statusMsg.textContent = String(message || '');
     clearTimeout(flash.t);
@@ -413,6 +574,7 @@ export function openProjectMode({ store, agent }) {
   function onKey(e) {
     if (!root.isConnected) return;
     if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) { e.preventDefault(); saveActive(); return; }
+    if (((e.ctrlKey || e.metaKey) && e.key === 'Enter') || e.key === 'F5') { e.preventDefault(); runActive(); return; }
     if (e.key === 'Escape' && !state.creating && !state.renaming) {
       e.preventDefault();
       close();
