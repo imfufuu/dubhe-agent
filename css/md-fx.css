@@ -1,0 +1,93 @@
+/* Markdown 排版扩展：渐变文字、动效文字、微交互卡片、十六进制颜色（语法见 js/md-fx.js）。
+   动效门控与 styles.css 的减少动效规则一致：「动效：关」或系统减少动效时全部停止。
+   导出的分享页同样引用本文件，动效保留。 */
+
+/* ── 渐变文字 :::gradient ── */
+.md-gradient {
+  background-image: var(--md-grad);
+  -webkit-background-clip: text; background-clip: text;
+  color: transparent; -webkit-text-fill-color: transparent;
+}
+
+/* ── 颜色：十六进制（按主题取值，已在 md-fx.js 中校验对比度） ── */
+.md-color.md-color-hex { color: var(--md-c-light); }
+[data-theme="dark"] .md-color.md-color-hex { color: var(--md-c-dark); }
+
+/* ── 动效文字 :::fx ── */
+.md-fx-shimmer {
+  background-image: linear-gradient(100deg, var(--fg) 42%, var(--bg) 50%, var(--fg) 58%);
+  background-size: 250% 100%;
+  -webkit-background-clip: text; background-clip: text;
+  color: transparent; -webkit-text-fill-color: transparent;
+  animation: md-fx-shimmer 2.8s linear infinite;
+}
+@keyframes md-fx-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+
+.md-fx-glow { animation: md-fx-glow 2.4s ease-in-out infinite; }
+@keyframes md-fx-glow {
+  0%, 100% { text-shadow: 0 0 4px currentColor; }
+  50% { text-shadow: 0 0 14px currentColor, 0 0 28px currentColor; }
+}
+
+.md-fx-wave { animation: md-fx-wave 2.2s ease-in-out infinite; }
+@keyframes md-fx-wave {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+
+.md-fx-typewriter { animation: md-fx-reveal 1.6s steps(24, end) both; }
+@keyframes md-fx-reveal { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+
+.md-fx-neon {
+  animation: md-fx-neon 1.8s steps(1, end) infinite;
+}
+@keyframes md-fx-neon {
+  0%, 100% { opacity: 1; text-shadow: 0 0 6px currentColor, 0 0 16px currentColor; }
+  8% { opacity: .55; text-shadow: none; }
+  12% { opacity: 1; }
+  60% { opacity: .8; text-shadow: 0 0 3px currentColor; }
+}
+
+.md-fx-rainbow {
+  background-image: linear-gradient(90deg, #ff3b3b, #ffa63b, #ffd93b, #3bdc6b, #3ba4ff, #9b3bff, #ff3b3b);
+  background-size: 300% 100%;
+  -webkit-background-clip: text; background-clip: text;
+  color: transparent; -webkit-text-fill-color: transparent;
+  animation: md-fx-flow 6s linear infinite;
+}
+@keyframes md-fx-flow { from { background-position: 0 0; } to { background-position: -300% 0; } }
+
+/* ── 微交互卡片 :::card ── */
+.md-card {
+  border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin: 10px 0;
+  background: var(--bg-soft, transparent);
+  transition: transform .25s cubic-bezier(.22,1,.36,1), box-shadow .25s ease, border-color .25s ease;
+  position: relative; overflow: hidden;
+}
+.md-card-lift:hover { transform: translateY(-3px); box-shadow: 0 10px 24px -12px rgba(0,0,0,.35); }
+.md-card-tilt:hover { transform: perspective(600px) rotateX(3deg) rotateY(-4deg) translateY(-2px); box-shadow: 0 10px 24px -12px rgba(0,0,0,.35); }
+.md-card-glow:hover { border-color: var(--fg-2); box-shadow: 0 0 0 1px var(--fg-2), 0 0 22px -6px var(--fg-3); }
+.md-card-ripple::after {
+  content: ""; position: absolute; left: var(--rx, 50%); top: var(--ry, 50%); width: 10px; height: 10px; margin: -5px 0 0 -5px;
+  border-radius: 50%; background: currentColor; opacity: 0; pointer-events: none;
+}
+.md-card-ripple:active::after { animation: md-fx-ripple .6s ease-out; }
+@keyframes md-fx-ripple { from { transform: scale(1); opacity: .25; } to { transform: scale(40); opacity: 0; } }
+
+/* ── 自定义动效块：容器只保证可读布局，动画与颜色由块内净化后的 CSS 决定 ── */
+.md-fx { position: relative; }
+
+/* 「动效：关」：强制停止所有 Markdown 动效与微交互 */
+html[data-motion="off"] .md-fx, html[data-motion="off"] .md-fx *,
+html[data-motion="off"] .md-card, html[data-motion="off"] .md-card::after {
+  animation: none !important; transition: none !important;
+}
+html[data-motion="off"] .md-card:hover { transform: none !important; }
+
+@media (prefers-reduced-motion: reduce) {
+  html:not([data-motion="on"]) .md-fx, html:not([data-motion="on"]) .md-fx *,
+  html:not([data-motion="on"]) .md-card, html:not([data-motion="on"]) .md-card::after {
+    animation: none !important; transition: none !important;
+  }
+  html:not([data-motion="on"]) .md-card:hover { transform: none !important; }
+}

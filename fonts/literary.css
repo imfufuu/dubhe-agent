@@ -41,3 +41,11 @@
 .md-font-jp {
   font-family: "Noto Serif JP", "Hiragino Mincho ProN", "Yu Mincho", "Dubhe Noto Serif", serif;
 }
+/* 懒加载字族（assets/fonts-lazy/index.css）：系统已有字体时优先系统字体，缺字时才取分片 */
+.md-font-sans-jp { font-family: "Noto Sans JP", "Hiragino Sans", "Yu Gothic", sans-serif; }
+.md-font-sans-kr { font-family: "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif; }
+.md-font-arabic { font-family: "Noto Naskh Arabic", "Geeza Pro", serif; }
+.md-font-hebrew { font-family: "Noto Sans Hebrew", "Arial Hebrew", sans-serif; }
+.md-font-thai { font-family: "Noto Sans Thai", "Thonburi", sans-serif; }
+.md-font-devanagari { font-family: "Noto Sans Devanagari", "Kohinoor Devanagari", sans-serif; }
+.md-font-han-ext { font-family: "BabelStone Han Extra", "Noto Sans SC", "PingFang SC", "Songti SC", serif; }
