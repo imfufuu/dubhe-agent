@@ -422,6 +422,16 @@ export function paintChecklistPanel(list) {
     if (empty) empty.hidden = true;
     for (const el of bodyEls) if (el) el.hidden = false;
   }
+  // 摘要：各状态计数 + 当前进行中的一项（面板不只是列表）
+  const sum = pane.querySelector('#task-summary');
+  if (sum) {
+    const order = ['in_progress', 'pending', 'done', 'failed', 'skipped'];
+    const counts = Object.fromEntries(order.map((k) => [k, items.filter((i) => i.status === k).length]));
+    const cur = items.find((i) => i.status === 'in_progress');
+    const chips = order.filter((k) => counts[k]).map((k) => `<span class="task-stat task-stat-${k}">${ckEsc(label[k])} <b>${counts[k]}</b></span>`).join('');
+    sum.hidden = !total;
+    sum.innerHTML = total ? `<div class="task-stats">${chips}</div>${cur ? `<div class="task-now"><span class="task-now-k">${ckEsc(localeText('当前', 'Now'))}</span>${ckEsc(cur.text)}</div>` : ''}` : '';
+  }
   if (ol) ol.innerHTML = items.map((item) => `<li class="ck-${ckEsc(item.status)}"><span class="ck-mark" aria-hidden="true"></span><span class="ck-text">${ckEsc(item.text)}</span><span class="ck-state">${ckEsc(label[item.status] || item.status)}</span></li>`).join('');
   if (count) count.textContent = total ? `${done}/${total}` : '—';
   if (fill) fill.style.width = total ? `${Math.round((done / total) * 100)}%` : '0%';

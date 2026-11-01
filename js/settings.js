@@ -457,6 +457,7 @@ export function openSettingsModal({ store } = {}) {
   $('#set-fast').checked = !!store.state.settings.fastMode;
   if ($('#set-image-review')) $('#set-image-review').checked = store.state.settings.imageRemoteReview !== false;
   if ($('#set-cleanup-unreferenced')) $('#set-cleanup-unreferenced').checked = store.state.settings.cleanupUnreferencedFiles === true;
+  if ($('#set-jev-decision')) $('#set-jev-decision').checked = store.state.settings.showJevDecision === true;
   $('#set-thinking').checked = store.state.settings.thinking !== false;
   syncSeg('#set-reason', store.state.settings.reasoningLevel || 'medium');
   syncSeg('#set-cpp-mode', store.state.settings.cppMode === 'local' ? 'local' : 'remote');
@@ -937,6 +938,7 @@ export function mountSettings(store, { onRelayChanged, onKeySaved, onSettingChan
   bindSw('#set-fast', 'fastMode');
   bindSw('#set-image-review', 'imageRemoteReview');
   bindSw('#set-cleanup-unreferenced', 'cleanupUnreferencedFiles');
+  bindSw('#set-jev-decision', 'showJevDecision');
   const reasonRow = document.getElementById('set-reason-row');
   const syncReasonRow = () => { if (reasonRow) reasonRow.hidden = !$('#set-thinking').checked; };
   bindSw('#set-thinking', 'thinking', syncReasonRow);

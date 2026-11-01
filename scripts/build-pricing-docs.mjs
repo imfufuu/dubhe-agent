@@ -32,15 +32,18 @@ function priceRow({ name, sub, type, p, notes }) {
   const perImage = p?.mode === 'tier' && p.tiers
     ? ['1K', '2K', '4K'].map((k) => `${k} ${fmt(p.tiers[k.toLowerCase()])}`).join(' · ')
     : '—';
+  // 「按张」与「说明」并入模型栏：栏目下方两行小字，减少列数
+  const extra = [
+    perImage !== '—' ? `按张：${perImage}` : '',
+    ...notes,
+  ].filter(Boolean).map((line) => `<div class=\"price-note\">${esc(line)}</div>`).join('');
   const cells = [
-    `<td><strong>${esc(name)}</strong><br><code>${esc(sub)}</code></td>`,
+    `<td><strong>${esc(name)}</strong><br><code>${esc(sub)}</code>${extra}</td>`,
     `<td>${esc(type)}</td>`,
     `<td>${fmt(p?.input)}</td>`,
     `<td>${fmt(p?.cachedInput)}</td>`,
     `<td>${fmt(p?.cacheCreation)}</td>`,
     `<td>${fmt(p?.output)}</td>`,
-    `<td>${perImage}</td>`,
-    `<td>${notes.map(esc).join('；') || '—'}</td>`,
   ];
   return `<tr>${cells.join('')}</tr>`;
 }
@@ -82,26 +85,22 @@ function teamorouterRows() {
       rows.push(priceRow({ name: m.displayName || m.id, sub: m.id, type, p: null, notes: ['公开目录未给出价格，暂不估价'] }));
       continue;
     }
-    const notes = ['TeamoRouter 折后价'];
+    const notes = [];
     if (p.kind === 'image' && p.mode === 'tier') {
       // 报告只给出按张价；沿用的官方 token 数值不可信，token 列留空。
       notes.push('按张计费；报告未列 token 价，token 价待确认');
       rows.push(priceRow({ name: m.displayName || m.id, sub: m.id, type, p: { ...p, input: undefined, output: undefined, cachedInput: undefined }, notes }));
       continue;
     }
-    if (p.kind === 'chat' || p.kind === 'vision') {
-      if (p.contextTier == null) notes.push('报告未给出上下文分档，不套用官方长上下文加价');
-      notes.push('缓存写入按普通输入价计');
-    }
     rows.push(priceRow({ name: m.displayName || m.id, sub: m.id, type, p, notes }));
   }
   for (const [id, f] of Object.entries(TEAMOROUTER_FAST_PRICING)) {
-    rows.push(priceRow({ name: `${id} · Fast`, sub: `${id}（service_tier: fast）`, type: '对话', p: { input: f.input, output: f.output }, notes: ['Fast 加速档（TeamoRouter 折后价，基础模型 ID 不变）'] }));
+    rows.push(priceRow({ name: `${id} · Fast`, sub: `${id}（service_tier: fast）`, type: '对话', p: { input: f.input, output: f.output }, notes: ['Fast 加速档，基础模型 ID 不变'] }));
   }
   return rows;
 }
 
-const TABLE_HEAD = '<thead><tr><th>模型</th><th>类型</th><th>输入</th><th>缓存读</th><th>缓存写</th><th>输出</th><th>按张</th><th>说明</th></tr></thead>';
+const TABLE_HEAD = '<thead><tr><th>模型</th><th>类型</th><th>输入</th><th>缓存读</th><th>缓存写</th><th>输出</th></tr></thead>';
 const table = (rows) => `<div class="price-wrap"><table class="price-table">${TABLE_HEAD}<tbody>${rows.join('')}</tbody></table></div>`;
 
 export function renderPricingSection() {

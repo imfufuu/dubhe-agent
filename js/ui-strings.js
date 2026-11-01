@@ -168,6 +168,8 @@ export const UI_STRINGS = {
   "对话行为": "Conversation",
   "代码沙箱": "Code sandbox",
   "自动清理未引用文件": "Auto-clean unreferenced files",
+  "显示 Jev 初步决策": "Show Jev preliminary decision",
+  "默认隐藏；开启后每轮回答下方显示 Jev 对本轮工具、沙箱、生图等的校准分类（如难度）": "Hidden by default; when on, each reply shows Jev's calibration for the turn (tools, sandbox, image generation, difficulty)",
   "默认关闭；开启后清理未被回答引用的新文件；internal/、uploads/ 始终保留": "Off by default. When enabled, unreferenced files are cleaned up; internal/ and uploads/ are always retained.",
   "C++ 工具": "C++ tool",
   "关闭后 execute_cpp 不可用；首用本地模式下载约30MB工具链": "Turn off to disable execute_cpp; local mode downloads a ~30 MB toolchain on first use.",
