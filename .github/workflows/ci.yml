@@ -66,6 +66,9 @@ jobs:
       - name: tests/auto-review.test.mjs · 自动审批层（codex-auto-review）触发 / 请求 / 失败回落
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/auto-review.test.mjs
+      - name: tests/jev-plan.test.mjs · Jev 回合等待上限（3s fail-open）与结论缓存（TTL / 容量 / 计费）
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/jev-plan.test.mjs
       - name: tests/i18n-packs.test.mjs · 语言包登记 / 覆盖 / 漏翻审计
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/i18n-packs.test.mjs

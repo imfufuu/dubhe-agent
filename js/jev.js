@@ -27,6 +27,32 @@ export function setActiveJevModel(id) {
 export function getActiveJevModel() { return activeJevModel; }
 export const JEV_PATH = '/v1/systemone';
 export const JEV_TIMEOUT_MS = 8000;
+// 回合开始时同步等待 Jev 的上限（第 1 项）：超过即中止、本轮不注入提示（fail-open），不再拖慢首个模型请求。
+export const JEV_PLAN_TIMEOUT_MS = 3000;
+// 决策结论缓存（第 3 项）：同一模型 + 同一状态文本在有效期内复用，命中时不产生 usage（不重复计费）。
+export const JEV_PLAN_CACHE_TTL_MS = 10 * 60 * 1000;
+export const JEV_PLAN_CACHE_MAX = 50;
+const planCache = new Map();
+
+export function planCacheKey(state, model = activeJevModel) {
+  return `${model}\n${state}`;
+}
+/** 读取缓存；过期或不存在返回 null。命中时刷新插入顺序（简单 LRU）。 */
+export function planCacheGet(key, now = Date.now()) {
+  const hit = planCache.get(key);
+  if (!hit) return null;
+  if (now - hit.at > JEV_PLAN_CACHE_TTL_MS) { planCache.delete(key); return null; }
+  planCache.delete(key);
+  planCache.set(key, hit);
+  return hit.value;
+}
+export function planCachePut(key, value, now = Date.now()) {
+  if (planCache.has(key)) planCache.delete(key);
+  planCache.set(key, { at: now, value });
+  while (planCache.size > JEV_PLAN_CACHE_MAX) planCache.delete(planCache.keys().next().value);
+}
+export function clearPlanCache() { planCache.clear(); }
+export function planCacheSize() { return planCache.size; }
 
 /** 决策模型不可当作聊天模型选中（网关 /v1/models 目前也不列出它，防以后漏进来） */
 export function isJevModel(modelId) {
@@ -256,14 +282,25 @@ export function formatPlanNote(answers, { webEnabled, sandboxEnabled, thinking, 
   return lines.join('\n');
 }
 
-export async function planTurn({ apiKey, text, model, settings, attachments, signal, timeoutMs } = {}) {
+export async function planTurn({ apiKey, text, model, settings, attachments, signal, timeoutMs, now = Date.now() } = {}) {
   const state = buildTurnState({ text, model, settings, attachments });
-  const r = await askJev({ apiKey, state, questions: TURN_QUESTIONS, signal, timeoutMs });
+  const key = planCacheKey(state, activeJevModel);
+  // 缓存只存结论（answers）；提示正文每次都按当前设置重算，所以切换思考档位等设置仍然正确。
+  const cached = planCacheGet(key, now);
+  let r;
+  if (cached) {
+    r = { ok: true, model: cached.model, answers: cached.answers, usage: null, cached: true };
+  } else {
+    r = await askJev({ apiKey, state, questions: TURN_QUESTIONS, signal, timeoutMs });
+    if (!r.ok) return r;
+    planCachePut(key, { model: r.model, answers: r.answers }, now);
+  }
   if (!r.ok) return r;
   const answers = r.answers;
   return {
     ok: true,
     model: r.model,
+    cached: !!r.cached,
     answers,
     usage: r.usage,
     route: choiceOf(answers, 'route') || 'chat',
