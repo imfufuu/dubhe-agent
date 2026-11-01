@@ -115,3 +115,25 @@ test('助手消息留白按主区域宽度判定（侧栏展开的 900px 视口�
   assert.match(css, /\.main \{ container-type: inline-size; \}/);
   assert.match(css, /@container \(max-width: 860px\) \{ \.msg-assistant:not\(\.msg-collapsed\) \{ padding-inline/);
 });
+
+test('中止后：进行中的项改回待办，已完成 / 跳过 / 失败的项保持不变（不改原数组）', async () => {
+  const { interruptChecklist } = await import('../js/checklist.js');
+  const before = [
+    { id: 'a', text: '读文件', status: 'done' },
+    { id: 'b', text: '改代码', status: 'in_progress' },
+    { id: 'c', text: '跑测试', status: 'pending' },
+    { id: 'd', text: '发布', status: 'skipped' },
+    { id: 'e', text: '旧步骤', status: 'failed' },
+  ];
+  const snapshot = JSON.parse(JSON.stringify(before));
+  const after = interruptChecklist(before);
+  assert.deepEqual(after.map((i) => i.status), ['done', 'pending', 'pending', 'skipped', 'failed']);
+  assert.deepEqual(before, snapshot, '不修改传入的数组');
+  assert.deepEqual(interruptChecklist(null), []);
+});
+
+test('中止分支接线：agent 在中止时更新清单所在消息，UI 只保留必要的状态', () => {
+  const agent = fs.readFileSync(new URL('../js/agent.js', import.meta.url), 'utf8');
+  assert.match(agent, /interruptChecklist\(ckOwner\.checklist\)/);
+  assert.match(agent, /store\.updateMessage\(ckOwner\.id, \{ checklist: interruptChecklist/);
+});

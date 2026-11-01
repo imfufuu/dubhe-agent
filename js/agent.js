@@ -142,7 +142,7 @@ import {
 } from './executionContext.js?v=2026.10.25.1';
 import { createToolRunner } from './toolrunner.js?v=2026.10.25.1';
 import { finalizeTurn } from './turnfinalizer.js?v=2026.10.25.1';
-import { checklistBlocksEnd, checklistReminder, recordChecklistCall } from './checklist.js';
+import { checklistBlocksEnd, checklistReminder, recordChecklistCall, interruptChecklist } from './checklist.js';
 import { formatAuditGoalsReport, auditBoundaryStatement } from './audit.js?v=2026.10.25.1';
 // P3：编辑直播预览保持独立模块，旧缓存组合下缺少它也不影响核心对话。
 import { buildFileEditPreview, formatEditPreviewNote, pathsOfEdits } from './editpreview.js?v=2026.10.25.1';
@@ -1523,6 +1523,11 @@ export function createAgent(store, hooks = {}) {
         // 用户在输出前中止：补一条空的助手占位，让这一轮可见、可分享，而不是留下悬空的提问。
         if (last) store.updateMessage(last.id, { cancelled: true, done: true });
         else store.pushMessage({ role: 'assistant', text: '', cancelled: true, done: true, model: store.state.model });
+        // 任务清单：中止后仍「进行中」的项不再运行，改回「待办」，避免面板长期显示「当前」
+        const ckOwner = checklistOwnerId && store.state.messages.find((m) => m && m.id === checklistOwnerId);
+        if (ckOwner && Array.isArray(ckOwner.checklist) && ckOwner.checklist.some((i) => i && i.status === 'in_progress')) {
+          store.updateMessage(ckOwner.id, { checklist: interruptChecklist(ckOwner.checklist) });
+        }
         emit('onCancelled');
       } else {
         setStatus('error');

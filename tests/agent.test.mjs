@@ -5472,7 +5472,7 @@ test('多题选择框合成一个框，支持逐题选择与回退清除', async
   const fsp = await import('node:fs');
   const ui = readUiSource();
   const css = fsp.readFileSync(new URL('../css/styles.css', import.meta.url), 'utf8');
-  assert.match(ui, /choiceHtml\(peeled\.groups\[\+i\]\)/, '多个 choice 必须合成一个框');
+  assert.match(ui, /choiceHtml\(peeled\.groups\[\+i\] \|\| \[\]\)/, '多个 choice 必须合成一个框');
   assert.match(ui, /data-choice-count/);
   assert.match(ui, /data-choice-back/);
   assert.match(ui, /choiceReplyText/);

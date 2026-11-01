@@ -163,7 +163,6 @@ registerLanguagePack('es', {
   "路由由本地启发式即时决定；换一句话问，可能会选到不同模型。": "El enrutamiento lo decide al instante una heurística local; reformular puede elegir otro modelo.",
   "输出在长度上限前结束，未收到可见正文。请点击「重新生成」重试。": "La salida terminó antes del límite de longitud sin texto visible. Haz clic en «Regenerar» para reintentar.",
   "模型未返回可见答复。请点击「重新生成」重试。": "El modelo no devolvió una respuesta visible. Haz clic en «Regenerar» para reintentar.",
-  "输出碰到长度上限，未写完。再说「继续」或点重新生成。": "La salida alcanzó el límite de longitud y se cortó. Di «continúa» o haz clic en Regenerar.",
   "联网检索中…": "Buscando en la web…",
   "可稍后重试，或换用其它支持原生联网的模型": "Inténtalo más tarde o cambia a un modelo con búsqueda web nativa.",
   "已停止": "Detenido",

@@ -164,7 +164,6 @@ registerLanguagePack('en', {
   "路由由本地启发式即时决定；换一句话问，可能会选到不同模型。": "Routing is decided instantly by local heuristics; rephrasing may select a different model.",
   "输出在长度上限前结束，未收到可见正文。请点击「重新生成」重试。": "Output ended before the length limit without visible text. Click “Regenerate” to retry.",
   "模型未返回可见答复。请点击「重新生成」重试。": "The model returned no visible reply. Click “Regenerate” to retry.",
-  "输出碰到长度上限，未写完。再说「继续」或点重新生成。": "Output hit the length limit and was cut off. Say “continue” or click Regenerate.",
   "联网检索中…": "Searching the web…",
   "可稍后重试，或换用其它支持原生联网的模型": "Try again later, or switch to a model with native web search.",
   "已停止": "Stopped",

@@ -580,7 +580,7 @@
       if (cur) {
         revealWithin(cur);
         // 过渡进行中要瞬间归位：平滑滚动会和新状态快照错位，化开效果就散了
-        if (scroll) window.scrollTo({ top: bodyTop(cur), behavior: scroll === 'instant' || inVt ? 'instant' : 'smooth' });
+        if (scroll) window.scrollTo({ top: bodyTop(cur), behavior: scroll === 'instant' ? 'instant' : 'smooth' });
       }
     }
 
@@ -598,7 +598,7 @@
       if (box && box.scrollWidth > box.clientWidth + 4) {
         var r = on.getBoundingClientRect(), b = box.getBoundingClientRect();
         var delta = (r.left + r.width / 2) - (b.left + b.width / 2);
-        if (Math.abs(delta) > 1) box.scrollBy({ left: delta, behavior: inVt ? 'instant' : 'smooth' });
+        if (Math.abs(delta) > 1) box.scrollBy({ left: delta, behavior: 'smooth' });
       }
     }
     addEventListener('resize', moveTabIndicator);
@@ -607,21 +607,9 @@
     function fromHash() {
       return (location.hash || '').replace('#', '');
     }
-    // 分区切换用同文档 View Transition：旧内容化开、新内容轻轻推近（关键帧在 css/page-fx.css）。
-    // 只在 startViewTransition 真的可用且动效没关时用，否则照常换页 —— 功能永远优先于动画。
-    var inVt = false;
-    function swapWithTransition(mutate) {
-      var allow = false;
-      try {
-        var flag = root.dataset.motion;
-        allow = typeof document.startViewTransition === 'function'
-          && flag !== 'off' && (flag === 'on' || !matchMedia('(prefers-reduced-motion: reduce)').matches);
-      } catch (e) { allow = false; }
-      if (!allow) { mutate(); return; }
-      try { inVt = true; document.startViewTransition(function () { mutate(); inVt = false; }); }
-      catch (e) { inVt = false; mutate(); }
-    }
-    window.addEventListener('hashchange', function () { swapWithTransition(function () { show(fromHash(), 'smooth'); }); });
+    // 分区切换直接瞬时换页并落到正文开头。不用整页 View Transition：快照交叉淡化时新旧两页内容会叠印，
+    // 且标签条与正文之间的空隙会露出旧内容（短暂的「锚点栏没有覆盖正文上方的内容」）。入场动效由 .page.active 的 pageIn 提供。
+    window.addEventListener('hashchange', function () { show(fromHash(), 'instant'); });
     show(fromHash(), location.hash ? 'instant' : false);
     // 字体等加载完成后高度可能变化：带锚点进入时再定位一次到正文开头
     window.addEventListener('load', function () {

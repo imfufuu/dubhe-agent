@@ -866,20 +866,24 @@ export function renderMarkdown(src, options = {}) {
   });
   const restoreInlineCodeTokens = (html) => String(html || '').replace(/\uE000IC(\d+)\uE000/g, (_, i) => `<code>${esc(inlineCodes[+i] || '')}</code>`);
   const restoreWidgets = (html) => {
+    // 占位符没有对应块（文本里偶然出现的私用区字符等）时输出空串，不能抛异常：否则整个界面挂载失败
     const foldAt = (_, i) => {
       const f = folds[+i];
+      if (!f) return '';
       const innerMd = getMd();
       const inner = innerMd ? renderMarkdown(f.body, options) : `<p>${esc(f.body)}</p>`;
       return `<div class="md-fold" role="button" tabindex="0"><span class="chip-ico">${ICON.chevRight || ''}</span><span class="chip-name">${esc(f.title)}</span><div class="chip-detail"><div class="fold-inner md-fold-body">${inner}</div></div></div>`;
     };
     const fontAt = (_, i) => {
       const f = fonts[+i];
+      if (!f) return '';
       const innerMd = getMd();
       const inner = innerMd ? renderMarkdown(f.body, options) : `<p>${esc(f.body)}</p>`;
       return `<div class="md-font md-font-${f.cls}">${inner}</div>`;
     };
     const colorAt = (_, i) => {
       const f = colors[+i];
+      if (!f) return '';
       const innerMd = getMd();
       const inner = innerMd ? renderMarkdown(f.body, options) : `<p>${esc(f.body)}</p>`;
       return f.style ? `<div class="md-color md-color-hex" style="${f.style}">${inner}</div>` : `<div class="md-color md-c-${f.cls}">${inner}</div>`;
@@ -893,16 +897,19 @@ export function renderMarkdown(src, options = {}) {
     };
     const alignAt = (_, i) => {
       const a = aligns[+i];
+      if (!a) return '';
       const innerMd = getMd();
       const inner = innerMd ? renderMarkdown(a.body, options) : `<p>${esc(a.body)}</p>`;
       return `<div class="md-align md-align-${a.cls}">${inner}</div>`;
     };
     const chartAt = (_, i) => {
       const c = charts[+i];
+      if (!c) return '';
       return renderQuickChart(c.kind, c.body, c.title);
     };
     const diagramAt = (_, i) => {
       const d = diagrams[+i];
+      if (!d) return '';
       return renderQuickDiagram(d.kind, d.body, d.title);
     };
     const fileAt = (_, i) => {
@@ -930,8 +937,8 @@ export function renderMarkdown(src, options = {}) {
       .replace(/\uE000COLOR(\d+)\uE000/g, colorAt)
       .replace(/<p>\s*\uE000FXB(\d+)\uE000\s*<\/p>/g, fxAt)
       .replace(/\uE000FXB(\d+)\uE000/g, fxAt)
-      .replace(/\uE000IC(\d+)\uE000/g, (_, i) => `<code>${esc(inlineCodes[+i])}</code>`);
-    out = out.replace(/<p>\s*\uE000CHOICE(\d+)\uE000\s*<\/p>/g, (_, i) => choiceHtml(peeled.groups[+i])).replace(/\uE000CHOICE(\d+)\uE000/g, (_, i) => choiceHtml(peeled.groups[+i]));
+      .replace(/\uE000IC(\d+)\uE000/g, (_, i) => `<code>${esc(inlineCodes[+i] ?? '')}</code>`);
+    out = out.replace(/<p>\s*\uE000CHOICE(\d+)\uE000\s*<\/p>/g, (_, i) => choiceHtml(peeled.groups[+i] || [])).replace(/\uE000CHOICE(\d+)\uE000/g, (_, i) => choiceHtml(peeled.groups[+i] || []));
     return out;
   };
 
