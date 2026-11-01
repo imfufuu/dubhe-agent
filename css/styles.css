@@ -3274,3 +3274,12 @@ html:lang(de) .tok-row > span { min-width: 0; overflow-wrap: anywhere; }
 .task-stat-failed b { color: var(--fg); text-decoration: underline wavy; }
 .task-now { display: flex; align-items: baseline; gap: 8px; line-height: 1.5; color: var(--fg); min-width: 0; overflow-wrap: anywhere; }
 .task-now-k { flex: none; font-family: var(--mono); font-size: 10.5px; letter-spacing: .04em; text-transform: uppercase; color: var(--fg-3); }
+
+/* ── 防人机对话框（第 11 条，js/human-check.js）── */
+.human-check{position:fixed;inset:0;z-index:10000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.42);padding:16px}
+.human-check-card{width:min(360px,100%);background:var(--bg,#fff);color:var(--fg,#111);border:1px solid var(--line,rgba(127,127,127,.25));border-radius:var(--radius,12px);box-shadow:var(--shadow-lg,0 12px 40px rgba(0,0,0,.25));padding:20px;display:flex;flex-direction:column;gap:10px}
+.human-check-title{margin:0;font-weight:600;font-size:16px}
+.human-check-hint,.human-check-status{margin:0;font-size:13px;opacity:.78}
+.human-check-widget{min-height:66px;display:flex;justify-content:center}
+.human-check-cancel{align-self:flex-end;border:1px solid var(--line,rgba(127,127,127,.3));background:var(--bg-soft,transparent);color:inherit;border-radius:8px;padding:6px 14px;cursor:pointer;font:inherit;font-size:13px}
+.human-check-cancel:hover{background:var(--bg-hover,rgba(127,127,127,.12))}
