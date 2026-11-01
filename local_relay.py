@@ -185,15 +185,35 @@ def _screenshot_argv(out):
     if sys.platform == "darwin":
         exe = shutil.which("screencapture")
         return [exe, "-x", "-t", "png", out] if exe else None
-    for argv in (
-        ["gnome-screenshot", "-f", out],
-        ["grim", out],
-        ["scrot", "-o", out],
-        ["import", "-window", "root", out],
-    ):
+    # Linux：按图形会话选工具。X11 上 grim 不可用，scrot/import 最稳；Wayland 上只有 grim（wlroots）
+    # 与 gnome-screenshot（GNOME）能截屏，X11 工具会因没有 X 服务器失败。
+    session = linux_session()
+    if session == "none":
+        return None
+    if session == "wayland":
+        candidates = [
+            ["grim", out],
+            ["gnome-screenshot", "-f", out],
+        ]
+    else:
+        candidates = [
+            ["scrot", "-o", out],
+            ["import", "-window", "root", out],
+            ["gnome-screenshot", "-f", out],
+        ]
+    for argv in candidates:
         if shutil.which(argv[0]):
             return argv
     return None
+
+
+def linux_session():
+    """'x11' | 'wayland' | 'none'；同时存在时按 X11（XWayland）处理。"""
+    if os.environ.get("DISPLAY"):
+        return "x11"
+    if os.environ.get("WAYLAND_DISPLAY"):
+        return "wayland"
+    return "none"
 
 
 def screenshot_available():
@@ -207,7 +227,9 @@ def take_screenshot():
     try:
         argv = _screenshot_argv(out)
         if not argv:
-            raise LocalError("未找到截图工具（Linux 需安装 gnome-screenshot / grim / scrot 之一）")
+            if not IS_WINDOWS and sys.platform != "darwin" and linux_session() == "none":
+                raise LocalError("没有图形会话（DISPLAY 与 WAYLAND_DISPLAY 都为空），无法截屏：请在桌面会话里启动 server.py")
+            raise LocalError("未找到截图工具（X11 安装 scrot 或 imagemagick；Wayland 安装 grim；或安装 gnome-screenshot）")
         try:
             r = subprocess.run(argv, stdin=subprocess.DEVNULL, capture_output=True, timeout=60)
         except subprocess.TimeoutExpired:

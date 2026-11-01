@@ -10,7 +10,7 @@ const EC = await import('../js/executionContext.js');
 const REG = await import('../js/capabilities.js');
 const { TOOL_DEFS } = await import('../js/tools.js');
 
-const LOCAL = ['run_shell', 'take_screenshot', 'local_files'];
+const LOCAL = ['run_shell', 'take_screenshot', 'local_files', 'local_desktop'];
 
 test('登记：三个本机工具都在能力登记处（group=localMachine）、有契约、有 TOOL_DEFS 定义', () => {
   for (const name of LOCAL) {
@@ -123,6 +123,43 @@ test('前端客户端：未探测到本机服务时直接报可读错误（不�
 test('安全：本机客户端只请求同源相对路径（/api/local/*），不走中继域名或第三方地址', () => {
   const src = fsp.readFileSync(new URL('../js/localmachine.js', import.meta.url), 'utf8');
   const urls = [...src.matchAll(/'(\/api\/local\/[a-z]+)'/g)].map((m) => m[1]);
-  assert.deepEqual([...new Set(urls)].sort(), ['/api/local/fs', '/api/local/screenshot', '/api/local/session', '/api/local/shell']);
+  assert.deepEqual([...new Set(urls)].sort(), ['/api/local/desktop', '/api/local/fs', '/api/local/screenshot', '/api/local/session', '/api/local/shell']);
   assert.doesNotMatch(src, /https?:\/\//, '不得出现绝对 URL');
+});
+
+test('local_desktop：只读动作不确认；改变桌面的动作逐次确认；契约为 L3 + 确认', () => {
+  const READ = ['info', 'windows', 'processes', 'clipboard_read'];
+  const WRITE = ['focus', 'clipboard_write', 'open', 'mouse_move', 'click', 'scroll', 'key', 'type'];
+  assert.deepEqual([...LM.LOCAL_DESKTOP_MUTATING].sort(), [...WRITE].sort());
+  assert.deepEqual([...LM.LOCAL_DESKTOP_ACTIONS].sort(), [...READ, ...WRITE].sort());
+  for (const a of READ) assert.equal(EX.localMachineMustConfirm('local_desktop', { action: a }), false, a);
+  for (const a of WRITE) assert.equal(EX.localMachineMustConfirm('local_desktop', { action: a }), true, a);
+  const c = EX.getToolContract('local_desktop');
+  assert.equal(c.riskLevel, 'L3');
+  assert.equal(c.requiresConfirmation, true);
+  assert.equal(c.retryPolicy, 'never');
+});
+
+test('local_desktop：未提供本机服务时返回可读错误，不发起网络请求', async () => {
+  const { executeTool } = await import('../js/tools.js');
+  const seen = [];
+  const out = await executeTool('local_desktop', { action: 'click', x: 1, y: 2 }, {
+    fs: { list: () => [], write() {}, read: () => null },
+    onUi: (p) => seen.push(p),
+    signal: undefined,
+  });
+  assert.match(out, /^local_desktop 失败：/, out);
+  assert.ok(seen.some((p) => p.status === 'error'), '应上报 error 状态');
+});
+
+test('local_desktop：工具定义的动作枚举与 Python 端一致', () => {
+  const def = TOOL_DEFS.find((t) => t.name === 'local_desktop');
+  assert.ok(def);
+  assert.deepEqual([...def.parameters.properties.action.enum].sort(), [...LM.LOCAL_DESKTOP_ACTIONS].sort());
+  assert.deepEqual(def.parameters.required, ['action']);
+  const py = fsp.readFileSync(new URL('../local_desktop.py', import.meta.url), 'utf8');
+  const m = py.match(/MUTATING_ACTIONS = \{([^}]*)\}/);
+  assert.ok(m, 'Python 端应声明 MUTATING_ACTIONS');
+  const pyWrite = [...m[1].matchAll(/"([a-z_]+)"/g)].map((x) => x[1]).sort();
+  assert.deepEqual(pyWrite, [...LM.LOCAL_DESKTOP_MUTATING].sort());
 });

@@ -20,7 +20,7 @@
 // 不能证明「真实性」（事件是否真由指定执行环境产生，需硬件远程证明，本架构不做此声明）。
 
 import { sha256Hex, GENESIS_TURN_DIGEST } from './nexus.js';
-import { LOCAL_MACHINE_TOOLS } from './localmachine.js';
+import { LOCAL_MACHINE_TOOLS, LOCAL_DESKTOP_MUTATING } from './localmachine.js';
 
 // ── 0. 策略版本（一次执行的审计记录必须记录这些版本，否则无法归因退化来源）──
 export const EXECUTION_KERNEL_VERSION = '2.3.0';
@@ -909,6 +909,7 @@ export const TOOL_CONTRACTS = Object.freeze({
   download_file: contract({ sideEffect: 'network', idempotent: true, retryPolicy: 'once', timeoutMs: 120000, riskLevel: 'L2', external: true, verifyAfterRun: true, note: '经中继 /api/file 跨域拉取 ≤16MB 文件写入沙箱 uploads/' }),
   pull_github_project: contract({ sideEffect: 'network', idempotent: false, retryPolicy: 'never', timeoutMs: 120000, riskLevel: 'L2', external: true, verifyAfterRun: true, note: '经 GitHub API 与中继 /api/file 读取公开仓库 ZIP（≤16MB），安全解压后写入沙箱；无历史、不覆盖' }),
   run_shell: contract({ sideEffect: 'sandbox', idempotent: false, retryPolicy: 'never', timeoutMs: 610000, riskLevel: 'L3', requiresConfirmation: true, note: '在用户本机执行 shell 命令（Windows：Git Bash / PowerShell；经本地中继 /api/local/shell）；每次都需用户确认，超时会结束整棵进程树' }),
+  local_desktop: contract({ sideEffect: 'sandbox', idempotent: false, retryPolicy: 'never', timeoutMs: 40000, riskLevel: 'L3', requiresConfirmation: true, note: '本机桌面交互：窗口 / 进程 / 剪贴板只读；切换窗口、点击、按键、输入、打开文件或网址需逐次确认' }),
   take_screenshot: contract({ sideEffect: 'filesystem', idempotent: true, retryPolicy: 'once', timeoutMs: 70000, riskLevel: 'L1', note: '抓取整个屏幕为 PNG 写入沙箱 outputs/；屏幕内容可能含隐私，结果仅用于当前任务' }),
   local_files: contract({ sideEffect: 'filesystem', idempotent: false, retryPolicy: 'never', timeoutMs: 30000, riskLevel: 'L1', note: '本机文件 list/stat/read 只读；write / mkdir / move / delete 在风险分级中升级并需确认；仅限允许根目录（默认主目录）内' }),
   run_git: contract({ sideEffect: 'filesystem', idempotent: false, timeoutMs: 30000, riskLevel: 'L2', external: true, verifyAfterRun: true, note: '远端操作（clone/push/pull）跨系统边界时升为 L3' }),
@@ -1478,6 +1479,15 @@ export function classifyToolRisk({ name = '', args = null, contract: contractDef
     requiresConfirmation = true;
     reasons.push('在本机执行 shell 命令（可修改或删除任意文件，不可自动恢复）');
   }
+  if (name === 'local_desktop') {
+    const act = String(a.action || '').toLowerCase();
+    if (LOCAL_DESKTOP_MUTATING.includes(act)) {
+      level = 'L3';
+      irreversible = true;
+      requiresConfirmation = true;
+      reasons.push(`本机桌面操作：${act}（会改变屏幕、焦点或剪贴板）`);
+    }
+  }
   if (name === 'local_files') {
     const act = String(a.action || '').toLowerCase();
     if (act === 'write') {
@@ -1599,6 +1609,7 @@ export const GUARD_MODES = Object.freeze(['observe', 'strict', 'strict-l2']);
 /** 本机能力的操作是否必须经过人工确认（不受档位与自动审批影响）：shell 一律确认；本机文件的写 / 建目录 / 移动 / 删除确认。 */
 export function localMachineMustConfirm(name, args) {
   if (name === 'run_shell') return true;
+  if (name === 'local_desktop') return LOCAL_DESKTOP_MUTATING.includes(String((args && args.action) || '').toLowerCase());
   if (name === 'local_files') return ['write', 'mkdir', 'move', 'delete'].includes(String((args && args.action) || '').toLowerCase());
   return false;
 }

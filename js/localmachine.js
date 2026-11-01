@@ -1,7 +1,10 @@
 // 本机能力（shell / 截图 / 本机文件）的前端客户端。
 // 只连接本地 server.py 的同源 /api/local/*，永不经 Cloudflare Worker 或第三方网关。
 // token 由 /api/local/session 下发，只保存在内存里；服务端重启或返回 401 时自动作废并重新探测。
-export const LOCAL_MACHINE_TOOLS = Object.freeze(['run_shell', 'take_screenshot', 'local_files']);
+export const LOCAL_MACHINE_TOOLS = Object.freeze(['run_shell', 'take_screenshot', 'local_files', 'local_desktop']);
+// local_desktop 中会改变桌面状态的动作：每次必须人工确认（只读动作：info / windows / processes / clipboard_read）
+export const LOCAL_DESKTOP_MUTATING = Object.freeze(['focus', 'clipboard_write', 'open', 'mouse_move', 'click', 'scroll', 'key', 'type']);
+export const LOCAL_DESKTOP_ACTIONS = Object.freeze(['info', 'windows', 'processes', 'clipboard_read', ...LOCAL_DESKTOP_MUTATING]);
 export const LOCAL_MACHINE_OUTPUT_CHARS = 48 * 1024;
 
 let available = false;
@@ -10,7 +13,7 @@ let lastProbe = 0;
 let pending = null;
 
 export const localMachineAvailable = () => available;
-export const localMachineInfo = () => (session ? { platform: session.platform, fs: session.fs, screenshot: !!session.screenshot } : null);
+export const localMachineInfo = () => (session ? { platform: session.platform, fs: session.fs, screenshot: !!session.screenshot, desktop: session.desktop || null } : null);
 export function resetLocalMachineProbe() { available = false; session = null; lastProbe = 0; pending = null; }
 
 export async function probeLocalMachine({ signal, force = false } = {}) {
@@ -63,6 +66,7 @@ async function localCall(method, path, body, { signal } = {}) {
 export const localShell = (args, opts) => localCall('POST', '/api/local/shell', args, opts);
 export const localScreenshot = (opts) => localCall('GET', '/api/local/screenshot', undefined, opts);
 export const localFsRequest = (args, opts) => localCall('POST', '/api/local/fs', args, opts);
+export const localDesktopRequest = (args, opts) => localCall('POST', '/api/local/desktop', args, opts);
 
 /** 截断工具输出，防止一次 shell 把上下文撑满；返回 { text, clipped }。 */
 export function clipLocalOutput(text, limit = LOCAL_MACHINE_OUTPUT_CHARS) {

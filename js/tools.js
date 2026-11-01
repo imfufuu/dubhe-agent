@@ -6,7 +6,7 @@ import { retrieveKnowledge } from './knowledge.js?v=2026.10.25.1';
 import { text, getLanguage } from './locale.js';
 import { prepareCommandArgs, retainCommandSource, commandRepairNote } from './commandsource.js?v=2026.10.25.1';
 import { sandboxProject, sandboxBrowserRequest } from './localbrowser.js?v=2026.10.25.1';
-import { localShell, localScreenshot, localFsRequest, clipLocalOutput } from './localmachine.js';
+import { localShell, localScreenshot, localFsRequest, localDesktopRequest, clipLocalOutput, LOCAL_DESKTOP_MUTATING } from './localmachine.js';
 // ─── Agent 工具集：定义 + 执行调度 ─────────────────────────────────────
 import { CODE_TOOL_NAMES as REG_CODE_TOOL_NAMES, LEGACY_TOOL_ALIASES as REG_LEGACY_TOOL_ALIASES } from './capabilities.js';
 import { runJavaScript, runPython, runCpp, runCppRemote, pythonAvailable, persistenceNote, isSafeFsPath, contentByteSize } from './sandbox.js';
@@ -452,6 +452,32 @@ export const TOOL_DEFS = [
       properties: {
         path: { type: 'string', description: '可选：沙箱保存路径（默认 outputs/screenshot-时间戳.png）' },
       },
+    },
+  },
+  {
+    name: 'local_desktop',
+    description:
+      '操作用户电脑的桌面（仅本地 server.py 在本机运行时可用；Windows 优先，Linux 需 X11 与 xdotool/wmctrl/xclip，macOS 鼠标需 cliclick）。' +
+      '只读：info 屏幕与会话信息 / windows 列出有标题的窗口 / processes 前 40 个进程（按内存）/ clipboard_read 读文本剪贴板。' +
+      '会改变桌面（每次需用户确认）：focus 按标题切换窗口 / clipboard_write 写剪贴板 / open 用默认程序打开网址或允许根内的文件或文件夹 / ' +
+      'mouse_move 与 click（x、y 为屏幕坐标，button left|right|middle，double 双击）/ scroll（dy 正数向上，-50..50）/ ' +
+      'key（组合键，如 enter、ctrl+c、alt+tab、ctrl+shift+t、f5）/ type（任意文本，经剪贴板粘贴并尽量恢复原剪贴板）。' +
+      '先用 info 或截图（take_screenshot）确认坐标与焦点，再点击或输入；不要盲目连续操作。',
+    parameters: {
+      type: 'object',
+      properties: {
+        action: { type: 'string', enum: ['info', 'windows', 'processes', 'clipboard_read', 'clipboard_write', 'focus', 'open', 'mouse_move', 'click', 'scroll', 'key', 'type'], description: '动作' },
+        title: { type: 'string', description: 'focus：窗口标题的一部分（macOS 为应用名）' },
+        text: { type: 'string', description: 'clipboard_write / type 的文本' },
+        target: { type: 'string', description: 'open：网址（http/https）或允许根目录内的文件或文件夹路径' },
+        x: { type: 'integer', description: 'mouse_move / click 的屏幕横坐标；scroll 可选' },
+        y: { type: 'integer', description: 'mouse_move / click 的屏幕纵坐标；scroll 可选' },
+        button: { type: 'string', enum: ['left', 'right', 'middle'], description: 'click 的按键，默认 left' },
+        double: { type: 'boolean', description: 'click 是否双击' },
+        dy: { type: 'integer', description: 'scroll 的格数：正数向上，负数向下，-50..50，非零' },
+        keys: { type: 'string', description: 'key 的组合键，如 ctrl+c、enter、alt+f4' },
+      },
+      required: ['action'],
     },
   },
   {
@@ -1440,6 +1466,25 @@ async function executeToolBody(outerName, outerArgs, ctx) {
         const sizeKb = Math.round((r.bytes || 0) / 1024);
         emit({ status: 'ok', fsChange: true, note: `${sizeKb} KB → ${path}` });
         return `[截图完成] 整屏 PNG ${sizeKb} KB → ${path}${persistenceNote(fs, path)}。可用 analyze_image 读取。`;
+      }
+      case 'local_desktop': {
+        const action = String(args.action || '').toLowerCase();
+        const label = { focus: `切换窗口 ${String(args.title || '').slice(0, 30)}`, open: `打开 ${String(args.target || '').slice(0, 40)}`, type: '输入文本', key: `按键 ${args.keys || ''}`, click: `点击 ${args.x},${args.y}` }[action] || action;
+        emit({ status: 'running', note: `本机桌面 · ${label}` });
+        const payload = { action, title: args.title, text: args.text, target: args.target, x: args.x, y: args.y, button: args.button, double: args.double === true, dy: args.dy, key: args.keys };
+        let r;
+        try {
+          r = await localDesktopRequest(payload, { signal: ctx.signal });
+        } catch (err) {
+          if (err && (err.name === 'AbortError' || ctx.signal && ctx.signal.aborted)) throw err;
+          emit({ status: 'error', error: { message: err.message } });
+          return `local_desktop 失败：${err.message}`;
+        }
+        const result = r.result;
+        const shown = typeof result === 'string' ? result : JSON.stringify(result, null, 2);
+        const clipped = clipLocalOutput(shown, 16 * 1024);
+        emit({ status: 'ok', note: LOCAL_DESKTOP_MUTATING.includes(action) ? `${label} 已执行` : `${action} 完成` });
+        return `[本机桌面 · ${action}]\n${clipped.text}`;
       }
       case 'local_files': {
         const action = String(args.action || '').toLowerCase();

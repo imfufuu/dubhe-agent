@@ -110,6 +110,7 @@ export function toolAccessSet(call) {
     case 'browser_sandbox': return { reads: [ACCESS_ANY], writes: [ACCESS_ANY] };
     case 'run_shell': return { reads: [ACCESS_ANY], writes: [ACCESS_ANY] };
     case 'take_screenshot': return { reads: [], writes: a.path ? strList(a.path) : [ACCESS_ANY] };
+    case 'local_desktop': return { reads: [ACCESS_ANY], writes: [ACCESS_ANY] };
     case 'local_files': {
       const mutating = ['write', 'mkdir', 'move', 'delete'].includes(String(a.action || ''));
       return mutating ? { reads: [], writes: [ACCESS_ANY] } : { reads: [ACCESS_ANY], writes: [] };

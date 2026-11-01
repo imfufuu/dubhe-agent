@@ -114,7 +114,8 @@ check("shell: bad timeout refused", expect_error(lambda: LR.run_shell("echo", ws
 
 # ── 截图：只校验错误分支可读 ──
 if not LR.screenshot_available():
-    check("screenshot: missing tool gives readable error", expect_error(LR.take_screenshot, "截图工具"))
+    # 无显示器时先报「没有图形会话」（更准确）；有显示器但缺工具时报「截图工具」
+    check("screenshot: missing tool or session gives readable error", expect_error(LR.take_screenshot, "截图工具") or expect_error(LR.take_screenshot, "图形会话"))
 else:
     check("screenshot: available flag consistent", True)
 
@@ -169,6 +170,14 @@ st, body = call("POST", "/api/local/fs", {"action": "read", "path": os.path.join
 check("http: fs outside root refused", st == 400, str(st))
 st, body = call("POST", "/api/local/fs", {"action": "write", "path": "http.txt", "content": "via-http"}, token)
 check("http: fs write ok", st == 200 and open(os.path.join(ws, "http.txt")).read() == "via-http", str(st))
+st, body = call("POST", "/api/local/desktop", {"action": "windows"})
+check("desktop: no token -> 401", st == 401, str(st))
+st, body = call("POST", "/api/local/desktop", {"action": "reboot"}, token)
+check("desktop: unknown action -> 400", st == 400 and "未知 action" in body.get("error", ""), str(st))
+st, body = call("POST", "/api/local/desktop", {"action": "click", "x": "a", "y": 1}, token)
+check("desktop: bad coordinates -> 400", st == 400, str(st))
+st, body = call("GET", "/api/local/session", None, None)
+check("session: exposes desktop summary", st == 200 and "desktop" in body and "actions" in body.get("desktop", {}), str(st))
 # fetch_url 中继：二进制内容必须拒绝（按文本解码会损坏字节），文本照常放行
 check("fetch: image/png is binary", server_mod.looks_textual("image/png", b"\x89PNG") is False)
 check("fetch: pdf is binary", server_mod.looks_textual("application/pdf", b"%PDF-1.4") is False)

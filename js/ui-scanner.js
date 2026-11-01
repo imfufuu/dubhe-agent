@@ -4,6 +4,7 @@
 import { detectDocCorners, computeHomography, warpImageData, applyScanFilter, targetSizeForQuad } from './doc-scanner.js';
 import { jpegPagesToPdf } from './doc-scanner.js';
 import { createLiveDetector, liveSmoothQuad, LIVE_INTERVAL_MS } from './doc-scan-live.js';
+import { uiText } from './locale.js';
 
 const PREVIEW_EDGE = 980;
 const OUTPUT_EDGE = 2400;
@@ -79,7 +80,7 @@ export async function openScanner({ doc = document } = {}) {
         </div>
         <div class="photo-editor-head-right">
           <span class="photo-local-badge" title="取景、矫正、导出都在浏览器本地完成，不上传">仅本地处理</span>
-          <button class="ghost-btn scan-fs" type="button" data-r="fullscreen" aria-pressed="false" title="全屏（取景角点在后台线程计算，不卡界面）">全屏</button>
+          <button class="ghost-btn scan-fs" type="button" data-r="fullscreen" aria-pressed="false">&nbsp;</button>
           <button class="photo-editor-close icon-btn" type="button" data-r="close" aria-label="关闭扫描（Esc）" title="关闭（Esc）"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
         </div>
       </header>
@@ -137,6 +138,8 @@ export async function openScanner({ doc = document } = {}) {
   const btnPreview = $('toggle-preview');
   const btnReshoot = $('reshoot');
   const btnFs = $('fullscreen');
+  btnFs.textContent = uiText('全屏', 'Fullscreen');
+  btnFs.title = uiText('全屏（取景角点在后台线程计算，不卡界面）', 'Fullscreen (live corner detection runs off the main thread)');
   requestAnimationFrame(() => requestAnimationFrame(() => modal.classList.add('open')));
 
   let stream = null;
@@ -170,13 +173,13 @@ export async function openScanner({ doc = document } = {}) {
   const syncFullscreen = () => {
     const on = doc.fullscreenElement === modal;
     modal.classList.toggle('scan-fs-on', on);
-    btnFs.textContent = on ? '退出全屏' : '全屏';
+    btnFs.textContent = on ? uiText('退出全屏', 'Exit fullscreen') : uiText('全屏', 'Fullscreen');
     btnFs.setAttribute('aria-pressed', String(on));
     requestAnimationFrame(() => drawOverlay());
   };
   const toggleFullscreen = () => {
     if (doc.fullscreenElement) { doc.exitFullscreen?.().catch(() => {}); return; }
-    modal.requestFullscreen?.().catch(() => { setHint('当前环境不允许全屏，已保持窗口模式'); });
+    modal.requestFullscreen?.().catch(() => { setHint(uiText('当前环境不允许全屏，已保持窗口模式', 'Fullscreen is not allowed here; staying in window mode')); });
   };
   btnFs.addEventListener('click', toggleFullscreen);
   doc.addEventListener('fullscreenchange', syncFullscreen);

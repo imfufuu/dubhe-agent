@@ -17,6 +17,7 @@
   POST /api/local/shell    →  在本机执行 shell 命令（Windows 优先 Git Bash，其次 PowerShell）  [需 token]
   GET  /api/local/screenshot → 抓取整个屏幕为 PNG（base64）                                      [需 token]
   POST /api/local/fs       →  本机文件 list/stat/read/write/mkdir/move/delete，限定在允许根目录内  [需 token]
+  POST /api/local/desktop  →  桌面交互：info/windows/processes/clipboard_*/focus/open/mouse_move/click/scroll/key/type  [需 token]
 本机能力只在回环地址监听时启用（--no-local 可关闭）；Host 必须是回环名，防 DNS 重绑定。
 """
 import base64
@@ -76,6 +77,7 @@ GIT_DENIED_SUBSTR = ("ext::", "filter-branch", "credential", "daemon", "serve", 
 # 本机能力（local_relay.py）：仅回环监听时启用；token 每进程随机生成，只经同源 session 端点下发
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import local_relay as LR  # noqa: E402
+import local_desktop as LD  # noqa: E402
 
 LOCAL_ENABLED = False
 LOCAL_TOKEN = secrets.token_urlsafe(32)
@@ -417,6 +419,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     "platform": LR.shell_info(),
                     "fs": LOCAL_FS.describe(),
                     "screenshot": LR.screenshot_available(),
+                    "desktop": LD.desktop_summary(),
                 })
             if route == "/api/local/shell" and method == "POST":
                 body = self._read_local_body()
@@ -430,6 +433,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             if route == "/api/local/fs" and method == "POST":
                 body = self._read_local_body()
                 return self._json(200, {"ok": True, "result": LR.fs_action(LOCAL_FS, body.get("action"), body)})
+            if route == "/api/local/desktop" and method == "POST":
+                body = self._read_local_body()
+                if str(body.get("action") or "") == "open":
+                    return self._json(200, LD.open_target(body.get("target"), fs_resolve=lambda raw: LOCAL_FS.resolve(raw)))
+                return self._json(200, LD.run_desktop(str(body.get("action") or ""), body))
             return self._json(404, {"error": f"unknown local route {method} {route}"})
         except LR.LocalError as exc:
             return self._json(400, {"error": str(exc)})

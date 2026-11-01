@@ -41,6 +41,7 @@ export const CAPABILITY_REGISTRY = Object.freeze({
   // ── 本机能力（本地 server.py 回环监听时可用；每次 run_shell / 写删都需用户确认）──
   run_shell: R('localMachine', 'exec', { heavy: true }),
   take_screenshot: R('localMachine', 'fs-write', { heavy: true, tags: ['image'] }),
+  local_desktop: R('localMachine', 'exec', { heavy: true }),
   local_files: R('localMachine', 'fs-write'),
   skill_library: R('invariantCore', 'local', { core: 14, parallel: true, readOnly: true }),
   tool_library: R('invariantCore', 'local', { core: 15 }),

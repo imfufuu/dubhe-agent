@@ -39,6 +39,9 @@ jobs:
       - name: tests/local_relay_checks.py · 本机能力（shell / 截图 / 文件）护栏自检
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/local_relay_checks.py
+      - name: tests/local_desktop_checks.py · 本机桌面交互（键位 / 参数 / 平台命令构造 / Linux 会话检查）
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/local_desktop_checks.py
       - name: tests/agent.test.mjs · 主单测
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/agent.test.mjs

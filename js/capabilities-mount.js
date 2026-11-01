@@ -26,6 +26,7 @@ export const TOOL_MOUNT_RULES_SOURCE = Object.freeze({
   pull_github_project: { text: /拉取.{0,12}(?:GitHub|仓库|项目)|下载.{0,12}(?:GitHub|仓库|项目)|导入.{0,12}(?:GitHub|仓库)|\b(?:pull|clone|import|download)\b.{0,48}\b(?:github|repository|repo|project)\b|\b(?:github|repository|repo|project)\b.{0,48}\b(?:pull|clone|import|download)\b/i },
   run_shell: { text: /命令|终端|shell|bash|powershell|\bcmd\b|脚本|安装依赖|\bgit\b|\bnpm\b|\bpip\b|\bpython\b|\bls\b|运行.{0,8}程序/i },
   take_screenshot: { text: /截图|截屏|屏幕|screenshot|screen ?cap/i },
+  local_desktop: { text: /桌面|鼠标|键盘|双击|组合键|剪贴板|切换.{0,4}(?:窗口|应用)|\bmouse\b|\bkeyboard\b|\bclipboard\b|\bfocus (?:the )?window\b/i },
   local_files: { text: /本机|我的电脑|电脑上|桌面|文档文件夹|下载文件夹|文件夹|目录|C:\\|~\/|\/Users\/|本地文件|local (?:file|folder|dir)|desktop|documents|downloads/i },
   browser_sandbox: { text: /网页|网站|页面|截图|截屏|预览|调试|\bhtml\b|\bcss\b|\bchromium\b|\bpuppeteer\b|\blocalhost\b|\bweb(?:site|page)?\b|\bpreview\b/i },
   run_git: { text: /\bgit\b|提交|\bcommit\b|分支|\bbranch\b|仓库|\brepo\b|版本库|\bmerge\b|\brebase\b/i },
