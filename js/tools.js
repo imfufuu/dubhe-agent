@@ -232,14 +232,14 @@ export const TOOL_DEFS = [
     description:
       '分析一张或多张图片（OCR、描述画面、读图表）。对话模型本身是纯文本，不能直接看图：必须调用本工具。' +
       `内部使用用户在设置里选定的识图模型（默认 ${VISION_TOOL_MODEL}），不要传 model，也不要把它当对话模型选。` +
-      'path 指向沙箱内图片（用户附件在 uploads/，生图在 outputs/）；paths / prefix 可批量。' +
+      'path 指向沙箱内图片（用户附件在 uploads/，生图在 outputs/）；也可直接传外部 http(s) 图片链接（自动经中继下载到 uploads/ 再分析，失败会返回原因）；paths / prefix 可批量。' +
       '文件名形如 foo-p01.jpg、foo-p02.jpg 的 PDF 页图会自动整批 OCR。' +
       '也可以不传 path 而分析用户本轮刚上传的图。' +
       '返回完整识别结果（不会截成摘要）；全文同时写入沙箱同名 .ocr.md，可用 read_file 再读。',
     parameters: {
       type: 'object',
       properties: {
-        path: { type: 'string', description: '沙箱图片路径，如 uploads/photo.png 或 outputs/image-001.png' },
+        path: { type: 'string', description: '沙箱图片路径，如 uploads/photo.png 或 outputs/image-001.png；或外部 http(s) 图片链接' },
         paths: { type: 'array', items: { type: 'string' }, description: '可选：多张图一次 OCR，按顺序分析' },
         prefix: { type: 'string', description: '可选：只分析以此路径前缀开头的图片（如 uploads/scan-）' },
         prompt: { type: 'string', description: '分析要求，如「读出图中全部文字」或「描述这张架构图」；缺省为全面描述' },
@@ -255,7 +255,7 @@ export const TOOL_DEFS = [
     parameters: {
       type: 'object',
       properties: {
-        path: { type: 'string', description: 'SVG 沙箱路径，如 uploads/diagram.svg 或 outputs/diagram-001.svg；省略=最近的 SVG' },
+        path: { type: 'string', description: 'SVG 沙箱路径，如 uploads/diagram.svg 或 outputs/diagram-001.svg；可传外部 http(s) SVG 链接；省略=最近的 SVG' },
         mode: { type: 'string', enum: ['image', 'ocr', 'code'], description: 'image=安全栅格化后远程识图；ocr=仅读原生 SVG 文本；code=将安全清理后的源码交给 Agent；默认 image' },
         prompt: { type: 'string', description: 'image 模式的识图要求，如「描述图中结构」「逐字读取所有可见文字」' },
       },
@@ -272,7 +272,7 @@ export const TOOL_DEFS = [
     parameters: {
       type: 'object',
       properties: {
-        path: { type: 'string', description: '沙箱视频路径，如 uploads/clip.mp4；省略=最近上传的视频' },
+        path: { type: 'string', description: '沙箱视频路径，如 uploads/clip.mp4；可传外部 http(s) 视频链接；省略=最近上传的视频' },
         prompt: { type: 'string', description: '分析要求，如「逐字转录字幕」「描述 0:10 前后发生了什么」「这是什么运动」；缺省为全面描述 + 转录' },
       },
     },
@@ -280,7 +280,7 @@ export const TOOL_DEFS = [
   {
     name: 'analyze_audio',
     description: '分析 uploads/ 中的音频：转录、语言、近似时间点、说话人 A/B、摘要和声音事件。原音频通过与视频相同的 file 部件上传网关，使用用户配置的三个 Gemini 模型之一，不传 model。仅凭声音不确定真实身份；时间点不是强制对齐。≤16MB；结果全文写入 internal/ocr/*.audio.md。',
-    parameters: { type: 'object', properties: { path: { type: 'string', description: '音频沙箱路径；省略时取最近音频' }, prompt: { type: 'string', description: '转录或分析要求' } } },
+    parameters: { type: 'object', properties: { path: { type: 'string', description: '音频沙箱路径或外部 http(s) 音频链接；省略时取最近音频' }, prompt: { type: 'string', description: '转录或分析要求' } } },
   },
   {
     name: 'analyze_pdf',
@@ -293,7 +293,7 @@ export const TOOL_DEFS = [
     parameters: {
       type: 'object',
       properties: {
-        path: { type: 'string', description: '沙箱 PDF 路径，如 uploads/report.pdf；省略=最近上传的 PDF' },
+        path: { type: 'string', description: '沙箱 PDF 路径，如 uploads/report.pdf；可传外部 http(s) PDF 链接；省略=最近上传的 PDF' },
         prompt: { type: 'string', description: '分析要求，如「提取全部表格」「总结每页要点」；code 模式会额外要求逐字抄录源码' },
         mode: { type: 'string', enum: ['image', 'ocr', 'code'], description: 'image=内嵌文本+视觉识图（默认）；ocr=仅本地提取文本层，不上传图片；code=视觉模型精确抄录 PDF 中的代码' },
         pages: { type: 'integer', minimum: 0, maximum: 24, description: 'image/code 模式最多识图页数（默认 8）；0 跳过视觉识别' },
@@ -960,6 +960,57 @@ function stampToolDuration(text, ms) {
   return body ? `${body}\n[执行耗时 ${n}ms]` : `[执行耗时 ${n}ms]`;
 }
 // 执行工具并返回字符串结果（会回填进对话）；onUi 用于驱动沙箱面板
+// 分析类工具可直接收外部 http(s) 地址：先经中继原样下载到 uploads/（与 download_file 同一条路径与落盘规则），
+// 再把得到的沙箱路径交给原有分析流程。下载失败不静默回退，原因作为工具结果直接回传给 Agent。
+const ANALYZE_URL_TOOLS = new Set(['analyze_image', 'analyze_svg', 'analyze_video', 'analyze_audio', 'analyze_pdf']);
+const EXTERNAL_HTTP_RE = /^https?:\/\//i;
+
+async function saveExternalFileForAnalysis(url, fs, ctx, emit) {
+  emit?.({ status: 'running', note: `下载外部文件 ${url.slice(0, 50)}` });
+  let r;
+  try {
+    r = await relayDownload({ url, maxBytes: RELAY_FILE_MAX_BYTES, signal: ctx.signal,
+      onProgress: ({ loaded, total }) => emit?.({ status: 'running', note: `拉取中 ${(loaded / 1024 / 1024).toFixed(1)}${total ? ` / ${(total / 1024 / 1024).toFixed(1)}` : ''} MB` }) });
+  } catch (err) {
+    if (err && (err.name === 'AbortError' || ctx.signal && ctx.signal.aborted)) throw err;
+    r = { ok: false, error: err.message };
+  }
+  if (!r.ok) return { error: `外部文件下载失败：${r.error}。请确认链接可公开访问，或改用用户上传的文件。` };
+  const mime = r.mime || 'application/octet-stream';
+  let path = `uploads/${(r.name || fileNameFromUrl(r.finalUrl || url, mime)).replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '_') || 'download'}`;
+  const taken = new Set(fs.list().map((f) => f.path));
+  if (taken.has(path)) {
+    const dot = path.lastIndexOf('.'), slash = path.lastIndexOf('/');
+    const stem = dot > slash ? path.slice(0, dot) : path, ext = dot > slash ? path.slice(dot) : '';
+    for (let n = 2; taken.has(path); n++) path = `${stem}-${n}${ext}`;
+  }
+  const textual = /^text\//i.test(mime) || /json|xml|javascript|csv|markdown|yaml|toml|x-sh/i.test(mime);
+  const content = textual && !/zip|pdf|octet/i.test(mime) ? new TextDecoder('utf-8', { fatal: false }).decode(r.bytes) : bytesToDataUrl(r.bytes, mime);
+  try { fs.write(path, content); } catch (err) { return { error: `外部文件写入 ${path} 失败：${err.message}` }; }
+  return { path };
+}
+
+async function materializeExternalAnalyzeArgs(name, args, ctx, emit) {
+  const out = { ...(args || {}) };
+  if (typeof out.path === 'string' && EXTERNAL_HTTP_RE.test(out.path.trim())) {
+    const saved = await saveExternalFileForAnalysis(out.path.trim(), ctx.fs, ctx, emit);
+    if (saved.error) return { error: `${name} 失败：${saved.error}` };
+    out.path = saved.path;
+  }
+  if (Array.isArray(out.paths) && out.paths.some((p) => EXTERNAL_HTTP_RE.test(String(p || '').trim()))) {
+    const next = [];
+    for (const p of out.paths) {
+      const v = String(p || '').trim();
+      if (!EXTERNAL_HTTP_RE.test(v)) { next.push(p); continue; }
+      const saved = await saveExternalFileForAnalysis(v, ctx.fs, ctx, emit);
+      if (saved.error) return { error: `${name} 失败：${saved.error}` };
+      next.push(saved.path);
+    }
+    out.paths = next;
+  }
+  return { args: out };
+}
+
 export async function executeTool(name, args, ctx) {
   const t0 = nowMs();
   const rawOnUi = ctx && ctx.onUi;
@@ -1023,6 +1074,11 @@ async function executeToolBody(outerName, outerArgs, ctx) {
   const umbrella = resolveUmbrellaTool(outerName, outerArgs);
   if (umbrella && umbrella.error) { emit({ status: 'error', error: { message: umbrella.error } }); return umbrella.error; }
   if (umbrella) { name = umbrella.name; args = umbrella.args; }
+  if (ANALYZE_URL_TOOLS.has(name)) {
+    const pre = await materializeExternalAnalyzeArgs(name, args, ctx, emit);
+    if (pre.error) { emit({ status: 'error', error: { message: pre.error } }); return pre.error; }
+    args = pre.args;
+  }
   // 兜底防线：工具列表按开关过滤过，但缓存错配或旧上下文里的工具调用仍可能打进来
   if (name === 'execute_cpp' && ctx.localCpp === false) {
     return 'execute_cpp 已被用户关闭（设置 → C++ 工具）；未启动编译器，也未发送源码给远程编译服务。可改用 execute_javascript / execute_python，或请用户开启本地 C++。';

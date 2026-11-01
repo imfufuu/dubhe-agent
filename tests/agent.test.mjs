@@ -1223,21 +1223,18 @@ test('systemPrompt / 子智能体：注入输出规范', async () => {
   assert.ok(OUTPUT_SPEC.includes('Markdown') && OUTPUT_SPEC.includes('KaTeX'), '规范含 Markdown/KaTeX');
   assert.ok(OUTPUT_SPEC.includes('==高亮=='), '提示词说明客户端支持的高亮语法');
   assert.match(OUTPUT_SPEC, /sandbox:\/\//);
-  assert.match(OUTPUT_SPEC, /:::choice/);
-  assert.match(OUTPUT_SPEC, /:::fold/);
-  assert.match(OUTPUT_SPEC, /:::font/);
-  assert.match(OUTPUT_SPEC, /:::center/);
-  assert.match(OUTPUT_SPEC, /:::right/);
-  assert.match(OUTPUT_SPEC, /:::chart/);
-  assert.match(OUTPUT_SPEC, /:::flow/);
-  assert.match(OUTPUT_SPEC, /:::mind/);
+  // 第 12 条：围栏的精确语法不再写进提示词，只列出围栏名并要求先 knowledge_search 检索
+  assert.match(OUTPUT_SPEC, /knowledge_search/, '输出规范指向知识库检索');
+  for (const name of ['选择框', '折叠', '字体', '颜色', '渐变', '动效', '卡片', '对齐', '图表', '流程图', '思维导图']) {
+    assert.ok(OUTPUT_SPEC.includes(name), `输出规范列出围栏族：${name}`);
+  }
+  assert.doesNotMatch(OUTPUT_SPEC, /:::fold 标题/, '折叠语法示例已迁入知识库');
   assert.ok(OUTPUT_SPEC.includes('表格') && OUTPUT_SPEC.includes('围栏代码块'), '规范含表格/代码块要求');
   assert.match(OUTPUT_SPEC, /colspan="2"[\s\S]*rowspan="2"/, '中文输出规范说明合并单元格写法');
   const { OUTPUT_SPEC_EN } = await import('../js/prompt-en.js');
   assert.match(OUTPUT_SPEC_EN, /colspan="2"[\s\S]*rowspan="2"/, '英文输出规范同步说明合并单元格写法');
   assert.match(compactOutputSpec('zh'), /仅在确需合并单元格时使用经安全清理的表格 HTML[\s\S]*colspan/);
   assert.match(compactOutputSpec('en'), /except sanitized table markup strictly required for merged cells[\s\S]*colspan/);
-  assert.ok(OUTPUT_SPEC.includes(String.raw`少用）：\n:::fold 标题\n内容\n:::`), '折叠栏示例只保留单层反斜杠');
   assert.ok(OUTPUT_SPEC.includes('Emoji：默认不使用装饰性 Emoji'), '提示词降低装饰性 Emoji 频率');
   assert.match(OUTPUT_SPEC, /完整可运行/, '代码不得写太短太简略');
   assert.match(systemPrompt(), /Markdown/);
@@ -5391,7 +5388,8 @@ test('文学字体本地 OFL 文件与 :::font 提示词', async () => {
   const fsp = await import('node:fs');
   const cfg = fsp.readFileSync(new URL('../js/config.js', import.meta.url), 'utf8');
   const html = fsp.readFileSync(new URL('../app.html', import.meta.url), 'utf8');
-  assert.match(cfg, /:::font/);
+  assert.match(cfg, /字体/);
+  assert.match(cfg, /knowledge_search/, '字体语法指向知识库检索');
   assert.match(html, /fonts\/literary\.css/);
   assert.equal(fsp.existsSync(new URL('../fonts/SourceSerif4-Regular.ttf', import.meta.url)), true);
   assert.equal(fsp.existsSync(new URL('../fonts/NotoSerif-Regular.ttf', import.meta.url)), true);
@@ -5464,8 +5462,8 @@ test('居中/右对齐语法与样式已注册', async () => {
   assert.match(ui, /ALIGN_ALIAS/);
   assert.match(css, /\.md-align-center/);
   assert.match(css, /\.md-align-right/);
-  assert.match(cfg, /:::center/);
-  assert.match(cfg, /:::right/);
+  assert.match(cfg, /对齐/);
+  assert.match(fsp.readFileSync(new URL('../assets/knowledge/rendering.zh.md', import.meta.url), 'utf8'), /:::center[\s\S]*:::right/, '对齐语法保存在知识库');
 });
 
 
@@ -5546,11 +5544,12 @@ test('快捷 SVG 图表语法覆盖 14 类统计图与流程/思维导图', asyn
   assert.match(ui, /renderQuickDiagram/);
   assert.match(ui, /md-diagram-flow/);
   assert.match(ui, /md-diagram-mind/);
-  assert.match(cfg, /:::chart <类型> 标题/);
-  for (const kw of ['bar 柱状图', 'barh 条形图', 'line 折线图', 'area 面积图', 'pie 饼图', 'donut 环形图', 'stacked 堆叠柱状图', 'stacked-area 堆叠面积图', 'histogram 直方图', 'boxplot 箱线图', 'scatter 散点图', 'bubble 气泡图', 'funnel 漏斗图', 'sankey 桑基图', 'map 地图']) assert.match(cfg, new RegExp(kw));
+  const kbZhDoc = fsp.readFileSync(new URL('../assets/knowledge/rendering.zh.md', import.meta.url), 'utf8');
+  assert.match(kbZhDoc, /:::chart 类型 标题/, '图表语法保存在知识库');
+  for (const kw of ['bar 柱状图', 'barh 条形图', 'line 折线图', 'area 面积图', 'pie 饼图', 'donut 环形图', 'stacked 堆叠柱状图', 'stacked-area 堆叠面积图', 'histogram 直方图', 'boxplot 箱线图', 'scatter 散点图', 'bubble 气泡图', 'funnel 漏斗图', 'sankey 桑基图', 'map 地图']) { const [en, zh] = kw.split(' '); assert.ok(kbZhDoc.includes(en) && kbZhDoc.includes(zh.slice(0, 2)), `知识库含图表类型 ${kw}`); }
   assert.doesNotMatch(cfg, /物理 s-t 图/);
-  assert.match(cfg, /:::flow/);
-  assert.match(cfg, /:::mind/);
+  assert.match(cfg, /流程图/);
+  assert.match(cfg, /思维导图/);
 });
 test('选择框删除跳过入口', async () => {
   const fsp = await import('node:fs');

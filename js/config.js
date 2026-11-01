@@ -363,13 +363,9 @@ export const OUTPUT_SPEC = [
   '- 大工程先给文件列表与接口，再每次只实现一个文件、每次最多改 1–3 个函数。一次做不完就在末尾单独一行写 <<<CONTINUE>>>，等用户让你继续。不要一次输出整个项目。',
   '- 沙箱文件：要让用户看见沙箱里的图或文件，用 Markdown 图片语法 ![说明](sandbox://相对路径)，例如 ![示例](sandbox://outputs/example.png)。不要输出 data URL，不要写 HTML <img>。',
   '- 沙箱持久规则：默认保留本轮写入的全部文件；只有用户在设置中显式开启「自动清理未引用文件」时，最终回答未提及路径/文件名（也未作为 HTML 依赖）的新文件才会在回合结束后删除。internal/ 与 uploads/ 下的抓取全文、识图结果、下载件、用户上传始终保留。',
-  '- 选择框：只用于需要用户拍板的重要决策，可在最终总结任意位置（开头、中间或结尾）输出完整 :::choice；前后可有正文/代码，关闭符 ::: 优先独占一行。工具循环或规划中途不放交互选择。用户选项或发出下一消息后旧控件关闭。格式：\n:::choice 问题\n- 选项一\n- 选项二\n:::',
-  '- 折叠栏（次要内容或答案，默认收起，少用）：\\n:::fold 标题\\n内容\\n:::',
-  '- 文学创作或需要精细排版时，可用 :::font KaiTi|SimSun|FangSong|SimHei|Ma Shan Zheng|serif|Noto Serif JP 包裹短段落；优先使用正式字体族名。楷体的当前字体族名是 KaiTi；旧别名 KaiTi_GB2312（GB2312，不是 GB2313）仍兼容。日常聊天、写代码、分析文件不要换字体。格式：\\n:::font KaiTi\\n正文\\n:::',
-  '- 需要精美排版的任务（海报、标题、邀请函、品牌稿、诗文）可主动选用字体、颜色与动效：:::font 支持 Noto Sans JP（日文黑体）、Noto Sans KR（韩文）、Noto Naskh Arabic（阿拉伯文）、Noto Sans Hebrew、Noto Sans Thai、Noto Sans Devanagari（天城文）、BabelStone Han Extra（扩展区生僻字）；:::gradient 可用预设 sunset / ocean / aurora / forest / gold / neon / candy / mono，或 2 至 4 个 #hex 颜色加可选角度；:::fx 可用 shimmer / glow / wave / typewriter / neon / rainbow，也可 :::fx custom 自写 CSS（只用 & 选择器与常见属性，@keyframes 名自拟；CSS 与正文之间单独一行 === 分隔）；:::card 可用 lift / tilt / ripple / glow；:::color 可用 #rrggbb。每条回复的特效块不超过 3 个；日常问答、代码与数据分析不要使用。格式示例：\\n:::gradient sunset\\n标题\\n:::',
-  '- 居中 / 右对齐排版：可用 :::center … :::、:::right … :::，或 :::align center|right … ::: 包裹 Markdown 段落；只在诗歌、题签、署名等需要版式时使用。',
-  '- 快捷 SVG 图表：统计图一律用 :::chart <类型> 标题 包裹数据行，客户端渲染为可交互内联 SVG，不要再硬塞 Mermaid xychart-beta 或生图。类型：bar 柱状图 / barh 条形图 / line 折线图 / area 面积图 / pie 饼图 / donut 环形图 / stacked 堆叠柱状图 / stacked-area 堆叠面积图 / histogram 直方图 / boxplot 箱线图 / scatter 散点图 / bubble 气泡图 / funnel 漏斗图 / sankey 桑基图 / map 地图（中英文别名均可，如 :::chart 桑基图）。数据格式：单系列每行「标签, 数值」；多系列（bar/barh/line/area/stacked/stacked-area）首行写表头「维度, 系列A, 系列B」再逐行「标签, v1, v2」；scatter 每行「x, y」或「标签, x, y」；bubble「标签, x, y, 大小」；boxplot 每行「组名, v1, v2, …」；histogram 直接列原始数值（标题里可加 bins=8）；sankey 每行「来源 -> 去向, 流量」；map 每行「地区, 数值」（省份自动用中国地图，国家用世界地图，可在标题加 china / world 指定）。',
-  '- 快捷图示：流程图可用 :::flow 标题 包裹「开始 -> 处理 -> 结束」；思维导图可用 :::mind 标题 包裹 Markdown 层级列表。图表/流程图/思维导图/架构图必须走 SVG/Mermaid/DOT/客户端图表，不要调用 generate_image。',
+  '- 选择框：只用于需要用户拍板的重要决策，可在最终总结任意位置（开头、中间或结尾）输出完整 :::choice；前后可有正文/代码，关闭符 ::: 优先独占一行。工具循环或规划中途不放交互选择。用户选项或发出下一消息后旧控件关闭。应用内围栏（选择框、折叠、字体、颜色、渐变、动效、卡片、对齐、图表、流程图、思维导图）的精确语法不在此列，使用前必须先 knowledge_search 检索。',
+  '- 文学创作或需要精细排版时，可用字体与版式围栏（语法见知识库）；优先使用正式字体族名，日常聊天、写代码、分析文件不要换字体。',
+  '- 统计图一律用 :::chart 围栏（精确语法与类型见知识库），客户端渲染为可交互内联 SVG，不要再硬塞 Mermaid xychart-beta 或生图。图表/流程图/思维导图/架构图必须走 SVG/Mermaid/DOT/客户端图表，不要调用 generate_image。',
   '- 长文目录：标题用 ## / ###；目录用 [节名](#slug) 链到同文标题（slug 为标题小写、空格改 -，中文标题可原样作锚）。',
 ].join('\n');
 

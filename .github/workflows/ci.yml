@@ -63,6 +63,9 @@ jobs:
       - name: tests/share-download.test.mjs · 长图 / HTML 导出：自动下载与进度条
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/share-download.test.mjs
+      - name: tests/analyze-url.test.mjs · 分析工具直接接受外部链接，失败原因回传
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/analyze-url.test.mjs
       - name: tests/reasoning-body.test.mjs · 流式思考块与正文不互相覆盖
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/reasoning-body.test.mjs
