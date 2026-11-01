@@ -60,6 +60,21 @@ jobs:
       - name: tests/reasoning-body.test.mjs · 流式思考块与正文不互相覆盖
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/reasoning-body.test.mjs
+      - name: tests/md-fx.test.mjs · 排版扩展（渐变 / 动效 / 微交互）与懒加载字体筛选
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/md-fx.test.mjs
+      - name: tests/auto-review.test.mjs · 自动审批层（codex-auto-review）触发 / 请求 / 失败回落
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/auto-review.test.mjs
+      - name: tests/jev-plan.test.mjs · Jev 回合等待上限（3s fail-open）与结论缓存（TTL / 容量 / 计费）
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/jev-plan.test.mjs
+      - name: tests/jev-feedback.test.mjs · Jev 决策反馈（上一轮上下文 / 回合结果回写）
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/jev-feedback.test.mjs
+      - name: tests/jev-thresholds-failover.test.mjs · Jev 阈值锁定 / 遥测信号 / 共用网关故障转移
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/jev-thresholds-failover.test.mjs
       - name: tests/i18n-packs.test.mjs · 语言包登记 / 覆盖 / 漏翻审计
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/i18n-packs.test.mjs

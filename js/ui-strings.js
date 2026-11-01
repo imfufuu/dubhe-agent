@@ -169,6 +169,8 @@ export const UI_STRINGS = {
   "代码沙箱": "Code sandbox",
   "自动清理未引用文件": "Auto-clean unreferenced files",
   "显示 Jev 初步决策": "Show Jev preliminary decision",
+  "自动审批（codex-auto-review）": "Auto review (codex-auto-review)",
+  "默认开启：高风险操作先由审批模型裁决，拿不准仍转你确认": "On by default: approval model reviews high-risk actions first; uncertain ones still ask you",
   "默认隐藏；开启后每轮回答下方显示 Jev 对本轮工具、沙箱、生图等的校准分类（如难度）": "Hidden by default; when on, each reply shows Jev's calibration for the turn (tools, sandbox, image generation, difficulty)",
   "默认关闭；开启后清理未被回答引用的新文件；internal/、uploads/ 始终保留": "Off by default. When enabled, unreferenced files are cleaned up; internal/ and uploads/ are always retained.",
   "C++ 工具": "C++ tool",

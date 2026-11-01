@@ -46,6 +46,7 @@ function mockFetch(responses) {
 function newAgent(model) {
   const store = createStore();
   store.state.settings.webEnabled = false; store.state.settings.jevEnabled = false;
+  store.state.settings.autoReview = false; // 审批层另有专门测试（auto-review.test.mjs），这里只验证工具循环
   store.state.apiKey = 'sk-teamo-test'; store.state.model = model; store.state.settings.thinking = true;
   return { store, agent: createAgent(store, {}) };
 }

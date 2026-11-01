@@ -52,8 +52,8 @@
   --accent: #d97757;
   --warn: #b65d31;
   --ring: rgba(41, 40, 35, .72); /* 键盘焦点描边（.36）：比纯 --fg 柔和一档，深浅模式各有一个值 */
-  --font: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
-  --chat-font: "Dubhe Serif", "Noto Serif SC", "Songti SC", Georgia, serif;
+  --font: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, "Noto Sans SC", "Noto Sans JP", "Noto Sans KR", "BabelStone Han Extra", "Noto Naskh Arabic", "Noto Sans Hebrew", "Noto Sans Thai", "Noto Sans Devanagari", sans-serif;
+  --chat-font: "Dubhe Serif", "Noto Serif SC", "Songti SC", Georgia, "Noto Sans SC", "Noto Sans JP", "Noto Sans KR", serif;
   --sans: var(--font);
   --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
   --ease: cubic-bezier(.22,.61,.36,1);

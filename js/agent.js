@@ -30,7 +30,8 @@ import { compactMessages, contextBudgetFor } from './context.js';
 import { subagentGuide, specialistPrompt } from './subagents.js';
 import { TOOL_LOOP_MAX, SUBAGENT_LOOP_MAX, systemPrompt, OUTPUT_SPEC, outputSpec, compactOutputSpec, DEFAULT_IMAGE_MODEL, SMART_ROUTER_ID, FALLBACK_MODELS, resolveModelAlias } from './config.js?v=2026.10.25.1';
 import { routeModel, isSmartRouter } from './smartrouter.js?v=2026.10.25.1';
-import { planTurn } from './jev.js';
+import { planTurn, planSignals, JEV_PLAN_TIMEOUT_MS } from './jev.js';
+import { markJevOutcome, markLastUserOutcome, turnContext } from './jev-feedback.js';
 import { assembleSystemLayers, formatRuntime, formatBudgetNote } from './prompt.js';
 import { formatSkillsIndex, selectSkillBodies, distillSkill, rememberSkill, pruneLearnedSkillsWithReport } from './skills.js';
 import { formatMemory, formatActiveMemoryReminder, extractAutoMemoryFacts, upsertFacts, pruneMemoryFacts, recallArchivedMemories } from './memory.js';
@@ -298,6 +299,7 @@ export function createAgent(store, hooks = {}) {
   const baseFS = createFS(store.state.files);
   let fs = baseFS; // 当前生效的 fs（回合内 = temp overlay；回合间 = baseFS）
   let abortController = null;
+  let currentTurnUserId = null; // 决策反馈
   let status = 'idle'; // idle | moderating | thinking | streaming | executing | done | error | cancelled
   let turnChecklist = null, checklistNudges = 0, checklistOwnerId = null; // 复杂任务清单（回合内；只挂在首次创建的那条消息上）
 
@@ -989,6 +991,8 @@ export function createAgent(store, hooks = {}) {
     async function stageLoop() {
         // Jev System-One is a TeamoRouter-specific service. Never send a first-party key to it;
         // official gateways instead rely on the selected native model plus local safety rules.
+        const tc = turnContext(store.state.messages);
+        currentTurnUserId = tc.currentId;
         if (settings.jevEnabled !== false && turn.gatewayId === DEFAULT_GATEWAY_ID) {
           const jevT0 = Date.now();
           setStatus(turn.thinking ? 'thinking' : 'connecting');
@@ -997,14 +1001,16 @@ export function createAgent(store, hooks = {}) {
             apiKey, model, settings, signal,
             text: lastUser ? lastUser.text : '',
             attachments: lastUser && lastUser.attachments,
+            timeoutMs: JEV_PLAN_TIMEOUT_MS,
+            previous: tc.previous,
           });
-          telemetry.recordLayer('L1-jev', Date.now() - jevT0);
+          telemetry.recordLayer('L1-jev', Date.now() - jevT0, planSignals(plan));
           if (plan && plan.ok && plan.note) {
             turnPlan = plan;
             jevNote = '\n\n' + plan.note;
             if (lastUser) {
               store.updateMessage(lastUser.id, {
-                jev: { summary: plan.summary, route: plan.route, needSearch: plan.needSearch, difficulty: plan.difficulty },
+                jev: { ...(lastUser.jev || {}), summary: plan.summary, route: plan.route, needSearch: plan.needSearch, difficulty: plan.difficulty },
               });
               emit('onJevPlan', lastUser, plan);
             }
@@ -1268,6 +1274,7 @@ export function createAgent(store, hooks = {}) {
             exec.tokenBudgetNoted = true;
             exec.faultNote = [exec.faultNote, '[执行内核] Token 预算已耗尽：不再发起新的工具调用，转为用已有信息作答并如实说明未完成步骤。'].filter(Boolean).join('\n');
           }
+          if (toolCalls.length) markJevOutcome(store, currentTurnUserId, { usedTools: true });
           store.updateMessage(assistantMsg.id, {
             text,
             reasoning: turn.thinking && reasoning ? reasoning : undefined,
@@ -1761,7 +1768,7 @@ export function createAgent(store, hooks = {}) {
     },
     abort: () => {
       const ctrl = abortController;
-      if (ctrl) ctrl.abort();
+      if (ctrl) { markJevOutcome(store, currentTurnUserId, { stopped: true }); ctrl.abort(); }
       if (status === 'moderating') setStatus('cancelled');
     },
 
@@ -1805,6 +1812,7 @@ export function createAgent(store, hooks = {}) {
     },
 
     async regenerate() {
+      markLastUserOutcome(store, { regenerated: true });
       store.dropLastAssistantTurn();
       await runLoop();
     },

@@ -94,6 +94,11 @@ globalThis.fetch = async (url, opts) => {
   let body = null;
   if (ep) { try { body = JSON.parse(opts.body); reqs.push({ url: u, body }); } catch { /**/ } }
   if (!ep) return new Response(JSON.stringify({ data: [{ id: 'gpt-5.6-sol' }, { id: 'claude-sonnet-5' }] }), { status: 200, headers: { 'content-type': 'application/json' } });
+  // 自动审批（codex-auto-review，默认开启）：非流式 JSON 结论；放行，且不计入对话请求记录
+  if (ep === 'responses' && body && body.model === 'codex-auto-review') {
+    reqs.pop();
+    return new Response(JSON.stringify({ output_text: JSON.stringify({ outcome: 'allow', rationale: 'test: 放行', risk_level: 'low', user_authorization: 'explicit' }) }), { status: 200, headers: { 'content-type': 'application/json' } });
+  }
   const hay = JSON.stringify(body || {});
   // 只看请求体里的工具声明（提示词里也写着 web_search 这个词，不能拿整个 body 当判据）
   const wantsWeb = ((body && body.tools) || []).some((t) => String(t.type || '').startsWith('web_search'));

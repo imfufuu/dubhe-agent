@@ -7,12 +7,15 @@ import { APP_LOGO, providerIcon } from './icons.js';
 import { providerOf, APP_VERSION } from './config.js?v=2026.10.25.1';
 import { isSmartRouter, SMART_ROUTER_LABEL, ROUTER_ICON_SVG } from './smartrouter.js?v=2026.10.25.1';
 import { getLanguage, text } from './locale.js';
-const STYLE_URLS = ['../css/styles.css', '../assets/hljs/dubhe.css', '../assets/katex/katex.min.css', '../fonts/literary.css'];
+import { codepointsOf, selectLazyFaces } from './lazy-fonts.js';
+const STYLE_URLS = ['../css/styles.css', '../assets/hljs/dubhe.css', '../assets/katex/katex.min.css', '../fonts/literary.css', '../css/md-fx.css'];
+const LAZY_FONT_INDEX = '../assets/fonts-lazy/index.css';
 export const SHARE_CSS = `
 /* 分享图是静态快照：没有展开/折叠的交互状态，工具详情需常显（否则 .chip-detail 默认 0fr + hidden，导出后为空） */
 .tool-call-chip > .chip-detail { grid-template-rows: 1fr; opacity: 1; visibility: visible; }
 .tool-call-chip .chip-detail > .fold-inner { transform: none; }
-html,body{margin:0;min-height:100%;background:var(--bg);color:var(--fg)}body{display:block;height:auto;overflow:auto;font-family:var(--font);font-size:14px}
+/* 应用外壳的 html,body{height:100%;overflow:hidden} 会让导出页滚不动；导出页是普通长文档，由视口滚动 */
+html,body{margin:0;height:auto;min-height:100%;overflow:visible;background:var(--bg);color:var(--fg)}body{display:block;font-family:var(--font);font-size:14px}
 .share-page{width:min(760px,100%);margin:auto;padding:32px 0 24px;box-sizing:border-box}.share-page .msg{max-width:100%;margin-bottom:24px;animation:none!important;opacity:1;transform:none;overflow:visible}
 .share-head{margin:0 28px 32px;border-bottom:1px solid var(--line);padding-bottom:20px;display:flex;gap:12px;align-items:center}.share-brand{width:32px;height:32px;flex:0 0 auto}.share-head h1{font-size:18px;line-height:1.4;margin:0;overflow-wrap:anywhere}.share-subtitle{font-family:var(--mono);font-size:10px;color:var(--fg-2);margin-top:5px}.share-footer{margin:28px 28px 0;border-top:1px solid var(--line);padding-top:18px;font-size:11px;color:var(--fg-2)}
 .share-controls{display:flex;gap:8px;margin:0 28px 24px}.share-controls button,.share-copy{border:1px solid var(--line);border-radius:7px;background:var(--bg-soft);color:var(--fg-2);padding:5px 9px;font-size:11px;cursor:pointer}.share-page .tool-chips{display:block}.share-page .tool-call-chip{margin:8px 0}.share-page .chip-detail{overflow:visible}.share-page .expanded>.chip-detail{display:block;height:auto!important;max-height:none;opacity:1}.share-reason{margin:12px 0;border:1px solid var(--line);border-radius:10px;padding:12px;color:var(--fg-2);font-size:12px}.share-reason pre{white-space:pre-wrap;word-break:break-word;margin:10px 0 0}.share-file{display:inline-block;color:var(--link);border:1px solid var(--line);border-radius:8px;padding:8px 12px;text-decoration:none}
@@ -118,6 +121,26 @@ async function embedMedia(node, selected, fs) {
     if (n.tagName === 'A') { const href = n.getAttribute('href') || ''; if (!/^(https?:|data:|#)/i.test(href)) n.removeAttribute('href'); n.rel = 'noopener noreferrer'; if (/^https?:/i.test(href)) n.target = '_blank'; }
   }
 }
+async function embedLazyFonts(textContent) {
+  const cps = codepointsOf(textContent);
+  if (!cps.length) return '';
+  const base = new URL(LAZY_FONT_INDEX, import.meta.url);
+  base.searchParams.set('v', APP_VERSION);
+  const r = await fetch(base);
+  if (!r.ok) return '';
+  const faces = selectLazyFaces(await r.text(), cps);
+  const out = [];
+  for (const face of faces) {
+    const res = await fetch(new URL(face.url, base), { credentials: 'omit' });
+    if (!res.ok) throw new Error('无法嵌入分享字体：' + face.url);
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    let bin = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    out.push(face.block.replace(/url\([^)]*\)/, `url(data:font/woff2;base64,${btoa(bin)})`));
+  }
+  return out.join('\n');
+}
+
 export async function buildShareDocument({ messages, selected, fs, title = 'Dubhe Agent', tools = false, reasoning = false, interactive = true, theme = document.documentElement.dataset.theme } = {}) {
   const style = await shareStyles();
   const main = document.createElement('main'); main.className = 'share-page';
@@ -127,6 +150,8 @@ export async function buildShareDocument({ messages, selected, fs, title = 'Dubh
   main.insertAdjacentHTML('beforeend', `<footer class="share-footer">Dubhe Agent · ${text('仅包含选中消息；独立离线页面，不连接模型或应用中继', 'Selected messages only · self-contained offline page · no model or app relay connection')}</footer>`);
   await hydrateShareMaps(main);
   await embedMedia(main, selected, fs);
+  // 懒加载字体：只内嵌本文档用到的字符所在分片（不整体内嵌，避免导出膨胀）
+  const lazyCss = await embedLazyFonts(main.textContent || '');
   let client = '', scriptPolicy = "'none'";
   if (interactive) {
     const r = await fetch(new URL('./share-client.js', import.meta.url)); if (!r.ok) throw new Error('无法加载分享交互'); client = await r.text();
@@ -134,5 +159,5 @@ export async function buildShareDocument({ messages, selected, fs, title = 'Dubh
     scriptPolicy = `'sha256-${btoa(String.fromCharCode(...hash))}'`;
   }
   const csp = `default-src 'none'; script-src ${scriptPolicy}; style-src 'unsafe-inline'; img-src data:; font-src data:; media-src data: blob:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'`;
-  return `<!doctype html><html lang="${getLanguage() === 'en' ? 'en' : 'zh-CN'}" data-theme="${theme === 'dark' ? 'dark' : 'light'}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="${csp}"><title>${esc(title)} · Dubhe Agent</title><style>${style.replace(/</g, '\\3c ')}</style></head><body>${main.outerHTML}${client ? `<script>${client}</script>` : ''}</body></html>`;
+  return `<!doctype html><html lang="${getLanguage() === 'en' ? 'en' : 'zh-CN'}" data-theme="${theme === 'dark' ? 'dark' : 'light'}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="${csp}"><title>${esc(title)} · Dubhe Agent</title><style>${style.replace(/</g, '\\3c ')}${lazyCss}</style></head><body>${main.outerHTML}${client ? `<script>${client}</script>` : ''}</body></html>`;
 }

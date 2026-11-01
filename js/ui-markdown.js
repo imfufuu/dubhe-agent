@@ -9,6 +9,7 @@ import { contextBudgetFor } from './context.js';
 import { ICON } from './icons.js';
 import { sanitizeSvgMarkup, svgSourceFromValue } from './svg-safety.js';
 import { prepareMarkdownExtensions, parsePandocAttributes, pandocAttributesHtml } from './markdown-extensions.js?v=2026.10.25.1';
+import { blockWrapper, colorStyleFor, fxKind, sanitizeCustomCss } from './md-fx.js?v=2026.10.25.1';
 import { CHART_ALIAS, parseChartInfo, parseDiagramInfo, renderQuickChart, renderQuickDiagram, CHART_DIRECT_ALIASES } from './quickviz.js?v=2026.10.25.1';
 
 export const $ = (sel, el = document) => el.querySelector(sel);
@@ -645,6 +646,7 @@ function isStreamableWidgetDirective(line) {
   if (key === 'choice') return true;
   if (key === 'align') return !!tail;
   if (['center', 'centre', 'right', '居中', '居中对齐', '中', '右对齐', '靠右'].includes(key)) return true;
+  if (['gradient', 'fx', 'card'].includes(key)) return !!tail;
   if (key === 'chart') return !!tail;
   if (key === 'diagram') return !!tail;
   if (['flow', 'flowchart', 'mind', 'mindmap', 'mind-map', '流程图', '流程', '思维导图', '脑图'].includes(key)) return true;
@@ -781,6 +783,14 @@ export function renderMarkdown(src, options = {}) {
     xingkai: 'xingkai', mashanzheng: 'xingkai', stxingkai: 'xingkai', 行楷: 'xingkai',
     serif: 'serif', latin: 'serif', sourceserif4: 'serif', sourceserifpro: 'serif', georgia: 'serif', charter: 'serif', 衬线: 'serif',
     jp: 'jp', japanese: 'jp', notoserifjp: 'jp', 日文: 'jp',
+    // 懒加载无衬线字族（assets/fonts-lazy，字符出现时才下载分片）
+    sansjp: 'sans-jp', notosansjp: 'sans-jp', 日文黑体: 'sans-jp', 日文无衬线: 'sans-jp',
+    sanskr: 'sans-kr', notosanskr: 'sans-kr', korean: 'sans-kr', 韩文: 'sans-kr', 韩文黑体: 'sans-kr',
+    arabic: 'arabic', notonaskharabic: 'arabic', 阿拉伯文: 'arabic', 阿拉伯语: 'arabic',
+    hebrew: 'hebrew', 希伯来文: 'hebrew', 希伯来语: 'hebrew',
+    thai: 'thai', 泰文: 'thai', 泰语: 'thai',
+    devanagari: 'devanagari', hindi: 'devanagari', 天城文: 'devanagari', 印地文: 'devanagari',
+    hanext: 'han-ext', babelstone: 'han-ext', 扩展汉字: 'han-ext', 生僻字: 'han-ext', 扩展区汉字: 'han-ext',
   };
   const fonts = [];
   t = t.replace(/^:::font[ \t]+(.+)\n([\s\S]*?)^:::[ \t]*$/gm, (_, name, body) => {
@@ -806,10 +816,33 @@ export function renderMarkdown(src, options = {}) {
     accent: 'accent', 强调: 'accent', 高亮: 'accent',
   };
   const colors = [];
+  // 渐变 / 动效 / 微交互块（语法见 md-fx.js）
+  const fxBlocks = [];
+  t = t.replace(/^:::(gradient|fx|card)[ \t]+(.+)\n([\s\S]*?)^:::[ \t]*$/gm, (whole, kind, arg, body) => {
+    let payload = {};
+    let content = body;
+    if (kind === 'fx' && fxKind(arg) === 'custom') {
+      // 自定义动效：=== 之上是 CSS（净化后仅作用于本块），之下是正文
+      const parts = body.split(/^===[ \t]*$/m);
+      if (parts.length < 2) return whole;
+      payload = sanitizeCustomCss(parts[0]) || {};
+      content = parts.slice(1).join('===');
+    }
+    const w = blockWrapper(kind, arg, payload);
+    if (!w) return whole;
+    fxBlocks.push({ ...w, body: content });
+    return `\n\n\uE000FXB${fxBlocks.length - 1}\uE000\n\n`;
+  });
   t = t.replace(/^:::color[ \t]+(.+)\n([\s\S]*?)^:::[ \t]*$/gm, (_, name, body) => {
     const raw = String(name || '').trim();
     const cls = COLOR_ALIAS[raw] || COLOR_ALIAS[raw.toLowerCase()] || '';
-    if (!cls) return _;
+    if (!cls) {
+      // 十六进制颜色：按主题分别校验对比度，无法修正则保留原文
+      const style = colorStyleFor(raw);
+      if (!style) return _;
+      colors.push({ cls: '', style, body });
+      return `\n\n\uE000COLOR${colors.length - 1}\uE000\n\n`;
+    }
     colors.push({ cls, body });
     return `\n\n\uE000COLOR${colors.length - 1}\uE000\n\n`;
   });
@@ -849,7 +882,14 @@ export function renderMarkdown(src, options = {}) {
       const f = colors[+i];
       const innerMd = getMd();
       const inner = innerMd ? renderMarkdown(f.body, options) : `<p>${esc(f.body)}</p>`;
-      return `<div class="md-color md-c-${f.cls}">${inner}</div>`;
+      return f.style ? `<div class="md-color md-color-hex" style="${f.style}">${inner}</div>` : `<div class="md-color md-c-${f.cls}">${inner}</div>`;
+    };
+    const fxAt = (_, i) => {
+      const f = fxBlocks[+i];
+      if (!f) return '';
+      const innerMd = getMd();
+      const inner = innerMd ? renderMarkdown(f.body, options) : `<p>${esc(f.body)}</p>`;
+      return `${f.open}${inner}${f.close}`;
     };
     const alignAt = (_, i) => {
       const a = aligns[+i];
@@ -888,6 +928,8 @@ export function renderMarkdown(src, options = {}) {
       .replace(/\uE000FONT(\d+)\uE000/g, fontAt)
       .replace(/<p>\s*\uE000COLOR(\d+)\uE000\s*<\/p>/g, colorAt)
       .replace(/\uE000COLOR(\d+)\uE000/g, colorAt)
+      .replace(/<p>\s*\uE000FXB(\d+)\uE000\s*<\/p>/g, fxAt)
+      .replace(/\uE000FXB(\d+)\uE000/g, fxAt)
       .replace(/\uE000IC(\d+)\uE000/g, (_, i) => `<code>${esc(inlineCodes[+i])}</code>`);
     out = out.replace(/<p>\s*\uE000CHOICE(\d+)\uE000\s*<\/p>/g, (_, i) => choiceHtml(peeled.groups[+i])).replace(/\uE000CHOICE(\d+)\uE000/g, (_, i) => choiceHtml(peeled.groups[+i]));
     return out;

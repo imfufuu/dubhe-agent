@@ -136,3 +136,24 @@ export function isNetworkError(err) {
   if (err.name === 'TypeError') return true;                     // fetch 网络失败（含 CORS/DNS/连接被拒）
   return /Failed to fetch|NetworkError|ERR_|net::|Load failed/i.test(String(err.message || err));
 }
+
+/**
+ * 共用网关封装（Jev 决策 / 自动审批等 TeamoRouter 直连请求）：
+ * 先打当前接入点；仅网络层错误才换另一个域名重试（HTTP 错误不算域名问题）；
+ * 中止（用户停止 / 超时）直接抛出；换域名成功后记住新域名。
+ * base / fallback / fetchImpl 可注入，便于测试（注入 base 时不改动全局接入点）。
+ */
+export async function postWithGatewayFailover(path, init, { fetchImpl = fetch, base = null, fallback = null } = {}) {
+  const primary = base || gatewayBase();
+  try {
+    return await fetchImpl(primary + path, init);
+  } catch (err) {
+    if (init && init.signal && init.signal.aborted) throw err;
+    if (!isNetworkError(err)) throw err;
+    const alt = fallback || otherGatewayBase();
+    const res = await fetchImpl(alt + path, init);
+    if (!base) setGatewayBase(alt, 'failover');
+    return res;
+  }
+}
+
