@@ -157,12 +157,34 @@ class GuardedRedirectHandler(urllib.request.HTTPRedirectHandler):
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
+class BinaryContentError(ValueError):
+    """上游是二进制内容（图片/PDF/压缩包/音视频等）。按文本解码会损坏字节，因此拒绝返回正文。"""
+
+    def __init__(self, ctype):
+        super().__init__(ctype or "未知类型")
+        self.ctype = ctype or ""
+
+
+_TEXTUAL_MARKERS = ("json", "xml", "javascript", "ecmascript", "x-www-form-urlencoded", "yaml", "csv")
+
+
+def looks_textual(ctype, data):
+    """Content-Type 明确时以它为准；缺失或模糊时，前 4KB 含 NUL 字节即视为二进制。"""
+    base = str(ctype or "").split(";")[0].strip().lower()
+    if base:
+        return base.startswith("text/") or base.endswith("+json") or base.endswith("+xml") \
+            or any(marker in base for marker in _TEXTUAL_MARKERS)
+    return b"\x00" not in bytes(data[:4096])
+
+
 def http_get_text(url, limit=MAX_FETCH_BYTES, timeout=FETCH_TIMEOUT):
     req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "*/*", "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8"})
     opener = urllib.request.build_opener(GuardedRedirectHandler)
     with opener.open(req, timeout=timeout) as res:  # noqa: S310 - 目标与每一跳重定向都经过 guard_public_http_url
         ctype = res.headers.get("Content-Type", "")
         data = res.read(limit + 1)
+        if not looks_textual(ctype, data):
+            raise BinaryContentError(ctype)
         return res.status, ctype, data[:limit].decode("utf-8", "replace")
 
 
@@ -532,6 +554,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             status, ctype, body = http_get_text(url, limit)
         except urllib.error.HTTPError as exc:
             return self._json(502, {"error": f"上游返回 HTTP {exc.code}", "url": url})
+        except BinaryContentError as exc:
+            return self._json(415, {"error": f"目标是二进制文件（{exc.ctype}），不是网页正文；fetch_url 不能无损保存二进制。请改用 download_file 下载。", "url": url, "content_type": exc.ctype})
         except Exception as exc:  # DNS / 超时 / TLS
             return self._json(502, {"error": f"抓取失败：{type(exc).__name__}: {exc}", "url": url})
         truncated = len(body) >= limit

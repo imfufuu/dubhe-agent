@@ -10,7 +10,7 @@ import { installFeedback } from './ui-feedback.js';
 import { installSpeechInput } from './ui-speech.js';
 import { createToolPresentation, presentationCallSettled, turnToolResults } from './toolpresentation.js?v=2026.10.25.1';
 import { paintEditFoldContent, syncEditingFold, toggleEditingFold } from './ui-editpreview.js?v=2026.10.25.1';
-import { exploringInFlight, paintOrderedAssistant, renderToolChipDetail, paintCommandRows, paintKnowledgeFold, webGroupLabel, hasMediaTaskRunning, syncToolMenuCursor, ownerOfTool, paintVisibleTurn, activeToolOwner, persistTurnTiming, paintWebActivity, syncChecklistBlock, installChecklistPanel } from './ui-toolflow.js?v=2026.10.25.1';
+import { exploringInFlight, paintOrderedAssistant, renderToolChipDetail, paintCommandRows, paintKnowledgeFold, webGroupLabel, hasMediaTaskRunning, syncToolMenuCursor, ownerOfTool, paintVisibleTurn, activeToolOwner, persistTurnTiming, paintWebActivity, syncChecklistBlock, placeChecklistCompletion, installChecklistPanel } from './ui-toolflow.js?v=2026.10.25.1';
 import { classifyToolResult, toolResultFailed } from './toolwindows.js?v=2026.10.25.1';
 import { adjacentToolMessages, appendToolStream, toolFamily, commandRunFor } from './toolflow.js?v=2026.10.25.1';
 import { createRollbackFx } from './ui-rollback-fx.js?v=2026.10.25.1';
@@ -33,7 +33,7 @@ import { readThemePreference, writeThemePreference, THEME_STORAGE_KEY } from './
 import { autoTitle } from './titler.js';
 import { pickSuggestionCards } from './suggestions.js';
 import { revealChunks } from './ui-chunks.js?v=2026.10.25.1';
-import { unlockAdminKey, adminUnlocked, isAdminAlias, adminExpiresAt } from './adminkey.js';
+import { unlockAdminKey, adminUnlocked, isAdminAlias, adminExpiresAt, adminPhraseVerified } from './adminkey.js';
 import { shortSuggest } from './commands.js';
 import { getOrCreateUserSalutation, buildWelcomeGreeting } from './user-salutation.js';
 import { installShiftEnterGuard } from './composer-newline-guard.js';
@@ -117,6 +117,7 @@ export function mountUI(store, agent) {
   });
   installCaretEffect(composer);
   const sendBtn = $('#send-btn');
+  let attachmentsRef = null; // 附件模块就绪后再赋值；发送按钮状态可能早于它被刷新
   const statusDot = $('#status-dot');
   const statusText = $('#status-text');
   const msgNodes = new Map();
@@ -480,7 +481,7 @@ export function mountUI(store, agent) {
   const adminPhraseWrap = $('#key-admin-phrase-wrap');
   const adminPhraseInput = $('#key-admin-phrase');
   const syncAdminPhraseField = () => {
-    const needed = isAdminAlias(keyInput.value.trim()) && (store.state.gatewayId || DEFAULT_GATEWAY_ID) === DEFAULT_GATEWAY_ID;
+    const needed = isAdminAlias(keyInput.value.trim()) && (store.state.gatewayId || DEFAULT_GATEWAY_ID) === DEFAULT_GATEWAY_ID && !adminPhraseVerified();
     if (adminPhraseWrap) adminPhraseWrap.hidden = !needed;
     if (!needed && adminPhraseInput) adminPhraseInput.value = '';
   };
@@ -535,7 +536,7 @@ const fmtAdminExp = (ms) => {
     if (isAdminAlias(typed)) {
       toast(localeText('正在校验管理员口令与暗号…', 'Verifying admin key and phrase…'), 'ok', 1500);
       const phrase = adminPhraseInput ? adminPhraseInput.value : '';
-      const r = await unlockAdminKey(typed, { phrase });
+      const r = await unlockAdminKey(typed, { phrase, skipPhrase: adminPhraseVerified() });
       if (!r.ok) {
         const why = r.reason === 'bad-password' ? localeText('管理员口令不正确（admin- 开头的密钥会被当作管理员口令）', 'Incorrect admin key (values starting with admin- are treated as admin aliases)')
           : r.reason === 'bad-phrase' ? localeText('管理员暗号不正确', 'Incorrect admin phrase')
@@ -1312,7 +1313,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       paintPart: paintAssistant, paintMeta: paintTurnMeta, paintFoot, syncShell: syncAssistantShell,
       syncFolds: syncCompletedToolFolds,
       refreshActions: refreshActionVisibility,
-    })) { syncCancelledTail(wrap, m); syncAssistantShell(wrap); refreshActionVisibility(); settleTurnToolbars(msgList, store.state.messages); return; }
+    })) { placeChecklistCompletion(wrap, m); syncCancelledTail(wrap, m); syncAssistantShell(wrap); refreshActionVisibility(); settleTurnToolbars(msgList, store.state.messages); return; }
     wrap.classList.toggle('cancelled', !!m.cancelled);
     const body = $(':scope > .md-body', wrap); // 只取本消息正文：思考详情 .think-full-text 也带 md-body 类
     let html = publicPlanHtml(m.publicPlan);
@@ -2196,7 +2197,8 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     if (typeof refreshActionVisibility === 'function') refreshActionVisibility();
     sendBtn.classList.toggle('stop-mode', busy);
     $('#send-ico').textContent = busy ? '■' : '↑';
-    sendBtn.title = busy ? '停止' : '发送 (Enter)';
+    sendBtn.title = busy ? '停止' : '发送';
+    syncSendButton();
     // 顶栏不确定进度条：连接阶段更快，让用户一眼看出「正在等模型响应」
     const bar = $('#turn-bar');
     if (bar) bar.classList.toggle('on', busy);
@@ -2314,7 +2316,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
   });
 
   // ── 附件：见 ui-attachments.js（按钮 / 相机 / 拖拽 / 粘贴 → addFiles；发送时 takePending()）──
-  const attachments = installAttachments({ composer, toast, safeImgSrc, fmtSize });
+  const attachments = installAttachments({ composer, toast, safeImgSrc, fmtSize, onChange: () => syncSendButton() }); attachmentsRef = attachments;
 
   // ── 输入区 ────────────────────────────────────────────────────────────
   let composerFollowFrame = 0;
@@ -2381,11 +2383,10 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
   composer.addEventListener('keydown', (e) => {
     if (sysComplete.handleKeydown(e)) return;
     if (e.key !== 'Enter' || e.isComposing) return;
-    if (e.shiftKey) { shiftEnterGuard.capture(); return; }
-    e.preventDefault(); doSend();
+    shiftEnterGuard.capture(); // Enter 只换行（与 Shift+Enter 相同的守卫）；发送只能点击发送按钮
   });
-  // 生图 / 生视频是计费任务：运行中点停止前二次确认
-  sendBtn.addEventListener('click', () => {
+  composer.addEventListener('input', () => syncSendButton());
+  sendBtn.addEventListener('click', () => { // 生图 / 生视频是计费任务：运行中点停止前二次确认
     if (getBusy()) {
       if (hasMediaTaskRunning(store.state.messages, liveToolCallIds) && !window.confirm(localeText(
         '正在生成图片或视频。停止后，已提交的生成任务可能仍会计费，且结果不会返回。确定停止吗？',
@@ -2399,6 +2400,8 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     const next = restorableComposerText(composer.value, composerDraftAwaitingKey); composerDraftAwaitingKey = null;
     if (next != null) { composer.value = next; autoGrow(); composer.focus(); }
   }
+  // 发送按钮：运行中（停止态）始终可点；空闲时输入为空且无附件则禁用（灰色）
+  function syncSendButton() { if (sendBtn) sendBtn.disabled = !getBusy() && !(composer.value.trim() || attachmentsRef?.hasPending()); }
   function doSend() {
     const text = composer.value.trim();
     if (!text && !attachments.hasPending()) return;

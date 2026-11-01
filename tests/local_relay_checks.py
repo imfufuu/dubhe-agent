@@ -169,6 +169,13 @@ st, body = call("POST", "/api/local/fs", {"action": "read", "path": os.path.join
 check("http: fs outside root refused", st == 400, str(st))
 st, body = call("POST", "/api/local/fs", {"action": "write", "path": "http.txt", "content": "via-http"}, token)
 check("http: fs write ok", st == 200 and open(os.path.join(ws, "http.txt")).read() == "via-http", str(st))
+# fetch_url 中继：二进制内容必须拒绝（按文本解码会损坏字节），文本照常放行
+check("fetch: image/png is binary", server_mod.looks_textual("image/png", b"\x89PNG") is False)
+check("fetch: pdf is binary", server_mod.looks_textual("application/pdf", b"%PDF-1.4") is False)
+check("fetch: html is text", server_mod.looks_textual("text/html; charset=utf-8", b"<p>x</p>") is True)
+check("fetch: json/xml are text", server_mod.looks_textual("application/json", b"{}") and server_mod.looks_textual("application/atom+xml", b"<a/>"))
+check("fetch: unknown type with NUL is binary", server_mod.looks_textual("", b"a\x00b") is False)
+check("fetch: unknown type plain is text", server_mod.looks_textual("", b"hello") is True)
 server_mod.LOCAL_ENABLED = False
 st, _ = call("GET", "/api/local/session")
 check("http: disabled -> 404", st == 404, str(st))

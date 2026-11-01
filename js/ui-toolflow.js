@@ -353,21 +353,38 @@ export function syncChecklistBlock(wrap, m) {
   wrap.querySelectorAll(':scope > .agent-checklist').forEach((n) => n.remove());
   if (!list.length) return;
   const doc = wrap.ownerDocument;
-  const stages = [{ key: 'created', text: localeText(`任务清单 · 已创建 ${m.checklistCreatedCount || list.length} 项`, `Checklist · ${m.checklistCreatedCount || list.length} items created`) }];
-  if (checklistComplete(list)) stages.push({ key: 'completed', text: localeText(`任务清单 · 已完成 ${list.length}/${list.length}`, `Checklist · ${list.length}/${list.length} completed`) });
   const head = wrap.querySelector(':scope > .msg-head');
-  let anchor = head;
-  for (const stage of stages) {
-    const pill = doc.createElement('button');
-    pill.type = 'button';
-    pill.className = `agent-checklist ${stage.key === 'completed' ? 'is-complete' : 'is-created'}`;
-    pill.dataset.openTasks = '1';
-    pill.dataset.stage = stage.key;
-    pill.title = localeText('在沙箱面板的「任务」标签中查看', 'Open the Tasks tab in the sandbox panel');
-    pill.innerHTML = `<span class="ck-pill-mark" aria-hidden="true"></span><span class="ck-pill-text">${ckEsc(stage.text)}</span><span class="ck-pill-go">${ckEsc(localeText('在面板查看', 'View in panel'))} ›</span>`;
-    if (anchor) anchor.after(pill); else wrap.prepend(pill);
-    anchor = pill;
-  }
+  // 「已创建」固定在消息头部；「已完成」由 placeChecklistCompletion 放到真实完成的位置
+  const pill = checklistPill(doc, 'created', localeText(`任务清单 · 已创建 ${m.checklistCreatedCount || list.length} 项`, `Checklist · ${m.checklistCreatedCount || list.length} items created`));
+  if (head) head.after(pill); else wrap.prepend(pill);
+}
+
+function checklistPill(doc, stage, text) {
+  const pill = doc.createElement('button');
+  pill.type = 'button';
+  pill.className = `agent-checklist ${stage === 'completed' ? 'is-complete' : 'is-created'}`;
+  pill.dataset.openTasks = '1';
+  pill.dataset.stage = stage;
+  pill.title = localeText('在沙箱面板的「任务」标签中查看', 'Open the Tasks tab in the sandbox panel');
+  pill.innerHTML = `<span class="ck-pill-mark" aria-hidden="true"></span><span class="ck-pill-text">${ckEsc(text)}</span><span class="ck-pill-go">${ckEsc(localeText('在面板查看', 'View in panel'))} ›</span>`;
+  return pill;
+}
+
+// 「已完成」标签：挂在真正登记完成的那次 checklist 工具调用所在的输出段之后。
+// 找不到对应段（老消息 / 段已折叠）时退回消息头部。flow 段落会被重绘，因此每次绘制后都要调用。
+export function placeChecklistCompletion(wrap, m) {
+  if (!wrap) return;
+  wrap.querySelectorAll('.agent-checklist[data-stage="completed"]').forEach((n) => n.remove());
+  const list = Array.isArray(m?.checklist) ? m.checklist : [];
+  if (!checklistComplete(list)) return;
+  const doc = wrap.ownerDocument;
+  const pill = checklistPill(doc, 'completed', localeText(`任务清单 · 已完成 ${list.length}/${list.length}`, `Checklist · ${list.length}/${list.length} completed`));
+  const callId = String(m.checklistDoneCallId || '');
+  const partIndex = callId ? displayParts(m).findIndex((p) => (p.toolCalls || []).some((c) => String(c?.id) === callId)) : -1;
+  const row = partIndex >= 0 ? wrap.querySelector(`:scope > .assistant-flow > .assistant-fragment[data-part="${partIndex}"]`) : null;
+  if (row) { row.appendChild(pill); return; }
+  const created = wrap.querySelector(':scope > .agent-checklist[data-stage="created"]') || wrap.querySelector(':scope > .msg-head');
+  if (created) created.after(pill); else wrap.prepend(pill);
 }
 
 // 任务面板空状态插画：与文件 / 记忆面板同一套 SVG 结构与动画类（fe-*）
@@ -414,7 +431,7 @@ export function paintChecklistPanel(list) {
     if (empty.dataset.painted !== '1') {
       empty.dataset.painted = '1';
       empty.setAttribute('aria-label', localeText('暂无任务清单', 'No checklist yet'));
-      empty.innerHTML = `${TASK_EMPTY_ART}<p class="files-empty-text">${ckEsc(localeText('复杂任务开始时，Agent 会在这里列出清单并实时更新状态。', 'When a complex task starts, the agent lists its checklist here and updates its status in real time.'))}</p>`;
+      empty.innerHTML = `${TASK_EMPTY_ART}<p class="files-empty-text">${ckEsc(localeText('复杂任务开始时，Agent 会在这里列出清单并实时更新状态。', 'When a complex task starts, the agent lists its checklist here and updates its status in real time.'))}</p><p class="files-empty-sub">${ckEsc(localeText('多阶段任务会自动生成清单，进度随执行实时更新', 'Multi-stage tasks get a checklist that updates as they run'))}</p>`;
     }
     empty.hidden = false;
     for (const el of bodyEls) if (el) el.hidden = true;

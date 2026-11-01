@@ -1387,7 +1387,7 @@ export function createAgent(store, hooks = {}) {
             telemetry.recordTool(call.name, Math.round(waveMs / Math.max(1, toolCalls.length)), { engine, ok: !isErr });
             syncFS();
             store.pushMessage({ role: 'tool', toolCallId: call.id, name: call.name, content: result });
-            if (call.name === 'checklist' && !isErr) turnChecklist = recordChecklistCall(store, checklistOwnerId ||= assistantMsg.id, call.args);
+            if (call.name === 'checklist' && !isErr) turnChecklist = recordChecklistCall(store, checklistOwnerId ||= assistantMsg.id, call.args, call.id);
             emit('onToolResult', call, result);
           }
           telemetry.subagentDispatches = turn.subagentReports.length;

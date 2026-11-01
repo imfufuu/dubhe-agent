@@ -1162,6 +1162,9 @@ test('照片编辑器：显示画布按真实工作区等比适配，裁剪框�
   const { fitPhotoDisplaySize, cropRectFromDrag, resizeCropRect } = await import('../js/photo-editor.js');
   assert.deepEqual(fitPhotoDisplaySize(4000, 3000, 600, 400), { width: 533, height: 400, scale: 0.13333333333333333 });
   assert.deepEqual(fitPhotoDisplaySize(400, 300, 900, 700), { width: 400, height: 300, scale: 1 }, '小图不无谓放大');
+  // 裁剪后的小图在编辑器舞台里要撑满可视区（allowUpscale），默认行为保持不变
+  assert.deepEqual(fitPhotoDisplaySize(200, 100, 800, 600, { allowUpscale: true }), { width: 800, height: 400, scale: 4 }, '编辑器舞台允许放大到撑满');
+  assert.deepEqual(fitPhotoDisplaySize(200, 100, 800, 600), { width: 200, height: 100, scale: 1 }, '默认仍不放大');
   assert.deepEqual(cropRectFromDrag(80, 70, 20, 10, 100, 100), { x: 20, y: 10, width: 60, height: 60 });
   assert.deepEqual(resizeCropRect({ x: 20, y: 20, width: 60, height: 40 }, 'w', { x: 10, y: 40 }, 100, 100), { x: 10, y: 20, width: 70, height: 40 });
   assert.deepEqual(resizeCropRect({ x: 20, y: 20, width: 60, height: 40 }, 's', { x: 50, y: 80 }, 100, 100), { x: 20, y: 20, width: 60, height: 60 });

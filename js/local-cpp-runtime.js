@@ -51,6 +51,78 @@ function captureStream() {
   };
 }
 
+// 已编译 WebAssembly.Module 的持久缓存（IndexedDB，结构化克隆支持 Module）。
+// 每次运行都会新建 Worker，若不缓存，每次都要解压并重新编译 clang/lld（数十 MB），这是「很慢」的主要来源。
+// 工具链资源变更时递增 MODULE_VERSION；任何读写失败都回退到原来的逐次加载路径。
+const MODULE_DB = 'dubhe-cpp-modules';
+const MODULE_STORE = 'modules';
+const MODULE_VERSION = 'v1';
+
+function moduleDb() {
+  return new Promise((resolve) => {
+    try {
+      if (typeof indexedDB === 'undefined') return resolve(null);
+      const request = indexedDB.open(MODULE_DB, 1);
+      request.onupgradeneeded = () => request.result.createObjectStore(MODULE_STORE);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => resolve(null);
+    } catch { resolve(null); }
+  });
+}
+
+async function moduleStore(mode, action) {
+  const db = await moduleDb();
+  if (!db) return undefined;
+  try {
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(MODULE_STORE, mode);
+      const request = action(tx.objectStore(MODULE_STORE));
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  } catch { return undefined; }
+  finally { db.close(); }
+}
+
+async function readCachedModule(name) {
+  const value = await moduleStore('readonly', (store) => store.get(`${MODULE_VERSION}:${name}`));
+  return value instanceof WebAssembly.Module ? value : null;
+}
+
+function storeCachedModule(name, module) {
+  return moduleStore('readwrite', (store) => store.put(module, `${MODULE_VERSION}:${name}`)).catch(() => {});
+}
+
+function forgetCachedModule(name) {
+  return moduleStore('readwrite', (store) => store.delete(`${MODULE_VERSION}:${name}`)).catch(() => {});
+}
+
+async function fetchAsset(name) {
+  const response = await fetch(new URL(name, BROWSERCC_DIST), { credentials: 'omit', cache: 'force-cache' });
+  if (!response.ok) throw new Error(`工具链资源 ${name} 加载失败：HTTP ${response.status}`);
+  return response.arrayBuffer();
+}
+
+// 有缓存则不下载 wasm 字节；无缓存则下载、编译并写入缓存。
+async function loadWasmModule(name) {
+  const cached = await readCachedModule(name);
+  if (cached) return cached;
+  const module = await WebAssembly.compile(await fetchAsset(name));
+  void storeCachedModule(name, module);
+  return module;
+}
+
+// 用已编译的 Module 实例化 Emscripten 工厂（Emscripten 的 instantiateWasm 钩子：回调为 (instance, module)）。
+// 实例化失败时清掉该缓存条目，下一次运行会重新编译，不会反复命中坏缓存。
+function instantiateWith(module, name) {
+  return (imports, receive) => {
+    WebAssembly.instantiate(module, imports)
+      .then((instance) => receive(instance, module))
+      .catch((error) => { void forgetCachedModule(name); console.error('C++ 工具链实例化失败', name, error); });
+    return {};
+  };
+}
+
 function logText(logs, level, text) {
   const clean = String(text || '').trimEnd();
   if (clean) logs.push({ level, text: clean });
@@ -88,16 +160,16 @@ export async function compileAndRunCpp(job = {}, { onPhase = null } = {}) {
 
   try {
     onPhase?.('loading-assets');
-    const [clangWasm, lldWasm, sysroot] = await Promise.all(['clang.wasm', 'lld.wasm', 'sysroot.tar'].map(async (name) => {
-      const response = await fetch(new URL(name, BROWSERCC_DIST), { credentials: 'omit', cache: 'force-cache' });
-      if (!response.ok) throw new Error(`工具链资源 ${name} 加载失败：HTTP ${response.status}`);
-      return response.arrayBuffer();
-    }));
+    const [clangModule, lldModule, sysroot] = await Promise.all([
+      loadWasmModule('clang.wasm'),
+      loadWasmModule('lld.wasm'),
+      fetchAsset('sysroot.tar'),
+    ]);
 
     const clang = await Clang({
       thisProgram: 'clang++',
       noExitRuntime: true,
-      wasmBinary: clangWasm,
+      instantiateWasm: instantiateWith(clangModule, 'clang.wasm'),
       printErr: diagnostics('clang'),
     });
     setUpSysroot(clang, sysroot);
@@ -137,7 +209,7 @@ export async function compileAndRunCpp(job = {}, { onPhase = null } = {}) {
 
     const lld = await LLD({
       thisProgram: 'wasm-ld',
-      wasmBinary: lldWasm,
+      instantiateWasm: instantiateWith(lldModule, 'lld.wasm'),
       printErr: diagnostics('lld'),
     });
     setUpSysroot(lld, sysroot);

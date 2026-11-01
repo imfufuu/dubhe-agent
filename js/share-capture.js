@@ -58,6 +58,7 @@ export async function captureShare(html, { signal, onPart, onStage } = {}) {
     await bounded(Promise.all([...doc.images].map((img) => img.decode?.().catch(() => {}) || Promise.resolve())));
     const root = doc.querySelector('.share-page'); const height = Math.ceil(root.getBoundingClientRect().height);
     const plan = capturePlan(760, height, window.devicePixelRatio); const parts = [];
+    onStage?.('plan', plan.length);
     for (const [i, part] of plan.entries()) {
       if (signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
       onStage?.(`part-${i + 1}`);
