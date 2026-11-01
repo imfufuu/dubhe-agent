@@ -234,7 +234,18 @@ test('docs hash router has a same-document transition path with an instant scrol
   const docs = read('../docs.html');
   assert.match(docs, /document\.startViewTransition\(function \(\) \{ mutate\(\); inVt = false; \}\)/);
   assert.match(docs, /window\.addEventListener\('hashchange',[\s\S]*?swapWithTransition/);
-  assert.match(docs, /behavior: inVt \? 'instant' : 'smooth'/);
+  assert.match(docs, /behavior: scroll === 'instant' \|\| inVt \? 'instant' : 'smooth'/);
   assert.match(pageFxCss, /::view-transition-old\(root\)/);
   assert.match(pageFxCss, /::view-transition-new\(root\)/);
+});
+
+test('docs anchors land at the start of the section body, not the page top', () => {
+  const docs = read('../docs.html');
+  // 落点 = 分区顶部（文档坐标）减去 sticky 导航与分区标签条的高度；不再滚动到 0（页面顶部的标题区）
+  assert.match(docs, /function bodyTop\(el\) \{[\s\S]*?y \+= n\.offsetTop[\s\S]*?offsetHeight[\s\S]*?return Math\.max\(0, y - off\);/);
+  assert.match(docs, /if \(scroll\) window\.scrollTo\(\{ top: bodyTop\(cur\)/);
+  assert.equal(/scrollTo\(\{ top: 0/.test(docs), false, '不应再滚动到页面顶部');
+  // 带锚点首次加载立即定位，并在 load 后重算一次（字体加载可能改变高度）
+  assert.match(docs, /show\(fromHash\(\), location\.hash \? 'instant' : false\);/);
+  assert.match(docs, /addEventListener\('load', function \(\) \{[\s\S]*?bodyTop\(document\.getElementById\('page-' \+ h\)\)/);
 });
