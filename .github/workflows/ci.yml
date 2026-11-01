@@ -108,6 +108,9 @@ jobs:
       - name: tests/teamorouter-pricing.test.mjs · TeamoRouter 折后价与音视频 / 视频生成计费分桶
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/teamorouter-pricing.test.mjs
+      - name: tests/pricing-docs.test.mjs · 文档价目表与生成器同步、覆盖 TeamoRouter 与全部官方网关
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/pricing-docs.test.mjs
       - name: tests/gguf.test.mjs · GGUF 元数据与内存估算
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/gguf.test.mjs
