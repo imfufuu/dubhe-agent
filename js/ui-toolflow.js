@@ -278,13 +278,13 @@ const HIDE_ROW_NAME = new Set(['generate_image', 'generate_video']);
 // 联网折叠行：行集合变化才整体重建；状态/结果原地更新，避免已展开的行重播入场动画。
 // 结果区是可平滑展开收起的折叠块（grid-rows 过渡，与 chip-detail 一致），展开状态按行保留。
 export function paintWebActivity(node, { rows, label, icon, labels, stateText, readFile }) {
-  const shape = JSON.stringify([label, rows.map((r) => [r.id, r.name, r.summary, r.videoPath ? 1 : 0])]);
+  const shape = JSON.stringify([label, rows.map((r) => [r.id, r.name, r.summary, r.videoPath ? 1 : 0, r.status === 'running' ? 1 : 0])]);
   node._openResults ||= new Set();
   if (node._webShape !== shape) {
     node._webShape = shape;
     node.innerHTML = `<span class="chip-ico think-ico">${icon}</span><span class="mono chip-name">${esc(label)}</span>`
       + `<div class="chip-detail"><div class="fold-inner"><ul>${rows.map((r) => `<li class="web-row" data-call="${esc(r.id)}">`
-      + (HIDE_ROW_NAME.has(r.name) ? '' : `<span class="web-name">${esc(labels[r.name]?.[0] || r.name)}</span>`)
+      + (HIDE_ROW_NAME.has(r.name) ? '' : `<span class="web-name">${esc(labels[r.name]?.[r.status === 'running' ? 1 : 0] || r.name)}</span>`)
       + `<span class="web-arg mono" title="${esc(r.summary)}">${esc(r.summary)}</span>`
       + `<span class="web-state"></span>`
       + (r.videoPath ? `<div class="web-video" data-path="${esc(r.videoPath)}"></div>` : '')
@@ -454,4 +454,10 @@ export function installChecklistPanel(store) {
     if (e.target.closest?.('[data-open-tasks]')) openTasksPanel();
   });
   paintChecklistPanel(latest());
+}
+
+// 探索类（读文件 / 分析）工具是否仍有未返回结果的调用：用于折叠标题的进行时（Exploring）。
+export function exploringInFlight(cluster, messages) {
+  const calls = (cluster || []).flatMap((x) => x.toolCalls || []);
+  return calls.some((c) => toolFamily(c) === 'explored' && !(messages || []).some((x) => x.role === 'tool' && String(x.toolCallId) === String(c.id)));
 }
