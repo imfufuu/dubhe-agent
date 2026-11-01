@@ -72,6 +72,9 @@ jobs:
       - name: tests/jev-feedback.test.mjs · Jev 决策反馈（上一轮上下文 / 回合结果回写）
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/jev-feedback.test.mjs
+      - name: tests/jev-thresholds-failover.test.mjs · Jev 阈值锁定 / 遥测信号 / 共用网关故障转移
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/jev-thresholds-failover.test.mjs
       - name: tests/i18n-packs.test.mjs · 语言包登记 / 覆盖 / 漏翻审计
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/i18n-packs.test.mjs

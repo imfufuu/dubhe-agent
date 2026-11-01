@@ -132,6 +132,6 @@ test('容量：超过 50 条后按最久未用淘汰', () => {
 test('agent.js 回合开始路径使用 3 秒上限', async () => {
   const fsp = await import('node:fs');
   const src = fsp.readFileSync(new URL('../js/agent.js', import.meta.url), 'utf8');
-  assert.match(src, /import \{ planTurn, JEV_PLAN_TIMEOUT_MS \} from '\.\/jev\.js';/);
+  assert.match(src, /import \{[^}]*\bplanTurn\b[^}]*\bJEV_PLAN_TIMEOUT_MS\b[^}]*\} from '\.\/jev\.js';/);
   assert.match(src, /attachments: lastUser && lastUser\.attachments,\s*timeoutMs: JEV_PLAN_TIMEOUT_MS,/);
 });

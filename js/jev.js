@@ -9,7 +9,7 @@
 // 本模块给「每一个」对话模型当 System-1：回合开始先做一次校准过的路由/难度判断，
 // 再把结论写进主模型的系统提示。Jev 失败必须 fail-open，不能挡对话。
 
-import { gatewayBase, setGatewayBase, otherGatewayBase, isNetworkError } from './endpoint.js';
+import { postWithGatewayFailover } from './endpoint.js';
 
 export const JEV_MODEL = 'jev-1.14.0';
 // 决策层可选版本（TeamoRouter 目录实测可用；1.13.0 保留给需要与旧版行为对照的场景）
@@ -104,24 +104,7 @@ export function confidenceOf(answers, key) {
 
 async function requestSystemOne(apiKey, body, signal) {
   const headers = { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' };
-  const payload = JSON.stringify(body);
-  const tryFetch = (url) => fetch(url, { method: 'POST', headers, body: payload, signal });
-  const base = gatewayBase();
-  try {
-    return await tryFetch(base + JEV_PATH);
-  } catch (err) {
-    if (signal && signal.aborted) throw err;
-    if (!isNetworkError(err)) throw err;
-    const alt = otherGatewayBase();
-    try {
-      const res = await tryFetch(alt + JEV_PATH);
-      setGatewayBase(alt, 'failover');
-      return res;
-    } catch (err2) {
-      if (signal && signal.aborted) throw err2;
-      throw err2;
-    }
-  }
+  return postWithGatewayFailover(JEV_PATH, { method: 'POST', headers, body: JSON.stringify(body), signal });
 }
 
 /**
@@ -207,6 +190,22 @@ export const TURN_QUESTIONS = {
 export const JEV_PREVIOUS_TEXT_MAX = 300;
 
 /**
+ * 决策层路由阈值（第 4 项）。数值与重构前的字面量逐一相同；调整前应先用遥测
+ * （L1-jev 层的 meta 记录了各项概率与难度）做回归，再改这里，不要散落修改。
+ */
+export const JEV_THRESHOLDS = Object.freeze({
+  chip: 0.55,          // 摘要标签：检索 / 沙箱 / 生图 / 委派 的显示门槛
+  searchStrong: 0.65,  // 强制提示先检索
+  searchWeak: 0.25,    // 大概率不需要检索
+  image: 0.6,          // 提示只在明确需要栅格画面时生图
+  codeStrong: 0.6,     // 建议写进沙箱执行
+  codeWeak: 0.25,      // 与委派一起判断「可以直接回答」
+  dispatchWeak: 0.3,   // 同上：不必为了委派而委派
+  dispatchStrong: 0.7, // 适合委派子智能体
+  difficultyHard: 4,   // 难度 ≥ 4 时提示先想清步骤
+});
+
+/**
  * 决策反馈（第 5 项）：把一轮的真实结果合并到触发它的用户消息的 jev 字段上。
  * 只追加 outcome，保留 summary / route 等已有字段；patch 里的布尔值覆盖旧值。
  */
@@ -252,16 +251,18 @@ export function summarizePlan(answers) {
   const dispatch = noulOf(answers, 'need_dispatch');
   const diff = scoreOf(answers, 'difficulty');
   const bits = [route];
-  if (search != null && search >= 0.55) bits.push('检索');
-  if (code != null && code >= 0.55) bits.push('沙箱');
-  if (image != null && image >= 0.55) bits.push('生图');
-  if (dispatch != null && dispatch >= 0.55) bits.push('委派');
+  const T = JEV_THRESHOLDS;
+  if (search != null && search >= T.chip) bits.push('检索');
+  if (code != null && code >= T.chip) bits.push('沙箱');
+  if (image != null && image >= T.chip) bits.push('生图');
+  if (dispatch != null && dispatch >= T.chip) bits.push('委派');
   if (diff != null) bits.push(`难度 ${Number(diff).toFixed(1).replace(/\.0$/, '')}`);
   return bits.join(' · ');
 }
 
 export function formatPlanNote(answers, { webEnabled, sandboxEnabled, thinking, reasoningLevel } = {}) {
   if (!answers) return '';
+  const T = JEV_THRESHOLDS;
   const route = choiceOf(answers, 'route') || 'chat';
   const conf = confidenceOf(answers, 'route');
   const search = noulOf(answers, 'need_search');
@@ -274,38 +275,55 @@ export function formatPlanNote(answers, { webEnabled, sandboxEnabled, thinking, 
     '【Jev 决策】下面是 TypeSafe Jev（System One）对本轮对话类型与工具路径的参考建议（对话类型仅为 Agent 提供策略建议，不限制输出 token 长度；思考等级仅决定思考深度；与用户开关冲突时，开关优先）：',
     `- 建议路径：${route}${conf != null ? `（置信 ${pct(conf)}）` : ''}；检索 ${pct(search)} · 代码 ${pct(code)} · 生图 ${pct(image)} · 委派 ${pct(dispatch)}${diff != null ? ` · 难度 ${Number(diff).toFixed(1)}/5` : ''}`,
   ];
-  if (route === 'search' || (search != null && search >= 0.65)) {
+  if (route === 'search' || (search != null && search >= T.searchStrong)) {
     if (webEnabled !== false) {
       lines.push('- 本题需要实时事实：工具表提供 search_web 时先检索；需要核对来源时用 fetch_url，长文档可用 crawl_site 限量抓取。无相应工具或没抓到就不要说「已联网」。');
     } else {
       lines.push('- 本题需要实时事实，但用户关了联网：明确说无法核实，不要用记忆里的数字冒充刚查到的。');
     }
-  } else if (search != null && search < 0.25 && webEnabled !== false) {
+  } else if (search != null && search < T.searchWeak && webEnabled !== false) {
     lines.push('- 本题大概率不需要实时检索。不要为了检索而检索；没有新事实要核实时直接答。');
   }
-  if (route === 'image' || (image != null && image >= 0.6)) {
+  if (route === 'image' || (image != null && image >= T.image)) {
     lines.push('- 只有用户要照片/插画/海报/图标等栅格画面时才调用 generate_image；统计图、物理关系图、流程图、思维导图、架构图必须用 SVG / Mermaid / DOT / :::chart / :::flow / :::mind，禁止走生图模型。');
   }
-  if (code != null && code >= 0.6) {
+  if (code != null && code >= T.codeStrong) {
     lines.push(sandboxEnabled === false
       ? '- 本题适合跑代码，但沙箱关着：不要假装执行，说明需要打开沙箱，或改用不可执行的推理。'
       : '- 涉及计算/验证：建议写进沙箱执行，不要口算。');
-  } else if (route === 'chat' && (code == null || code < 0.25) && (dispatch == null || dispatch < 0.3)) {
+  } else if (route === 'chat' && (code == null || code < T.codeWeak) && (dispatch == null || dispatch < T.dispatchWeak)) {
     lines.push('- 本题可以直接回答。建议不用为了用工具而用工具，也不要无故委派。');
   }
   const lv = String(reasoningLevel || 'medium').toLowerCase();
   const canDispatch = thinking !== false && (lv === 'max' || lv === 'ultra');
-  if (dispatch != null && dispatch >= 0.7) {
+  if (dispatch != null && dispatch >= T.dispatchStrong) {
     lines.push(canDispatch
       ? (lv === 'ultra'
         ? '- 本题适合委派：Ultra 下建议并行派出相关专家，收齐后交叉核对再交，不要只派一个就停。'
         : '- 本题适合委派子智能体：建议主动 dispatch_subagent，task 必须自包含。')
       : '- 本题适合专业视角，但当前思考级别未到 Max/Ultra，不能委派；请你自己直接做。');
   }
-  if (diff != null && diff >= 4) {
+  if (diff != null && diff >= T.difficultyHard) {
     lines.push('- 高难度：先在内部想清步骤；互不依赖的工具建议在同一轮并行发出。');
   }
   return lines.join('\n');
+}
+
+/** 遥测用的决策信号（第 4 项：用于回归与校准阈值）。只保留数值，不含用户文本。 */
+export function planSignals(plan) {
+  if (!plan || !plan.ok) return { ok: false, reason: plan && plan.reason || 'none' };
+  const r2 = (v) => (v == null ? null : Math.round(Number(v) * 100) / 100);
+  return {
+    ok: true,
+    route: plan.route || null,
+    routeConfidence: r2(plan.routeConfidence),
+    needSearch: r2(plan.needSearch),
+    needCode: r2(plan.needCode),
+    needImage: r2(plan.needImage),
+    needDispatch: r2(plan.needDispatch),
+    difficulty: r2(plan.difficulty),
+    cached: !!plan.cached,
+  };
 }
 
 export async function planTurn({ apiKey, text, model, settings, attachments, previous, signal, timeoutMs, now = Date.now() } = {}) {

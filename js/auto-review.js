@@ -5,7 +5,7 @@
 // 只能「拦截」「放行免弹窗」或「转交人工」，绝不能在任何失败时静默放行（fail-closed → ask）。
 // 隐藏模型：不在 /v1/models 列表，也不进入模型选择器；计价未公开，界面不得估价。
 
-import { gatewayBase } from './endpoint.js';
+import { postWithGatewayFailover } from './endpoint.js';
 import { DEFAULT_GATEWAY_ID } from './gateway-registry.js?v=2026.10.25.1';
 
 export const AUTO_REVIEW_MODEL = 'codex-auto-review';
@@ -112,7 +112,7 @@ export function parseReviewVerdict(text) {
  * 网络、HTTP、超时、解析失败一律返回 outcome:'ask'（ok:false），由调用方转交人工确认。
  * 用户主动中止会把 AbortError 抛出去。
  */
-export async function reviewToolCall({ apiKey, call, risk, userRequest = '', signal, timeoutMs = AUTO_REVIEW_TIMEOUT_MS, fetchImpl = fetch, base = null } = {}) {
+export async function reviewToolCall({ apiKey, call, risk, userRequest = '', signal, timeoutMs = AUTO_REVIEW_TIMEOUT_MS, fetchImpl = fetch, base = null, fallback = null } = {}) {
   if (!apiKey) return { ok: false, outcome: 'ask', reason: 'no-key' };
   const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
   const timer = setTimeout(() => ctrl && ctrl.abort(), Math.max(1000, Number(timeoutMs) || AUTO_REVIEW_TIMEOUT_MS));
@@ -123,8 +123,7 @@ export async function reviewToolCall({ apiKey, call, risk, userRequest = '', sig
   }
   const t0 = Date.now();
   try {
-    const url = (base || gatewayBase()) + AUTO_REVIEW_PATH;
-    const res = await fetchImpl(url, {
+    const res = await postWithGatewayFailover(AUTO_REVIEW_PATH, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -133,7 +132,7 @@ export async function reviewToolCall({ apiKey, call, risk, userRequest = '', sig
       },
       body: JSON.stringify(buildReviewBody({ call, risk, userRequest })),
       signal: ctrl ? ctrl.signal : signal,
-    });
+    }, { fetchImpl, base, fallback });
     if (!res.ok) return { ok: false, outcome: 'ask', reason: 'http', status: res.status, latencyMs: Date.now() - t0 };
     const json = await res.json().catch(() => null);
     const verdict = parseReviewVerdict(extractResponseText(json));

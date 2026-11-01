@@ -30,7 +30,7 @@ import { compactMessages, contextBudgetFor } from './context.js';
 import { subagentGuide, specialistPrompt } from './subagents.js';
 import { TOOL_LOOP_MAX, SUBAGENT_LOOP_MAX, systemPrompt, OUTPUT_SPEC, outputSpec, compactOutputSpec, DEFAULT_IMAGE_MODEL, SMART_ROUTER_ID, FALLBACK_MODELS, resolveModelAlias } from './config.js?v=2026.10.25.1';
 import { routeModel, isSmartRouter } from './smartrouter.js?v=2026.10.25.1';
-import { planTurn, JEV_PLAN_TIMEOUT_MS } from './jev.js';
+import { planTurn, planSignals, JEV_PLAN_TIMEOUT_MS } from './jev.js';
 import { markJevOutcome, markLastUserOutcome, turnContext } from './jev-feedback.js';
 import { assembleSystemLayers, formatRuntime, formatBudgetNote } from './prompt.js';
 import { formatSkillsIndex, selectSkillBodies, distillSkill, rememberSkill, pruneLearnedSkillsWithReport } from './skills.js';
@@ -1004,7 +1004,7 @@ export function createAgent(store, hooks = {}) {
             timeoutMs: JEV_PLAN_TIMEOUT_MS,
             previous: tc.previous,
           });
-          telemetry.recordLayer('L1-jev', Date.now() - jevT0);
+          telemetry.recordLayer('L1-jev', Date.now() - jevT0, planSignals(plan));
           if (plan && plan.ok && plan.note) {
             turnPlan = plan;
             jevNote = '\n\n' + plan.note;
