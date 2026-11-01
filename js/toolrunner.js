@@ -22,6 +22,7 @@ import { buildCheckpoint, diffFileState, digestArtifact } from './recovery.js?v=
 import { operationKey, planReplay, digestResultText } from './idempotency.js?v=2026.10.25.1';
 import { toolName } from './executionContext.js?v=2026.10.25.1';
 import { skillToolsFromResult } from './skill-library.js';
+import { shouldAutoReview, reviewToolCall } from './auto-review.js';
 import { toolDefinitionFromResult } from './tool-catalog.js';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -542,11 +543,44 @@ export function createToolRunner({ store, emit, getFs, runSubagent } = {}) {
         return `⛔ ${call.name} 的授权已被用户撤销，本次未执行。请说明目的并请用户重新授权后再试。`;
       }
 
+      // ②d 自动审批（codex-auto-review，L2/L3）：先由独立审批模型裁决，再决定要不要人工确认。
+      //   deny  → 直接拦截（可在设置中关闭该层）；
+      //   allow → 放行并跳过人工确认弹窗；
+      //   ask / 审核不可用 → 强制落回下面的人工确认（fail-closed，即使生效档位为 observe）。
+      let autoReviewAllowed = false;
+      let autoReviewForcesConfirm = false;
+      const sessionAllowedNow = approval === 'allow-session' || exec.confirmGate.isSessionAllowed(call.name);
+      if (shouldAutoReview({ enabled: store.state.settings.autoReview !== false, gatewayId: turn.gatewayId, risk, sessionAllowed: sessionAllowedNow })) {
+        const lastUser = [...store.state.messages].reverse().find((m) => m.role === 'user');
+        const review = await reviewToolCall({ apiKey: turn.apiKey, call, risk, userRequest: lastUser ? lastUser.text : '', signal: turn.signal });
+        exec.machine.audit.record('auto-review', {
+          name: call.name, outcome: review.outcome, riskLevel: review.riskLevel || risk.level,
+          userAuthorization: review.userAuthorization || 'unknown', ok: !!review.ok, reason: review.reason || '',
+          latencyMs: review.latencyMs,
+        });
+        if (review.outcome === 'deny') {
+          recordBlocked(call, {
+            reason: `自动审批拒绝：${review.rationale || '未给出理由'}`,
+            failure: { kind: 'PERMISSION', label: '自动审批拒绝', handling: '不执行：审批层判定为不应执行', retryable: false, maxRetries: 0, verifyFirst: false, guidance: '不要重试同一操作；换用更安全的方式，或请用户明确授权。' },
+            risk, idempotencyKey: pre.idempotencyKey, notes: ['auto-review-deny'],
+          });
+          return `⛔ 自动审批拒绝了 ${call.name}：${review.rationale || '未给出理由'}。本次未执行，请不要重复同一操作；如确需执行，请先征得用户明确授权。`;
+        }
+        if (review.outcome === 'allow') {
+          autoReviewAllowed = true;
+          risk.autoReviewed = 'allow';
+        } else {
+          autoReviewForcesConfirm = true;
+        }
+      }
+
       // ③ 交互确认（P1/P2）：L2/L3 按生效档位停下来等用户决定；无人应答或超时一律按拒绝（fail-closed）
       // 生效档位可能来自策略实验变体（未开灰度时等于用户设置，行为不变）
       const guardMode = exec.effectiveGuard || 'observe';
       const sessionAllowedBySettings = approval === 'allow-session';
-      if (guardRequiresConfirmation({ guard: guardMode, risk }) && !sessionAllowedBySettings && !exec.confirmGate.isSessionAllowed(call.name)) {
+      const needHumanConfirm = !autoReviewAllowed
+        && (autoReviewForcesConfirm || guardRequiresConfirmation({ guard: guardMode, risk }));
+      if (needHumanConfirm && !sessionAllowedBySettings && !exec.confirmGate.isSessionAllowed(call.name)) {
         const request = formatConfirmationRequest({
           name: call.name, args: call.args,
           reason: risk.reasons[0] || '', impact: undefined,

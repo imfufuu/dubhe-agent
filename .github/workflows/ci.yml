@@ -63,6 +63,9 @@ jobs:
       - name: tests/md-fx.test.mjs · 排版扩展（渐变 / 动效 / 微交互）与懒加载字体筛选
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/md-fx.test.mjs
+      - name: tests/auto-review.test.mjs · 自动审批层（codex-auto-review）触发 / 请求 / 失败回落
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/auto-review.test.mjs
       - name: tests/i18n-packs.test.mjs · 语言包登记 / 覆盖 / 漏翻审计
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/i18n-packs.test.mjs

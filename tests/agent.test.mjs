@@ -22,7 +22,8 @@ import { knowledgeTokens, searchKnowledge } from '../js/knowledge.js';
 // /v1/chat/completions 与 /v1/messages 两条端点的解析与循环 —— 统一关掉联网，避免无关路由变化。
 // Worker 搜索/爬取路由与旧服务端事件兼容性分别有独立用例。
 // 单测默认关掉联网与 Jev：Jev 会先打 /v1/systemone，否则会吃掉 mock 队列里给聊天用的那一格。
-const storeNoWeb = (st) => { st.state.settings.webEnabled = false; st.state.settings.jevEnabled = false; return st; };
+// autoReview 关闭：本文件用例只验证工具循环本身；审批层的请求与分支由 tests/auto-review.test.mjs 专门覆盖。
+const storeNoWeb = (st) => { st.state.settings.webEnabled = false; st.state.settings.jevEnabled = false; st.state.settings.autoReview = false; return st; };
 
 // 排空上一用例遗留的持久化防抖定时器（state.save 用 300ms setTimeout），
 // 避免它的写入串进下一个用例的 localStorage 桩
@@ -3773,7 +3774,7 @@ test('有中继但关掉联网时不提供 fetch_url，run_git 仍在', async ()
     const store = createStore();
     store.state.apiKey = 'sk-teamo-test';
     store.state.model = 'gpt-5.6-sol';
-    store.state.settings.webEnabled = false;
+    store.state.settings.webEnabled = false; store.state.settings.autoReview = false;
     store.state.settings.jevEnabled = false;
     store.state.relayOk = true;
     const agent = createAgent(store, {});
@@ -3790,7 +3791,7 @@ test('有中继且打开联网时提供 fetch_url', async () => {
     const store = createStore();
     store.state.apiKey = 'sk-teamo-test';
     store.state.model = 'gpt-5.6-sol';
-    store.state.settings.webEnabled = true;
+    store.state.settings.webEnabled = true; store.state.settings.autoReview = false;
     store.state.settings.jevEnabled = false;
     store.state.relayOk = true;
     const agent = createAgent(store, {});
@@ -3837,7 +3838,7 @@ test('初次 Worker 探测未完成时，回合等待真实结果而不乐观开
     const store = createStore();
     store.state.apiKey = 'sk-teamo-test';
     store.state.model = 'gpt-5.6-sol';
-    store.state.settings.webEnabled = true;
+    store.state.settings.webEnabled = true; store.state.settings.autoReview = false;
     store.state.settings.jevEnabled = false;
     store.state.relayOk = null;
     const agent = createAgent(store, { onRelayStatus: (ok, meta) => relayEvents.push({ ok, meta }) });
@@ -3869,7 +3870,7 @@ test('启动期误判离线时，实际可用的 Cloudflare Worker 会在联网�
     const store = createStore();
     store.state.apiKey = 'sk-teamo-test';
     store.state.model = 'gpt-5.6-sol';
-    store.state.settings.webEnabled = true;
+    store.state.settings.webEnabled = true; store.state.settings.autoReview = false;
     store.state.settings.jevEnabled = false;
     store.state.relayOk = false; // 启动期可能误判；公开 Worker 实际可用
     const agent = createAgent(store, { onRelayStatus: (ok, meta) => relayEvents.push({ ok, meta }) });
@@ -4058,7 +4059,7 @@ test('Agent 回合：联网来源写进消息（切会话后还在），提示�
     const store = createStore();
     store.state.apiKey = 'sk-teamo-test';
     store.state.model = 'claude-sonnet-5';
-    store.state.settings.webEnabled = true;
+    store.state.settings.webEnabled = true; store.state.settings.autoReview = false;
     store.state.settings.jevEnabled = false;
     const agent = createAgent(store, { onWebSearch: (m, w) => { seen = w; } });
     await agent.send('今天有什么新闻');
@@ -4068,7 +4069,7 @@ test('Agent 回合：联网来源写进消息（切会话后还在），提示�
     const sys = calls[0].body.system || calls[0].body.messages[0].content;
     assert.match(sys, /fetch_url|本地中继/);
     // 关掉联网后必须换成「别声称能联网」的说法
-    store.state.settings.webEnabled = false;
+    store.state.settings.webEnabled = false; store.state.settings.autoReview = false;
     await agent.send('再来一轮');
     const sys2 = calls[1].body.system || calls[1].body.messages[0].content;
     assert.match(sys2, /未联网|无法核实/);
@@ -4355,7 +4356,7 @@ test('Agent：Jev 结论写入系统提示；失败时对话照常', async () =>
     const store = createStore();
     store.state.apiKey = 'sk-teamo-test';
     store.state.model = 'gpt-5.6-sol';
-    store.state.settings.webEnabled = false;
+    store.state.settings.webEnabled = false; store.state.settings.autoReview = false;
     store.state.settings.jevEnabled = true;
     const agent = createAgent(store, {});
     await agent.send('你好');
@@ -4377,7 +4378,7 @@ test('Agent：Jev 挂了不能挡住聊天（fail-open）', async () => {
     const store = createStore();
     store.state.apiKey = 'sk-teamo-test';
     store.state.model = 'gpt-5.6-sol';
-    store.state.settings.webEnabled = false;
+    store.state.settings.webEnabled = false; store.state.settings.autoReview = false;
     store.state.settings.jevEnabled = true;
     const agent = createAgent(store, {});
     await agent.send('还在吗');
@@ -9612,8 +9613,9 @@ test('端到端：连抓 5 页后第 6 轮请求的 system 里有「外部副作
     const store = createStore();
     store.state.apiKey = 'sk-teamo-test';
     store.state.model = 'gpt-5.6-sol';
-    store.state.settings.webEnabled = true;
+    store.state.settings.webEnabled = true; store.state.settings.autoReview = false;
     store.state.settings.jevEnabled = false;
+    store.state.settings.autoReview = false; // 本用例只验证预算账本；审批层见 auto-review.test.mjs
     // 本用例验证「额度耗尽」的拦截链路，显式把预算钉在 6，不依赖默认值
     store.state.settings.executionBudget = { maxExternalSideEffects: 6, maxToolCalls: 32 };
     store.state.relayOk = true;
@@ -9809,7 +9811,7 @@ test('端到端：fetch_url 落盘的 internal/web/*.md 在回答完全没提到
     const store = createStore();
     store.state.apiKey = 'sk-teamo-test';
     store.state.model = 'gpt-5.6-sol';
-    store.state.settings.webEnabled = true;
+    store.state.settings.webEnabled = true; store.state.settings.autoReview = false;
     store.state.settings.jevEnabled = false;
     store.state.relayOk = true;
     const agent = createAgent(store, {});
@@ -9989,7 +9991,7 @@ test('端到端：思考 Off + 中继离线时，agent.previewToolTable().allowe
     store.state.apiKey = 'sk-teamo-test';
     store.state.model = 'gpt-5.6-sol';
     store.state.relayOk = false;
-    store.state.settings.webEnabled = true;
+    store.state.settings.webEnabled = true; store.state.settings.autoReview = false;
     store.state.settings.thinking = false;
     store.state.settings.localCppEnabled = false;
     const agent = createAgent(store, {});
@@ -10043,7 +10045,7 @@ test('端到端：中继在线但只声明 fetch/search 时，【联网】段列
     const store = createStore();
     store.state.apiKey = 'sk-teamo-test';
     store.state.model = 'gpt-5.6-sol';
-    store.state.settings.webEnabled = true;
+    store.state.settings.webEnabled = true; store.state.settings.autoReview = false;
     store.state.settings.jevEnabled = false;
     store.state.relayOk = true;
     assert.equal(await net.relayAvailable(), true, '先真实探测一次，让 relaySupports 记住 health.capabilities');
@@ -10311,7 +10313,7 @@ test('P6 验收：三类典型消息的请求体 tools.length 中位数 ≤ 18�
       const store = createStore();
       store.state.apiKey = 'sk-teamo-test';
       store.state.model = 'gpt-5.6-sol';
-      store.state.settings.webEnabled = true;
+      store.state.settings.webEnabled = true; store.state.settings.autoReview = false;
       store.state.settings.jevEnabled = false;
       store.state.settings.thinking = true;
       store.state.settings.reasoningLevel = 'max';
@@ -10855,7 +10857,7 @@ test('relayAvailable：health 先 500 后 200 → 失败缓存 60s 内不再探�
     assert.equal(net.relaySupports('search'), true);
     // 恢复后：工具表重新包含 search_web（UI 侧把事件写回 store.state.relayOk，再预演同一条消息）
     const store = createStore();
-    store.state.apiKey = 'sk-teamo-test'; store.state.settings.webEnabled = true; store.state.relayOk = events.at(-1).ok;
+    store.state.apiKey = 'sk-teamo-test'; store.state.settings.webEnabled = true; store.state.settings.autoReview = false; store.state.relayOk = events.at(-1).ok;
     const agent = createAgent(store, {});
     const pv = agent.previewToolTable({ text: '搜一下今天的新闻' });
     assert.ok(pv.mounted.includes('search_web'), `恢复后应挂载 search_web，实际 ${pv.mounted.join(',')}`);
