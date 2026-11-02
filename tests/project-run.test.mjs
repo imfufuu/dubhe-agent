@@ -97,7 +97,9 @@ test('project mode wiring: run uses the existing sandbox runners and commits pro
   const src = readFileSync(new URL('../js/project-mode.js', import.meta.url), 'utf8');
   assert.match(src, /runJavaScript\(code, fsObj/);
   assert.match(src, /runPython\(code, fsObj/);
-  assert.match(src, /runCpp\(code, \{ mainPath: path/);
+  // 运行 C++ 时同时接入阶段 / 下载进度回调（进度条），主文件路径仍由 mainPath 传入
+  assert.match(src, /runCpp\(code, \{\s*mainPath: path/);
+  assert.match(src, /onProgress: \(p\) =>/);
   assert.match(src, /agent\.sandboxCommit\(\)/);
   const store = { state: { files: {} }, notify() {}, save() {} };
   const agent = createAgent(store, {});

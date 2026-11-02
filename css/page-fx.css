@@ -80,3 +80,7 @@ html.fx-leaving { cursor: progress; }
 html[data-motion="off"] .page-veil { display: none; }
 html[data-motion="off"]::view-transition-old(root), html[data-motion="off"]::view-transition-new(root) { animation: none; }
 html[data-motion="off"].fx-leaving::before, html[data-motion="off"].fx-entering::before { animation: none; opacity: 0; }
+
+/* 第 5 项：触屏 / 部分桌面浏览器按下控件时，默认会画一块半透明灰色点击高亮（rgba(0,0,0,.18)），
+   表现为「按下后短暂出现灰底」。全站可点控件统一关闭；按下反馈由各控件自己的 :active 颜色与位移承担。 */
+*, *::before, *::after { -webkit-tap-highlight-color: transparent; }

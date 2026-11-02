@@ -76,6 +76,13 @@ export function openProjectMode({ store, agent }) {
   const outSum = h('div', { class: 'pm-out-sum' });
   const outProbs = h('div', { class: 'pm-probs' });
   const outLines = h('div', { class: 'pm-out-lines', role: 'log', 'aria-live': 'polite' });
+  // 运行进度条：C++ 首次加载工具链（约 30 MB）与编译阶段都在这里显示；阶段未知时为循环的不确定条
+  const outProgLabel = h('span', { class: 'pm-prog-label' });
+  const outProgFill = h('i', { class: 'pm-prog-fill' });
+  const outProgress = h('div', { class: 'pm-progress', hidden: true, role: 'status', 'aria-label': T('运行进度', 'Run progress') }, [
+    h('div', { class: 'pm-prog-track' }, [outProgFill]),
+    outProgLabel,
+  ]);
   const outPanel = h('section', { class: 'pm-out', hidden: true, 'aria-label': T('输出与问题', 'Output and problems') }, [
     h('div', { class: 'pm-out-head' }, [
       h('span', { class: 'pm-out-title' }, T('输出 · 问题', 'OUTPUT · PROBLEMS')),
@@ -83,7 +90,7 @@ export function openProjectMode({ store, agent }) {
       h('button', { type: 'button', class: 'pm-mini', title: T('清空', 'Clear'), 'aria-label': T('清空输出', 'Clear output'), onclick: () => clearOutput() }, '⌫'),
       h('button', { type: 'button', class: 'pm-mini', title: T('隐藏', 'Hide'), 'aria-label': T('隐藏输出', 'Hide output'), onclick: () => setOutOpen(false) }, '×'),
     ]),
-    h('div', { class: 'pm-out-body' }, [outSum, outProbs, outLines]),
+    h('div', { class: 'pm-out-body' }, [outProgress, outSum, outProbs, outLines]),
   ]);
 
   const aiStatus = h('span', { class: 'pm-ai-status' });
@@ -567,7 +574,28 @@ export function openProjectMode({ store, agent }) {
     btnStop.hidden = !running;
   }
 
+  // fraction < 0 表示阶段未知（不确定条）；0..1 为确定进度
+  function setProgress(text, fraction = -1) {
+    outProgress.hidden = false;
+    outProgLabel.textContent = String(text || '');
+    outProgress.classList.toggle('indeterminate', !(fraction >= 0));
+    outProgFill.style.width = fraction >= 0 ? `${Math.round(Math.min(1, fraction) * 1000) / 10}%` : '';
+  }
+  function hideProgress() {
+    outProgress.hidden = true;
+    outProgress.classList.remove('indeterminate');
+    outProgFill.style.width = '';
+  }
+  const CPP_PHASE_TEXT = {
+    bootstrap: () => T('启动本地 C++ Worker…', 'Starting local C++ worker…'),
+    executing: () => T('加载本地 C++ 工具链…', 'Loading local C++ toolchain…'),
+    'loading-assets': () => T('按需加载本站 C++ 工具链（首次约 30 MB）…', 'Loading the C++ toolchain (about 30 MB on first run)…'),
+    compiling: () => T('Clang / LLD 编译与链接中…', 'Compiling and linking with Clang / LLD…'),
+    'program-start': () => T('WASI 程序执行中…', 'Running the WASI program…'),
+  };
+
   function clearOutput() {
+    hideProgress();
     state.diags = [];
     outLines.replaceChildren();
     outProbs.replaceChildren();
@@ -662,13 +690,25 @@ export function openProjectMode({ store, agent }) {
           if (typeof p === 'string') outSum.textContent = `${RUNNER_LABEL[lang]} · ${p}`;
         }, [], { signal: controller.signal, onOutput: onLog });
       } else {
-        out = await runCpp(code, { mainPath: path, files: cppSources(files(), path), signal: controller.signal });
+        out = await runCpp(code, {
+          mainPath: path, files: cppSources(files(), path), signal: controller.signal,
+          onPhase: (phase) => { if (CPP_PHASE_TEXT[phase]) setProgress(CPP_PHASE_TEXT[phase](), -1); },
+          onProgress: (p) => {
+            const total = Number(p?.total) || 0;
+            const loaded = Math.min(Number(p?.loaded) || 0, total || Number(p?.loaded) || 0);
+            const mb = (n) => (n / 1048576).toFixed(1);
+            if (!(total > 0)) { setProgress(T(`下载工具链…（已 ${mb(loaded)} MB）`, `Downloading toolchain… (${mb(loaded)} MB)`), -1); return; }
+            const fraction = Math.min(1, loaded / total);
+            setProgress(T(`下载工具链 ${Math.round(fraction * 100)}%（${mb(loaded)} / ${mb(total)} MB）`, `Downloading toolchain ${Math.round(fraction * 100)}% (${mb(loaded)} / ${mb(total)} MB)`), fraction);
+          },
+        });
       }
     } catch (err) {
       out = { ok: false, logs: [], error: { message: String(err?.message || err) } };
     }
     state.controller = null;
     setRunning(false);
+    hideProgress();
     // 运行器可能写出了文件（回写到 fsObj）：同步到 store，侧栏与 Agent 随之可见
     try { agent.sandboxCommit(); } catch { /* 同步失败不影响输出 */ }
     state.lastSnap = null;
@@ -736,9 +776,14 @@ export function openProjectMode({ store, agent }) {
 
 /** 侧栏「项目」按钮。 */
 export function installProjectEntry({ store, agent, doc = document }) {
-  const button = doc.getElementById('open-project');
-  if (!button || button.dataset.bound === '1') return false;
-  button.dataset.bound = '1';
-  button.addEventListener('click', () => openProjectMode({ store, agent }));
-  return true;
+  // 两个入口：顶栏「项目」按钮（主入口，始终可见）与沙箱面板里的图标按钮；同一个打开逻辑，各自只绑定一次
+  let bound = false;
+  for (const id of ['project-toggle', 'open-project']) {
+    const button = doc.getElementById(id);
+    if (!button || button.dataset.bound === '1') continue;
+    button.dataset.bound = '1';
+    button.addEventListener('click', () => openProjectMode({ store, agent }));
+    bound = true;
+  }
+  return bound;
 }

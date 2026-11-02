@@ -1,3 +1,4 @@
+import { copyText } from './copy-text.js';
 import { staticPreviewDocument } from './file-preview.js?v=2026.10.25.1';
 import { sandboxProject, sandboxBrowserRequest, probeLocalBrowser } from './localbrowser.js?v=2026.10.25.1';
 // Dubhe Agent · 侧栏沙箱文件面板（从 ui.js 的 mountUI 拆出，V1.7.1）
@@ -299,7 +300,7 @@ export function installFilesPanel({ store, agent, toast, fmtSize, highlightCode,
           + `<span class="ft-actions"><button class="files-icon-btn file-dl" type="button" title="${localeText('下载此文件', 'Download file')}" aria-label="${localeText('下载此文件', 'Download file')}">${ICON.download}</button><button class="files-icon-btn ft-copy" type="button" title="${localeText('复制文件名', 'Copy file name')}" aria-label="${localeText('复制文件名', 'Copy file name')}">${ICON.copy}</button></span>`;
         $('.ft-copy', row).addEventListener('click', (e) => {
           e.stopPropagation();
-          navigator.clipboard.writeText(r.name).then(() => toast(localeText('已复制文件名', 'File name copied'), 'ok', 1200), () => toast(localeText('复制失败：浏览器拒绝了剪贴板权限', 'Copy failed: clipboard permission was denied'), 'err'));
+          copyText(r.name).then((ok) => (ok ? toast(localeText('已复制文件名', 'File name copied'), 'ok', 1200) : toast(localeText('复制失败：浏览器拒绝了剪贴板权限', 'Copy failed: clipboard permission was denied'), 'err')));
         });
         $('.file-dl', row).addEventListener('click', (e) => { e.stopPropagation(); downloadFile(r.path); });
         row.addEventListener('click', () => openFileViewer(r.path));

@@ -115,6 +115,7 @@ test('project mode is wired: entry button, main.js install call, and CSS', () =>
   const main = readFileSync(new URL('../js/main.js', import.meta.url), 'utf8');
   const css = readFileSync(new URL('../css/styles.css', import.meta.url), 'utf8');
   assert.match(html, /id="open-project"/);
+  assert.match(html, /id="project-toggle"/);
   assert.match(main, /installProjectEntry\(\{ store, agent \}\)/);
   assert.match(css, /\.pm-root \{/);
 });

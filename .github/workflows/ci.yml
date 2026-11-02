@@ -75,6 +75,12 @@ jobs:
       - name: tests/project-ai.test.mjs · 项目模式 AI 辅助提示词
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/project-ai.test.mjs
+      - name: tests/copy-text.test.mjs · 复制降级路径（非安全上下文 / 权限拒绝）
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/copy-text.test.mjs
+      - name: tests/ui-polish-fixes.test.mjs · 项目入口 / 菜单配色 / C++ 进度 / 点击灰底
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/ui-polish-fixes.test.mjs
       - name: tests/project-run.test.mjs · 项目模式运行 / 报错定位
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/project-run.test.mjs

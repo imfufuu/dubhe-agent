@@ -352,7 +352,7 @@ html { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
 
 .dd-menu {
   position: fixed; z-index: 60; /* fixed 脱离侧栏 overflow:hidden 裁剪，left/top/width 由 JS 按按钮位置设置 */
-  background: var(--bg); border: 1px solid var(--line); border-radius: 12px;
+  background: var(--conversation-card); border: 1px solid var(--conversation-line); border-radius: 12px;
   box-shadow: var(--shadow-lg); max-height: min(360px, 52vh); overflow: hidden auto; /* .34：矮一点，别遮住半屏对话 */
   /* 全局气泡弹入（见动效层 --pop-*）：从按钮下沿冒出来，收起时快速淡出 */
   opacity: 0; transform: translate3d(0, -14px, 0) scale(var(--pop-scale, .78)); transform-origin: top left; pointer-events: none;
@@ -364,7 +364,7 @@ html { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
   transition: opacity .2s ease-out, transform var(--pop-dur) var(--pop-ease), visibility 0s;
 }
 /* 搜索框固定在菜单顶部；层级显式高于分组标题（模型系列图标层在其之下）*/
-.dd-search-wrap { position: sticky; top: 0; z-index: 3; background: var(--bg); padding: 10px; border-bottom: 1px solid var(--line); }
+.dd-search-wrap { position: sticky; top: 0; z-index: 3; background: var(--conversation-card); padding: 10px; border-bottom: 1px solid var(--conversation-line); }
 .dd-search { width: 100%; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg-soft); color: var(--fg); outline: none; transition: border-color .2s; }
 .dd-search:focus { border-color: var(--fg-3); }
 .dd-group { padding: 4px 0; }
@@ -3462,10 +3462,20 @@ html:lang(de) .tok-row > span { min-width: 0; overflow-wrap: anywhere; }
 .pm-mark.note { background: var(--fg-3); }
 
 html[data-motion="off"] .pm-root, html[data-motion="off"] .pm-ai, html[data-motion="off"] .pm-out, html[data-motion="off"] .pm-empty, html[data-motion="off"] .pm-st-msg, html[data-motion="off"] .pm-tree-row.create, html[data-motion="off"] .pm-ai-status.busy { animation: none !important; }
+html[data-motion="off"] .pm-progress.indeterminate .pm-prog-fill { animation: none !important; }
+.pm-progress { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; animation: pmRise .25s var(--ease-out) both; }
+.pm-progress[hidden] { display: none; }
+.pm-prog-track { position: relative; height: 4px; border-radius: 999px; background: var(--conversation-line); overflow: hidden; }
+.pm-prog-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; border-radius: 999px; background: var(--fg); transition: width .25s var(--ease); }
+.pm-progress.indeterminate .pm-prog-fill { width: 34% !important; animation: pmSweep 1.2s var(--ease) infinite; }
+.pm-prog-label { color: var(--fg-2); font-size: 12px; }
+@keyframes pmSweep { from { transform: translateX(-110%); } to { transform: translateX(300%); } }
+
 @media (max-width: 900px) { .pm-ai { width: 260px; flex-basis: 260px; } }
 @media (max-width: 720px) { .pm-explorer { width: 170px; flex-basis: 170px; } .pm-ai { display: none; } .pm-status { display: none; } }
 @media (prefers-reduced-motion: reduce) {
   html:not([data-motion="on"]) .pm-root, html:not([data-motion="on"]) .pm-ai, html:not([data-motion="on"]) .pm-out, html:not([data-motion="on"]) .pm-empty, html:not([data-motion="on"]) .pm-st-msg, html:not([data-motion="on"]) .pm-tree-row.create, html:not([data-motion="on"]) .pm-ai-status.busy { animation: none !important; }
+  html:not([data-motion="on"]) .pm-progress.indeterminate .pm-prog-fill { animation: none !important; }
   html:not([data-motion="on"]) .pm-root.pm-leaving { transition: none; }
   html:not([data-motion="on"]) .pm-btn, html:not([data-motion="on"]) .pm-chip, html:not([data-motion="on"]) .pm-tab, html:not([data-motion="on"]) .pm-tree-row, html:not([data-motion="on"]) .pm-mini { transition: none !important; transform: none !important; }
 }
