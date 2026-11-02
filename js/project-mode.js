@@ -3,12 +3,13 @@
 // 文件直接读写永久沙箱（agent.sandboxWrite / sandboxRemove），侧栏与 Agent 看到的是同一份文件。
 // 轮询 store.state.files 同步外部改动（Agent 写入）：未保存的标签不会被覆盖。
 import { uiText as T } from './locale.js';
+import { highlightCode } from './ui-markdown.js?v=2026.10.25.1';
+const escHtml = (v) => String(v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 import {
   workspaceEntries, isBinaryContent, languageOf, lineCol, lineCount, indentEdit, enterEdit,
   validateName, joinPath, parentDir, explorerRows, isWorkspacePath, PROJECT_RENDER_LINE_CAP,
 } from './project-core.js';
 import { runJavaScript, runPython, runCpp } from './sandbox.js';
-import { AI_ACTIONS, actionById, actionAvailability, buildAiPrompt } from './project-ai.js';
 import {
   runnerFor, cppSources, parseDiagnostics, lineStartIndex, runSummary, RUNNER_LABEL,
 } from './project-run.js';
@@ -47,7 +48,6 @@ export function openProjectMode({ store, agent }) {
     running: false,
     controller: null,
     diags: [],         // 最近一次运行的问题 [{file,line,col,severity,message}]
-    aiOpen: false,
   };
   let closing = false;
   let timer = 0;
@@ -57,7 +57,11 @@ export function openProjectMode({ store, agent }) {
   const gutter = h('div', { class: 'pm-gutter', 'aria-hidden': 'true' });
   const textarea = h('textarea', { class: 'pm-text', spellcheck: 'false', autocapitalize: 'off', autocorrect: 'off', 'aria-label': T('代码编辑器', 'Code editor') });
   const marks = h('div', { class: 'pm-marks', 'aria-hidden': 'true' });
-  const editorWrap = h('div', { class: 'pm-editor' }, [gutter, textarea, marks]);
+  // 语法高亮：底层 <pre> 按 hljs 着色，textarea 文字透明只保留光标与选区（同步滚动）
+  const hlCode = h('code', { class: 'hljs' });
+  const hlPre = h('pre', { class: 'pm-hl', 'aria-hidden': 'true' }, [hlCode]);
+  const codeWrap = h('div', { class: 'pm-code' }, [hlPre, textarea]);
+  const editorWrap = h('div', { class: 'pm-editor' }, [gutter, codeWrap, marks]);
   const emptyNote = h('div', { class: 'pm-empty' });
   const statusLang = h('span', { class: 'pm-st-lang' });
   const statusPos = h('span', { class: 'pm-st-pos' });
@@ -72,7 +76,7 @@ export function openProjectMode({ store, agent }) {
   const btnRun = h('button', { class: 'pm-btn primary run', type: 'button', title: T('运行当前文件（Ctrl+Enter）', 'Run current file (Ctrl+Enter)'), onclick: () => runActive() }, T('▶ 运行', '▶ Run'));
   const btnStop = h('button', { class: 'pm-btn', type: 'button', hidden: true, title: T('停止运行', 'Stop'), onclick: () => stopRun() }, T('■ 停止', '■ Stop'));
   const btnOut = h('button', { class: 'pm-btn', type: 'button', title: T('显示 / 隐藏输出面板', 'Show / hide output panel'), onclick: () => setOutOpen(!state.outOpen) }, T('输出', 'Output'));
-  const btnAi = h('button', { class: 'pm-btn', type: 'button', 'aria-pressed': 'false', title: T('AI 助手：基于当前文件、选区与报错（代码为主，AI 为辅）', 'AI assistant: current file, selection and problems (code first, AI assists)'), onclick: () => setAiOpen(!state.aiOpen) }, T('✦ AI', '✦ AI'));
+
   const outSum = h('div', { class: 'pm-out-sum' });
   const outProbs = h('div', { class: 'pm-probs' });
   const outLines = h('div', { class: 'pm-out-lines', role: 'log', 'aria-live': 'polite' });
@@ -93,33 +97,6 @@ export function openProjectMode({ store, agent }) {
     h('div', { class: 'pm-out-body' }, [outProgress, outSum, outProbs, outLines]),
   ]);
 
-  const aiStatus = h('span', { class: 'pm-ai-status' });
-  const aiCtx = h('div', { class: 'pm-ai-ctx' });
-  const aiQuick = h('div', { class: 'pm-ai-quick' }, AI_ACTIONS.filter((a) => a.id !== 'custom').map((a) => h('button', {
-    type: 'button', class: 'pm-chip', 'data-action': a.id, title: T(a.label, a.labelEn),
-    onclick: () => sendAi(a.id, aiInput.value),
-  }, T(a.label, a.labelEn))));
-  const aiInput = h('textarea', { class: 'pm-ai-input', rows: '3', placeholder: T('告诉 AI 要做什么（Enter 换行，点“发送”提交）', 'Tell the AI what to do (Enter for a new line, click Send)'), 'aria-label': T('给 AI 的指令', 'Instruction for the AI') });
-  const aiSend = h('button', { class: 'pm-btn primary', type: 'button', onclick: () => sendAi('custom', aiInput.value) }, T('发送', 'Send'));
-  const aiReply = h('div', { class: 'pm-ai-reply', role: 'log', 'aria-live': 'polite' });
-  const aiPanel = h('aside', { class: 'pm-ai', hidden: true, 'aria-label': T('AI 助手', 'AI assistant') }, [
-    h('div', { class: 'pm-ai-head' }, [
-      h('span', { class: 'pm-ai-title' }, T('AI 助手', 'AI assistant')),
-      aiStatus,
-      h('span', { class: 'pm-spacer' }),
-      h('button', { class: 'pm-mini', type: 'button', 'aria-label': T('收起 AI 助手', 'Hide AI assistant'), onclick: () => setAiOpen(false) }, '×'),
-    ]),
-    aiCtx,
-    aiQuick,
-    aiInput,
-    h('div', { class: 'pm-ai-foot' }, [
-      h('span', { class: 'pm-ai-hint' }, T('修改直接写入工作区，编辑器会自动刷新', 'Edits go straight to the workspace; the editor refreshes')),
-      aiSend,
-    ]),
-    h('div', { class: 'pm-ai-label' }, T('最近回复', 'Latest reply')),
-    aiReply,
-  ]);
-  aiInput.addEventListener('input', () => renderAi());
 
   root.append(
     h('header', { class: 'pm-top' }, [
@@ -127,7 +104,7 @@ export function openProjectMode({ store, agent }) {
       projName,
       projCount,
       h('span', { class: 'pm-spacer' }),
-      btnRun, btnStop, btnOut, btnAi,
+      btnRun, btnStop, btnOut,
       btnSave,
       btnClose,
     ]),
@@ -140,7 +117,6 @@ export function openProjectMode({ store, agent }) {
     ]),
     h('footer', { class: 'pm-status' }, [statusLang, statusPos, statusDirty, h('span', { class: 'pm-spacer' }), statusMsg]),
   );
-  root.querySelector('.pm-body').append(aiPanel);
   root.querySelector('.pm-status').before(outPanel);
   (document.body || document.documentElement).appendChild(root);
 
@@ -172,7 +148,6 @@ export function openProjectMode({ store, agent }) {
     renderTree();
     renderTabs();
     renderHeader();
-    if (state.aiOpen) renderAi();
   }
 
   function renderHeader() {
@@ -407,7 +382,21 @@ export function openProjectMode({ store, agent }) {
     if (!state.tabs.length) showEmpty();
   }
 
+  // 高亮语言：languageOf 的显示名 → hljs 语言 ID；超过行数上限或纯文本不着色（保持性能与可读）
+  const HL_LINE_CAP = 3000;
+  function paintHighlight() {
+    const tab = current();
+    const name = tab ? languageOf(tab.path) : 'Text';
+    const lang = name.toLowerCase().replace('c++', 'cpp').replace('c#', 'csharp');
+    const on = !!tab && name !== 'Text' && lineCount(textarea.value) <= HL_LINE_CAP;
+    codeWrap.classList.toggle('hl-on', on);
+    hlCode.innerHTML = on ? highlightCode(textarea.value + '\n', lang, escHtml) : '';
+    hlPre.scrollTop = textarea.scrollTop;
+    hlPre.scrollLeft = textarea.scrollLeft;
+  }
+
   function updateGutter() {
+    paintHighlight();
     const n = Math.min(lineCount(textarea.value), PROJECT_RENDER_LINE_CAP);
     let out = '';
     for (let i = 1; i <= n; i++) out += i + '\n';
@@ -416,9 +405,10 @@ export function openProjectMode({ store, agent }) {
   }
 
   function updateStatus() {
-    if (state.aiOpen) renderAi();
     const tab = current();
     statusLang.textContent = tab ? languageOf(tab.path) : '';
+    // 运行按钮只对正在编辑的可运行脚本（JS / Python / C++）显示
+    btnRun.hidden = !(tab && runnerFor(tab.path));
     const pos = lineCol(textarea.value, textarea.selectionEnd);
     statusPos.textContent = tab ? T(`行 ${pos.line}，列 ${pos.col}`, `Ln ${pos.line}, Col ${pos.col}`) : '';
     statusDirty.textContent = tab && tab.dirty ? T('● 未保存', '● Unsaved') : '';
@@ -449,7 +439,7 @@ export function openProjectMode({ store, agent }) {
   });
   textarea.addEventListener('keyup', updateStatus);
   textarea.addEventListener('click', updateStatus);
-  textarea.addEventListener('scroll', () => { gutter.scrollTop = textarea.scrollTop; renderMarks(); });
+  textarea.addEventListener('scroll', () => { gutter.scrollTop = textarea.scrollTop; hlPre.scrollTop = textarea.scrollTop; hlPre.scrollLeft = textarea.scrollLeft; renderMarks(); });
 
   function applyEdit(edit) {
     const tab = current();
@@ -482,82 +472,6 @@ export function openProjectMode({ store, agent }) {
     renderHeader();
     updateStatus();
     flash(T(`已保存 ${tab.path}`, `Saved ${tab.path}`));
-  }
-
-  // ── 段 3：AI 辅助（代码为主，AI 为辅）──
-  function setAiOpen(open) {
-    state.aiOpen = !!open;
-    aiPanel.hidden = !state.aiOpen;
-    btnAi.setAttribute('aria-pressed', String(state.aiOpen));
-    if (state.aiOpen) renderAi();
-  }
-
-  function selectionInfo() {
-    const s = textarea.selectionStart;
-    const e = textarea.selectionEnd;
-    if (textarea.hidden || s === e) return null;
-    const lo = Math.min(s, e);
-    const hi = Math.max(s, e);
-    const v = textarea.value;
-    return { text: v.slice(lo, hi), startLine: lineCol(v, lo).line, endLine: lineCol(v, hi).line };
-  }
-
-  function agentBusy() {
-    try { return ['moderating', 'connecting', 'thinking', 'streaming', 'executing'].includes(agent.getStatus()); }
-    catch { return false; }
-  }
-
-  function lastAssistantText() {
-    const list = (store.state && store.state.messages) || [];
-    for (let i = list.length - 1; i >= 0; i--) {
-      if (list[i] && list[i].role === 'assistant' && list[i].text) return String(list[i].text);
-    }
-    return '';
-  }
-
-  function renderAi() {
-    const tab = current();
-    const sel = selectionInfo();
-    const busy = agentBusy();
-    aiCtx.textContent = tab
-      ? `${tab.path} · ${lineCount(tab.value)} ${T('行', 'lines')}${sel ? ` · ${T('选中', 'selected')} ${sel.endLine - sel.startLine + 1} ${T('行', 'lines')}` : ''}`
-      : T('还没有打开文件：先在左侧选一个文件', 'No file open: pick one in the explorer');
-    aiStatus.textContent = busy ? T('处理中…', 'Working…') : T('空闲', 'Idle');
-    aiStatus.classList.toggle('busy', busy);
-    aiSend.disabled = busy || !aiInput.value.trim();
-    for (const btn of aiQuick.querySelectorAll('button')) {
-      const ok = actionAvailability(btn.dataset.action, { hasFile: !!tab, diagnosticsCount: state.diags.length }).ok;
-      btn.disabled = busy || !ok;
-    }
-    const last = lastAssistantText();
-    aiReply.textContent = last
-      ? (last.length > 1600 ? `${last.slice(0, 1600)}…` : last)
-      : T('还没有 AI 回复。结果会出现在这里；完整对话在主界面。', 'No reply yet. Results appear here; the full conversation is in the main window.');
-  }
-
-  function sendAi(action, instruction = '') {
-    const tab = current();
-    const spec = actionById(action);
-    if (!spec) return;
-    const text = String(instruction || '').trim();
-    if (action === 'custom' && !text) return flash(T('先写一条指令', 'Write an instruction first'));
-    if (action !== 'custom' && !tab) return flash(T('先打开一个文件', 'Open a file first'));
-    if (agentBusy()) return flash(T('Agent 还在处理上一条任务', 'The agent is still working on the previous task'));
-    if (action === 'fix' && !state.diags.length) return flash(T('当前没有报错', 'No problems to fix'));
-    if (tab && tab.dirty) saveActive(); // 让 AI 看到的就是编辑器里的最新内容
-    const prompt = buildAiPrompt({
-      action,
-      path: tab ? tab.path : '',
-      content: tab ? tab.value : '',
-      selection: selectionInfo(),
-      diagnostics: state.diags,
-      instruction: text,
-    });
-    try { agent.send(prompt, []); }
-    catch (err) { return flash(T(`发送失败：${err.message}`, `Send failed: ${err.message}`)); }
-    aiInput.value = '';
-    flash(T('已发送给 Agent，结果会出现在这里', 'Sent. The result will appear here'));
-    renderAi();
   }
 
   // ── 段 2：编译 / 运行 ──

@@ -3197,7 +3197,7 @@ html[data-motion="off"] .empty-state h2[data-typing="true"]::after,
 /* 联网 / 生成类工具折叠行（web-activity）：每条调用一行，名称 · 参数 · 状态；结果可展开 */
 .web-activity .web-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; }
 .web-activity .web-name { font-family: var(--font); color: var(--fg-3); white-space: nowrap; }
-.web-activity .web-arg { min-width: 0; flex: 1 1 180px; overflow-wrap: anywhere; color: var(--fg-2); }
+.web-activity .web-arg { min-width: 0; flex: 1 1 180px; overflow-wrap: anywhere; color: var(--fg-2); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; text-overflow: ellipsis; }
 .web-activity .web-state { font-family: var(--font); font-size: 11px; color: var(--fg-3); white-space: nowrap; }
 .web-activity .web-row.error .web-state { color: #dc2626; }
 .web-activity .web-result { flex-basis: 100%; margin-top: 2px; }
@@ -3322,6 +3322,7 @@ html:lang(de) .tok-row > span { min-width: 0; overflow-wrap: anywhere; }
 .pm-btn.primary:hover:not(:disabled) { color: var(--bg); opacity: .92; }
 .pm-btn[aria-pressed="true"] { border-color: var(--fg); color: var(--fg); background: var(--bg-hover); }
 .pm-btn:disabled { opacity: .4; cursor: default; transform: none; }
+.pm-btn[hidden] { display: none !important; }
 
 .pm-body { flex: 1 1 auto; display: flex; min-height: 0; gap: 10px; padding: 10px; }
 .pm-explorer {
@@ -3389,6 +3390,17 @@ html:lang(de) .tok-row > span { min-width: 0; overflow-wrap: anywhere; }
   caret-color: var(--fg);
 }
 .pm-text::selection { background: var(--bg-hover); }
+/* 语法高亮层：与 textarea 同尺寸叠放，textarea 文字透明（保留光标与选区） */
+.pm-code { flex: 1 1 auto; min-width: 0; position: relative; display: flex; }
+.pm-code > .pm-text { position: absolute; inset: 0; width: 100%; height: 100%; box-sizing: border-box; }
+.pm-hl {
+  position: absolute; inset: 0; margin: 0; padding: 12px 16px 12px 8px; box-sizing: border-box;
+  overflow: hidden; pointer-events: none; color: var(--fg); background: transparent;
+  font: 12.5px/1.6 var(--mono); white-space: pre; tab-size: 2;
+}
+.pm-hl code.hljs { display: block; background: transparent; padding: 0; margin: 0; font: inherit; color: inherit; }
+.pm-code:not(.hl-on) .pm-hl { display: none; }
+.pm-code.hl-on > .pm-text { color: transparent; -webkit-text-fill-color: transparent; }
 .pm-text[hidden] { display: none; }
 .pm-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--fg-3); pointer-events: none; animation: pmRise .4s var(--ease-out) both; }
 .pm-empty[hidden] { display: none; }

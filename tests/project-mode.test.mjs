@@ -133,8 +133,23 @@ test('IME: Enter during composition does not commit create/rename', () => {
   assert.ok(guards.length >= 2, `expected IME guards on create and rename, found ${guards.length}`);
 });
 
-test('project-ai module is wired into the project window', () => {
+test('项目窗口顶栏没有 AI 按钮与侧边面板：项目内的修改统一经对话区进行', () => {
   const src = readFileSync(new URL('../js/project-mode.js', import.meta.url), 'utf8');
-  assert.match(src, /from '\.\/project-ai\.js'/);
-  assert.match(src, /agent\.send\(/);
+  assert.doesNotMatch(src, /btnAi|pm-ai|setAiOpen|renderAi|sendAi/);
+});
+
+test('运行按钮：仅对可运行脚本显示，且 hidden 不被 .pm-btn 的 display 覆盖', () => {
+  const src = readFileSync(new URL('../js/project-mode.js', import.meta.url), 'utf8');
+  const css = readFileSync(new URL('../css/styles.css', import.meta.url), 'utf8');
+  assert.match(src, /btnRun\.hidden = !\(tab && runnerFor\(tab\.path\)\)/);
+  assert.match(css, /\.pm-btn\[hidden\]\s*\{\s*display:\s*none\s*!important/);
+});
+
+test('项目编辑器语法高亮：经 highlightCode 着色，textarea 文字透明，滚动同步', () => {
+  const src = readFileSync(new URL('../js/project-mode.js', import.meta.url), 'utf8');
+  const css = readFileSync(new URL('../css/styles.css', import.meta.url), 'utf8');
+  assert.match(src, /import \{ highlightCode \} from '\.\/ui-markdown\.js\?v=2026\.10\.25\.1'/);
+  assert.match(src, /highlightCode\(textarea\.value \+ '\\n', lang, escHtml\)/);
+  assert.match(src, /hlPre\.scrollTop = textarea\.scrollTop/);
+  assert.match(css, /\.pm-code\.hl-on > \.pm-text \{ color: transparent/);
 });
