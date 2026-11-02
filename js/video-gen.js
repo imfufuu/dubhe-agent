@@ -10,7 +10,8 @@ const SHORT_SIDE = { '480p': 480, '720p': 720, '768p': 768, '1080p': 1080, '2k':
 
 // 六个模型族，每族三个变体：文生视频 / 图生视频 / 参考图生视频
 const FAMILIES = [
-  { family: 'Seedance 2.5', ids: ['seedance-2-5-text-to-video-basic', 'seedance-2-5-image-to-video-basic', 'seedance-2-5-reference-to-video-basic'], seconds: [4, 30], resolutions: ['480p', '720p', '1080p'], tag: 'Seedance 2.5 · 最新', tagEn: 'Seedance 2.5 · newest', note: '4–30 秒 · 480p/720p/1080p', noteEn: '4–30 s · 480p/720p/1080p' },
+  // Seedance 2.5 Flex / Flex R2V 是 2.5 的变体（仅文生与参考图生，无图生），归入同族
+  { family: 'Seedance 2.5', ids: ['seedance-2-5-text-to-video-basic', 'seedance-2-5-image-to-video-basic', 'seedance-2-5-reference-to-video-basic'], flexIds: ['seedance-2-5-text-to-video-flex', null, 'seedance-2-5-reference-to-video-flex'], seconds: [4, 30], resolutions: ['480p', '720p', '1080p'], tag: 'Seedance 2.5 · 最新', tagEn: 'Seedance 2.5 · newest', note: '4–30 秒 · 480p/720p/1080p', noteEn: '4–30 s · 480p/720p/1080p' },
   { family: 'Seedance 2.0', ids: ['seedance-2-0-text-to-video-basic', 'seedance-2-0-image-to-video-basic', 'seedance-2-0-reference-to-video-basic'], seconds: [4, 15], resolutions: ['480p', '720p', '1080p', '4k'], tag: 'Seedance 2.0 · 高质', tagEn: 'Seedance 2.0 · high quality', note: '4–15 秒 · 最高 4K', noteEn: '4–15 s · up to 4K' },
   { family: 'Seedance 2.0 Fast', ids: ['seedance-2-0-fast-text-to-video-basic', 'seedance-2-0-fast-image-to-video-basic', 'seedance-2-0-fast-reference-to-video-basic'], seconds: [4, 15], resolutions: ['480p', '720p'], tag: 'Seedance 2.0 · 快速', tagEn: 'Seedance 2.0 · fast', note: '4–15 秒 · 480p/720p', noteEn: '4–15 s · 480p/720p' },
   { family: 'Seedance 2.0 Mini', ids: ['seedance-2-0-mini-text-to-video-basic', 'seedance-2-0-mini-image-to-video-basic', 'seedance-2-0-mini-reference-to-video-basic'], seconds: [4, 15], resolutions: ['480p', '720p'], tag: 'Seedance 2.0 · 低价', tagEn: 'Seedance 2.0 · cheap', note: '4–15 秒 · 480p/720p', noteEn: '4–15 s · 480p/720p' },
@@ -24,20 +25,33 @@ const MODE_LABEL = { text: '文生视频', image: '图生视频', reference: '�
 const MODE_LABEL_EN = { text: 'Text-to-video', image: 'Image-to-video', reference: 'Reference-to-video' };
 
 // 设置页下拉用的完整目录（文档表格共 18 个：6 个模型族 × 文生 / 图生 / 参考图生）
-export const VIDEO_GEN_MODELS = FAMILIES.flatMap((f) => f.ids.map((id, i) => ({
-  id,
-  label: `${f.family} · ${MODE_LABEL[MODE_OF[i]]}`,
-  family: f.family,
-  mode: MODE_OF[i],
-  seconds: f.seconds,
-  resolutions: f.resolutions,
-  tag: f.tag,
-  tagEn: f.tagEn,
-  note: `${MODE_LABEL[MODE_OF[i]]} · ${f.note}`,
-  noteEn: `${MODE_LABEL_EN[MODE_OF[i]]} · ${f.noteEn}`,
-})));
+function videoEntry(f, id, i, variant) {
+  return {
+    id,
+    label: `${f.family}${variant === 'flex' ? ' Flex' : ''} · ${MODE_LABEL[MODE_OF[i]]}`,
+    family: f.family,
+    variant,
+    mode: MODE_OF[i],
+    seconds: f.seconds,
+    resolutions: f.resolutions,
+    tag: f.tag,
+    tagEn: f.tagEn,
+    note: `${MODE_LABEL[MODE_OF[i]]} · ${f.note}`,
+    noteEn: `${MODE_LABEL_EN[MODE_OF[i]]} · ${f.noteEn}`,
+  };
+}
+export const VIDEO_GEN_MODELS = FAMILIES.flatMap((f) => [
+  ...f.ids.map((id, i) => videoEntry(f, id, i, 'basic')),
+  ...(f.flexIds || []).flatMap((id, i) => (id ? [videoEntry(f, id, i, 'flex')] : [])),
+]);
 
 export const DEFAULT_VIDEO_GEN_MODEL = 'seedance-2-0-mini-text-to-video-basic';
+
+// 支持 negative_prompt 的模型 ID。只有在此登记（并经 GET /v1/models?type=video 核实）的模型才会发送该字段。
+// 现状：公开文档只给出 OpenAPI 的通用字段，未列出逐模型支持表；MiniMax H3 官方请求体无此字段。
+// 因此集合暂为空：Agent 传入的负面提示词不会发出，结果里会明确说明，而不是静默丢弃。
+export const NEGATIVE_PROMPT_MODELS = new Set([]);
+export const NEGATIVE_PROMPT_MAX = 2500; // OpenAPI 默认上限（个别模型可到 20000）
 
 // 设置页下拉菜单：每族一项。文生 / 图生 / 参考图三种模式合并在同一型号下，
 // 由 Agent 调用 generate_video 时通过 mode 选择（未指定时按是否有参考图自动判断）。
@@ -86,7 +100,7 @@ export function videoSizeFor(resolution, aspectRatio) {
 }
 
 // 校验并生成请求参数。返回 { ok:true, model, size, seconds, needsImage } 或 { ok:false, error }
-export function planVideoRequest({ model, mode, prompt, seconds, resolution, aspectRatio, hasImage }) {
+export function planVideoRequest({ model, mode, prompt, seconds, resolution, aspectRatio, hasImage, negativePrompt }) {
   const text = String(prompt || '').trim();
   if (!text) return { ok: false, error: 'generate_video 需要 prompt（画面与动作描述）。' };
   const base = videoGenModelSpec(model) || videoGenModelSpec(DEFAULT_VIDEO_GEN_MODEL);
@@ -97,7 +111,9 @@ export function planVideoRequest({ model, mode, prompt, seconds, resolution, asp
   if (!hasImage && target !== 'text') {
     return { ok: false, error: `「${base.family}」的${MODE_LABEL[target]}需要参考图：请传入 input_image（沙箱中的图片路径），或改用文生视频（mode: text）。` };
   }
-  const spec = VIDEO_GEN_MODELS.find((m) => m.family === base.family && m.mode === target);
+  // 同族内优先沿用锚定型号的变体（如 Flex）；该变体无此模式时回落到同族基础版
+  const sameFamily = VIDEO_GEN_MODELS.filter((m) => m.family === base.family && m.mode === target);
+  const spec = sameFamily.find((m) => m.variant === base.variant) || sameFamily.find((m) => m.variant === 'basic') || null;
   if (!spec) return { ok: false, error: `「${base.family}」不支持${MODE_LABEL[target]}。` };
   const sec = seconds == null || seconds === '' ? Math.min(Math.max(5, spec.seconds[0]), spec.seconds[1]) : Math.round(Number(seconds));
   if (!Number.isFinite(sec) || sec < spec.seconds[0] || sec > spec.seconds[1]) {
@@ -111,7 +127,14 @@ export function planVideoRequest({ model, mode, prompt, seconds, resolution, asp
   if (!VIDEO_GEN_ASPECT_RATIOS.includes(ratio)) {
     return { ok: false, error: `画面比例须为 ${VIDEO_GEN_ASPECT_RATIOS.join(' / ')} 之一（收到 ${aspectRatio}）。` };
   }
-  return { ok: true, model: spec.id, mode: target, size: videoSizeFor(res, ratio), seconds: sec, resolution: res, aspectRatio: ratio, needsImage: target !== 'text' };
+  // 负面提示词：仅支持的模型发送；否则记录为已丢弃，由调用方告知用户
+  const neg = String(negativePrompt || '').trim().slice(0, NEGATIVE_PROMPT_MAX);
+  const negSupported = NEGATIVE_PROMPT_MODELS.has(spec.id);
+  return {
+    ok: true, model: spec.id, mode: target, size: videoSizeFor(res, ratio), seconds: sec, resolution: res, aspectRatio: ratio, needsImage: target !== 'text',
+    negativePrompt: negSupported && neg ? neg : '',
+    negativePromptDropped: !negSupported && !!neg,
+  };
 }
 
 // POST /v1/videos 的 JSON 请求体。seconds 按文档为字符串整数。
@@ -122,6 +145,7 @@ export function buildVideoBody(plan, prompt, imageDataUrl, { endImageUrl = '', a
   // 模型专属扩展（OpenAPI video-openapi.json）：end_image_url 尾帧、audio 音轨开关；未指定则不发送，沿用模型默认
   if (endImageUrl) body.end_image_url = endImageUrl;
   if (typeof audio === 'boolean') body.audio = audio;
+  if (plan.negativePrompt) body.negative_prompt = plan.negativePrompt;
   return body;
 }
 

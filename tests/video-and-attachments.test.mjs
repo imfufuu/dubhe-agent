@@ -12,9 +12,14 @@ import { toolFamily } from '../js/toolflow.js';
 
 const PNG_URL = 'data:image/png;base64,iVBORw0KGgo=';
 
-test('视频目录：文档表格共 18 个模型、ID 唯一、六族各含文生/图生/参考图三种变体', () => {
-  assert.equal(VIDEO_GEN_MODELS.length, 18);
-  assert.equal(new Set(VIDEO_GEN_MODELS.map((m) => m.id)).size, 18);
+test('视频目录：18 个基础模型 + Seedance 2.5 Flex 两个变体（同族），ID 唯一，六族各含文生/图生/参考图三种变体', () => {
+  assert.equal(VIDEO_GEN_MODELS.length, 20);
+  assert.equal(new Set(VIDEO_GEN_MODELS.map((m) => m.id)).size, 20);
+  const flex = VIDEO_GEN_MODELS.filter((m) => m.variant === 'flex');
+  assert.deepEqual(flex.map((m) => m.id).sort(), ['seedance-2-5-reference-to-video-flex', 'seedance-2-5-text-to-video-flex']);
+  assert.ok(flex.every((m) => m.family === 'Seedance 2.5' && m.seconds[0] === 4 && m.seconds[1] === 30));
+  assert.equal(planVideoRequest({ model: 'seedance-2-5-text-to-video-flex', prompt: 'x', seconds: 5, resolution: '720p', aspectRatio: '16:9' }).model, 'seedance-2-5-text-to-video-flex');
+  assert.equal(planVideoRequest({ model: 'seedance-2-5-text-to-video-basic', prompt: 'x', seconds: 5, resolution: '720p', aspectRatio: '16:9' }).model, 'seedance-2-5-text-to-video-basic');
   const families = new Map();
   for (const m of VIDEO_GEN_MODELS) {
     if (!families.has(m.family)) families.set(m.family, new Set());
@@ -215,4 +220,14 @@ test('工具分类：generate_video 与 generate_image 同属 web 折叠（不�
   assert.equal(toolFamily({ name: 'generate_image' }), 'web');
   assert.equal(toolFamily({ name: 'search_web' }), 'web');
   assert.equal(toolFamily({ name: 'fetch_url' }), 'web');
+});
+
+test('负面提示词：未登记为支持的模型不发送 negative_prompt，并标记为已丢弃', () => {
+  const plan = planVideoRequest({ model: 'seedance-2-0-mini-text-to-video-basic', prompt: 'a dog', seconds: 5, resolution: '720p', aspectRatio: '16:9', negativePrompt: 'blurry' });
+  assert.equal(plan.ok, true);
+  assert.equal(plan.negativePrompt, '');
+  assert.equal(plan.negativePromptDropped, true);
+  assert.equal('negative_prompt' in buildVideoBody(plan, 'a dog', ''), false);
+  const none = planVideoRequest({ model: 'seedance-2-0-mini-text-to-video-basic', prompt: 'a dog', seconds: 5, resolution: '720p', aspectRatio: '16:9' });
+  assert.equal(none.negativePromptDropped, false);
 });

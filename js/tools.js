@@ -17,7 +17,7 @@ import { analyzeImage, analyzeVideo, analyzeAudio, VISION_TOOL_MODEL, VIDEO_TOOL
 import { sanitizeSvgMarkup, svgSourceFromValue, svgDataUrl, extractSvgText } from './svg-safety.js';
 import { pdfToImages, pdfExtractText } from './pdfpages.js';
 import { SUBAGENTS } from './subagents.js';
-import { DEFAULT_IMAGE_MODEL, IMAGE_STYLES, IMAGE_RESOLUTIONS, resolveImageVariant, IMAGE_SIZES, IMAGE_QUALITIES, IMAGE_FORMATS, IMAGE_BACKGROUNDS, IMAGE_MODEL_IDS, resolveImageModel, resolveVisionModel, resolveVideoModel, resolveAudioModel } from './config.js?v=2026.10.25.1';
+import { DEFAULT_IMAGE_MODEL, IMAGE_STYLES, IMAGE_RESOLUTIONS, resolveImageVariant, IMAGE_SIZES, IMAGE_QUALITIES, IMAGE_FORMATS, IMAGE_BACKGROUNDS, resolveImageModel, resolveVisionModel, resolveVideoModel, resolveAudioModel } from './config.js?v=2026.10.25.1';
 import { fetchPage, gitRun, relaySearch, relayCrawl, relayDownload, fileNameFromUrl, RELAY_FILE_MAX_BYTES } from './net.js';
 import { createZip, fileBytesFromValue } from './zip.js';
 import { planConversion, runConversion, convertProgressNote, MAX_CONVERT_INPUT } from './convert.js';
@@ -189,6 +189,7 @@ export const TOOL_DEFS = [
         aspect_ratio: { type: 'string', enum: VIDEO_GEN_ASPECT_RATIOS, description: '画面比例，默认 16:9' },
         end_image: { type: 'string', description: '可选：尾帧图片路径（沙箱内，如 uploads/end.png）。需同时给 input_image 作首帧；仅支持首尾帧的模型可用，否则网关会拒绝' },
         audio: { type: 'boolean', description: '可选：是否生成音轨。用户要求无声时必须传 false（部分模型默认带环境音）；不传则用模型默认值。仅支持音频的模型生效' },
+        negative_prompt: { type: 'string', description: '可选：负面提示词（要避免的元素）。仅当前模型支持时才会发送；不支持时工具结果会说明未发送，此时请把否定内容改写进 prompt' },
       },
       required: ['prompt'],
     },
@@ -218,11 +219,6 @@ export const TOOL_DEFS = [
         output_format: { type: 'string', enum: IMAGE_FORMATS, description: '输出格式，默认 png' },
         background: { type: 'string', enum: IMAGE_BACKGROUNDS, description: '背景：transparent 为透明底（png/webp 有效），默认 auto 由模型决定' },
         n: { type: 'integer', enum: [1, 2, 3, 4], description: '一次生成几张候选图（默认 1）；多张会全部写入沙箱 outputs/' },
-        model: {
-          type: 'string',
-          enum: IMAGE_MODEL_IDS,
-          description: `不要传。生图模型由用户在菜单选定（runtime 里的「生图模型」）。若仍传入，会被忽略并改用会话选定值。可选 ID 仅供识别：${IMAGE_MODEL_IDS.join(' / ')}（不要传「2.5 Sunburst」这类显示名）`,
-        },
       },
       required: ['prompt'],
     },
@@ -1651,7 +1647,7 @@ async function executeToolBody(outerName, outerArgs, ctx) {
         const plan = planVideoRequest({
           model: resolveVideoGenModel(ctx.videoGenModel), mode: args.mode,
           prompt, seconds: args.seconds, resolution: args.resolution, aspectRatio: args.aspect_ratio,
-          hasImage: !!imageDataUrl,
+          hasImage: !!imageDataUrl, negativePrompt: args.negative_prompt,
         });
         if (!plan.ok) {
           emit({ status: 'error', error: { message: plan.error } });
@@ -1672,7 +1668,8 @@ async function executeToolBody(outerName, outerArgs, ctx) {
         };
         // 幂等键：本次调用内的重试沿用同一个 key，避免重复创建任务（重复计费）
         const idempotencyKey = `dubhe-video-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-        emit({ status: 'running', note: `提交视频任务（${plan.model} · ${plan.size} · ${plan.seconds}s）…` });
+        const negNote = plan.negativePromptDropped ? '；负面提示词未发送（该模型不支持 negative_prompt）' : '';
+        emit({ status: 'running', note: `提交视频任务（${plan.model} · ${plan.size} · ${plan.seconds}s）…${negNote}` });
         let job;
         try {
           job = await createVideoJob({ ...common, body: buildVideoBody(plan, prompt, imageDataUrl, { endImageUrl, audio: audioFlag }), idempotencyKey, timeoutMs: 60000 });

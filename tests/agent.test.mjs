@@ -1829,9 +1829,11 @@ test('工具已注册且参数齐全', () => {
   assert.ok(def, 'TOOL_DEFS 应包含 generate_image');
   assert.ok(def.description.includes('/v1/images/edits'), '描述应说明编辑模式');
   const props = def.parameters.properties;
-  for (const k of ['prompt', 'reference_paths', 'size', 'quality', 'output_format', 'model', 'compare_paths']) {
+  for (const k of ['prompt', 'reference_paths', 'size', 'quality', 'output_format', 'compare_paths']) {
     assert.ok(props[k], `参数 ${k} 缺失`);
   }
+  // 生图模型只由会话锚定的家族决定：工具 schema 不再暴露模型枚举（Agent 看不到其它家族的 ID）
+  assert.equal(props.model, undefined, 'generate_image 不应向 Agent 暴露 model 枚举');
   assert.deepEqual(def.parameters.required, ['prompt']);
 });
 test('compare_paths：无 Key 也能对比两张本地图', async () => {
@@ -2216,11 +2218,10 @@ test('缺省沿用会话选定模型；非法名退回默认而不是把垃圾�
   assert.equal(cfg.resolveImageModel('2.5', 'nope').id, cfg.DEFAULT_IMAGE_MODEL, '兜底值非法时用默认');
   assert.ok(cfg.IMAGE_MODEL_IDS.every((id) => cfg.isImageGenModel(id)));
 });
-test('工具 Schema 用 enum 限定模型 ID，提示词给出可选值', () => {
+test('Agent 不可见其它生图模型：Schema 无 model 枚举，提示词只说明「不要传 model」', () => {
   const def = TOOL_DEFS.find((t) => t.name === 'generate_image');
-  const m = def.parameters.properties.model;
-  assert.deepEqual(m.enum, cfg.IMAGE_MODEL_IDS, 'enum 约束比自由文本更难被模型写错');
-  assert.ok(/不要传/.test(m.description), '描述里要明确“不要传显示名”');
+  assert.equal(def.parameters.properties.model, undefined, '生图模型由会话锚定的家族决定，不向 Agent 暴露枚举');
+  assert.ok(/不要传 model/.test(cfg.referenceSystemPrompt()) || /不要传 model/.test(cfg.referenceSystemPrompt({}, {})), '提示词要求不要传 model');
   const sys = cfg.referenceSystemPrompt();
   assert.ok(/gpt-image-2\.5-sunburst/.test(sys), '系统提示词列出真实 ID');
   assert.ok(/gemini-3\.1-flash-image/.test(sys), '系统提示词列出 Nano Banana 真实 ID');

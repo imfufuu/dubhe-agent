@@ -32,6 +32,8 @@
   --sidebar-bg: #f7f8f3;
   --conversation-bg: #faf9f5;
   --conversation-card: #faf9f5;
+  /* 模型菜单底色：取自参考图 IMG_8753.jpeg 中心像素 RGB(245,246,240) */
+  --model-menu-bg: #f5f6f0;
   --conversation-card-hover: #f2f0e9;
   --conversation-line: #e6e3da;
   --conversation-shadow: none;
@@ -127,6 +129,7 @@ html[data-fontsize="large"] {
   --bg-soft: #121212;
   --conversation-bg: var(--bg);
   --conversation-card: #101010;
+  --model-menu-bg: #101010;
   --conversation-card-hover: #171717;
   --conversation-line: #242424;
   --conversation-shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 22px rgba(0,0,0,.25);
@@ -352,7 +355,7 @@ html { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
 
 .dd-menu {
   position: fixed; z-index: 60; /* fixed 脱离侧栏 overflow:hidden 裁剪，left/top/width 由 JS 按按钮位置设置 */
-  background: var(--conversation-card); border: 1px solid var(--conversation-line); border-radius: 12px;
+  background: var(--model-menu-bg); border: 1px solid var(--conversation-line); border-radius: 12px;
   box-shadow: var(--shadow-lg); max-height: min(360px, 52vh); overflow: hidden auto; /* .34：矮一点，别遮住半屏对话 */
   /* 全局气泡弹入（见动效层 --pop-*）：从按钮下沿冒出来，收起时快速淡出 */
   opacity: 0; transform: translate3d(0, -14px, 0) scale(var(--pop-scale, .78)); transform-origin: top left; pointer-events: none;
@@ -364,7 +367,7 @@ html { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
   transition: opacity .2s ease-out, transform var(--pop-dur) var(--pop-ease), visibility 0s;
 }
 /* 搜索框固定在菜单顶部；层级显式高于分组标题（模型系列图标层在其之下）*/
-.dd-search-wrap { position: sticky; top: 0; z-index: 3; background: var(--conversation-card); padding: 10px; border-bottom: 1px solid var(--conversation-line); }
+.dd-search-wrap { position: sticky; top: 0; z-index: 3; background: var(--model-menu-bg); padding: 10px; border-bottom: 1px solid var(--conversation-line); }
 .dd-search { width: 100%; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg-soft); color: var(--fg); outline: none; transition: border-color .2s; }
 .dd-search:focus { border-color: var(--fg-3); }
 .dd-group { padding: 4px 0; }

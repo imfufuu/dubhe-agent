@@ -15,8 +15,8 @@ test('the project entry is in the top bar and is bound', () => {
 test('model menu uses the warm off-white conversation card colour (matches model cards)', () => {
   const css = read('css/styles.css');
   const menu = css.match(/\.dd-menu \{[^}]*\}/)?.[0] || '';
-  assert.match(menu, /background: var\(--conversation-card\)/);
-  assert.match(css, /\.dd-search-wrap \{[^}]*background: var\(--conversation-card\)/);
+  assert.match(menu, /background: var\(--model-menu-bg\)/);
+  assert.match(css, /\.dd-search-wrap \{[^}]*background: var\(--model-menu-bg\)/);
 });
 
 test('C++ progress: the project window forwards phases and download bytes to a progress bar', () => {
