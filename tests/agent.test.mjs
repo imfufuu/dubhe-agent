@@ -11002,7 +11002,7 @@ test('Nano Banana 2.1（gemini-nano-banana-2.1，.34 实测 ID）是生图模型
   const pricing = await import('../js/pricing.js');
   assert.ok(c.IMAGE_MODELS.some((m) => m.id === 'gemini-nano-banana-2.1'));
   assert.ok(!c.IMAGE_MODELS.some((m) => m.id === 'nano-banana-2-1'), '.33 猜的 ID 不对，.34 用网关价目表 / 实测的 gemini-nano-banana-2.1');
-  assert.equal(c.IMAGE_MODELS.length, 9);
+  assert.equal(c.IMAGE_MODELS.length, 10); // + Midjourney（非官方，按任务 $0.079）
   assert.ok(c.IMAGE_MODELS.every((m) => m.tag && m.label && m.note), '设置页下拉需要 label · tag');
   assert.equal(c.DEFAULT_IMAGE_MODEL, 'gpt-image-2');
   for (const id of ['gemini-nano-banana-2.1', 'nano-banana-2-1', 'nano-banana-2', 'gpt-image-3', 'dall-e-4', 'flux-2-pro', 'imagen-4']) assert.equal(c.isImageModel(id), true, id);

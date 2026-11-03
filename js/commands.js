@@ -22,6 +22,7 @@ export function filterCmds(query, items, limit = 40) {
  * 会话 token 构成（与 estimateTokens 同一套估算）。
  * system 由调用方传入已估算值（系统提示不在 messages 里）。
  */
+const VISION_TOOL_RE = /^analyze_(image|pdf|svg)$/;
 export function tokenBreakdown(messages, estimateTokens, systemTok = 0) {
   const msgs = Array.isArray(messages) ? messages : [];
   let lastUser = -1;
@@ -30,10 +31,13 @@ export function tokenBreakdown(messages, estimateTokens, systemTok = 0) {
   }
   let history = 0;
   let tools = 0;
+  let vision = 0;
   let current = 0;
   for (let i = 0; i < msgs.length; i++) {
     const n = typeof estimateTokens === 'function' ? estimateTokens([msgs[i]]) : 0;
-    if (msgs[i] && msgs[i].role === 'tool') tools += n;
+    // 识图：看图类工具的结果（与成本里的「识图模型」一致；音视频分析仍归入工具结果）
+    if (msgs[i] && msgs[i].role === 'tool' && VISION_TOOL_RE.test(String(msgs[i].name || ''))) vision += n;
+    else if (msgs[i] && msgs[i].role === 'tool') tools += n;
     else if (lastUser >= 0 && i >= lastUser) current += n;
     else history += n;
   }
@@ -42,15 +46,16 @@ export function tokenBreakdown(messages, estimateTokens, systemTok = 0) {
     system,
     history,
     tools,
+    vision,
     current,
-    total: system + history + tools + current,
+    total: system + history + tools + vision + current,
   };
 }
 
 export function formatTokBreak(b) {
   const n = (x) => (x >= 1000 ? `${(x / 1000).toFixed(1)}k` : String(x));
   const p = b || {};
-  return `系统 ${n(p.system || 0)} · 历史 ${n(p.history || 0)} · 工具结果 ${n(p.tools || 0)} · 本轮 ${n(p.current || 0)} · 合计 ${n(p.total || 0)}`;
+  return `系统 ${n(p.system || 0)} · 历史 ${n(p.history || 0)} · 工具结果 ${n(p.tools || 0)} · 识图 ${n(p.vision || 0)} · 本轮 ${n(p.current || 0)} · 合计 ${n(p.total || 0)}`;
 }
 
 /** 移动端示例卡短句：保留 dataset 全文，展示截到标点或 22 字 */

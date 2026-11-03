@@ -88,6 +88,7 @@ registerLanguagePack('es', {
   "服务商": "Proveedor",
   "系统": "Sistema",
   "工具结果": "Resultados de herramientas",
+  "识图": "Visión",
   "本轮": "Este turno",
   "合计": "Total",
   "（再点一次收起）": "(haz clic de nuevo para contraer)",

@@ -88,6 +88,7 @@ registerLanguagePack('de', {
   "服务商": "Anbieter",
   "系统": "System",
   "工具结果": "Werkzeugergebnisse",
+  "识图": "Bildanalyse",
   "本轮": "Dieser Durchlauf",
   "合计": "Gesamt",
   "（再点一次收起）": "(erneut klicken zum Einklappen)",

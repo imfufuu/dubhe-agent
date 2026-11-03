@@ -5,7 +5,7 @@ import { IMAGE_MODELS, IMAGE_FAMILIES, imageFamilyOf, resolveImageVariant, DEFAU
 import { JEV_MODEL, JEV_VERSIONS, setActiveJevModel, getActiveJevModel, buildSystemOneBody, choice } from '../js/jev.js';
 
 test('生图菜单按家族归并：GPT Image 2 / GPT Image 2.5 / Nano Banana 三项', () => {
-  assert.deepEqual(IMAGE_FAMILIES.map((f) => f.id), ['gpt-image-2', 'gpt-image-2.5', 'nano-banana']);
+  assert.deepEqual(IMAGE_FAMILIES.map((f) => f.id), ['gpt-image-2', 'gpt-image-2.5', 'nano-banana', 'midjourney']);
   for (const f of IMAGE_FAMILIES) {
     assert.ok(IMAGE_MODELS.some((m) => m.id === f.defaultModel), `${f.id} 默认变体必须在目录中`);
     assert.equal(imageFamilyOf(f.defaultModel), f.id, `${f.defaultModel} 归属 ${f.id}`);

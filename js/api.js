@@ -3,7 +3,7 @@
 // 纯函数导出，便于 node 单测（tests/agent.test.mjs）
 
 import { text as localeText } from './locale.js';
-import { ANTHROPIC_VERSION, MAX_TOKENS, REQUEST_TIMEOUT_MS, protocolOf, thinkingParamsFor, resolveModelAlias } from './config.js?v=2026.10.25.1';
+import { ANTHROPIC_VERSION, MAX_TOKENS, REQUEST_TIMEOUT_MS, protocolOf, thinkingParamsFor, resolveModelAlias, isMidjourneyModel } from './config.js?v=2026.10.25.1';
 import { claudeThinkingBudget, normalizeReasoningLevel, reasoningEffortFor, withReasoningStrategy } from './reasoning.js?v=2026.10.25.1';
 import { gatewayBase, setGatewayBase, otherGatewayBase, isNetworkError } from './endpoint.js';
 import { webCapFor, injectWeb, buildResponsesInput, createResponsesStream } from './websearch.js';
@@ -1437,6 +1437,10 @@ async function generateNanoImage({ model, apiKey, prompt, size, quality, images,
 // 文生图：size 为像素尺寸（16 的倍数、最大边 ≤3840、长宽比 ≤3:1），auto/缺省交给模型
 // n>1 时网关在 data[] 内返回多张，全部落地（不要只取第一张而丢掉其余）
 export async function generateImage({ model, apiKey, prompt, size, quality, background, moderation, outputCompression, thinkingLevel, googleSearch, safetyIdentifier, stream = false, partialImages, onPartial, format = 'png', n, signal, timeoutMs = IMAGE_TIMEOUT_MS, onRetry, gatewayId = DEFAULT_GATEWAY_ID, gatewayBaseUrl = '' } = {}) {
+  if (isMidjourneyModel(model)) {
+    if (gatewayId !== DEFAULT_GATEWAY_ID) throw new Error(`Midjourney 只能经 TeamoRouter 使用；当前网关为「${getGateway(gatewayId).name}」`);
+    return generateMidjourney({ prompt, size, apiKey, signal });
+  }
   if (isNanoImageModel(model)) {
     if (!['teamorouter', 'gemini'].includes(gatewayId)) throw new Error(`Nano Banana 需要 TeamoRouter 或 Gemini 网关；当前网关为「${getGateway(gatewayId).name}」`);
     return generateNanoImage({ model, apiKey, prompt, size, quality, thinkingLevel, googleSearch, n, signal, timeoutMs, format, onRetry, gatewayId, gatewayBaseUrl });
@@ -1466,8 +1470,75 @@ export async function generateImage({ model, apiKey, prompt, size, quality, back
   return json;
 }
 
+// ── Midjourney（非官方，经 TeamoRouter /mj/*）：请求格式逐项照官方示例，不增删字段。
+// 只提交一次：超时或中断后绝不重新 POST（任务可能已受理，重提会重复计费）；
+// 轮询失败时凭 task_id 继续 GET 查询即可。提交禁止重定向（与示例一致）。
+export const MJ_SUBMIT_TIMEOUT_MS = 660000;
+export const MJ_POLL_INTERVAL_MS = 5000;
+export const MJ_MAX_POLLS = 120;
+export function buildMjSubmitBody(prompt) {
+  return JSON.stringify({ model: 'mj_imagine', botType: 'MID_JOURNEY', prompt: String(prompt) });
+}
+// 受理判定：code 为 1 或 22，且 result 是合法 task_id（字符串，或非负整数）
+export function parseMjSubmit(submitted) {
+  const code = submitted && submitted.code;
+  const result = submitted && submitted.result;
+  const taskId = typeof result === 'string' ? result : (Number.isInteger(result) && result >= 0 ? String(result) : '');
+  if (!Number.isInteger(code) || ![1, 22].includes(code) || !/^[A-Za-z0-9_-]{1,128}$/.test(taskId)) return { ok: false, taskId: '' };
+  return { ok: true, taskId };
+}
+export function mjTaskState(task) {
+  const s = String(task && task.status || '');
+  if (s === 'SUCCESS') return 'done';
+  if (s === 'FAILURE' || s === 'CANCEL') return 'failed';
+  return 'pending';
+}
+async function generateMidjourney({ prompt, size, apiKey, signal }) {
+  let text = String(prompt || '').trim();
+  if (!text) throw new Error(localeText('Midjourney 需要 prompt。', 'Midjourney needs a prompt.'));
+  // 宽高比用 --ar 表达（Midjourney 原生语法）；提示词里已有 --ar 则不重复添加
+  if (/^\d+:\d+$/.test(String(size || '')) && !/--ar\s/.test(text)) text = `${text} --ar ${size}`;
+  if (isNetworkOffline()) throw new Error(localeText('离线模式已阻止网关请求。', 'Offline mode blocked the gateway request.'));
+  const headers = { 'Content-Type': 'application/json', ...authHeaders('openai', apiKey, DEFAULT_GATEWAY_ID) };
+  const t = withTimeout(signal, MJ_SUBMIT_TIMEOUT_MS);
+  let submitted;
+  try {
+    const r = await fetch(gatewayBase() + '/mj/submit/imagine', { method: 'POST', headers, body: buildMjSubmitBody(text), signal: t.signal, redirect: 'manual' });
+    if (r.type === 'opaqueredirect' || (r.status >= 300 && r.status < 400)) throw new Error('Midjourney 提交被重定向，已拒绝（未重试）。');
+    const raw = await r.text().catch(() => '');
+    if (!r.ok) {
+      const err = new Error(httpErrorMessage(r.status, raw, DEFAULT_GATEWAY_ID));
+      err.status = r.status;
+      throw err;
+    }
+    try { submitted = JSON.parse(raw); } catch { throw new Error(`Midjourney 提交返回非 JSON（HTTP ${r.status}）。`); }
+  } finally { t.release(); }
+  const accepted = parseMjSubmit(submitted);
+  if (!accepted.ok) throw new Error(`Midjourney 未受理：${JSON.stringify(submitted).slice(0, 300)}`);
+  const taskId = accepted.taskId;
+  for (let i = 0; i < MJ_MAX_POLLS; i++) {
+    const tt = withTimeout(signal, 60000);
+    let task;
+    try {
+      const gr = await request(`/mj/task/${encodeURIComponent(taskId)}/fetch`, { method: 'GET', headers: authHeaders('openai', apiKey, DEFAULT_GATEWAY_ID), signal: tt.signal });
+      const gtext = await gr.text().catch(() => '');
+      if (!gr.ok) throw new Error(httpErrorMessage(gr.status, gtext, DEFAULT_GATEWAY_ID));
+      task = JSON.parse(gtext);
+    } finally { tt.release(); }
+    const state = mjTaskState(task);
+    if (state === 'done') {
+      if (!task.imageUrl) throw new Error(`Midjourney 缺少 imageUrl；task_id=${taskId}`);
+      return { images: [{ dataUrl: task.imageUrl, mime: 'image/png', ext: 'png', width: 0, height: 0, revisedPrompt: '' }], dataUrl: task.imageUrl, mime: 'image/png', ext: 'png', width: 0, height: 0, taskId, usage: null };
+    }
+    if (state === 'failed') throw new Error(`Midjourney 任务失败：${task.failReason || task.status}（task_id=${taskId}）`);
+    await sleepRetry(MJ_POLL_INTERVAL_MS, signal);
+  }
+  throw new Error(`Midjourney 轮询超时；task_id=${taskId} 可凭此 ID 继续 GET /mj/task/{id}/fetch 查询（不要重新提交）。`);
+}
+
 // 图片编辑：images = [{ name?, dataUrl }]（沙箱内图片读出即为 data URL）；mask 可选
 export async function editImage({ model, apiKey, prompt, images = [], mask, size, quality, inputFidelity, format = 'png', n, signal, timeoutMs = IMAGE_TIMEOUT_MS, onRetry, gatewayId = DEFAULT_GATEWAY_ID, gatewayBaseUrl = '' } = {}) {
+  if (isMidjourneyModel(model)) throw new Error('Midjourney 不支持图片编辑，只能文生图。');
   if (!images.length) throw new Error(localeText('图片编辑需要至少一张原图（reference_paths）', 'Image editing needs at least one source image (reference_paths).'));
   if (isNanoImageModel(model)) {
     if (!['teamorouter', 'gemini'].includes(gatewayId)) throw new Error(`Nano Banana 编辑需要 TeamoRouter 或 Gemini 网关；当前网关为「${getGateway(gatewayId).name}」`);

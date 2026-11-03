@@ -120,6 +120,12 @@ export const VISION_MODEL_PRICING = {
 
 // 生图模型专用官方价格表（含按张阶梯官方价 per_call_tiers 与按 token 官方价）
 export const IMAGE_MODEL_PRICING = {
+  // Midjourney（非官方，经 TeamoRouter /mj）：每个任务 $0.079，三档同价；每次调用按 1 张计
+  midjourney: {
+    id: 'midjourney', label: 'Midjourney', mode: 'tier', priceSource: 'teamorouter',
+    input: 0, imageInput: 0, output: 0, cachedInput: 0,
+    tiers: { '1k': 0.079, '2k': 0.079, '4k': 0.079 },
+  },
   'gpt-image-2.5-sunburst': {
     id: 'gpt-image-2.5-sunburst',
     label: 'GPT Image 2.5 Sunburst',
