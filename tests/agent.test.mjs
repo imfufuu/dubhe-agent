@@ -1829,9 +1829,11 @@ test('工具已注册且参数齐全', () => {
   assert.ok(def, 'TOOL_DEFS 应包含 generate_image');
   assert.ok(def.description.includes('/v1/images/edits'), '描述应说明编辑模式');
   const props = def.parameters.properties;
-  for (const k of ['prompt', 'reference_paths', 'size', 'quality', 'output_format', 'model', 'compare_paths']) {
+  for (const k of ['prompt', 'reference_paths', 'size', 'quality', 'output_format', 'compare_paths']) {
     assert.ok(props[k], `参数 ${k} 缺失`);
   }
+  // 生图模型只由会话锚定的家族决定：工具 schema 不再暴露模型枚举（Agent 看不到其它家族的 ID）
+  assert.equal(props.model, undefined, 'generate_image 不应向 Agent 暴露 model 枚举');
   assert.deepEqual(def.parameters.required, ['prompt']);
 });
 test('compare_paths：无 Key 也能对比两张本地图', async () => {
@@ -2216,11 +2218,10 @@ test('缺省沿用会话选定模型；非法名退回默认而不是把垃圾�
   assert.equal(cfg.resolveImageModel('2.5', 'nope').id, cfg.DEFAULT_IMAGE_MODEL, '兜底值非法时用默认');
   assert.ok(cfg.IMAGE_MODEL_IDS.every((id) => cfg.isImageGenModel(id)));
 });
-test('工具 Schema 用 enum 限定模型 ID，提示词给出可选值', () => {
+test('Agent 不可见其它生图模型：Schema 无 model 枚举，提示词只说明「不要传 model」', () => {
   const def = TOOL_DEFS.find((t) => t.name === 'generate_image');
-  const m = def.parameters.properties.model;
-  assert.deepEqual(m.enum, cfg.IMAGE_MODEL_IDS, 'enum 约束比自由文本更难被模型写错');
-  assert.ok(/不要传/.test(m.description), '描述里要明确“不要传显示名”');
+  assert.equal(def.parameters.properties.model, undefined, '生图模型由会话锚定的家族决定，不向 Agent 暴露枚举');
+  assert.ok(/不要传 model/.test(cfg.referenceSystemPrompt()) || /不要传 model/.test(cfg.referenceSystemPrompt({}, {})), '提示词要求不要传 model');
   const sys = cfg.referenceSystemPrompt();
   assert.ok(/gpt-image-2\.5-sunburst/.test(sys), '系统提示词列出真实 ID');
   assert.ok(/gemini-3\.1-flash-image/.test(sys), '系统提示词列出 Nano Banana 真实 ID');
@@ -4976,7 +4977,7 @@ test('代码块语言在左侧、复制始终可见；用户气泡反色链接',
   const ui = readUiSource();
   assert.match(hl, /\.code-head/);
   assert.match(hl, /\.copy-code \{[\s\S]*opacity:\s*1/);
-  assert.match(hl, /\.msg-user \.bubble\.md-body a \{ color: var\(--bg\)/);
+  assert.match(hl, /\.msg-user \.bubble\.md-body a \{ color: var\(--chat-user-text\)/, '用户气泡链接用气泡文字色（主题无关）');
   assert.match(html, /assets\/hljs\/highlight\.min\.js/);
   assert.match(ui, /bubble md-body/);
   assert.match(ui, /Explored file/);
@@ -5088,10 +5089,10 @@ test('用户气泡表格不用 --bg-soft（避免白底白字），代码块相�
   const hl = fsp.readFileSync(new URL('../assets/hljs/dubhe.css', import.meta.url), 'utf8');
   assert.match(hl, /\.msg-user \.bubble\.md-body tbody tr:nth-child\(even\)/);
   assert.equal(/\.msg-user[\s\S]{0,400}nth-child\(even\)[\s\S]{0,80}var\(--bg-soft\)/.test(hl), false, '斑马纹不能再用页面底色');
-  assert.match(hl, /color-mix\(in srgb, var\(--bg\)/);
-  assert.match(hl, /\[data-theme="light"\] \.msg-user \.bubble\.md-body \.hljs-keyword/);
+  assert.match(hl, /color-mix\(in srgb, var\(--chat-user-text\)/, '用户气泡叠色统一相对气泡文字色');
+  // 浅色主题的用户气泡是浅底：不得再出现白字（#f4f4f4）语法色块
+  assert.equal(/\[data-theme="light"\] \.msg-user \.bubble\.md-body \.hljs[\s\S]{0,40}#f4f4f4/.test(hl), false, '浅色主题用户气泡不能用亮色文字');
   assert.match(hl, /\[data-theme="dark"\] \.msg-user \.bubble\.md-body \.hljs-keyword/);
-  assert.match(hl, /#c4b5fd/, '浅色主题黑气泡用亮色 token');
   assert.match(hl, /#6d28d9/, '深色主题浅气泡用深色 token');
   assert.match(hl, /\.msg-user \.bubble\.md-body \.code-block \{\s*background:\s*transparent/);
   assert.match(hl, /\.msg-user \.bubble\.md-body pre code/);
@@ -11040,7 +11041,7 @@ test('界面动效偏好：auto / on / off 三态，on 覆盖系统 reduce，off
   assert.match(main, /applyMotion\(\);/);
   assert.match(main, /browserFeatureReport\(\)[\s\S]*?dubhe-oldbrowser-noted/);
   const css = fsp.readFileSync(new URL('../css/styles.css', import.meta.url), 'utf8');
-  assert.equal((css.match(/@media \(prefers-reduced-motion: reduce\) \{/g) || []).length, 15, '含 Editing 笔迹动画（edit-nib / edit-ink）减少动效块；含 C++/Python 加载不确定进度条的减少动效块；含欢迎页/思考摘要动效、嵌套编辑预览、语音球体、设置详情与状态抛光的减少动效块；含空状态插画（sess-empty-art）动效的减少动效块（原思维链逐行动画已移除；跨页过渡在 css/page-fx.css）');
+  assert.equal((css.match(/@media \(prefers-reduced-motion: reduce\) \{/g) || []).length, 16, '含 Editing 笔迹动画（edit-nib / edit-ink）减少动效块；含 C++/Python 加载不确定进度条的减少动效块；含欢迎页/思考摘要动效、嵌套编辑预览、语音球体、设置详情与状态抛光的减少动效块；含空状态插画（sess-empty-art）动效的减少动效块；含项目模式（.pm-*）进入/抽屉/输出面板动效的减少动效块（原思维链逐行动画已移除；跨页过渡在 css/page-fx.css）');
   assert.doesNotMatch(css, /thinkLineEnter|think-stream/, '进度摘要不再逐行呈现原始思维链');
   const reduceBlocks = css.split('@media (prefers-reduced-motion: reduce) {').slice(1);
   for (const b of reduceBlocks) {

@@ -16,6 +16,8 @@ export const UI_STRINGS = {
   "沙箱在本地运行 · 密钥只存浏览器": "Local sandbox · Keys stay in your browser",
   "返回导航页": "Back to home",
   "收起侧栏": "Collapse sidebar",
+  "项目模式：代码编辑、文件树与编译（VS Code 式）": "Project mode: code editor, file tree and build (VS Code style)",
+  "项目模式": "Project mode",
   "模型": "Model",
   "从 GET /v1/models 刷新": "Refresh from GET /v1/models",
   "刷新模型列表": "Refresh models",

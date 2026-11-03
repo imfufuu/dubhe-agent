@@ -2,6 +2,7 @@
 sans-jp: @fontsource/noto-sans-jp@5.3.1 (124 个分片)
 sans-kr: @fontsource/noto-sans-kr@5.3.1 (124 个分片)
 sans-sc: @fontsource/noto-sans-sc@5.3.1 (98 个分片)
+serif-sc: @fontsource/noto-serif-sc@5.3.1 (98 个分片)
 arabic: @fontsource/noto-naskh-arabic@5.3.0 (5 个分片)
 hebrew: @fontsource/noto-sans-hebrew@5.3.0 (5 个分片)
 thai: @fontsource/noto-sans-thai@5.3.0 (3 个分片)

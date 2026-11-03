@@ -12,12 +12,12 @@ import { CODE_TOOL_NAMES as REG_CODE_TOOL_NAMES, LEGACY_TOOL_ALIASES as REG_LEGA
 import { runJavaScript, runPython, runCpp, runCppRemote, pythonAvailable, persistenceNote, isSafeFsPath, contentByteSize } from './sandbox.js';
 import { SANDBOX_STORAGE_CAP } from './storagefmt.js';
 import { generateImage, editImage, bytesToDataUrl, dataUrlToBytes, sniffImage, createVideoJob, quoteVideoJob, getVideoJob, fetchVideoContent } from './api.js?v=2026.10.25.1';
-import { VIDEO_GEN_ASPECT_RATIOS, planVideoRequest, buildVideoBody, buildVideoQuoteBody, videoJobState, videoJobError, resolveVideoGenModel, VIDEO_POLL_INTERVAL_MS, VIDEO_MAX_WAIT_MS, VIDEO_SANDBOX_MAX_BYTES } from './video-gen.js';
+import { VIDEO_GEN_ASPECT_RATIOS, pickVideoExtras, planVideoRequest, buildVideoBody, buildVideoQuoteBody, videoJobState, videoJobError, resolveVideoGenModel, VIDEO_POLL_INTERVAL_MS, VIDEO_MAX_WAIT_MS, VIDEO_SANDBOX_MAX_BYTES } from './video-gen.js';
 import { analyzeImage, analyzeVideo, analyzeAudio, VISION_TOOL_MODEL, VIDEO_TOOL_MODEL } from './vision.js';
 import { sanitizeSvgMarkup, svgSourceFromValue, svgDataUrl, extractSvgText } from './svg-safety.js';
 import { pdfToImages, pdfExtractText } from './pdfpages.js';
 import { SUBAGENTS } from './subagents.js';
-import { DEFAULT_IMAGE_MODEL, IMAGE_STYLES, IMAGE_RESOLUTIONS, resolveImageVariant, IMAGE_SIZES, IMAGE_QUALITIES, IMAGE_FORMATS, IMAGE_BACKGROUNDS, IMAGE_MODEL_IDS, resolveImageModel, resolveVisionModel, resolveVideoModel, resolveAudioModel } from './config.js?v=2026.10.25.1';
+import { DEFAULT_IMAGE_MODEL, IMAGE_STYLES, IMAGE_RESOLUTIONS, resolveImageVariant, IMAGE_SIZES, IMAGE_QUALITIES, IMAGE_FORMATS, IMAGE_BACKGROUNDS, IMAGE_MODERATIONS, NANO_THINKING_LEVELS, resolveImageModel, resolveVisionModel, resolveVideoModel, resolveAudioModel } from './config.js?v=2026.10.25.1';
 import { fetchPage, gitRun, relaySearch, relayCrawl, relayDownload, fileNameFromUrl, RELAY_FILE_MAX_BYTES } from './net.js';
 import { createZip, fileBytesFromValue } from './zip.js';
 import { planConversion, runConversion, convertProgressNote, MAX_CONVERT_INPUT } from './convert.js';
@@ -189,6 +189,35 @@ export const TOOL_DEFS = [
         aspect_ratio: { type: 'string', enum: VIDEO_GEN_ASPECT_RATIOS, description: '画面比例，默认 16:9' },
         end_image: { type: 'string', description: '可选：尾帧图片路径（沙箱内，如 uploads/end.png）。需同时给 input_image 作首帧；仅支持首尾帧的模型可用，否则网关会拒绝' },
         audio: { type: 'boolean', description: '可选：是否生成音轨。用户要求无声时必须传 false（部分模型默认带环境音）；不传则用模型默认值。仅支持音频的模型生效' },
+        negative_prompt: { type: 'string', description: '可选：负面提示词（要避免的元素）。仅当前模型支持时才会发送；不支持时工具结果会说明未发送，此时请把否定内容改写进 prompt' },
+        size: { type: 'string', description: '可选：输出 WIDTHxHEIGHT（如 1280x720），须为当前模型支持的分辨率与比例；不传则由 resolution + aspect_ratio 推出' },
+        image_strength: { type: 'number', minimum: 0, maximum: 1, description: '可选：图生视频时参考图的约束强度 0–1（默认 1）' },
+        reference_image_urls: { type: 'array', items: { type: 'string' }, maxItems: 30, description: '可选：参考图（最多 30 张，保持角色/物体/风格一致）。每项可为 URL、data URL 或沙箱路径' },
+        reference_video_urls: { type: 'array', items: { type: 'string' }, maxItems: 10, description: '可选：参考视频（最多 10 段，每段 2–15 秒，合计 ≤15 秒），用于动作、运镜或风格参考' },
+        reference_audio_urls: { type: 'array', items: { type: 'string' }, maxItems: 10, description: '可选：参考音频（最多 10 段，每段 2–15 秒），用于人声、旁白或音效；必须与参考图或参考视频同时使用' },
+        reference_document_urls: { type: 'array', items: { type: 'string' }, maxItems: 1, description: '可选：一份文档或网页作为创作依据（仅支持文档参考的模型）' },
+        elements: { type: 'array', maxItems: 4, description: '可选：角色/物体元素（最多 4 个），每项 { frontal_image_url, reference_image_urls（≤3）, video_url }；提示词中以 @Element1、@Element2 引用' },
+        scene_image_urls: { type: 'array', items: { type: 'string' }, maxItems: 4, description: '可选：场景参考图（最多 4 张），提示词中以 @Image1、@Image2 引用' },
+        keyframes: { type: 'array', maxItems: 10, description: '可选：关键帧（最多 10 个）{ image_url, frame_index }，frame_index 互不相同且 ≤ 秒数×24' },
+        camera_trajectory: { type: 'array', minItems: 2, maxItems: 12, description: '可选：多角度模型的镜头轨迹 2–12 个关键帧 { time 0–1, azimuth 度, elevation −90–90, distance >0（1=不变） }，需同时给 input_image' },
+        omni_reference_task_type: { type: 'string', description: '可选：参考生视频的任务类型提示（模型支持多种工作流时）。提示词须与所选类型一致' },
+        upscale_factor: { type: 'integer', enum: [1, 2, 4], description: '可选：超分模型。1 仅提升画质，2 或 4 倍放大分辨率' },
+        enhancement_model: { type: 'string', description: '可选：增强模型名（各模型可选值见网关 GET /models）' },
+        target_fps: { type: 'integer', minimum: 16, maximum: 120, description: '可选：插帧目标帧率 16–120；不传则保持原帧率' },
+        slowdown_factor: { type: 'integer', enum: [1, 2, 4, 8], description: '可选：插帧模型的慢动作倍数' },
+        softness: { type: 'number', minimum: 1, maximum: 5, description: '可选：增强模型柔化程度 1（最锐）–5（最柔）' },
+        creativity: { type: 'number', minimum: 0, maximum: 1, description: '可选：增强模型可凭空补充细节的程度 0–1' },
+        realism: { type: 'number', minimum: 0, maximum: 1, description: '可选：增强模型向写实偏置的程度 0–1' },
+        sharp: { type: 'number', minimum: 0, maximum: 1, description: '可选：锐化 0（柔化）、0.5（中性）、1（强锐化）' },
+        compression: { type: 'number', minimum: 0, maximum: 1, description: '可选：压缩伪影去除强度 0–1' },
+        noise: { type: 'number', minimum: 0, maximum: 1, description: '可选：降噪强度 0–1' },
+        halo: { type: 'number', minimum: 0, maximum: 1, description: '可选：光晕削减强度 0–1' },
+        grain: { type: 'number', minimum: 0, maximum: 0.1, description: '可选：补回的胶片颗粒量 0–0.1' },
+        recover_detail: { type: 'number', minimum: 0, maximum: 1, description: '可选：恢复原始细节的程度 0–1' },
+        h264_output: { type: 'boolean', description: '可选：增强模型输出 H.264（默认 H.265）' },
+        output_format: { type: 'string', enum: ['mp4', 'prores'], description: '可选：SDR 转 HDR 模型的输出容器：mp4（10 位 HDR10）或 prores' },
+        reference_video_total_duration: { type: 'number', minimum: 0, description: '可选：参考视频总时长（秒）' },
+        consents: { type: 'object', description: '可选：提供方同意声明，仅在网关返回 409 needs_consent 时使用' },
       },
       required: ['prompt'],
     },
@@ -210,19 +239,17 @@ export const TOOL_DEFS = [
         prompt: { type: 'string', description: '画面描述（生成模式）或修改指令（编辑模式）。不要用于统计图、流程图、思维导图、架构图；那些请用 SVG / Mermaid / DOT / :::chart。' },
         compare_paths: { type: 'array', items: { type: 'string' }, description: '可选：两张沙箱图片路径，做本地差分/对比，不调用生图' },
         reference_paths: { type: 'array', items: { type: 'string' }, description: '可选：沙箱内参考图路径数组（如 ["uploads/cat.png"]）；提供即进入编辑模式' },
-        size: { type: 'string', enum: IMAGE_SIZES, description: `输出尺寸（宽x高像素），默认 ${'auto'} 由模型决定` },
-        aspect_ratio: { type: 'string', enum: ['1:1', '16:9', '9:16', '4:3', '3:4', '3:2', '2:3'], description: '可选：画面比例（与 size 二选一，优先使用本参数）' },
-        quality: { type: 'string', enum: IMAGE_QUALITIES, description: '质量档位，默认 auto' },
+        size: { type: 'string', description: '输出尺寸：auto / 1024x1024 / 1536x1024 / 1024x1536 等预设，或 WIDTHxHEIGHT 自定义像素（GPT Image 2 系列：宽高均为 16 的倍数，比例 1:3–3:1，最大 3840x2160；超过 2560x1440 为实验性）。默认 auto 由模型决定' },
+        aspect_ratio: { type: 'string', enum: ['1:1', '16:9', '9:16', '4:3', '3:4', '3:2', '2:3', '4:5', '5:4', '21:9', '1:4', '4:1', '1:8', '8:1'], description: '可选：画面比例（与 size 二选一，优先使用本参数）。1:4/4:1/1:8/8:1 与 4:5/5:4/21:9 仅 Nano Banana 有效' },
+        quality: { type: 'string', enum: IMAGE_QUALITIES, description: '质量档位，默认 auto。xhigh / max 仅 GPT Image 2.5（Sunburst / Flare）支持' },
         style: { type: 'string', enum: IMAGE_STYLES, description: '可选：画面风格。realistic 写实 / illustration 插画 / pro 精细 / quality 高质 / fast 快速；默认 auto，由所选家族与描述自动决定' },
         resolution: { type: 'string', enum: IMAGE_RESOLUTIONS, description: '可选：分辨率档。4K 会自动使用升采样变体（约 $0.02/张，比原生 4K 便宜）；默认 auto' },
         output_format: { type: 'string', enum: IMAGE_FORMATS, description: '输出格式，默认 png' },
         background: { type: 'string', enum: IMAGE_BACKGROUNDS, description: '背景：transparent 为透明底（png/webp 有效），默认 auto 由模型决定' },
-        n: { type: 'integer', enum: [1, 2, 3, 4], description: '一次生成几张候选图（默认 1）；多张会全部写入沙箱 outputs/' },
-        model: {
-          type: 'string',
-          enum: IMAGE_MODEL_IDS,
-          description: `不要传。生图模型由用户在菜单选定（runtime 里的「生图模型」）。若仍传入，会被忽略并改用会话选定值。可选 ID 仅供识别：${IMAGE_MODEL_IDS.join(' / ')}（不要传「2.5 Sunburst」这类显示名）`,
-        },
+        n: { type: 'integer', minimum: 1, maximum: 10, description: '一次生成几张候选图（默认 1，最多 10）；多张会全部写入沙箱 outputs/，按张计费' },
+        moderation: { type: 'string', enum: IMAGE_MODERATIONS, description: '可选，仅 GPT Image：内容审核强度 low（较宽松）/ auto（默认）' },
+        output_compression: { type: 'integer', minimum: 0, maximum: 100, description: '可选，仅 GPT Image 且 output_format 为 jpeg/webp：压缩强度 0-100，默认 100' },
+        thinking_level: { type: 'string', enum: NANO_THINKING_LEVELS, description: '可选，仅 Nano Banana：思考档位。2.1 支持 minimal/medium/high（默认 medium）；3.1 Flash Image 支持 minimal/high（默认 minimal）。不支持的取值会被忽略' },
       },
       required: ['prompt'],
     },
@@ -756,6 +783,16 @@ export const TOOL_DEFS = [
 export const CODE_TOOL_NAMES = [...REG_CODE_TOOL_NAMES]; // Helix 3.0：由能力登记处派生
 
 /** 按沙箱开关给出本轮可用的工具定义列表（纯过滤，不改原数组） */
+// 自定义 WIDTHxHEIGHT（仅 GPT Image 2 系列）：16 的倍数、比例 1:3–3:1、最大 3840x2160
+function validCustomImageSize(value, model) {
+  const m = String(value || '').trim().match(/^(\d{3,4})x(\d{3,4})$/i);
+  if (!m || /nano[-_ ]?banana|^gemini-/i.test(String(model || ''))) return false;
+  const w = Number(m[1]); const h = Number(m[2]);
+  if (w % 16 || h % 16 || w > 3840 || h > 2160) return false;
+  const r = w / h;
+  return r >= 1 / 3 && r <= 3;
+}
+
 export function toolsFor(sandboxEnabled, { localCpp = true } = {}) {
   if (sandboxEnabled) return localCpp ? TOOL_DEFS : TOOL_DEFS.filter((t) => t.name !== 'execute_cpp');
   return TOOL_DEFS.filter((t) => !CODE_TOOL_NAMES.includes(t.name));
@@ -1648,21 +1685,35 @@ async function executeToolBody(outerName, outerArgs, ctx) {
           }
           endImageUrl = content;
         }
+        // 其余生成参数：沙箱路径按文件内容转 data URL；校验失败直接在发起前拦下
+        const extraPick = pickVideoExtras(args, { resolveMedia: (v) => {
+          if (/^(https?:\/\/|data:)/i.test(v)) return v;
+          let c = ''; try { c = String(fs.read(normalizeFsPath(v)) || ''); } catch { c = ''; }
+          return /^data:/i.test(c) ? c : '';
+        } });
+        if (extraPick.errors.length) {
+          const message = `视频参数有误：${extraPick.errors.join('；')}`;
+          emit({ status: 'error', error: { message } });
+          return `视频调用在发起前失败：${message}`;
+        }
+        const videoExtras = extraPick.extras;
         const plan = planVideoRequest({
           model: resolveVideoGenModel(ctx.videoGenModel), mode: args.mode,
           prompt, seconds: args.seconds, resolution: args.resolution, aspectRatio: args.aspect_ratio,
-          hasImage: !!imageDataUrl,
+          hasImage: !!imageDataUrl, negativePrompt: args.negative_prompt,
         });
         if (!plan.ok) {
           emit({ status: 'error', error: { message: plan.error } });
           return `视频调用在发起前失败：${plan.error}`;
         }
+        // 显式 size（WIDTHxHEIGHT）优先于由分辨率 + 比例推出的尺寸；格式不符时忽略
+        if (typeof args.size === 'string' && /^\d{3,4}x\d{3,4}$/i.test(args.size.trim())) plan.size = args.size.trim().toLowerCase();
         const common = { apiKey: ctx.apiKey, signal: ctx.signal, ...gatewayRequestContext(ctx) };
         const audioFlag = typeof args.audio === 'boolean' ? args.audio : undefined;
         // 实时报价（免费）：POST /v1/videos/quote。报价失败不阻断提交，计费行标记为未计价
         let quote = null;
         try {
-          quote = await quoteVideoJob({ ...common, body: buildVideoQuoteBody(plan, imageDataUrl, { endImageUrl, audio: audioFlag }), timeoutMs: 20000 });
+          quote = await quoteVideoJob({ ...common, body: buildVideoQuoteBody(plan, imageDataUrl, { endImageUrl, audio: audioFlag, extras: videoExtras }), timeoutMs: 20000 });
         } catch { quote = null; }
         const quotedUsd = quote ? Number(quote.quote) : NaN;
         const billing = {
@@ -1672,10 +1723,11 @@ async function executeToolBody(outerName, outerArgs, ctx) {
         };
         // 幂等键：本次调用内的重试沿用同一个 key，避免重复创建任务（重复计费）
         const idempotencyKey = `dubhe-video-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-        emit({ status: 'running', note: `提交视频任务（${plan.model} · ${plan.size} · ${plan.seconds}s）…` });
+        const negNote = plan.negativePromptDropped ? '；负面提示词未发送（该模型不支持 negative_prompt）' : '';
+        emit({ status: 'running', note: `提交视频任务（${plan.model} · ${plan.size} · ${plan.seconds}s）…${negNote}` });
         let job;
         try {
-          job = await createVideoJob({ ...common, body: buildVideoBody(plan, prompt, imageDataUrl, { endImageUrl, audio: audioFlag }), idempotencyKey, timeoutMs: 60000 });
+          job = await createVideoJob({ ...common, body: buildVideoBody(plan, prompt, imageDataUrl, { endImageUrl, audio: audioFlag, extras: videoExtras }), idempotencyKey, timeoutMs: 60000 });
         } catch (err) {
           const message = `视频任务创建失败：${err.message || err}`;
           emit({ status: 'error', error: { message } });
@@ -1783,11 +1835,15 @@ async function executeToolBody(outerName, outerArgs, ctx) {
         // 比例参数：aspect_ratio 或 size 填了 16:9 这类比例时，Nano Banana 原样传比例；其它网关换算为像素尺寸（16 的倍数）
         const IMAGE_RATIO_PIXELS = { '1:1': '1024x1024', '16:9': '1536x864', '9:16': '864x1536', '4:3': '1024x768', '3:4': '768x1024', '3:2': '1536x1024', '2:3': '1024x1536' };
         const ratioArg = String(args.aspect_ratio || (String(args.size || '').includes(':') ? args.size : '') || '').trim();
-        let size = IMAGE_SIZES.includes(args.size) ? args.size : 'auto';
+        let size = IMAGE_SIZES.includes(args.size) ? args.size : (validCustomImageSize(args.size, model) ? String(args.size).trim() : 'auto');
         if (ratioArg && IMAGE_RATIO_PIXELS[ratioArg]) size = nano ? ratioArg : IMAGE_RATIO_PIXELS[ratioArg];
-        const quality = IMAGE_QUALITIES.includes(args.quality) ? args.quality : 'auto';
+        // xhigh / max 只属于 gpt-image-2.5 系列；其它模型降为 auto，避免网关 400
+        const quality = IMAGE_QUALITIES.includes(args.quality) && (!['xhigh', 'max'].includes(args.quality) || /gpt-image-2\.5/.test(model)) ? args.quality : 'auto';
         const background = IMAGE_BACKGROUNDS.includes(args.background) ? args.background : 'auto';
-        const count = [1, 2, 3, 4].includes(Number(args.n)) ? Number(args.n) : 1;
+        const count = Number.isInteger(Number(args.n)) && Number(args.n) >= 1 && Number(args.n) <= 10 ? Number(args.n) : 1;
+        const moderation = IMAGE_MODERATIONS.includes(args.moderation) && !nano ? args.moderation : 'auto';
+        const outputCompression = Number.isInteger(args.output_compression) && args.output_compression >= 0 && args.output_compression <= 100 ? args.output_compression : undefined;
+        const thinkingLevel = nano && NANO_THINKING_LEVELS.includes(args.thinking_level) ? args.thinking_level : '';
         const refs = (Array.isArray(args.reference_paths) ? args.reference_paths : [])
           .map((p) => String(p || '').trim()).filter(Boolean);
         // 缺失的原图先在本地拦下来：否则网关 400 之后用户只看到一句「调用失败」
@@ -1811,7 +1867,7 @@ async function executeToolBody(outerName, outerArgs, ctx) {
             out = await editImage({ model, apiKey: ctx.apiKey, prompt, images, size, quality, format, n: count, signal: ctx.signal, onRetry, ...gatewayRequestContext(ctx) });
           } else {
             emit({ status: 'running', note: `图像生成中（${model}${size !== 'auto' ? ` · ${size}` : ''}${count > 1 ? ` · ${count} 张` : ''}）…` });
-            out = await generateImage({ model, apiKey: ctx.apiKey, prompt, size, quality, background, format, n: count, signal: ctx.signal, onRetry, ...gatewayRequestContext(ctx) });
+            out = await generateImage({ model, apiKey: ctx.apiKey, prompt, size, quality, background, moderation, outputCompression, thinkingLevel, format, n: count, signal: ctx.signal, onRetry, ...gatewayRequestContext(ctx) });
           }
           // 网关也可能只给远程 URL：落地成 data URL，保证沙箱内可再编辑、可打包下载
           const list = (out.images && out.images.length ? out.images : [{ dataUrl: out.dataUrl, mime: out.mime, ext: out.ext, width: out.width, height: out.height }]);

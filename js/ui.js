@@ -37,6 +37,7 @@ import { unlockAdminKey, adminUnlocked, isAdminAlias, adminExpiresAt, adminPhras
 import { shortSuggest } from './commands.js';
 import { getOrCreateUserSalutation, buildWelcomeGreeting } from './user-salutation.js';
 import { installShiftEnterGuard } from './composer-newline-guard.js';
+import { copyText } from './copy-text.js';
 import { installWelcomeMotion } from './ui-welcome-motion.js?v=2026.10.25.1';
 import { paintReasoningBlocks } from './ui-reasoning-motion.js?v=2026.10.25.1';
 import { summarizeTurnCost, formatCcy, turnCostTitle, turnCostTipParts } from './pricing.js';
@@ -1079,7 +1080,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
           // 优先从已渲染的 DOM 取纯文本（浏览器自动解码 HTML 实体 / URI 编码，避免 %20/&amp; 等直接进入剪贴板）；
           // 如果 body 尚未渲染再回落到原始 m.text。
           const plain = turnPlainText(m, wrap);
-          navigator.clipboard.writeText(plain).then(() => toast('已复制', 'ok', 1200), () => toast('复制失败：浏览器拒绝了剪贴板权限', 'err'));
+          copyText(plain).then((ok) => (ok ? toast('已复制', 'ok', 1200) : toast('复制失败：浏览器拒绝了剪贴板权限', 'err')));
         }
       }));
     } else {
@@ -1127,7 +1128,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
         if (act === 'copy') {
           // 取渲染后纯文本，自动解码 HTML 实体/URI 编码，避免 %20/&amp; 等进入剪贴板
           const plain = turnPlainText(m, wrap);
-          navigator.clipboard.writeText(plain).then(() => toast('已复制', 'ok', 1200), () => toast('复制失败：浏览器拒绝了剪贴板权限', 'err'));
+          copyText(plain).then((ok) => (ok ? toast('已复制', 'ok', 1200) : toast('复制失败：浏览器拒绝了剪贴板权限', 'err')));
         }
         if (act === 'rollback') doRollback(m);
         if (act === 'regen') {
@@ -1691,7 +1692,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
         const status = c.status === 'error' || (tm && toolResultFailed(body)) ? 'error'
           : (c.status === 'ok' || tm) ? 'ok' : 'running';
         const a = c.args && typeof c.args === 'object' ? c.args : {};
-        const fullArg = String(a.query || a.url || a.prompt || '').trim(), cut = /^generate_(image|video)$/.test(c.name) ? 256 : 140, summary = [...fullArg].length > cut ? [...fullArg].slice(0, cut).join('') + '…' : fullArg;
+        const fullArg = String(a.query || a.url || a.prompt || '').trim(), cut = /^generate_(image|video)$/.test(c.name) ? Infinity : 140, summary = [...fullArg].length > cut ? [...fullArg].slice(0, cut).join('') + '…' : fullArg;
         const videoPath = c.name === 'generate_video' ? (/\[视频已生成\] (outputs\/[^\s]+\.mp4)/.exec(body) || [])[1] || '' : '';
         return { id: String(c.id), name: c.name, summary, status, body, videoPath };
       });
@@ -2503,7 +2504,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       const block = btn.closest('.code-block') || btn.parentElement;
       const code = block.querySelector('code');
       if (!code) return;
-      navigator.clipboard.writeText(code.textContent).then(() => { btn.textContent = '已复制'; setTimeout(() => (btn.textContent = '复制'), 1500); });
+      copyText(code.textContent).then((ok) => { btn.textContent = ok ? '已复制' : '复制失败'; setTimeout(() => (btn.textContent = '复制'), 1500); });
       return;
     }
     const jump = e.target.closest('a.md-jump, a[href^="#"]');
@@ -2690,9 +2691,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     const which = btn.dataset.which;
     // 三窗口各自的复制按钮：COMMAND / STDOUT / STDERR 复制本窗口原文（chip._win 由 renderToolChipDetail 写入）
     const payload = chip._win && Object.prototype.hasOwnProperty.call(chip._win, which) ? chip._win[which] : '';
-    navigator.clipboard.writeText(String(payload || '')).then(() => {
-      const prev = btn.textContent; btn.textContent = '已复制'; setTimeout(() => (btn.textContent = prev), 1200);
-    }).catch(() => toast('复制失败', 'warn'));
+    copyText(String(payload || '')).then((ok) => { if (!ok) { toast('复制失败', 'warn'); return; } const prev = btn.textContent; btn.textContent = '已复制'; setTimeout(() => (btn.textContent = prev), 1200); });
   });
 
   // ⌘K 命令面板 + 全局快捷键：见 ui-command-palette.js（P4 拆分）

@@ -7,14 +7,20 @@ import { executeTool, TOOL_DEFS, buildSubagentAttachments, SUB_ATTACH_MAX } from
 import {
   VIDEO_GEN_MODELS, DEFAULT_VIDEO_GEN_MODEL, videoSizeFor, planVideoRequest, buildVideoBody,
   videoJobState, imageVariantOf, resolveVideoGenModel, VIDEO_GEN_MENU, videoMenuIdOf,
+  pickVideoExtras, VIDEO_EXTRA_SPEC, buildVideoQuoteBody,
 } from '../js/video-gen.js';
 import { toolFamily } from '../js/toolflow.js';
 
 const PNG_URL = 'data:image/png;base64,iVBORw0KGgo=';
 
-test('视频目录：文档表格共 18 个模型、ID 唯一、六族各含文生/图生/参考图三种变体', () => {
-  assert.equal(VIDEO_GEN_MODELS.length, 18);
-  assert.equal(new Set(VIDEO_GEN_MODELS.map((m) => m.id)).size, 18);
+test('视频目录：18 个基础模型 + Seedance 2.5 Flex 两个变体（同族），ID 唯一，六族各含文生/图生/参考图三种变体', () => {
+  assert.equal(VIDEO_GEN_MODELS.length, 20);
+  assert.equal(new Set(VIDEO_GEN_MODELS.map((m) => m.id)).size, 20);
+  const flex = VIDEO_GEN_MODELS.filter((m) => m.variant === 'flex');
+  assert.deepEqual(flex.map((m) => m.id).sort(), ['seedance-2-5-reference-to-video-flex', 'seedance-2-5-text-to-video-flex']);
+  assert.ok(flex.every((m) => m.family === 'Seedance 2.5' && m.seconds[0] === 4 && m.seconds[1] === 30));
+  assert.equal(planVideoRequest({ model: 'seedance-2-5-text-to-video-flex', prompt: 'x', seconds: 5, resolution: '720p', aspectRatio: '16:9' }).model, 'seedance-2-5-text-to-video-flex');
+  assert.equal(planVideoRequest({ model: 'seedance-2-5-text-to-video-basic', prompt: 'x', seconds: 5, resolution: '720p', aspectRatio: '16:9' }).model, 'seedance-2-5-text-to-video-basic');
   const families = new Map();
   for (const m of VIDEO_GEN_MODELS) {
     if (!families.has(m.family)) families.set(m.family, new Set());
@@ -215,4 +221,50 @@ test('工具分类：generate_video 与 generate_image 同属 web 折叠（不�
   assert.equal(toolFamily({ name: 'generate_image' }), 'web');
   assert.equal(toolFamily({ name: 'search_web' }), 'web');
   assert.equal(toolFamily({ name: 'fetch_url' }), 'web');
+});
+
+test('负面提示词：未登记为支持的模型不发送 negative_prompt，并标记为已丢弃', () => {
+  const plan = planVideoRequest({ model: 'seedance-2-0-mini-text-to-video-basic', prompt: 'a dog', seconds: 5, resolution: '720p', aspectRatio: '16:9', negativePrompt: 'blurry' });
+  assert.equal(plan.ok, true);
+  assert.equal(plan.negativePrompt, '');
+  assert.equal(plan.negativePromptDropped, true);
+  assert.equal('negative_prompt' in buildVideoBody(plan, 'a dog', ''), false);
+  const none = planVideoRequest({ model: 'seedance-2-0-mini-text-to-video-basic', prompt: 'a dog', seconds: 5, resolution: '720p', aspectRatio: '16:9' });
+  assert.equal(none.negativePromptDropped, false);
+});
+
+test('其余生成参数：范围 / 枚举 / 类型校验，合法值进入请求体，非法值在发起前报错', () => {
+  const ok = pickVideoExtras({ target_fps: 24, slowdown_factor: 2, grain: 0.05, h264_output: true, output_format: 'mp4', camera_trajectory: [{ time: 0, azimuth: 0, elevation: 0, distance: 1 }, { time: 1, azimuth: 45, elevation: 10, distance: 1 }], keyframes: [{ image_url: 'https://x/a.png', frame_index: 0 }, { image_url: 'https://x/b.png', frame_index: 48 }], consents: { a: 1 } }, { resolveMedia: (v) => v });
+  assert.deepEqual(ok.errors, []);
+  assert.equal(ok.extras.target_fps, 24);
+  assert.equal(ok.extras.keyframes[1].frame_index, 48);
+  const bad = pickVideoExtras({ target_fps: 200, slowdown_factor: 3, grain: 0.5, output_format: 'avi', keyframes: [{ image_url: 'a', frame_index: 1 }, { image_url: 'b', frame_index: 1 }], camera_trajectory: [{ time: 0 }] }, { resolveMedia: (v) => v });
+  assert.equal(bad.errors.length, 6);
+  assert.equal(bad.extras.target_fps, undefined);
+});
+
+test('其余生成参数：媒体路径经 resolveMedia 解析，无法读取时报错；数组上限生效', () => {
+  const r = pickVideoExtras({ reference_image_urls: ['uploads/a.png', 'https://x/b.png'], reference_document_urls: ['a.pdf', 'b.pdf'] }, { resolveMedia: (v) => (v.startsWith('uploads/') ? 'data:image/png;base64,AAA' : v.startsWith('http') ? v : '') });
+  assert.deepEqual(r.extras.reference_image_urls, ['data:image/png;base64,AAA', 'https://x/b.png']);
+  assert.ok(r.errors.some((e) => /reference_document_urls：最多 1 项|最多 1 项/.test(e)));
+  const missing = pickVideoExtras({ scene_image_urls: ['nope.png'] }, { resolveMedia: () => '' });
+  assert.match(missing.errors[0], /scene_image_urls：无法读取/);
+});
+
+test('其余生成参数：规范化进入创建与报价请求体，但不覆盖 model / prompt / seconds / size', () => {
+  const plan = planVideoRequest({ model: 'seedance-2-5-text-to-video-basic', prompt: 'x', seconds: 5, resolution: '720p', aspectRatio: '16:9' });
+  const body = buildVideoBody(plan, 'x', '', { extras: { target_fps: 30, model: 'evil', seconds: '99', size: '1x1' } });
+  assert.equal(body.target_fps, 30);
+  assert.equal(body.model, plan.model);
+  assert.equal(body.seconds, '5');
+  assert.notEqual(body.size, '1x1');
+  const quote = buildVideoQuoteBody(plan, '', { extras: { softness: 3 } });
+  assert.equal(quote.softness, 3);
+});
+
+test('generate_video 工具 schema 暴露全部其余参数，且 consents 为对象', () => {
+  const def = TOOL_DEFS.find((t) => t.function?.name === 'generate_video') || TOOL_DEFS.find((t) => t.name === 'generate_video');
+  const props = (def.function || def).parameters.properties;
+  for (const k of Object.keys(VIDEO_EXTRA_SPEC)) assert.ok(k in props, k + ' 未进入 schema');
+  assert.equal(props.consents.type, 'object');
 });
