@@ -48,7 +48,9 @@ export const VIDEO_GEN_MODELS = FAMILIES.flatMap((f) => [
 export const DEFAULT_VIDEO_GEN_MODEL = 'seedance-2-0-mini-text-to-video-basic';
 
 // 支持 negative_prompt 的模型 ID。只有在此登记（并经 GET /v1/models?type=video 核实）的模型才会发送该字段。
-// 现状：公开文档只给出 OpenAPI 的通用字段，未列出逐模型支持表；MiniMax H3 官方请求体无此字段。
+// 现状：公开文档只给出 OpenAPI 的通用字段，未列出逐模型支持表；MiniMax H3 官方请求体无此字段；
+// 用户提供的 Seedance / MiniMax 请求格式清单中也不含 negative_prompt。
+// 生图侧：GPT 图像系列（OpenAI 官方）与 Nano Banana（Gemini）均无负面提示词字段，应写进正向 prompt。
 // 因此集合暂为空：Agent 传入的负面提示词不会发出，结果里会明确说明，而不是静默丢弃。
 export const NEGATIVE_PROMPT_MODELS = new Set([]);
 export const NEGATIVE_PROMPT_MAX = 2500; // OpenAPI 默认上限（个别模型可到 20000）
