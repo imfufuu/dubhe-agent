@@ -15,6 +15,29 @@ import {
 } from './project-run.js';
 
 const POLL_MS = 900;
+const SVG_NS = 'http://www.w3.org/2000/svg';
+const ICON = {
+  save: '<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/>',
+  close: '<path d="M18 6 6 18M6 6l12 12"/>',
+  output: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 15h18"/>',
+  file: '<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M12 18v-6M9 15l3-3 3 3"/>',
+  folder: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M12 17v-5M9.5 14.5 12 12l2.5 2.5"/>',
+};
+function svgIcon(inner) {
+  const s = document.createElementNS(SVG_NS, 'svg');
+  s.setAttribute('class', 'pm-ic');
+  s.setAttribute('viewBox', '0 0 24 24');
+  s.setAttribute('width', '14');
+  s.setAttribute('height', '14');
+  s.setAttribute('fill', 'none');
+  s.setAttribute('stroke', 'currentColor');
+  s.setAttribute('stroke-width', '2');
+  s.setAttribute('stroke-linecap', 'round');
+  s.setAttribute('stroke-linejoin', 'round');
+  s.setAttribute('aria-hidden', 'true');
+  s.innerHTML = inner;
+  return s;
+}
 let active = null; // 同一时间只开一个项目窗口
 
 function h(tag, attrs = {}, children = []) {
@@ -69,13 +92,17 @@ export function openProjectMode({ store, agent }) {
   const statusMsg = h('span', { class: 'pm-st-msg', role: 'status', 'aria-live': 'polite' });
   const projName = h('span', { class: 'pm-proj-name' }, T('项目', 'Project'));
   const projCount = h('span', { class: 'pm-proj-count' });
-  const btnSave = h('button', { class: 'pm-btn primary', type: 'button', title: T('保存（Ctrl+S）', 'Save (Ctrl+S)'), onclick: () => saveActive() }, T('保存', 'Save'));
+  const btnSave = h('button', { class: 'pm-btn primary', type: 'button', title: T('保存（Ctrl+S）', 'Save (Ctrl+S)'), onclick: () => saveActive() }, [svgIcon(ICON.save), T('保存', 'Save')]);
   const btnNew = h('button', { class: 'pm-icon', type: 'button', title: T('新建文件', 'New file'), 'aria-label': T('新建文件', 'New file'), onclick: () => startCreate() }, '+');
   const btnRefresh = h('button', { class: 'pm-icon', type: 'button', title: T('刷新', 'Refresh'), 'aria-label': T('刷新', 'Refresh'), onclick: () => { state.lastSnap = null; sync(); } }, '↻');
-  const btnClose = h('button', { class: 'pm-btn', type: 'button', title: T('关闭（Esc）', 'Close (Esc)'), onclick: () => close() }, T('关闭', 'Close'));
+  const importFileInput = h('input', { type: 'file', multiple: true, hidden: true, onchange: (e) => importFiles(e.target) });
+  const importDirInput = h('input', { type: 'file', multiple: true, hidden: true, webkitdirectory: true, onchange: (e) => importFiles(e.target, { folder: true }) });
+  const btnImportFile = h('button', { class: 'pm-icon', type: 'button', title: T('导入文件', 'Import files'), 'aria-label': T('导入文件', 'Import files'), onclick: () => importFileInput.click() }, [svgIcon(ICON.file)]);
+  const btnImportDir = h('button', { class: 'pm-icon', type: 'button', title: T('导入文件夹', 'Import folder'), 'aria-label': T('导入文件夹', 'Import folder'), onclick: () => importDirInput.click() }, [svgIcon(ICON.folder)]);
+  const btnClose = h('button', { class: 'pm-btn', type: 'button', title: T('关闭（Esc）', 'Close (Esc)'), onclick: () => close() }, [svgIcon(ICON.close), T('关闭', 'Close')]);
   const btnRun = h('button', { class: 'pm-btn primary run', type: 'button', title: T('运行当前文件（Ctrl+Enter）', 'Run current file (Ctrl+Enter)'), onclick: () => runActive() }, T('▶ 运行', '▶ Run'));
   const btnStop = h('button', { class: 'pm-btn', type: 'button', hidden: true, title: T('停止运行', 'Stop'), onclick: () => stopRun() }, T('■ 停止', '■ Stop'));
-  const btnOut = h('button', { class: 'pm-btn', type: 'button', title: T('显示 / 隐藏输出面板', 'Show / hide output panel'), onclick: () => setOutOpen(!state.outOpen) }, T('输出', 'Output'));
+  const btnOut = h('button', { class: 'pm-btn', type: 'button', title: T('显示 / 隐藏输出面板', 'Show / hide output panel'), onclick: () => setOutOpen(!state.outOpen) }, [svgIcon(ICON.output), T('输出', 'Output')]);
 
   const outSum = h('div', { class: 'pm-out-sum' });
   const outProbs = h('div', { class: 'pm-probs' });
@@ -110,8 +137,10 @@ export function openProjectMode({ store, agent }) {
     ]),
     h('div', { class: 'pm-body' }, [
       h('aside', { class: 'pm-explorer', 'aria-label': T('资源管理器', 'Explorer') }, [
-        h('div', { class: 'pm-ex-head' }, [h('span', {}, T('资源管理器', 'EXPLORER')), btnNew, btnRefresh]),
+        h('div', { class: 'pm-ex-head' }, [h('span', {}, T('资源管理器', 'EXPLORER')), btnImportFile, btnImportDir, btnNew, btnRefresh]),
         explorerBody,
+        importFileInput,
+        importDirInput,
       ]),
       h('section', { class: 'pm-main' }, [tabsBar, editorWrap, emptyNote]),
     ]),
@@ -243,6 +272,33 @@ export function openProjectMode({ store, agent }) {
   function startCreate() {
     state.creating = { dir: state.selected && !files()[state.selected] ? state.selected : parentDir(state.selected) };
     renderTree({ force: true });
+  }
+
+  // 导入：把本机文件（或整个文件夹，保留相对结构）写入沙箱。导入到当前选中目录下；
+  // 二进制、重名、不合法路径一律跳过并计数，绝不覆盖已有文件。
+  async function importFiles(input, { folder = false } = {}) {
+    const list = [...(input.files || [])];
+    input.value = '';
+    if (!list.length) return;
+    const dir = state.selected && !files()[state.selected] ? state.selected : parentDir(state.selected);
+    const taken = new Set(Object.keys(files()));
+    let done = 0;
+    let skipped = 0;
+    for (const file of list) {
+      const rel = folder && file.webkitRelativePath ? file.webkitRelativePath : file.name;
+      const path = joinPath(dir, rel);
+      const segOk = rel.split('/').filter(Boolean).every((seg) => validateName(seg).ok);
+      if (!segOk || !isWorkspacePath(path) || taken.has(path)) { skipped++; continue; }
+      let text = '';
+      try { text = await file.text(); } catch { skipped++; continue; }
+      if (isBinaryContent(text)) { skipped++; continue; }
+      try { agent.sandboxWrite(path, text); taken.add(path); done++; } catch { skipped++; }
+    }
+    state.lastSnap = null;
+    sync();
+    flash(skipped
+      ? T(`已导入 ${done} 个文件，跳过 ${skipped} 个（二进制、重名或名称不合法）`, `Imported ${done} file(s), skipped ${skipped} (binary, duplicate or invalid name)`)
+      : T(`已导入 ${done} 个文件`, `Imported ${done} file(s)`));
   }
 
   function commitCreate(raw) {

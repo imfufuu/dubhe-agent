@@ -3320,11 +3320,12 @@ html:lang(de) .tok-row > span { min-width: 0; overflow-wrap: anywhere; }
 .pm-spacer { flex: 1 1 auto; }
 
 .pm-btn {
-  display: inline-flex; align-items: center; gap: 5px; height: 30px; padding: 0 13px;
+  display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 16px;
   border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--fg-2);
-  font: inherit; font-size: 12.5px; cursor: pointer;
+  font: inherit; font-size: 13px; cursor: pointer;
   transition: color .22s var(--ease), border-color .22s var(--ease), background-color .22s var(--ease), transform .22s var(--ease);
 }
+.pm-btn .pm-ic, .pm-icon .pm-ic { flex: 0 0 auto; display: block; }
 .pm-btn:hover:not(:disabled) { border-color: var(--fg); color: var(--fg); transform: translateY(-1px); }
 .pm-btn:active:not(:disabled) { transform: translateY(0) scale(.98); }
 .pm-btn.primary { background: var(--fg); color: var(--bg); border-color: var(--fg); }
@@ -3341,7 +3342,8 @@ html:lang(de) .tok-row > span { min-width: 0; overflow-wrap: anywhere; }
 .pm-ex-head { display: flex; align-items: center; gap: 4px; padding: 10px 8px 8px 14px; font-size: 11px; letter-spacing: .12em; color: var(--fg-3); }
 .pm-ex-head > span { flex: 1 1 auto; }
 .pm-icon {
-  width: 26px; height: 26px; border: 0; border-radius: 8px; background: transparent; color: var(--fg-3);
+  width: 30px; height: 30px; border: 0; border-radius: 8px; background: transparent; color: var(--fg-3);
+  display: inline-flex; align-items: center; justify-content: center;
   font: inherit; font-size: 15px; line-height: 1; cursor: pointer; transition: background-color .2s var(--ease), color .2s var(--ease);
 }
 .pm-icon:hover { background: var(--bg-hover); color: var(--fg); }

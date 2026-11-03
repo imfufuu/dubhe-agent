@@ -153,3 +153,14 @@ test('项目编辑器语法高亮：经 highlightCode 着色，textarea 文字�
   assert.match(src, /hlPre\.scrollTop = textarea\.scrollTop/);
   assert.match(css, /\.pm-code\.hl-on > \.pm-text \{ color: transparent/);
 });
+
+test('project window: import files/folders wired, binary and duplicate files are skipped, buttons are taller with icons', () => {
+  const src = readFileSync(new URL('../js/project-mode.js', import.meta.url), 'utf8');
+  assert.match(src, /webkitdirectory: true/);
+  assert.match(src, /async function importFiles\(input, \{ folder = false \} = \{\}\)/);
+  assert.match(src, /isBinaryContent\(text\)\) \{ skipped\+\+; continue; \}/);
+  assert.match(src, /taken\.has\(path\)/);
+  assert.match(src, /svgIcon\(ICON\.save\)/);
+  const css = readFileSync(new URL('../css/styles.css', import.meta.url), 'utf8');
+  assert.match(css, /\.pm-btn \{\n  display: inline-flex; align-items: center; gap: 6px; height: 36px;/);
+});
