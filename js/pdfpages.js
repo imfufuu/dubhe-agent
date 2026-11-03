@@ -131,18 +131,7 @@ export async function pdfExtractText(bytes, { maxPages = 50, maxChars = 120000 }
     for (let i = 1; i <= n; i++) {
       const page = await doc.getPage(i);
       const content = await page.getTextContent();
-      let line = '';
-      const lines = [];
-      let lastY = null;
-      for (const item of content.items || []) {
-        if (!item || typeof item.str !== 'string') continue;
-        const y = Array.isArray(item.transform) ? Math.round(item.transform[5]) : null;
-        if (lastY != null && y != null && Math.abs(y - lastY) > 2) { lines.push(line.trimEnd()); line = ''; }
-        line += item.str + (item.hasEOL ? '\n' : '');
-        lastY = y;
-      }
-      if (line.trim()) lines.push(line.trimEnd());
-      let text = lines.join('\n').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+      let text = layoutPdfText(content.items || [], content.styles || {});
       if (chars + text.length > maxChars) { text = text.slice(0, Math.max(0, maxChars - chars)) + '\n…[文本层过长，已截断]'; texts.push(text); chars += text.length; break; }
       chars += text.length;
       texts.push(text);
@@ -153,4 +142,92 @@ export async function pdfExtractText(bytes, { maxPages = 50, maxChars = 120000 }
     try { if (doc && doc.destroy) doc.destroy(); } catch { /* */ }
   }
   return { ok: true, pages, texts, chars };
+}
+
+// ── 文本层排版（纯函数，可脱离 pdf.js 测试）──
+// 目标：让 TeX 排版的 PDF 尽量保留可读的公式结构，而不是把上下标拆成独立的行、把符号和字母粘成一团。
+//  · 行：按基线 y 分行；上下标（字号明显变小、基线偏移）留在原行内，不另起一行；
+//  · 间距：水平间隙超过字号 15% 时补一个空格（pdf.js 的文本项常常不带空格）；
+//  · 上下标：同一方向的连续上（下）标合并为 ^{…}（_{…}）；
+//  · 数学：数学字体（CMMI / CMSY / CMEX / MSAM / MSBM / STIX / Symbol 等）与上下标组成的连续片段包成 $…$。
+const MATH_FONT_RE = /CMMI|CMSY|CMEX|MSAM|MSBM|STIX|Math|Symbol/i;
+
+export function layoutPdfText(items, styles = {}) {
+  const lines = [];
+  let cur = null; // { base, size, toks: [{ text, math, script, gapBefore }] }
+  let prevEnd = null;
+  const flush = () => { if (cur) { lines.push(renderPdfLine(cur)); cur = null; prevEnd = null; } };
+  for (const item of items) {
+    if (!item) continue;
+    const str = typeof item.str === 'string' ? item.str : '';
+    const tr = Array.isArray(item.transform) ? item.transform : [];
+    const x = Number(tr[4]);
+    const y = Number(tr[5]);
+    const size = Math.max(1, Number(item.height) || Math.abs(Number(tr[3])) || Math.abs(Number(tr[0])) || 10);
+    const width = Number(item.width) || 0;
+    const family = String((styles[item.fontName] && styles[item.fontName].fontFamily) || item.fontName || '');
+    const math = MATH_FONT_RE.test(family);
+    if (str) {
+      if (!cur) {
+        cur = { base: y, size, toks: [] };
+      } else {
+        const dy = y - cur.base;
+        const absDy = Math.abs(dy);
+        const isScript = size < 0.85 * cur.size && absDy > 0.1 * cur.size && absDy < 0.9 * cur.size;
+        if (!isScript && absDy > Math.max(2, 0.5 * cur.size)) { flush(); cur = { base: y, size, toks: [] }; }
+        if (cur && isScript) {
+          cur.toks.push({ text: str, math: true, script: dy > 0 ? '^' : '_', gapBefore: false });
+          prevEnd = Number.isFinite(x) ? x + width : null;
+          if (item.hasEOL) cur.toks.push({ text: '\n', math: false, script: null, gapBefore: false });
+          continue;
+        }
+      }
+      const gap = prevEnd != null && Number.isFinite(x) ? x - prevEnd : 0;
+      const needSpace = prevEnd != null && gap > 0.15 * cur.size && !/^\s/.test(str);
+      if (needSpace) cur.toks.push({ text: ' ', math: false, script: null, gapBefore: true });
+      cur.toks.push({ text: str, math, script: null, gapBefore: false });
+      prevEnd = Number.isFinite(x) ? x + width : null;
+    }
+    if (item.hasEOL) { flush(); }
+  }
+  flush();
+  return lines.filter((l) => l.trim()).join('\n');
+}
+
+// 把一行的文本项渲染为文本（数学片段包进 $…$，上下标用 ^{…} / _{…}）
+function renderPdfLine(line) {
+  const out = [];
+  let mathRun = null; // 当前数学片段的字符串数组
+  const endMath = () => {
+    if (!mathRun) return;
+    const body = mathRun.join('').replace(/\s+/g, ' ').trim();
+    if (body) out.push('$' + body + '$');
+    mathRun = null;
+  };
+  let i = 0;
+  const toks = line.toks.filter((t) => t.text !== undefined);
+  while (i < toks.length) {
+    const t = toks[i];
+    if (t.script) {
+      // 合并同方向的连续上 / 下标
+      let j = i; let acc = '';
+      while (j < toks.length && toks[j].script === t.script) { acc += toks[j].text; j++; }
+      if (!mathRun) mathRun = [];
+      mathRun.push(t.script + '{' + acc.trim() + '}');
+      i = j;
+      continue;
+    }
+    if (t.math) {
+      if (!mathRun) mathRun = [];
+      mathRun.push(t.text);
+      i++;
+      continue;
+    }
+    if (t.text === ' ' && mathRun) { mathRun.push(' '); i++; continue; }
+    endMath();
+    out.push(t.text);
+    i++;
+  }
+  endMath();
+  return out.join('').replace(/[ \t]+/g, (m) => (m.length > 1 ? ' ' : m)).replace(/\s+$/g, '');
 }

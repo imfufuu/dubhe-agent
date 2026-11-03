@@ -348,6 +348,8 @@ export function isImageModel(modelId) {
   const m = String(modelId || '').toLowerCase();
   // 识图实验模型只给 analyze_image 工具用，不进对话选择器
   if (m === 'deepseek-v4-flash-vision-exp' || /flash-vision/.test(m)) return true;
+  // Midjourney：网关可能以 mj_imagine / midjourney-* 等 ID 出现在列表里，一律不进对话选择器
+  if (/^mj[_-]|midjourney/.test(m)) return true;
   // 生图家族的常见命名：…-image-… / nano-banana / dall-e / imagen / flux / seedream / stable-diffusion / kolors / hunyuan-image
   return /(^|-)image(-|$)|nano[-_]?banana|dall-?e|(^|-)imagen(-|$)|(^|-)flux(-|$)|seedream|stable-?diffusion|kolors|hunyuan-image/.test(m);
 }

@@ -760,6 +760,8 @@ export function summarizeTurnCost(arg1, opts = {}) {
         }
         continue;
       }
+      // 执行失败的多模态命令不计费（生图 / 识图 / 音视频 / 视频生成）；子智能体的对话用量已在上面处理
+      if (String(tc.status || '') === 'error') continue;
       if (b && b.kind === 'vision') {
         const vc = b.costUsd != null ? b : estimateVisionCost({
           model: b.model || VISION_MODEL_ID,

@@ -7,6 +7,7 @@ import { uiText as messageLocaleText } from './locale.js';
 // 不拥有：任何 store / agent 状态、toast、消息列表与 mountUI 内的交互。本文件绝不 import ui.js。
 import { contextBudgetFor } from './context.js';
 import { ICON } from './icons.js';
+import { fileCardIconHtml } from './file-card.js';
 import { sanitizeSvgMarkup, svgSourceFromValue } from './svg-safety.js';
 import { prepareMarkdownExtensions, parsePandocAttributes, pandocAttributesHtml } from './markdown-extensions.js?v=2026.10.25.1';
 import { blockWrapper, colorStyleFor, fxKind, sanitizeCustomCss, splitInlineFence } from './md-fx.js?v=2026.10.25.1';
@@ -235,7 +236,8 @@ export function renderAttachments(atts) {
         + `<span class="att-video-badge">${can ? '▶' : '⊘'}${dur ? ` ${dur}` : ''}</span>`
         + `<span class="att-video-name mono">${esc(a.name)}${a.stripped ? '（已省略）' : ` · ${fmtSize(a.size)}`}</span></button>`;
     }
-    return `<span class="att-file mono" title="${esc(a.name)}">📄 ${esc(a.name)}${a.stripped ? '（已省略）' : ` · ${fmtSize(a.size)}`}</span>`;
+    // 其它格式：按类型的卡片图标（附件卡片规则见 file-card.js）
+    return `<span class="att-card${a.stripped ? ' is-off' : ''}" title="${esc(a.name)}">${fileCardIconHtml(a, { safeImgSrc, esc })}<span class="att-card-meta"><span class="att-card-name mono">${esc(a.name)}</span><span class="att-card-size">${a.stripped ? '内容已省略' : fmtSize(a.size)}</span></span></span>`;
   }).join('');
   return `<div class="att-row">${items}</div>`;
 }
@@ -328,11 +330,13 @@ function mathHtml(html, display, open = false) {
 // ── Markdown 渲染：markdown-it（本地打包 assets/md/，完整 CommonMark + GFM 表格）
 //    + KaTeX 公式；两者任一未加载时回退到内置精简渲染器（先转义再解析，无 XSS 面）──
 let mdEngine; // undefined=未初始化 null=不可用
-export function getMd() {
-  if (mdEngine === undefined) {
-    if (typeof markdownit === 'undefined') { mdEngine = null; }
+// breaks: 用户消息用（单个换行保留为 <br>，不被 Markdown 吞掉）；其余保持标准 Markdown 语义
+let mdEngineBreaks;
+export function getMd({ breaks = false } = {}) {
+  if ((breaks ? mdEngineBreaks : mdEngine) === undefined) {
+    if (typeof markdownit === 'undefined') { if (breaks) mdEngineBreaks = null; else mdEngine = null; }
     else {
-      const md = markdownit({ html: false, linkify: true, breaks: false, typographer: false });
+      const md = markdownit({ html: false, linkify: true, breaks, typographer: false });
       // 只识别显式协议链接（http(s)://）；关闭模糊匹配，否则 report.md、index.html 等文件名会被当成域名
       md.linkify.set({ fuzzyLink: false, fuzzyEmail: false });
       md.renderer.rules.link_open = (tokens, idx, options, env, self) => {
@@ -429,10 +433,10 @@ export function getMd() {
           tok.children.unshift(cb);
         }
       });
-      mdEngine = md;
+      if (breaks) mdEngineBreaks = md; else mdEngine = md;
     }
   }
-  return mdEngine;
+  return breaks ? mdEngineBreaks : mdEngine;
 }
 
 // ── /system 回复格式化（.18）：行级结构化——命令行/结果行/小节标题，不再挤成一团 ──
@@ -941,7 +945,7 @@ export function renderMarkdown(src, options = {}) {
     return out;
   };
 
-  const md = getMd();
+  const md = getMd({ breaks: !!(options && options.userBreaks) });
   if (md) {
     let html = md.render(t);
     html = restoreWidgets(html);
