@@ -26,7 +26,7 @@ test('视频目录：18 个基础模型 + Seedance 2.5 Flex 两个变体（同�
     if (!families.has(m.family)) families.set(m.family, new Set());
     families.get(m.family).add(m.mode);
   }
-  assert.equal(families.size, 6);
+  assert.equal(families.size, 4, 'Seedance 2.0 Fast/Mini 已折叠进 2.0 家族');
   for (const [fam, modes] of families) assert.deepEqual([...modes].sort(), ['image', 'reference', 'text'], fam);
   assert.ok(VIDEO_GEN_MODELS.some((m) => m.id === 'seedance-2-5-text-to-video-basic'));
   assert.ok(VIDEO_GEN_MODELS.some((m) => m.id === 'minimax-h3-max-image-to-video'));
@@ -35,8 +35,8 @@ test('视频目录：18 个基础模型 + Seedance 2.5 Flex 两个变体（同�
 });
 
 test('设置菜单：每族一项（三种模式合并），仅默认模型标注「默认」', () => {
-  assert.equal(VIDEO_GEN_MENU.length, 6);
-  assert.equal(new Set(VIDEO_GEN_MENU.map((m) => m.family)).size, 6);
+  assert.equal(VIDEO_GEN_MENU.length, 4);
+  assert.equal(new Set(VIDEO_GEN_MENU.map((m) => m.family)).size, 4);
   assert.equal(VIDEO_GEN_MENU.filter((m) => m.tag === '默认').length, 1);
   assert.equal(VIDEO_GEN_MENU.find((m) => m.tag === '默认').id, DEFAULT_VIDEO_GEN_MODEL);
   for (const m of VIDEO_GEN_MENU) assert.ok(m.note.length <= 30, m.note);
@@ -267,4 +267,15 @@ test('generate_video 工具 schema 暴露全部其余参数，且 consents 为�
   const props = (def.function || def).parameters.properties;
   for (const k of Object.keys(VIDEO_EXTRA_SPEC)) assert.ok(k in props, k + ' 未进入 schema');
   assert.equal(props.consents.type, 'object');
+});
+
+test('折叠变体：Seedance 2.0 Fast / Mini 不单独占菜单项，归入 Seedance 2.0 家族', async () => {
+  const { VIDEO_GEN_MENU, VIDEO_GEN_MODELS, videoMenuIdOf } = await import('../js/video-gen.js');
+  assert.deepEqual(VIDEO_GEN_MENU.map((m) => m.label), ['Seedance 2.5', 'Seedance 2.0', 'MiniMax H3 Max', 'MiniMax H3']);
+  const fast = VIDEO_GEN_MODELS.filter((m) => m.variant === 'fast');
+  const mini = VIDEO_GEN_MODELS.filter((m) => m.variant === 'mini');
+  assert.equal(fast.length, 3); assert.equal(mini.length, 3);
+  assert.ok([...fast, ...mini].every((m) => m.family === 'Seedance 2.0'));
+  assert.equal(videoMenuIdOf('seedance-2-0-fast-text-to-video-basic'), 'seedance-2-0-text-to-video-basic');
+  assert.equal(videoMenuIdOf('seedance-2-0-mini-image-to-video-basic'), 'seedance-2-0-text-to-video-basic');
 });
