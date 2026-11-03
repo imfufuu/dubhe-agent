@@ -30,7 +30,6 @@ export const ANTHROPIC_VERSION = '2023-06-01';
 // 另有运行时自学：某模型真实返回过 hidden thinking 后也会被标记（见 agent.js observedHiddenThink）。
 export const ENCRYPTED_THINKING_RE = /(?:^|\/)(?:o[134](?:-|$)|o\d-mini)/i;
 export const MAX_TOKENS = 8192;          // Anthropic 协议必填 max_tokens
-export const THINKING_BUDGET = 4096;     // 思考 token 预算（Anthropic budget_tokens）
 export const TOOL_LOOP_MAX = 0;          // 0 = 不限制（有上限会掐死多步 Agent）
 export const SUBAGENT_LOOP_MAX = 0;      // 0 = 不限制
 export const REQUEST_TIMEOUT_MS = 600000; // 官方服务器最长支持 600s
@@ -156,14 +155,17 @@ const parseImagePixels = (s) => { const m = String(s || '').match(/^(\d{3,5})\s*
 /** 解析本次生图实际使用的变体：family（或其任一变体 ID）+ 风格/分辨率提示 → 具体模型 ID。
  *  style: auto | realistic | illustration | pro | fast | quality；resolution: 1K | 2K | 4K 或像素尺寸。
  *  4K 时 GPT 家族改走升采样变体（按张 $0.02，比原生 4K 便宜）。 */
-export function resolveImageVariant(familyOrModel, { style = 'auto', resolution = '', size = '' } = {}) {
+const ILLUS_HINT_RE = /插画|卡通|动漫|动画|漫画|绘画|水彩|贴纸|矢量|线稿|illustrat|anime|cartoon|manga|sticker|vector|watercolor|drawing/i;
+export function resolveImageVariant(familyOrModel, { style = 'auto', resolution = '', size = '', prompt = '' } = {}) {
   const fam = imageFamilyOf(familyOrModel);
   const def = IMAGE_FAMILIES.find((f) => f.id === fam);
   if (!def) return DEFAULT_IMAGE_MODEL;
   // 传入的是具体变体（如 gpt-image-2.5-flare）且未指定风格时，沿用该变体的角色
   const hitVariant = IMAGE_MODELS.find((m) => m.id === String(familyOrModel || ''));
   const roleStyle = hitVariant && String(style || 'auto').toLowerCase() === 'auto' ? String(hitVariant.role || '').replace(/^upscale-/, '') : '';
-  const st = roleStyle && roleStyle !== 'upscale' && roleStyle !== 'default' ? roleStyle : String(style || 'auto').toLowerCase();
+  let st = roleStyle && roleStyle !== 'upscale' && roleStyle !== 'default' ? roleStyle : String(style || 'auto').toLowerCase();
+  // style 为 auto 时，按描述自动判断写实 / 插画（用户不必指定变体）
+  if (st === 'auto' && prompt) st = ILLUS_HINT_RE.test(String(prompt)) ? 'illustration' : 'realistic';
   const res = String(resolution || '').trim().toUpperCase();
   const wants4k = res === '4K' || parseImagePixels(size) > 2048 || parseImagePixels(resolution) > 2048 || /upscale/.test(String(hitVariant?.role || ''));
   if (fam === 'gpt-image-2') return wants4k ? 'gpt-image-2-4k-upscale' : 'gpt-image-2';
@@ -206,10 +208,6 @@ export function resolveVisionModel(id) {
 export function resolveVideoModel(id) {
   return VIDEO_MODELS.some((m) => m.id === id) ? id : DEFAULT_VIDEO_MODEL;
 }
-export function visionModelLabel(id) {
-  const hit = VISION_MODELS.find((m) => m.id === id) || VIDEO_MODELS.find((m) => m.id === id);
-  return hit ? hit.label : String(id || '');
-}
 export const DEFAULT_CHAT_MODEL = SMART_ROUTER_ID;
 // GPT Image：宽x高像素。Nano Banana 另认 16:9 / 1K / 2K 等（见 api.js nanoImageConfig）
 export const IMAGE_SIZES = ['auto', '1024x1024', '1536x1024', '1024x1536', '2048x2048', '16:9', '9:16', '4:3', '3:4', '1K', '2K', '4K'];
@@ -221,6 +219,14 @@ export const IMAGE_RESOLUTIONS = ['auto', '1K', '2K', '4K'];
 export const IMAGE_FORMATS = ['png', 'jpeg', 'webp'];
 export const IMAGE_BACKGROUNDS = ['auto', 'transparent', 'opaque'];
 export function isImageGenModel(id) { return IMAGE_MODELS.some((m) => m.id === id); }
+// 会话保存的生图选择：系列 ID（推荐）或历史变体 ID
+export function isImageGenSelection(id) { return isImageGenModel(id) || IMAGE_FAMILIES.some((f) => f.id === id); }
+// 写进运行时提示词的生图说明：系列写明变体规则；变体写明 ID
+export function imageModelRuntimeDescription(id) {
+  const fam = IMAGE_FAMILIES.find((f) => f.id === id);
+  if (fam) return `${fam.label} 系列（系列内变体由你按描述自动选择：写实/照片 → style=realistic，插画/卡通/动漫 → style=illustration，4K → resolution=4K；默认 ${fam.defaultModel}）`;
+  return `${imageModelLabel(id)}（ID ${id}）`;
+}
 export function imageModelLabel(id) {
   const hit = IMAGE_MODELS.find((m) => m.id === id);
   return hit ? hit.label : String(id || '');
@@ -260,6 +266,9 @@ const IMAGE_MODEL_ALIASES = (() => {
   put('nano banana 2 1', 'gemini-nano-banana-2.1');
   put('nanobanana21', 'gemini-nano-banana-2.1');
   put('nano-banana-2-1', 'gemini-nano-banana-2.1'); // 模型菜单里曾见过的写法，一并归一
+  // 模型系列放最后注册：已有的变体别名（如 Nano Banana → 2）优先，系列 ID 与系列名作为兜底
+  // 模型系列（菜单里选的就是系列；Agent 在系列内自动选变体）
+  for (const f of IMAGE_FAMILIES) { put(f.id.toLowerCase(), f.id); put(imageModelAliasKey(f.label), f.id); }
   return map;
 })();
 

@@ -377,33 +377,3 @@ export function formatFaultReport(result) {
   return lines.join('\n');
 }
 
-export function summarizeFaultCampaign(cards = []) {
-  const list = (Array.isArray(cards) ? cards : []).filter((c) => c && c.kind);
-  const byKind = {};
-  for (const c of list) {
-    byKind[c.kind] = byKind[c.kind] || { total: 0, ok: 0, missing: {} };
-    byKind[c.kind].total += 1;
-    if (c.ok) byKind[c.kind].ok += 1;
-    for (const m of c.missing || []) byKind[c.kind].missing[m] = (byKind[c.kind].missing[m] || 0) + 1;
-  }
-  const total = list.length;
-  const ok = list.filter((c) => c.ok).length;
-  return { total, ok, failed: total - ok, byKind, coverage: Object.keys(FAULT_KINDS).length };
-}
-
-/** 按「每类故障 × 五个性质」生成覆盖率矩阵（红队平台的最小可用形态）。 */
-export function buildFaultCoverageMatrix(cards = []) {
-  const matrix = {};
-  for (const id of Object.keys(FAULT_KINDS)) {
-    matrix[id] = { kind: id, label: FAULT_KINDS[id].label, properties: {}, runs: 0, okRuns: 0 };
-  }
-  for (const c of cards || []) {
-    if (!matrix[c.kind]) continue;
-    matrix[c.kind].runs += 1;
-    if (c.ok) matrix[c.kind].okRuns += 1;
-    for (const p of FAULT_PROPERTIES) {
-      matrix[c.kind].properties[p] = matrix[c.kind].properties[p] === false ? false : !!c.properties[p];
-    }
-  }
-  return matrix;
-}

@@ -4,13 +4,13 @@
 // ③ 两层本地都没把握（灰区）的图，才交给视觉模型（REMOTE_IMAGE_REVIEW_MODEL）按严格规则复核——命中即拦截，
 // 远程不可用（无 Key / 超时 / 网络）时退回本地阈值判定，不把网络抖动变成误拦。前两层随项目放在 assets/moderation/，在浏览器本地运行。
 
+export const TEXT_MODERATION_MODEL = 'jev:systemone+policy-v4';
 import { askJev, noul, choice, score, noulOf, choiceOf, scoreOf, confidenceOf, JEV_TIMEOUT_MS, getActiveJevModel } from './jev.js';
 import { analyzeImage } from './vision.js';
 import { DEFAULT_GATEWAY_ID, getGateway, defaultVisionModelForGateway } from './gateway-registry.js?v=2026.10.25.1';
 import { BLOCKING_TEXT, policyTextHeuristic } from './local-text-policy.js';
 export { policyTextHeuristic } from './local-text-policy.js';
 
-export const TEXT_MODERATION_MODEL = 'jev:systemone+policy-v4';
 export const IMAGE_MODERATION_MODEL = 'local:nudenet-320n+nsfwjs-inception-v3';
 export const REMOTE_IMAGE_REVIEW_MODEL = 'gemini-3.5-flash-lite';   // 灰区图远程复核（便宜、快；只在本地拿不准时调用）
 export const REMOTE_IMAGE_REVIEW_MAX_PER_TURN = 3;                  // 每轮最多复核几张（视频抽帧也算），控成本

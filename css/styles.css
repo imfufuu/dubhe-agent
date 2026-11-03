@@ -454,6 +454,9 @@ html { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
 .sess-empty.files-empty { padding: 18px 8px 22px; }
 .sess-empty .files-empty-art { width: 116px; margin-bottom: 8px; }
 .sess-empty .files-empty-text { font-size: var(--ui-fs-11_5px, 11.5px); max-width: 180px; }
+/* 空状态文字的入场动效：淡入 + 轻微上浮 + 去模糊，晚于插画出现（仅作用于侧栏空状态） */
+.sess-empty .files-empty-text { animation: sessEmptyTextIn .7s var(--ease-out, ease) .35s both; }
+@keyframes sessEmptyTextIn { from { opacity: 0; transform: translateY(4px); filter: blur(2px); } to { opacity: 1; transform: none; filter: none; } }
 /* 空状态插画的动态效果：背后的卡片轻摆、前景卡片轻浮、火花闪烁（仅作用于本插画）。
    fe-back 自带 rotate(-5 80 60) 属性，动画关键帧需用同一中心与角度，否则会覆盖属性。 */
 .files-empty-art.sess-empty-art .fe-back { transform-box: view-box; transform-origin: 80px 60px; animation: sessEmptySway 6s ease-in-out infinite; }
@@ -466,8 +469,10 @@ html { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
 @keyframes sessEmptyTwinkle { 0%, 100% { opacity: .3; transform: scale(.85); } 50% { opacity: .95; transform: scale(1.12); } }
 @media (prefers-reduced-motion: reduce) {
   html:not([data-motion="on"]) .files-empty-art.sess-empty-art * { animation: none !important; }
+  html:not([data-motion="on"]) .sess-empty .files-empty-text { animation: none; }
 }
 html[data-motion="off"] .files-empty-art.sess-empty-art * { animation: none !important; }
+html[data-motion="off"] .sess-empty .files-empty-text { animation: none; }
 
 .mini-btn {
   min-height: 24px; line-height: 1.35;

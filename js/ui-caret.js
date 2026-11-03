@@ -12,12 +12,6 @@ export const CARET_COLORS = Object.freeze(['#ef4444', '#eab308', '#3b82f6', '#22
 export const CARET_HOLD_MS = 1100;
 export const CARET_EM = 1.2;
 export const CARET_NUDGE = Object.freeze({ x: -1, y: 2 });
-export const CARET_CYCLE_MS = CARET_HOLD_MS * CARET_COLORS.length;
-export function caretColorAt(ms) {
-  const at = Math.max(0, Number(ms) || 0);
-  return CARET_COLORS[Math.floor(at / CARET_HOLD_MS) % CARET_COLORS.length];
-}
-
 // 镜像需要与 textarea 的排版完全一致（字体 / 边距 / 换行），否则光标会偏移
 const MIRROR_PROPS = ['boxSizing', 'fontStyle', 'fontVariant', 'fontWeight', 'fontStretch', 'fontSize', 'fontFamily', 'lineHeight',
   'letterSpacing', 'textTransform', 'textIndent', 'textAlign', 'wordSpacing', 'tabSize',

@@ -10,8 +10,6 @@
 import { computeWilsonConfidenceInterval } from './memory.js';
 
 export const EXPERIMENT_POLICY_VERSION = 'experiment-policy-2.5.0';
-export const EXPERIMENT_SCHEMA_VERSION = 'experiment-schema-1';
-
 // 实验定义：每个实验声明变体、流量、指标口径、护栏与判定阈值。
 export const EXPERIMENT_REGISTRY = Object.freeze({
   // 高风险确认档位的默认值：control = 现状（observe 只记录），treatment = 默认 strict（仅 L3 打断）
@@ -211,52 +209,6 @@ export function summarizeExperiment({ experiment, samples = [] } = {}) {
   };
 }
 
-/**
- * 离线对拍：同一批用例在两个变体下各跑一遍，比 P/R/F1。
- * runs = { control: { cases: [{ id, category, ok, expected, predicted }] }, treatment: {...} }
- */
-export function compareOfflineVariants({ experiment, runs = {}, tolerance = 0.02 } = {}) {
-  const summarize = (list) => {
-    const cases = Array.isArray(list) ? list : [];
-    const tp = cases.filter((c) => c.expected === true && c.predicted === true).length;
-    const fp = cases.filter((c) => c.expected === false && c.predicted === true).length;
-    const fn = cases.filter((c) => c.expected === true && c.predicted === false).length;
-    const tn = cases.filter((c) => c.expected === false && c.predicted === false).length;
-    const precision = rate(tp, tp + fp);
-    const recall = rate(tp, tp + fn);
-    const f1 = (precision + recall) ? Number(((2 * precision * recall) / (precision + recall)).toFixed(4)) : 0;
-    return { n: cases.length, tp, fp, fn, tn, precision, recall, f1, failures: cases.filter((c) => c.expected !== c.predicted) };
-  };
-  const control = summarize(runs.control);
-  const treatment = summarize(runs.treatment);
-  const f1Delta = Number((treatment.f1 - control.f1).toFixed(4));
-  const byCategory = {};
-  for (const cat of new Set([...control.failures, ...treatment.failures].map((c) => c.category))) {
-    const cF = control.failures.filter((c) => c.category === cat).length;
-    const tF = treatment.failures.filter((c) => c.category === cat).length;
-    byCategory[cat] = { controlFailures: cF, treatmentFailures: tF, delta: tF - cF };
-  }
-  const def = typeof experiment === 'string' ? EXPERIMENT_REGISTRY[experiment] : experiment;
-  const minDelta = (def && def.decision && def.decision.minDelta) || 0.05;
-  let action = EXPERIMENT_DECISIONS.KEEP;
-  let reason = '';
-  if (f1Delta <= -tolerance) {
-    action = EXPERIMENT_DECISIONS.ROLLBACK;
-    reason = `离线 F1 退化 ${f1Delta}（超过容差 -${tolerance}）：不上线，回退变体`;
-  } else if (f1Delta >= minDelta) {
-    action = EXPERIMENT_DECISIONS.PROMOTE;
-    reason = `离线 F1 提升 ${f1Delta} ≥ ${minDelta}：可进入小流量灰度`;
-  } else {
-    action = EXPERIMENT_DECISIONS.KEEP;
-    reason = `离线差异 ${f1Delta} 在容差与提升门槛之间：保持现状，不灰度`;
-  }
-  return {
-    ok: true, policyVersion: EXPERIMENT_POLICY_VERSION,
-    experimentId: def ? def.id : '', metricKey: 'f1',
-    control, treatment, f1Delta, byCategory, action, reason, decidedAt: Date.now(),
-  };
-}
-
 export function formatExperimentReport(result) {
   if (!result || !result.ok) return `【策略实验】${(result && result.reason) || '无数据'}`;
   const pct = (x) => (x === null || x === undefined ? '-' : `${(x * 100).toFixed(1)}%`);
@@ -272,35 +224,9 @@ export function formatExperimentReport(result) {
   return lines.join('\n');
 }
 
-export function formatOfflineAB(result) {
-  if (!result || !result.ok) return '【离线对拍】无数据';
-  const pct = (x) => `${(x * 100).toFixed(1)}%`;
-  const lines = [
-    `【离线对拍 · ${result.experimentId}】control F1 ${pct(result.control.f1)}（n=${result.control.n}） vs treatment F1 ${pct(result.treatment.f1)}（n=${result.treatment.n}）`,
-    `  · 差值 ${result.f1Delta} · 判定 ${result.action}：${result.reason}`,
-  ];
-  for (const [cat, v] of Object.entries(result.byCategory || {})) {
-    lines.push(`  · ${cat}：对照失败 ${v.controlFailures} / 变体失败 ${v.treatmentFailures}（${v.delta > 0 ? '+' : ''}${v.delta}）`);
-  }
-  return lines.join('\n');
-}
-
 /** 实验台账：记录本次分配与结果，便于事后复现与回退决策。 */
 export function appendExperimentSample(log = [], sample = {}, max = 64) {
   const next = [...(Array.isArray(log) ? log : []), { ...sample, at: sample.at || Date.now() }];
   return next.slice(-max);
 }
 
-export function summarizeExperimentHealth(state = {}) {
-  const assignments = state.experimentAssignments || {};
-  const samples = state.experimentSamples || [];
-  const inExperiment = Object.values(assignments).filter((a) => a && a.inExperiment).length;
-  const rolledBack = (state.experimentRollbacks || []).length;
-  return {
-    registered: Object.keys(EXPERIMENT_REGISTRY).length,
-    enabled: Object.values(EXPERIMENT_REGISTRY).filter((e) => e.enabled).length,
-    activeAssignments: inExperiment,
-    samples: samples.length,
-    rollbacks: rolledBack,
-  };
-}

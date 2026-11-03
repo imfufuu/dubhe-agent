@@ -10,8 +10,6 @@ import { DEFAULT_GATEWAY_ID, getGateway, gatewayPath, defaultVisionModelForGatew
 
 export const VISION_TOOL_MODEL = DEFAULT_VISION_MODEL;
 export const VIDEO_TOOL_MODEL = DEFAULT_VIDEO_MODEL;
-export const AUDIO_TOOL_MODEL = DEFAULT_AUDIO_MODEL;
-
 // 网关对 OpenAI 兼容接口未传 max_tokens 时经常默认 1k/4k，OCR 会被 finish_reason=length 砍半截。
 const VISION_MAX_TOKENS = 16384;
 const VISION_CONTINUES = 4;

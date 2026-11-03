@@ -37,28 +37,6 @@ export const AUDIT_GOALS = Object.freeze({
 });
 
 /**
- * 上下文与版本绑定：一次执行的所有审计事件都必须能被「哪套策略、哪个版本、哪个会话」唯一确定。
- * 返回绑定摘要（用于事件头与报告展示，不替代内核自己的哈希）。
- */
-export function bindAuditContext({
-  schemaVersion = AUDIT_SCHEMA_VERSION,
-  sessionId = 'local',
-  turnId = 'turn-local',
-  eventIndex = 0,
-  previousDigest = GENESIS_TURN_DIGEST,
-  eventType = '',
-  payload = {},
-  policyVersions = {},
-} = {}) {
-  const material = [
-    String(schemaVersion), String(sessionId), String(turnId), String(eventIndex),
-    String(previousDigest), String(eventType), canonicalJSON(payload),
-    canonicalJSON(policyVersions),
-  ].join('|');
-  return { contextDigest: sha256Hex(material), boundKeys: Object.keys(policyVersions || {}).sort(), material };
-}
-
-/**
  * 对账：站在外部 Store 的位置，核验一次执行的审计足迹。
  * 输入都是「已经落盘/落记录」的东西，任何一项拿不到就如实标记为不可判定。
  */

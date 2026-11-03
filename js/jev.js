@@ -393,35 +393,3 @@ export function buildModerationState(text) {
   return `Task: Content safety moderation for user input.\nUser input:\n${body || '(empty)'}`;
 }
 
-export async function moderateTextWithJev({ apiKey, text, signal, timeoutMs = JEV_TIMEOUT_MS } = {}) {
-  const raw = String(text || '').trim();
-  if (!raw) return { ok: true, blocked: false, source: 'jev', category: 'safe', unsafe: 0, severity: 0, labels: [] };
-  const r = await askJev({
-    apiKey,
-    state: buildModerationState(raw),
-    questions: MODERATION_QUESTIONS,
-    signal,
-    timeoutMs,
-  });
-  if (!r.ok) return r;
-  const unsafe = noulOf(r.answers, 'unsafe');
-  const category = choiceOf(r.answers, 'category') || 'safe';
-  const confidence = confidenceOf(r.answers, 'category');
-  const severity = scoreOf(r.answers, 'severity');
-  const blocked = (unsafe != null && unsafe >= 0.7)
-    || (category !== 'safe' && (unsafe == null || unsafe >= 0.5) && (severity == null || severity >= 2.5));
-  return {
-    ok: true,
-    blocked,
-    source: 'jev',
-    model: r.model || activeJevModel,
-    unsafe,
-    category,
-    confidence,
-    severity,
-    labels: blocked ? [{ label: category !== 'safe' ? category : 'policy_violation', score: unsafe ?? 1 }] : [],
-    answers: r.answers,
-    usage: r.usage,
-  };
-}
-

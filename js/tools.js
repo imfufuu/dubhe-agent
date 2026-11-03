@@ -249,6 +249,10 @@ export const TOOL_DEFS = [
         n: { type: 'integer', minimum: 1, maximum: 10, description: '一次生成几张候选图（默认 1，最多 10）；多张会全部写入沙箱 outputs/，按张计费' },
         moderation: { type: 'string', enum: IMAGE_MODERATIONS, description: '可选，仅 GPT Image：内容审核强度 low（较宽松）/ auto（默认）' },
         output_compression: { type: 'integer', minimum: 0, maximum: 100, description: '可选，仅 GPT Image 且 output_format 为 jpeg/webp：压缩强度 0-100，默认 100' },
+        safety_identifier: { type: 'string', maxLength: 128, description: '可选，仅 GPT Image：终端用户的稳定标识（≤128 字符，建议传哈希而非用户名或邮箱），用于官方滥用监测；不传则不发送' },
+        stream: { type: 'boolean', description: '可选，仅 GPT Image：流式生成，过程中回传草稿（默认 false）。草稿只显示进度，终图完成后才写入沙箱 outputs/' },
+        partial_images: { type: 'integer', minimum: 0, maximum: 3, description: '可选，仅在 stream 为 true 时有效：草稿张数 0-3（默认 2）' },
+        google_search: { type: 'boolean', description: '可选，仅 Nano Banana 2.1 与 3.1 Flash Image：开启 Google 搜索落地，让画面基于实时信息（天气、近期事件等）。3.1 Flash Lite Image 不支持，默认 false' },
         thinking_level: { type: 'string', enum: NANO_THINKING_LEVELS, description: '可选，仅 Nano Banana：思考档位。2.1 支持 minimal/medium/high（默认 medium）；3.1 Flash Image 支持 minimal/high（默认 minimal）。不支持的取值会被忽略' },
       },
       required: ['prompt'],
@@ -1820,7 +1824,7 @@ async function executeToolBody(outerName, outerArgs, ctx) {
         // 会把用户刚选的 Nano Banana 盖掉。args.model 只作纠错提示，不覆盖菜单。
         const session = resolveImageModel(ctx.imageModel || DEFAULT_IMAGE_MODEL, DEFAULT_IMAGE_MODEL);
         // 家族/变体归并：Agent 按 style / resolution / size 自动选具体变体（如 4K 走升采样）
-        const model = resolveImageVariant(session.id, { style: args.style, resolution: args.resolution, size: args.size });
+        const model = resolveImageVariant(session.id, { style: args.style, resolution: args.resolution, size: args.size, prompt });
         const nano = /^gemini-|nano[-_ ]?banana/i.test(model);
         const imageRouteSupported = gatewayId === DEFAULT_GATEWAY_ID
           || (gatewayId === 'openai' && !nano)
@@ -1844,6 +1848,10 @@ async function executeToolBody(outerName, outerArgs, ctx) {
         const moderation = IMAGE_MODERATIONS.includes(args.moderation) && !nano ? args.moderation : 'auto';
         const outputCompression = Number.isInteger(args.output_compression) && args.output_compression >= 0 && args.output_compression <= 100 ? args.output_compression : undefined;
         const thinkingLevel = nano && NANO_THINKING_LEVELS.includes(args.thinking_level) ? args.thinking_level : '';
+        const safetyIdentifier = !nano && typeof args.safety_identifier === 'string' ? args.safety_identifier.trim().slice(0, 128) : '';
+        const stream = !nano && args.stream === true;
+        const partialImages = Number.isInteger(args.partial_images) && args.partial_images >= 0 && args.partial_images <= 3 ? args.partial_images : 2;
+        const googleSearch = nano && args.google_search === true;
         const refs = (Array.isArray(args.reference_paths) ? args.reference_paths : [])
           .map((p) => String(p || '').trim()).filter(Boolean);
         // 缺失的原图先在本地拦下来：否则网关 400 之后用户只看到一句「调用失败」
@@ -1867,7 +1875,8 @@ async function executeToolBody(outerName, outerArgs, ctx) {
             out = await editImage({ model, apiKey: ctx.apiKey, prompt, images, size, quality, format, n: count, signal: ctx.signal, onRetry, ...gatewayRequestContext(ctx) });
           } else {
             emit({ status: 'running', note: `图像生成中（${model}${size !== 'auto' ? ` · ${size}` : ''}${count > 1 ? ` · ${count} 张` : ''}）…` });
-            out = await generateImage({ model, apiKey: ctx.apiKey, prompt, size, quality, background, moderation, outputCompression, thinkingLevel, format, n: count, signal: ctx.signal, onRetry, ...gatewayRequestContext(ctx) });
+            const onPartial = ({ index }) => emit({ status: 'running', note: `草稿 ${index + 1}/${partialImages} 已生成（终图完成后替换）` });
+            out = await generateImage({ model, apiKey: ctx.apiKey, prompt, size, quality, background, moderation, outputCompression, thinkingLevel, googleSearch, safetyIdentifier, stream, partialImages, onPartial, format, n: count, signal: ctx.signal, onRetry, ...gatewayRequestContext(ctx) });
           }
           // 网关也可能只给远程 URL：落地成 data URL，保证沙箱内可再编辑、可打包下载
           const list = (out.images && out.images.length ? out.images : [{ dataUrl: out.dataUrl, mime: out.mime, ext: out.ext, width: out.width, height: out.height }]);

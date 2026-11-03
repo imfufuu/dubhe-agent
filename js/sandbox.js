@@ -451,8 +451,6 @@ export function warmSandboxWorker() {
   warmWorker = { worker, dispose, at: Date.now(), ready: false };
   return true;
 }
-export function releaseWarmSandboxWorker() { discardWarmWorker(); }
-
 function runInWorker(workerFile, payload, timeoutMs, {
   rpc = null, extraScripts = [], onOutput = null, onPhase = null, signal = null,
   readyToken = 'js-runtime-2', workerType = 'classic', allowBlobFallback = true,

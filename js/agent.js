@@ -29,7 +29,7 @@ import { createFS, createTempFS } from './sandbox.js';
 import { effectiveApiKey, isAdminAlias } from './adminkey.js';
 import { compactMessages, contextBudgetFor } from './context.js';
 import { subagentGuide, specialistPrompt } from './subagents.js';
-import { TOOL_LOOP_MAX, SUBAGENT_LOOP_MAX, systemPrompt, OUTPUT_SPEC, outputSpec, compactOutputSpec, DEFAULT_IMAGE_MODEL, SMART_ROUTER_ID, FALLBACK_MODELS, resolveModelAlias } from './config.js?v=2026.10.25.1';
+import { TOOL_LOOP_MAX, SUBAGENT_LOOP_MAX, systemPrompt, OUTPUT_SPEC, outputSpec, compactOutputSpec, DEFAULT_IMAGE_MODEL, imageModelRuntimeDescription, SMART_ROUTER_ID, FALLBACK_MODELS, resolveModelAlias } from './config.js?v=2026.10.25.1';
 import { routeModel, isSmartRouter } from './smartrouter.js?v=2026.10.25.1';
 import { planTurn, planSignals, JEV_PLAN_TIMEOUT_MS } from './jev.js';
 import { markJevOutcome, markLastUserOutcome, turnContext } from './jev-feedback.js';
@@ -520,7 +520,7 @@ export function createAgent(store, hooks = {}) {
       runtime: formatRuntime({
         now: new Date(),
         model,
-        imageModel: store.state.imageModel || DEFAULT_IMAGE_MODEL,
+        imageModel: imageModelRuntimeDescription(store.state.imageModel || DEFAULT_IMAGE_MODEL),
         // 视频生成模型：设置页「多模态模型」里选定（全局，不随会话）
         videoGenModel: (store.state.settings && store.state.settings.videoGenModel) || null,
         filesNote: fsNote(),
@@ -703,7 +703,7 @@ export function createAgent(store, hooks = {}) {
         localCpp: settings.localCppEnabled !== false,
         cppMode: settings.cppMode === 'local' ? 'local' : 'remote',
         webEnabled: !offlineOnly && settings.webEnabled !== false && relayOk,
-        imageModel: store.state.imageModel || DEFAULT_IMAGE_MODEL,
+        imageModel: imageModelRuntimeDescription(store.state.imageModel || DEFAULT_IMAGE_MODEL),
         videoGenModel: (store.state.settings && store.state.settings.videoGenModel) || null,
         // 识图 / 视频识别模型：设置页「多模态模型」全局生效（不随会话）
         visionModel: settings.visionModel || null,

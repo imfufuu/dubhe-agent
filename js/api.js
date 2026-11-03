@@ -26,8 +26,6 @@ const responsesUnsupported = new Set();
 const modelScopeKey = (model, gatewayId = DEFAULT_GATEWAY_ID) => gatewayId === DEFAULT_GATEWAY_ID ? model : `${gatewayId}:${model}`;
 export function effortDisabledFor(model, gatewayId = DEFAULT_GATEWAY_ID) { return effortUnsupported.has(modelScopeKey(model, gatewayId)); }
 export function thinkingDisabledFor(model, gatewayId = DEFAULT_GATEWAY_ID) { return thinkingUnsupported.has(modelScopeKey(model, gatewayId)); }
-export function webFallbackFor(model, gatewayId = DEFAULT_GATEWAY_ID) { return webUnsupported.has(modelScopeKey(model, gatewayId)); }
-export function responsesFallbackFor(model, gatewayId = DEFAULT_GATEWAY_ID) { return responsesUnsupported.has(modelScopeKey(model, gatewayId)); }
 // 仅测试用：清空降级记录，保证用例互相独立
 export function __resetThinkingFallbackForTests() { thinkingUnsupported.clear(); effortUnsupported.clear(); temperatureUnsupported.clear(); }
 export function __resetWebFallbackForTests() { webUnsupported.clear(); responsesUnsupported.clear(); }
@@ -41,9 +39,7 @@ function proxyAvailable() {
 
 // 切换域名后通知界面（只有真的换了才提示一次，避免刷屏）
 let lastSwitchNote = 0;
-export function __resetEndpointForTests() { endpointSwitched = false; }
 let endpointSwitched = false;
-export function endpointSwitchNote() { return lastSwitchNote; }
 function noteSwitch(from, to) {
   endpointSwitched = true;
   lastSwitchNote = Date.now();
@@ -580,8 +576,6 @@ export function buildAnthropicPayload(messages, { maxTokens = MAX_TOKENS, includ
 // onThinkingFallback：思考参数被 400 降级时回调（用于向用户提示，避免静默关闭）
 // 首响应超时：HTTP 200 已返回但读流时超过该毫秒数仍未解析到有效 JSON SSE 事件 → 视为连接假死
 export const FIRST_TOKEN_TIMEOUT_MS = 15000;
-export const FIRST_TOKEN_MAX_RETRIES = 3;
-
 export async function streamChat({ model, apiKey, messages, tools, fastMode = false, thinking = false, reasoningLevel = 'medium', temperature, plan = null, iteration = 1, phase = '', subagentId = '', signal, onEvent, onThinkingFallback, webEnabled = false, onWebFallback, gatewayId = DEFAULT_GATEWAY_ID, gatewayBaseUrl = '', firstTokenTimeoutMs = FIRST_TOKEN_TIMEOUT_MS, streamTimeoutMs = REQUEST_TIMEOUT_MS }) {
   // 废弃/改名模型别名解析（agent 层已做，但子智能体直传时再保底一次）
   model = resolveModelAlias(model);
@@ -1217,6 +1211,61 @@ async function postImage(path, { apiKey, body, isForm, signal, timeoutMs, gatewa
   }
 }
 
+// 流式生图（OpenAI Images 兼容）：SSE 事件 image_generation.partial_image（草稿）与 image_generation.completed（终图）。
+// 网关若未返回 event-stream，则按整包 JSON 处理。返回与非流式相同形状的 { data: [...] }。
+async function postImageStream(path, { apiKey, body, signal, timeoutMs, format = 'png', gatewayId = DEFAULT_GATEWAY_ID, gatewayBaseUrl = '', onPartial }) {
+  const t = withTimeout(signal, timeoutMs);
+  try {
+    const protocol = getGateway(gatewayId).protocol === 'anthropic' ? 'anthropic' : 'openai';
+    const headers = { 'Content-Type': 'application/json', Accept: 'text/event-stream', ...authHeaders(protocol, apiKey, gatewayId) };
+    const r = await request(path, { method: 'POST', headers, body, signal: t.signal, gatewayId, gatewayBaseUrl });
+    if (!r.ok) {
+      const text = await r.text().catch(() => '');
+      const err = new Error(httpErrorMessage(r.status, text, gatewayId));
+      err.status = r.status;
+      err.retryable = r.status === 429 || r.status >= 500;
+      throw err;
+    }
+    const ctype = r.headers.get('content-type') || '';
+    if (!r.body || !/event-stream/i.test(ctype)) {
+      const text = await r.text().catch(() => '');
+      let json = null;
+      try { json = JSON.parse(text); } catch { /* 交给上层报错 */ }
+      if (!json) throw new Error(`图像接口返回了非 JSON 响应（HTTP ${r.status}）：${text.slice(0, 160).replace(/\s+/g, ' ').trim() || '空响应体'}`);
+      return json;
+    }
+    let final = null;
+    const handle = (block) => {
+      const data = block.split('\n').filter((l) => l.startsWith('data:')).map((l) => l.slice(5).trimStart()).join('\n');
+      if (!data || data === '[DONE]') return;
+      let ev = null;
+      try { ev = JSON.parse(data); } catch { return; }
+      if (ev.type === 'error' || ev.error) throw new Error(`图像流式生成失败：${String((ev.error && ev.error.message) || ev.message || '未知错误').slice(0, 200)}`);
+      if (ev.type === 'image_generation.partial_image' && ev.b64_json) {
+        if (onPartial) onPartial({ index: Number(ev.partial_image_index) || 0, dataUrl: `data:image/${format === 'jpeg' ? 'jpeg' : format};base64,${ev.b64_json}` });
+        return;
+      }
+      if (ev.type === 'image_generation.completed' && ev.b64_json) { final = { data: [{ b64_json: ev.b64_json }] }; return; }
+      if (Array.isArray(ev.data) && ev.data.length) final = ev; // 兼容：末尾直接给出整包结构
+    };
+    const reader = r.body.getReader();
+    const dec = new TextDecoder();
+    let buf = '';
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true }).replace(/\r\n/g, '\n');
+      let idx;
+      while ((idx = buf.indexOf('\n\n')) >= 0) { handle(buf.slice(0, idx)); buf = buf.slice(idx + 2); }
+    }
+    if (buf.trim()) handle(buf);
+    if (!final) throw new Error('图像流式响应结束时没有终图（可能是网关未完整转发流式事件）');
+    return final;
+  } finally {
+    t.release();
+  }
+}
+
 // 生图单次 30–65s，抖动重放代价高但远小于整轮失败，故只补一次、间隔 3s
 export const IMAGE_RETRY_DELAY_MS = 3000;
 export async function postImageWithRetry(path, opts, { parse, retries = 1, retryDelayMs = IMAGE_RETRY_DELAY_MS, onRetry, signal } = {}) {
@@ -1257,6 +1306,11 @@ const NANO_ASPECT = new Set(['1:1', '1:4', '1:8', '2:3', '3:2', '3:4', '4:1', '4
 function isNanoImageModel(id) {
   const m = String(id || '').toLowerCase();
   return m === 'gemini-3.1-flash-image' || /nano[-_ ]?banana/.test(m);
+}
+function nanoGroundingSupported(model) {
+  const m = String(model || '').toLowerCase();
+  if (/lite/.test(m)) return false;
+  return /nano[-_ ]?banana[-_ ]?2[.-]1/.test(m) || /3[.-]1[-_ ]flash[-_ ]image/.test(m);
 }
 function nanoThinkingLevel(model, level) {
   const m = String(model || '').toLowerCase();
@@ -1333,7 +1387,7 @@ function parseGeminiImage(json, format = 'png') {
   }
   return { images, ...images[0], created: 0, usage: json.usageMetadata || json.usage || null };
 }
-async function generateNanoImage({ model, apiKey, prompt, size, quality, images, thinkingLevel, n, signal, timeoutMs, format, onRetry, gatewayId = DEFAULT_GATEWAY_ID, gatewayBaseUrl = '' }) {
+async function generateNanoImage({ model, apiKey, prompt, size, quality, images, thinkingLevel, googleSearch = false, n, signal, timeoutMs, format, onRetry, gatewayId = DEFAULT_GATEWAY_ID, gatewayBaseUrl = '' }) {
   const { aspectRatio, imageSize } = nanoImageConfig(size, quality);
   const parts = [{ text: String(prompt || '') }];
   for (const img of images || []) {
@@ -1354,6 +1408,8 @@ async function generateNanoImage({ model, apiKey, prompt, size, quality, images,
   // thinking_level 按模型表：2.1 支持 minimal/medium/high；3.1 Flash(Lite) Image 支持 minimal/high；不支持的取值不发送
   const lvl = nanoThinkingLevel(mid, thinkingLevel);
   if (lvl) body.generationConfig.thinkingConfig = { thinkingLevel: lvl };
+  // Google Search 落地：官方仅 Nano Banana 2.1 与 3.1 Flash Image 支持（3.1 Flash Lite Image 不支持）
+  if (googleSearch && nanoGroundingSupported(mid)) body.tools = [{ googleSearch: {} }];
   // Nano Banana 2.1（gemini-nano-banana-2.1）实测不接受 imageSize '512'（上游 503）：退到 1K
   if (/nano[-_ ]?banana[-_ ]?2[.-]1/.test(mid.toLowerCase()) && body.generationConfig.imageConfig.imageSize === '512') body.generationConfig.imageConfig.imageSize = '1K';
   const nativePath = `models/${encodeURIComponent(mid)}:generateContent`;
@@ -1380,10 +1436,10 @@ async function generateNanoImage({ model, apiKey, prompt, size, quality, images,
 
 // 文生图：size 为像素尺寸（16 的倍数、最大边 ≤3840、长宽比 ≤3:1），auto/缺省交给模型
 // n>1 时网关在 data[] 内返回多张，全部落地（不要只取第一张而丢掉其余）
-export async function generateImage({ model, apiKey, prompt, size, quality, background, moderation, outputCompression, thinkingLevel, format = 'png', n, signal, timeoutMs = IMAGE_TIMEOUT_MS, onRetry, gatewayId = DEFAULT_GATEWAY_ID, gatewayBaseUrl = '' } = {}) {
+export async function generateImage({ model, apiKey, prompt, size, quality, background, moderation, outputCompression, thinkingLevel, googleSearch, safetyIdentifier, stream = false, partialImages, onPartial, format = 'png', n, signal, timeoutMs = IMAGE_TIMEOUT_MS, onRetry, gatewayId = DEFAULT_GATEWAY_ID, gatewayBaseUrl = '' } = {}) {
   if (isNanoImageModel(model)) {
     if (!['teamorouter', 'gemini'].includes(gatewayId)) throw new Error(`Nano Banana 需要 TeamoRouter 或 Gemini 网关；当前网关为「${getGateway(gatewayId).name}」`);
-    return generateNanoImage({ model, apiKey, prompt, size, quality, thinkingLevel, n, signal, timeoutMs, format, onRetry, gatewayId, gatewayBaseUrl });
+    return generateNanoImage({ model, apiKey, prompt, size, quality, thinkingLevel, googleSearch, n, signal, timeoutMs, format, onRetry, gatewayId, gatewayBaseUrl });
   }
   const body = { model, prompt, output_format: format };
   if (size && size !== 'auto' && /^\d+x\d+$/i.test(size)) body.size = size;
@@ -1392,9 +1448,18 @@ export async function generateImage({ model, apiKey, prompt, size, quality, back
   // 官方参数：moderation 仅 low/auto；output_compression 仅 jpeg/webp 有效（0-100）
   if (moderation && moderation !== 'auto') body.moderation = moderation;
   if ((format === 'jpeg' || format === 'webp') && Number.isInteger(outputCompression) && outputCompression >= 0 && outputCompression <= 100) body.output_compression = outputCompression;
+  // 官方参数：safety_identifier（终端用户稳定标识，≤128 字符）；stream + partial_images（流式返回草稿，0-3）
+  if (typeof safetyIdentifier === 'string' && safetyIdentifier.trim()) body.safety_identifier = safetyIdentifier.trim().slice(0, 128);
   const count = Number(n);
   if (Number.isFinite(count) && count > 1) body.n = Math.min(10, Math.max(2, Math.floor(count)));
   const path = gatewayPath(gatewayId, 'images');
+  if (stream) {
+    // 流式：不自动重放（重放会重复计费）；草稿只回调给上层，最终图按原路径解析
+    body.stream = true;
+    body.partial_images = Number.isInteger(partialImages) && partialImages >= 0 && partialImages <= 3 ? partialImages : 2;
+    const json = await postImageStream(path, { apiKey, body: JSON.stringify(body), signal, timeoutMs, format, gatewayId, gatewayBaseUrl, onPartial });
+    return parseImageResponse(json, format, { status: 200 });
+  }
   const json = await postImageWithRetry(path, {
     apiKey, body: JSON.stringify(body), signal, timeoutMs, format, gatewayId, gatewayBaseUrl,
   }, { signal, onRetry, parse: (j) => parseImageResponse(j, format, { status: 200 }) });

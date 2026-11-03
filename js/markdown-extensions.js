@@ -556,7 +556,3 @@ export function prepareMarkdownExtensions(source) {
   return { text, state, restore };
 }
 
-export function stripRawHtmlForTest(source) {
-  const state = { rawHtml: [] };
-  return protectRawHtml(source, state);
-}

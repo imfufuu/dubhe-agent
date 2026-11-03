@@ -13,7 +13,7 @@ import { getLanguage, onLanguageChange } from './locale.js';
 import { VIDEO_GEN_MENU, resolveVideoGenModel, videoMenuIdOf } from './video-gen.js';
 import { JEV_MODEL, JEV_VERSIONS, setActiveJevModel } from './jev.js';
 // 设置弹窗：API Key / 中继地址 / 主题 / 字号 / 沙箱 / 联网 / 快速 / 思考 / 识图·音视频解析模型 / 清空数据 / 关于
-import { APP_RELEASE, APP_VERSION, STORAGE_KEY, VISION_MODELS, VIDEO_MODELS, IMAGE_MODELS, IMAGE_FAMILIES, imageFamilyOf, DEFAULT_IMAGE_MODEL, isImageGenModel, imageModelLabel, resolveVisionModel, resolveVideoModel } from './config.js?v=2026.10.25.1';
+import { APP_RELEASE, APP_VERSION, STORAGE_KEY, VISION_MODELS, VIDEO_MODELS, IMAGE_MODELS, IMAGE_FAMILIES, imageFamilyOf, DEFAULT_IMAGE_MODEL, isImageGenModel, isImageGenSelection, imageModelLabel, resolveVisionModel, resolveVideoModel } from './config.js?v=2026.10.25.1';
 import { DEFAULT_GATEWAY_ID, getGateway, validateGatewayApiKey, validateGatewayBaseUrl, gatewayModelListLabel, defaultModelForGateway } from './gateway-registry.js?v=2026.10.25.1';
 import { currentRelay, resetRelayProbe, RELAY_OVERRIDE_KEY } from './net.js';
 import { DEFAULT_TURN_BUDGET } from './execution.js?v=2026.10.25.1';
@@ -217,7 +217,7 @@ function syncMultimodalSelects(store) {
   // 音视频解析模型已合并为一个设置：videoModel 为存档主键，audioModel 与其保持同值（兼容旧快照与工具 ctx）
   const av = resolveVideoModel(settings.videoModel || settings.audioModel);
   // 生图模型随会话保存（store.state.imageModel），不在 settings 里；不在目录内的值退回默认
-  const image = isImageGenModel(store && store.state && store.state.imageModel) ? store.state.imageModel : DEFAULT_IMAGE_MODEL;
+  const image = isImageGenSelection(store && store.state && store.state.imageModel) ? store.state.imageModel : DEFAULT_IMAGE_MODEL;
   // 视频生成模型：全局设置（settings.videoGenModel），不在目录内的值退回默认
   const vgen = resolveVideoGenModel(settings.videoGenModel);
   fillModelSelect($('#set-vgen-model'), VIDEO_GEN_MENU, videoMenuIdOf(vgen));
@@ -998,12 +998,13 @@ export function mountSettings(store, { onRelayChanged, onKeySaved, onSettingChan
   // 生图模型：写进当前会话（与旧模型菜单里的行为一致），不是全局设置
   const imgSel = $('#set-image-model');
   if (imgSel) imgSel.addEventListener('change', () => {
+    // 保存系列 ID（不再降成默认变体）：Agent 在系列内按描述自动选择写实 / 插画 / 4K 变体
     const fam = IMAGE_FAMILIES.find((f) => f.id === imgSel.value);
-    const id = fam ? fam.defaultModel : DEFAULT_IMAGE_MODEL;
+    const id = fam ? fam.id : DEFAULT_IMAGE_MODEL;
     store.state.imageModel = id;
     store.notify();
     syncMultimodalSelects(store);
-    toast(`生图模型已切换为 ${imageModelLabel(id)}（由 Agent 的 generate_image 工具调用，随当前会话保存）`, 'ok');
+    toast(`生图模型已切换为 ${fam ? fam.label : imageModelLabel(id)}（由 Agent 的 generate_image 工具调用，随当前会话保存）`, 'ok');
   });
   bindModelSelect('#set-vision-model', 'visionModel', resolveVisionModel);
   const decSel = $('#set-decision-model');

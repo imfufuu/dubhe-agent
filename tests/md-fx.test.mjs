@@ -129,3 +129,31 @@ test('已删除「输出碰到长度上限，未写完」提示（界面与所�
   const packs = fs.readdirSync(new URL('../js/i18n-packs/', import.meta.url));
   for (const f of packs) assert.equal(fs.readFileSync(new URL(`../js/i18n-packs/${f}`, import.meta.url), 'utf8').includes(phrase), false, f);
 });
+
+// 单行写法：用户与模型常把整段写在开头行（`:::gradient ocean 120 正文 :::`），应当渲染而不是原样输出
+test('渐变：预设可带角度，预设名后紧跟颜色时以颜色为准', () => {
+  assert.equal(fx.gradientCss('ocean 120'), 'linear-gradient(120deg, #2193b0, #6dd5ed)');
+  assert.equal(fx.gradientCss('forest #1f4037 #99f2c8 90'), 'linear-gradient(90deg, #1f4037, #99f2c8)');
+});
+
+test('单行围栏：参数取开头合法记号，其余为正文；非法参数返回 null', () => {
+  assert.deepEqual(fx.splitInlineFence('gradient', 'ocean 120 海洋渐变 · 到指定角度 120°'), { arg: 'ocean 120', body: '海洋渐变 · 到指定角度 120°' });
+  assert.deepEqual(fx.splitInlineFence('gradient', '#ff7a18 #af002d 45 正文'), { arg: '#ff7a18 #af002d 45', body: '正文' });
+  assert.deepEqual(fx.splitInlineFence('fx', 'shimmer 闪光标题'), { arg: 'shimmer', body: '闪光标题' });
+  assert.equal(fx.splitInlineFence('fx', 'custom 不行'), null);
+  assert.equal(fx.splitInlineFence('gradient', '不是参数的正文'), null);
+});
+
+test('单行渐变围栏：渲染为渐变块，正文保留，不残留 ::: 原文', () => {
+  const html = renderMarkdown(':::gradient ocean 120 海洋渐变 · 到指定角度 120° :::\n\n正文段落');
+  assert.match(html, /md-gradient/);
+  assert.match(html, /linear-gradient\(120deg/);
+  assert.match(html, /海洋渐变/);
+  assert.doesNotMatch(html, /:::/);
+});
+
+test('单行渐变围栏：流式未闭合补全不会对已闭合的单行块多补一个 :::', () => {
+  const html = renderMarkdown(':::gradient sunset 日落标题 :::', { streaming: true });
+  assert.doesNotMatch(html, /:::/);
+  assert.match(html, /md-gradient/);
+});

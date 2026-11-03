@@ -135,7 +135,7 @@ Pandoc 风格围栏容器可写 `::: {.notice #intro}`，容器内容，最后�
 
 以下都是“开头一行 + 正文 + 单独结束行 `:::`”的块级围栏，围栏要单独占行。正文继续渲染 Markdown。
 
-- 渐变文字：`:::gradient 预设 [角度]`，正文，`:::`。预设有 sunset（日落）、ocean（海洋）、aurora（极光）、forest（森林）、gold（金色）、neon（霓虹）、candy（糖果）、mono（墨色 / 灰度）。也可以直接给 2 到 4 个颜色：`:::gradient #ff7a18 #af002d 45`，角度可省略。
+- 渐变文字：`:::gradient 预设 [角度]`，正文，`:::`。预设有 sunset（日落）、ocean（海洋）、aurora（极光）、forest（森林）、gold（金色）、neon（霓虹）、candy（糖果）、mono（墨色 / 灰度）。也可以直接给 2 到 4 个颜色：`:::gradient #ff7a18 #af002d 45`，角度可省略。预设也可带角度：`:::gradient ocean 120`。推荐分行写（开头行只放参数，正文另起行，结束的 `:::` 单独一行）；若必须写在一行，格式为 `:::gradient ocean 120 正文 :::`，参数须放在正文之前。
 - 动效文字：`:::fx 效果名`，正文，`:::`。效果名有 shimmer（闪光）、glow（发光）、wave（波浪）、typewriter（打字机）、neon（霓虹）、rainbow（彩虹）。适合标题、海报文案、短句，不要用于整段长正文。
 - 自定义动效：`:::fx custom`。第一段写 CSS（只作用于本块，仅允许白名单属性，禁止 url()、@import、变量、转义以及 `<` `>`），然后单独一行写 `===`，再写正文。
 - 微交互卡片：`:::card lift`（上浮）、`:::card tilt`（倾斜）、`:::card ripple`（涟漪）、`:::card glow`（发光），正文，`:::`。悬停或点击时触发。

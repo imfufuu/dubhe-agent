@@ -6,7 +6,6 @@ let available = false;
 let lastProbe = 0;
 let pending = null;
 export const localBrowserAvailable = () => available;
-export function resetLocalBrowserProbe() { available = false; lastProbe = 0; pending = null; }
 export async function probeLocalBrowser({ signal, force = false } = {}) {
   if (isNetworkOffline()) { available = false; lastProbe = Date.now(); return false; }
   if (typeof location === 'undefined' || !/^https?:$/.test(location.protocol || '')) return false;

@@ -532,17 +532,6 @@ export function estimateImageCost({
   };
 }
 
-/** 格式化美元金额，供 tok 信息旁展示 */
-export function formatUsd(amount) {
-  const n = Number(amount);
-  if (!Number.isFinite(n) || n < 0) return '$0.0000';
-  if (n === 0) return '$0.0000';
-  if (n < 0.0001) return `<$0.0001`;
-  if (n < 0.01) return `$${n.toFixed(4)}`;
-  if (n < 1) return `$${n.toFixed(4).replace(/0+$/, '').replace(/\.$/, '.00')}`;
-  return `$${n.toFixed(2)}`;
-}
-
 function contextTierNote(p, language = getLanguage()) {
   const tier = p?.contextTier;
   if (!tier || typeof tier !== 'object' || !Number.isFinite(Number(tier.thresholdTokens))) return '';

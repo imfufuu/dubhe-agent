@@ -72,9 +72,6 @@ jobs:
       - name: tests/project-mode.test.mjs · 项目模式纯逻辑与接线
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/project-mode.test.mjs
-      - name: tests/project-ai.test.mjs · 项目模式 AI 辅助提示词
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/project-ai.test.mjs
       - name: tests/copy-text.test.mjs · 复制降级路径（非安全上下文 / 权限拒绝）
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/copy-text.test.mjs

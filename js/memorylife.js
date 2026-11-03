@@ -23,8 +23,6 @@ export const MEMORY_SOURCES = Object.freeze({
   'compression-flush': { label: '滑窗压缩刷盘', rank: 1, longTermEligible: false, confidence: 0.72 },
 });
 
-export const MEMORY_SCOPES = Object.freeze(['identity', 'preference', 'constraint', 'project', 'style', 'fact']);
-export const MEMORY_POOLS = Object.freeze(['long_term', 'candidate', 'reject']);
 export const MEMORY_APPLICATION_STATES = Object.freeze(['RECALLED', 'VALIDATED', 'APPLIED', 'REJECTED_FOR_TURN']);
 
 const SENSITIVITY_PATTERNS = [

@@ -793,7 +793,7 @@ console.log('\n⑱ 设置页字号 / 深度思考 / 本地会话数回归');
     ok('设置页生图模型菜单按家族展示（3 项，含 nano-banana）', imgSel.options.length === 3 && [...imgSel.options].some((o) => o.value === 'nano-banana'), `实际 ${imgSel.options.length}`);
     ok('设置页生图选择器显示当前会话所属家族', imgSel.value === imageFamilyOf(store.state.imageModel), `${imgSel.value} vs ${store.state.imageModel}`);
     imgSel.value = 'nano-banana'; imgSel.dispatchEvent(new window.Event('change', { bubbles: true }));
-    ok('改生图家族写入会话的家族默认变体 store.state.imageModel', store.state.imageModel === 'gemini-3.1-flash-image', store.state.imageModel);
+    ok('改生图家族写入会话的家族 ID（变体由 Agent 按提示词选）store.state.imageModel', imageFamilyOf(store.state.imageModel) === 'nano-banana', store.state.imageModel);
     imgSel.value = 'gpt-image-2'; imgSel.dispatchEvent(new window.Event('change', { bubbles: true }));
     window.localStorage.setItem('dubhe-fontsize', 'small');
     applyFontSize();

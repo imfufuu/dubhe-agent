@@ -135,7 +135,7 @@ Keywords: gradient, motion, animation, fx, shimmer, glow, wave, typewriter, neon
 
 Each of these is a block fence: an opening line, the body, and a closing line that is only `:::`. The fence must sit on its own line. The body is still rendered as Markdown.
 
-- Gradient text: `:::gradient preset [angle]`, body, `:::`. Presets: sunset, ocean, aurora, forest, gold, neon, candy, mono (greyscale). You can also pass 2 to 4 colours directly, for example `:::gradient #ff7a18 #af002d 45`; the angle is optional.
+- Gradient text: `:::gradient preset [angle]`, body, `:::`. Presets: sunset, ocean, aurora, forest, gold, neon, candy, mono (greyscale). You can also pass 2 to 4 colours directly, for example `:::gradient #ff7a18 #af002d 45`; the angle is optional. Presets can take an angle too, for example `:::gradient ocean 120`. Prefer the multi-line form (arguments on the opening line, body on the next lines, a closing `:::` alone on its own line); a one-line form `:::gradient ocean 120 body :::` also works, with the arguments before the body.
 - Motion text: `:::fx name`, body, `:::`. Names: shimmer, glow, wave, typewriter, neon, rainbow. Use it for titles, poster lines and short phrases, not for long running text.
 - Custom motion: `:::fx custom`. The first part is CSS that applies only to this block. Only whitelisted properties are allowed; `url()`, `@import`, variables, escapes, `<` and `>` are rejected. Then a single `===` line, then the body.
 - Micro-interaction cards: `:::card lift`, `:::card tilt`, `:::card ripple` or `:::card glow`, body, `:::`. They react on hover or click.

@@ -58,7 +58,7 @@ export const BUNDLED_SKILLS = [
     },
     body: [
       '## Skill: image-generation',
-      '- 用户要照片/插画/海报/头像等栅格画面：调用 generate_image。model 只能是会话 runtime 指定的生图模型 ID。',
+      '- 用户要照片/插画/海报/头像等栅格画面：调用 generate_image。不要传 model 参数，使用会话 runtime 指定的生图模型系列；系列内变体由你按描述（写实/插画/4K）通过 style、resolution 自动选择。',
       '- 改图用 reference_paths 指向沙箱内图片。统计图、流程图、思维导图、架构图不属于本技能，禁止调用 generate_image。',
     ].join('\n'),
   },
@@ -98,33 +98,6 @@ export function getSoftArchivedSkills(externalArchive = []) {
     }
   }
   return [...skillArchiveMap.values()].sort((a, b) => (b.archivedAt || b.ts || 0) - (a.archivedAt || a.ts || 0));
-}
-
-export function restoreArchivedSkill(activeList = [], idOrQuery = 'last', now = Date.now()) {
-  const pool = getSoftArchivedSkills();
-  if (!pool.length) return { next: pruneLearnedSkills(activeList, { now }), restored: [] };
-  const q = String(idOrQuery || 'last').trim().toLowerCase();
-  const matched = (!q || q === 'last')
-    ? [pool[0]]
-    : pool.filter((s) => s.id.toLowerCase() === q || String(s.description || '').toLowerCase().includes(q));
-  if (!matched.length) return { next: pruneLearnedSkills(activeList, { now }), restored: [] };
-  let next = pruneLearnedSkills(activeList, { now });
-  const restored = [];
-  for (const s of matched) {
-    skillArchiveMap.delete(s.id);
-    const revived = {
-      ...s,
-      archived: false,
-      archivedAt: undefined,
-      archiveReason: undefined,
-      lastHitAt: now,
-      hits: (Number(s.hits) || 0) + 1,
-      vitality: Math.max(0.75, computeSkillVitality({ ...s, lastHitAt: now, hits: (Number(s.hits) || 0) + 1 }, now)),
-    };
-    restored.push(revived);
-    next = rememberSkill(next, revived);
-  }
-  return { next, restored };
 }
 
 // 技能物理彻底清除通道（Purge · 合规不可恢复）：同时从活跃列表与冷备归档中物理删除

@@ -45,16 +45,24 @@ export function contrastRatio(a, b) {
   return (hi + 0.05) / (lo + 0.05);
 }
 
-export function colorReadable(hex, backgrounds = THEME_BACKGROUNDS) {
-  return backgrounds.every((bg) => contrastRatio(hex, bg) >= TEXT_CONTRAST_MIN);
+function presetKey(name) {
+  const raw = String(name || '');
+  return GRADIENT_PRESETS[raw.toLowerCase()] ? raw.toLowerCase() : (PRESET_ALIAS[raw] || null);
 }
 
 export function gradientCss(spec) {
   const raw = String(spec || '').trim();
   if (!raw) return null;
-  const preset = GRADIENT_PRESETS[raw.toLowerCase()] ? raw.toLowerCase() : PRESET_ALIAS[raw];
-  if (preset) return `linear-gradient(90deg, ${GRADIENT_PRESETS[preset].join(', ')})`;
-  const tokens = raw.split(/[\s,，→]+|->/).filter(Boolean);
+  // 预设 [角度]：如 `ocean 120`（角度缺省 90）
+  const pm = /^(\S+)(?:[ \t]+(-?\d{1,3})(?:deg)?)?$/i.exec(raw);
+  const preset = pm ? presetKey(pm[1]) : null;
+  if (preset) {
+    const angle = pm[2] !== undefined ? Math.min(360, Math.max(0, parseInt(pm[2], 10))) : 90;
+    return `linear-gradient(${angle}deg, ${GRADIENT_PRESETS[preset].join(', ')})`;
+  }
+  let tokens = raw.split(/[\s,，→]+|->/).filter(Boolean);
+  // 预设名后紧跟颜色（如 `forest #1f4037 #99f2c8 90`）：以颜色为准，丢弃预设名
+  if (tokens.length > 1 && presetKey(tokens[0]) && hexColor(tokens[1])) tokens = tokens.slice(1);
   let angle = 90;
   const colors = [];
   for (const t of tokens) {
@@ -65,6 +73,29 @@ export function gradientCss(spec) {
   }
   if (colors.length < 2 || colors.length > 4) return null;
   return `linear-gradient(${angle}deg, ${colors.join(', ')})`;
+}
+
+// 单行写法：`:::gradient ocean 120 正文 :::`。参数取开头连续的合法记号（取最长合法前缀），其余为正文。
+// 返回 { arg, body } 或 null（参数不合法时调用方保留原文）。
+export function splitInlineFence(kind, rest) {
+  const s = String(rest || '').trim();
+  if (!s) return null;
+  if (kind === 'gradient') {
+    const idx = [];
+    for (const m of s.matchAll(/\S+/g)) idx.push([m.index, m.index + m[0].length]);
+    let best = null;
+    for (let n = 1; n <= Math.min(idx.length, 6); n++) {
+      const arg = s.slice(idx[0][0], idx[n - 1][1]);
+      if (gradientCss(arg)) best = { arg, body: s.slice(idx[n - 1][1]).trim() };
+    }
+    return best;
+  }
+  const m = /^(\S+)(?:[ \t]+([\s\S]*))?$/.exec(s);
+  if (!m) return null;
+  const arg = m[1];
+  if (kind === 'fx' && (!fxKind(arg) || fxKind(arg) === 'custom')) return null;
+  if (kind === 'card' && !cardKind(arg)) return null;
+  return { arg, body: (m[2] || '').trim() };
 }
 
 export function fxKind(name) {

@@ -708,4 +708,3 @@ export async function gitRun({ command, repo, timeoutSec = 25, signal, fs } = {}
   return localGitRun({ command: cmd, repo, fs });
 }
 
-export const NET_TOOLS_AVAILABLE_NOTE = RELAY_HINT;

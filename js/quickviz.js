@@ -21,7 +21,6 @@ export const CHART_ALIAS = {
   sankey: 'sankey', 桑基图: 'sankey', 桑吉图: 'sankey', 桑基: 'sankey',
   map: 'map', geo: 'map', choropleth: 'map', 地图: 'map', 世界地图: 'map', 中国地图: 'map', 热力地图: 'map',
 };
-export const CHART_KINDS = ['bar', 'barh', 'line', 'area', 'pie', 'donut', 'stacked', 'stackedarea', 'histogram', 'boxplot', 'scatter', 'bubble', 'funnel', 'sankey', 'map'];
 export const CHART_KIND_LABEL = {
   bar: '柱状图', barh: '条形图', line: '折线图', area: '面积图', pie: '饼图', donut: '环形图', stacked: '堆叠图', stackedarea: '堆叠面积图',
   histogram: '直方图', boxplot: '箱线图', scatter: '散点图', bubble: '气泡图', funnel: '漏斗图', sankey: '桑基图', map: '地图',
