@@ -7,6 +7,7 @@ import { uiText as messageLocaleText } from './locale.js';
 // 不拥有：任何 store / agent 状态、toast、消息列表与 mountUI 内的交互。本文件绝不 import ui.js。
 import { contextBudgetFor } from './context.js';
 import { ICON } from './icons.js';
+import { fileCardIconHtml } from './file-card.js';
 import { sanitizeSvgMarkup, svgSourceFromValue } from './svg-safety.js';
 import { prepareMarkdownExtensions, parsePandocAttributes, pandocAttributesHtml } from './markdown-extensions.js?v=2026.10.25.1';
 import { blockWrapper, colorStyleFor, fxKind, sanitizeCustomCss, splitInlineFence } from './md-fx.js?v=2026.10.25.1';
@@ -235,7 +236,8 @@ export function renderAttachments(atts) {
         + `<span class="att-video-badge">${can ? '▶' : '⊘'}${dur ? ` ${dur}` : ''}</span>`
         + `<span class="att-video-name mono">${esc(a.name)}${a.stripped ? '（已省略）' : ` · ${fmtSize(a.size)}`}</span></button>`;
     }
-    return `<span class="att-file mono" title="${esc(a.name)}">📄 ${esc(a.name)}${a.stripped ? '（已省略）' : ` · ${fmtSize(a.size)}`}</span>`;
+    // 其它格式：按类型的卡片图标（附件卡片规则见 file-card.js）
+    return `<span class="att-card${a.stripped ? ' is-off' : ''}" title="${esc(a.name)}">${fileCardIconHtml(a, { safeImgSrc, esc })}<span class="att-card-meta"><span class="att-card-name mono">${esc(a.name)}</span><span class="att-card-size">${a.stripped ? '内容已省略' : fmtSize(a.size)}</span></span></span>`;
   }).join('');
   return `<div class="att-row">${items}</div>`;
 }

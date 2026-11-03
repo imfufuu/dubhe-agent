@@ -165,6 +165,9 @@ jobs:
       - name: tests/midjourney-currency-tokens.test.mjs · Midjourney 文生图 / 识图栏 / 新增币种
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/midjourney-currency-tokens.test.mjs
+      - name: tests/any-format-attachments.test.mjs · 附件不限格式与卡片图标
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/any-format-attachments.test.mjs
       - name: tests/mj-pm-pdf-fixes.test.mjs · MJ 菜单 / 失败不计费 / 项目模式 / PDF 排版 / 换行与光标
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/mj-pm-pdf-fixes.test.mjs

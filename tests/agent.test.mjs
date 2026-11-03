@@ -4553,11 +4553,14 @@ test('fmtSandboxSize / fmtMB / filesCountLabel：从 KB 起算，超过 1024KB �
   const q = await s.resolveStorageQuota(s.SANDBOX_STORAGE_CAP);
   assert.ok(q > 0);
 });
-test('index.html 附件 accept 含 PDF 与 ZIP；提示词说明转图片再识别', async () => {
+test('index.html 附件不限格式（无 accept）；PDF/ZIP 专门分支；提示词说明转图片再识别', async () => {
   const fsp = await import('node:fs');
   const html = fsp.readFileSync(new URL('../app.html', import.meta.url), 'utf8');
-  assert.ok(html.includes('application/pdf') && html.includes('.pdf'), 'attach-input accept 应含 PDF');
-  assert.ok(html.includes('application/zip') && html.includes('.zip'), 'accept 应含 ZIP');
+  // 附件不限格式：文件选择器不再带 accept 白名单；PDF / ZIP 仍由 ui-attachments.js 专门分支处理
+  const attachInput = html.match(/<input id="attach-input"[^>]*>/)?.[0] || '';
+  assert.ok(attachInput && !/\baccept=/.test(attachInput), 'attach-input 不应带 accept 白名单');
+  const attUi = fsp.readFileSync(new URL('../js/ui-attachments.js', import.meta.url), 'utf8');
+  assert.ok(/PDF_RE/.test(attUi) && /ZIP_RE/.test(attUi), 'PDF / ZIP 仍有专门分支');
   const sys = cfg.referenceSystemPrompt();
   assert.match(sys, /analyze_image/);
   assert.match(sys, /analyze_pdf/);
@@ -9221,7 +9224,6 @@ test('analyze_video 工具：定义 / 契约 / 并行与访问表 / 执行路径
     ['../js/api.js', /请调用 analyze_video 工具/],
     ['../js/ui-attachments.js', /source: 'video'/],
     ['../js/ui-attachments.js', /MAX_VIDEO = 16 \* 1024 \* 1024/],
-    ['../app.html', /accept="image\/\*,[^\"]*video\/mp4,video\/webm,video\/quicktime,\.mp4,\.webm,\.mov,\.m4v,/],
   ]) assert.match(fsp.readFileSync(new URL(file, import.meta.url), 'utf8'), re, `${file} 缺少 analyze_video 触点`);
   assert.match(readUiSource(), /const pathsOfAnalyzeVideo = \(msg\) =>/);
 });

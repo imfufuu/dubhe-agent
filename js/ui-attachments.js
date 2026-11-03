@@ -8,6 +8,7 @@ import { ICON } from './icons.js';
 import { openPhotoEditor } from './photo-editor.js?v=2026.10.25.1';
 import { relayDownload, relaySupports, relayAvailable, RELAY_FILE_MAX_BYTES } from './net.js';
 import { svgDataUrl } from './svg-safety.js';
+import { fileCardIconHtml } from './file-card.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -26,6 +27,20 @@ export function installAttachments({ composer, toast, safeImgSrc, fmtSize, onCha
   const VIDEO_RE = /\.(mp4|webm|mov|m4v)$/i;
   const VIDEO_MIME_RE = /^video\/(mp4|webm|quicktime|x-m4v)$/i;
   const MAX_IMG = 5 * 1024 * 1024, MAX_TEXT = 512 * 1024, MAX_PDF = 12 * 1024 * 1024, MAX_ZIP = 12 * 1024 * 1024, MAX_VIDEO = 16 * 1024 * 1024, MAX_FILES = 8;
+  // 任意格式：未被上面专门分支接住的文件，小于此上限即可附加；小且像 UTF-8 文本的按文本读，其余按二进制 data URL 原样落盘
+  const MAX_ANY = 16 * 1024 * 1024;
+  // 嗅探：前 4KB 不含 NUL 且能按 UTF-8 解码（末尾截断的多字节字符容忍）→ 视为文本
+  const looksLikeText = async (f) => {
+    const head = new Uint8Array(await f.slice(0, 4096).arrayBuffer());
+    if (head.includes(0)) return false;
+    let end = head.length;
+    if (f.size > head.length) {
+      while (end > 0 && (head[end - 1] & 0xC0) === 0x80) end--;
+      if (end > 0 && head[end - 1] >= 0xC0) end--;
+    }
+    try { new TextDecoder('utf-8', { fatal: true }).decode(head.subarray(0, end)); return true; } catch { return false; }
+  };
+
   let pending = [];
   const attachChips = $('#attach-chips');
   const fileInput = $('#attach-input');
@@ -258,7 +273,15 @@ export function installAttachments({ composer, toast, safeImgSrc, fmtSize, onCha
           if (f.size > MAX_TEXT) { toast(`${f.name}：文本超过 512KB`, 'err'); continue; }
           pending.push({ id: Math.random().toString(36).slice(2), kind: 'text', name: f.name, mime: f.type || 'text/plain', size: f.size, text: await readAs('text', f) });
         } else {
-          toast(`不支持的文件类型：${f.name}（支持图片、视频 mp4/webm/mov、PDF、ZIP 与文本/代码文件）`, 'err');
+          // 任意格式（不做白名单）：小的 UTF-8 文本按文本附加；其余按二进制 data URL 附加，发送后写入 uploads/
+          if (f.size > MAX_ANY) { toast(`${f.name}：超过 16MB，请压缩或分割后再传`, 'err'); continue; }
+          if (f.size <= MAX_TEXT && await looksLikeText(f)) {
+            pending.push({ id: Math.random().toString(36).slice(2), kind: 'text', name: f.name, mime: f.type || 'text/plain', size: f.size, text: await readAs('text', f) });
+          } else {
+            const mime = f.type || 'application/octet-stream';
+            const raw = String(await readAs('dataURL', f));
+            pending.push({ id: Math.random().toString(36).slice(2), kind: 'file', source: 'binary', name: f.name, mime, size: f.size, dataUrl: raw.replace(/^data:[^;,]*/, `data:${mime}`), originalName: f.name });
+          }
         }
       } catch (err) { toast(err.message, 'err'); }
     }
@@ -274,7 +297,7 @@ export function installAttachments({ composer, toast, safeImgSrc, fmtSize, onCha
       const imgSrc = a.kind === 'image' ? safeImgSrc(a.dataUrl) : (a.source === 'video' && a.poster ? safeImgSrc(a.poster) : '');
       chip.innerHTML = (imgSrc
         ? `<span class="attach-chip-thumb${a.source === 'video' ? ' is-video' : ''}"><img src="${esc(imgSrc)}" alt=""></span>`
-        : `<span class="attach-chip-ico">${a.source === 'video' ? '🎬' : a.source === 'audio' ? '♫' : '📄'}</span>`)
+        : fileCardIconHtml(a, { safeImgSrc, esc }))
         + `<span class="attach-chip-name mono">${esc(a.originalName || a.name)}</span><span class="attach-chip-size">${fmtSize(a.size)}</span><button class="attach-chip-x" type="button" aria-label="移除附件">${ICON.x}</button>`;
       $('.attach-chip-x', chip).addEventListener('click', () => {
         pending = pending.filter((x) => x.id !== a.id);

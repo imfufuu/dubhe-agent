@@ -1023,6 +1023,7 @@ html.show-jev-decision .jev-chip { display: block; }
 .attach-chip-thumb { position: relative; display: inline-flex; flex-shrink: 0; }
 .attach-chip-thumb.is-video::after { content: ''; position: absolute; left: 50%; top: 50%; width: 0; height: 0; transform: translate(-40%, -50%); border-style: solid; border-width: 5px 0 5px 8px; border-color: transparent transparent transparent #fff; filter: drop-shadow(0 0 2px rgba(0,0,0,.7)); pointer-events: none; }
 .attach-chip-ico { font-size: var(--ui-fs-14px, 14px); padding: 0 2px; }
+.attach-chip .fc-ico { width: 24px; height: 24px; }
 .attach-chip-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .attach-chip-size { color: var(--fg-3); font-family: var(--mono); font-size: var(--ui-fs-10px, 10px); flex-shrink: 0; }
 .attach-chip-x { color: var(--fg-3); font-size: var(--ui-fs-10px, 10px); padding: 2px 4px; border-radius: 5px; transition: all .18s var(--ease); flex-shrink: 0; }
@@ -1318,6 +1319,21 @@ html.show-jev-decision .jev-chip { display: block; }
   white-space: nowrap; max-width: 260px; overflow: hidden; text-overflow: ellipsis;
 }
 .msg-user .att-file { color: var(--fg); }
+/* 附件卡片图标（file-card.js）：按格式归类的彩色标签；图片 / 视频用原图与首帧 */
+.fc-ico { --fc: #64748b; position: relative; display: inline-grid; place-items: center; flex-shrink: 0; width: 28px; height: 28px; border-radius: 7px; background: color-mix(in srgb, var(--fc) 16%, var(--bg)); border: 1px solid color-mix(in srgb, var(--fc) 34%, transparent); color: var(--fc); overflow: hidden; box-sizing: border-box; }
+.fc-badge { font-family: var(--mono); font-size: 8.5px; font-weight: 700; letter-spacing: .02em; line-height: 1; max-width: 100%; padding: 0 2px; overflow: hidden; text-overflow: clip; white-space: nowrap; }
+.fc-ico.fc-pdf { --fc: #e5484d; } .fc-ico.fc-word { --fc: #2f6fed; } .fc-ico.fc-sheet { --fc: #1f9d55; } .fc-ico.fc-slide { --fc: #f76808; }
+.fc-ico.fc-archive { --fc: #b7791f; } .fc-ico.fc-audio { --fc: #8e4ec6; } .fc-ico.fc-video { --fc: #d6409f; } .fc-ico.fc-image { --fc: #0d9488; }
+.fc-ico.fc-code { --fc: #7c5cff; } .fc-ico.fc-text, .fc-ico.fc-font { --fc: #6b7280; } .fc-ico.fc-model { --fc: #0891b2; } .fc-ico.fc-other { --fc: #64748b; }
+.fc-ico.fc-thumb { width: 28px; height: 28px; padding: 0; border-radius: 7px; background: var(--bg-soft); }
+.fc-ico.fc-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.fc-ico.fc-video .fc-play { position: absolute; left: 50%; top: 50%; width: 0; height: 0; transform: translate(-30%, -50%); border-style: solid; border-width: 4px 0 4px 6px; border-color: transparent transparent transparent #fff; filter: drop-shadow(0 0 2px rgba(0,0,0,.7)); pointer-events: none; }
+.fc-glyph { font-size: 12px; color: var(--fg-3); }
+.att-card { display: inline-flex; align-items: center; gap: 8px; max-width: 280px; padding: 6px 10px 6px 6px; border: 1px solid var(--line-2); border-radius: 10px; background: var(--bg); text-align: left; }
+.att-card.is-off { opacity: .6; }
+.att-card-meta { display: flex; flex-direction: column; min-width: 0; }
+.att-card-name { font-size: var(--ui-fs-11px, 11px); color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 200px; }
+.att-card-size { font-size: var(--ui-fs-10px, 10px); color: var(--fg-3); font-family: var(--mono); }
 
 /* Pandoc 风格 ==高亮== */
 .md-body mark.md-highlight {
@@ -2898,7 +2914,7 @@ html[data-motion="off"] .offline-model-status.is-loading::before { animation: no
 /* 启动屏：阶段点变 done 时弹一下 */
 .boot-steps li.done b { animation: badgeIn .3s var(--ease-spring) both; }
 /* 用户气泡附件 / 消息头部路由芯片 */
-.att-row .att-img, .att-row .att-file { animation: popIn .26s var(--ease-out) both; transition: transform .2s var(--ease); }
+.att-row .att-img, .att-row .att-file, .att-row .att-card { animation: popIn .26s var(--ease-out) both; transition: transform .2s var(--ease); }
 .att-row .att-img:hover { transform: translateY(-1px) scale(1.02); }
 .router-chip { transition: transform .2s var(--ease-spring), border-color .2s var(--ease), background-color .2s var(--ease); }
 .router-chip:hover { transform: translateY(-1px); }
