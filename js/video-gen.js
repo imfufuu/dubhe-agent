@@ -13,8 +13,9 @@ const FAMILIES = [
   // Seedance 2.5 Flex / Flex R2V 是 2.5 的变体（仅文生与参考图生，无图生），归入同族
   { family: 'Seedance 2.5', ids: ['seedance-2-5-text-to-video-basic', 'seedance-2-5-image-to-video-basic', 'seedance-2-5-reference-to-video-basic'], flexIds: ['seedance-2-5-text-to-video-flex', null, 'seedance-2-5-reference-to-video-flex'], seconds: [4, 30], resolutions: ['480p', '720p', '1080p'], tag: 'Seedance 2.5 · 最新', tagEn: 'Seedance 2.5 · newest', note: '4–30 秒 · 480p/720p/1080p', noteEn: '4–30 s · 480p/720p/1080p' },
   { family: 'Seedance 2.0', ids: ['seedance-2-0-text-to-video-basic', 'seedance-2-0-image-to-video-basic', 'seedance-2-0-reference-to-video-basic'], seconds: [4, 15], resolutions: ['480p', '720p', '1080p', '4k'], tag: 'Seedance 2.0 · 高质', tagEn: 'Seedance 2.0 · high quality', note: '4–15 秒 · 最高 4K', noteEn: '4–15 s · up to 4K' },
-  { family: 'Seedance 2.0 Fast', ids: ['seedance-2-0-fast-text-to-video-basic', 'seedance-2-0-fast-image-to-video-basic', 'seedance-2-0-fast-reference-to-video-basic'], seconds: [4, 15], resolutions: ['480p', '720p'], tag: 'Seedance 2.0 · 快速', tagEn: 'Seedance 2.0 · fast', note: '4–15 秒 · 480p/720p', noteEn: '4–15 s · 480p/720p' },
-  { family: 'Seedance 2.0 Mini', ids: ['seedance-2-0-mini-text-to-video-basic', 'seedance-2-0-mini-image-to-video-basic', 'seedance-2-0-mini-reference-to-video-basic'], seconds: [4, 15], resolutions: ['480p', '720p'], tag: 'Seedance 2.0 · 低价', tagEn: 'Seedance 2.0 · cheap', note: '4–15 秒 · 480p/720p', noteEn: '4–15 s · 480p/720p' },
+  // 折叠变体：与 Flex 相同，归入 Seedance 2.0 家族，不单独占菜单项；分辨率/时长仍按各自规格校验
+  { family: 'Seedance 2.0', folded: 'fast', ids: ['seedance-2-0-fast-text-to-video-basic', 'seedance-2-0-fast-image-to-video-basic', 'seedance-2-0-fast-reference-to-video-basic'], seconds: [4, 15], resolutions: ['480p', '720p'], tag: 'Seedance 2.0 · 快速', tagEn: 'Seedance 2.0 · fast', note: '4–15 秒 · 480p/720p', noteEn: '4–15 s · 480p/720p' },
+  { family: 'Seedance 2.0', folded: 'mini', ids: ['seedance-2-0-mini-text-to-video-basic', 'seedance-2-0-mini-image-to-video-basic', 'seedance-2-0-mini-reference-to-video-basic'], seconds: [4, 15], resolutions: ['480p', '720p'], tag: 'Seedance 2.0 · 低价', tagEn: 'Seedance 2.0 · cheap', note: '4–15 秒 · 480p/720p', noteEn: '4–15 s · 480p/720p' },
   { family: 'MiniMax H3 Max', ids: ['minimax-h3-max-text-to-video', 'minimax-h3-max-image-to-video', 'minimax-h3-max-reference-to-video'], seconds: [4, 15], resolutions: ['768p'], tag: 'MiniMax H3 Max', tagEn: 'MiniMax H3 Max', note: '4–15 秒 · 768p', noteEn: '4–15 s · 768p' },
   { family: 'MiniMax H3', ids: ['minimax-h3-text-to-video', 'minimax-h3-image-to-video', 'minimax-h3-reference-to-video'], seconds: [4, 15], resolutions: ['768p', '2k'], tag: 'MiniMax H3', tagEn: 'MiniMax H3', note: '4–15 秒 · 768p/2k', noteEn: '4–15 s · 768p/2k' },
 ];
@@ -25,10 +26,11 @@ const MODE_LABEL = { text: '文生视频', image: '图生视频', reference: '�
 const MODE_LABEL_EN = { text: 'Text-to-video', image: 'Image-to-video', reference: 'Reference-to-video' };
 
 // 设置页下拉用的完整目录（文档表格共 18 个：6 个模型族 × 文生 / 图生 / 参考图生）
+const VARIANT_LABEL = { basic: '', flex: ' Flex', fast: ' Fast', mini: ' Mini' };
 function videoEntry(f, id, i, variant) {
   return {
     id,
-    label: `${f.family}${variant === 'flex' ? ' Flex' : ''} · ${MODE_LABEL[MODE_OF[i]]}`,
+    label: `${f.family}${VARIANT_LABEL[variant] || ''} · ${MODE_LABEL[MODE_OF[i]]}`,
     family: f.family,
     variant,
     mode: MODE_OF[i],
@@ -40,12 +42,14 @@ function videoEntry(f, id, i, variant) {
     noteEn: `${MODE_LABEL_EN[MODE_OF[i]]} · ${f.noteEn}`,
   };
 }
-export const VIDEO_GEN_MODELS = FAMILIES.flatMap((f) => [
-  ...f.ids.map((id, i) => videoEntry(f, id, i, 'basic')),
-  ...(f.flexIds || []).flatMap((id, i) => (id ? [videoEntry(f, id, i, 'flex')] : [])),
-]);
+export const VIDEO_GEN_MODELS = FAMILIES.flatMap((f) => (f.folded
+  ? f.ids.map((id, i) => videoEntry(f, id, i, f.folded))
+  : [
+    ...f.ids.map((id, i) => videoEntry(f, id, i, 'basic')),
+    ...(f.flexIds || []).flatMap((id, i) => (id ? [videoEntry(f, id, i, 'flex')] : [])),
+  ]));
 
-export const DEFAULT_VIDEO_GEN_MODEL = 'seedance-2-0-mini-text-to-video-basic';
+export const DEFAULT_VIDEO_GEN_MODEL = 'seedance-2-0-text-to-video-basic'; // 菜单中的 Seedance 2.0 项（Fast/Mini 已折叠，不能作默认）
 
 // 支持 negative_prompt 的模型 ID。只有在此登记（并经 GET /v1/models?type=video 核实）的模型才会发送该字段。
 // 现状：公开文档只给出 OpenAPI 的通用字段，未列出逐模型支持表；MiniMax H3 官方请求体无此字段；
@@ -57,7 +61,7 @@ export const NEGATIVE_PROMPT_MAX = 2500; // OpenAPI 默认上限（个别模型�
 
 // 设置页下拉菜单：每族一项。文生 / 图生 / 参考图三种模式合并在同一型号下，
 // 由 Agent 调用 generate_video 时通过 mode 选择（未指定时按是否有参考图自动判断）。
-export const VIDEO_GEN_MENU = FAMILIES.map((f) => {
+export const VIDEO_GEN_MENU = FAMILIES.filter((f) => !f.folded).map((f) => {
   const isDefault = f.ids[0] === DEFAULT_VIDEO_GEN_MODEL;
   return {
     id: f.ids[0], label: f.family, tag: isDefault ? '默认' : '多模式', tagEn: isDefault ? 'Default' : 'Multi-mode',
@@ -85,8 +89,9 @@ export function resolveVideoGenModel(id) {
 export function imageVariantOf(id) {
   const spec = videoGenModelSpec(id);
   if (!spec) return null;
-  const fam = VIDEO_GEN_MODELS.filter((m) => m.family === spec.family);
-  return (fam.find((m) => m.mode === 'image') || null)?.id || null;
+  const fam = VIDEO_GEN_MODELS.filter((m) => m.family === spec.family && m.mode === 'image');
+  // 优先同一变体（Fast 切 Fast 图生，Mini 切 Mini 图生），没有再回落到基础版
+  return (fam.find((m) => m.variant === spec.variant) || fam.find((m) => m.variant === 'basic') || null)?.id || null;
 }
 
 function evenInt(n) { return Math.max(2, Math.round(n / 2) * 2); }

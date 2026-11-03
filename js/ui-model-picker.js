@@ -8,7 +8,7 @@ import { mergeAvailableModels, MODEL_CATALOG_DATE } from './model-catalog.js?v=2
 import { uiText as localeText, onLanguageChange } from './locale.js';
 import { onCurrencyChange } from './currency.js';
 import { $, el, esc } from './ui-markdown.js?v=2026.10.25.1';
-import { FALLBACK_MODELS, isImageModel, providerOf, SMART_ROUTER_ID, PROVIDER_ORDER, SMART_ROUTER_PROVIDER, sortModelsInFamily, isFreeModel, supportsVision, supportsFastMode, IMAGE_MODELS, DEFAULT_IMAGE_MODEL, imageModelLabel, imageFamilyOf } from './config.js?v=2026.10.25.1';
+import { FALLBACK_MODELS, isImageModel, providerOf, SMART_ROUTER_ID, PROVIDER_ORDER, SMART_ROUTER_PROVIDER, sortModelsInFamily, isFreeModel, supportsVision, supportsFastMode, IMAGE_MODELS, isImageGenSelection, DEFAULT_IMAGE_MODEL, imageModelLabel, imageFamilyOf } from './config.js?v=2026.10.25.1';
 import { isJevModel } from './jev.js';
 import { ICON, providerIcon } from './icons.js';
 import { LOCAL_PROVIDER_ICON_SVG } from './icons.js';
@@ -324,7 +324,7 @@ export function installModelPicker({ store, agent, toast, getBusy, openKeyModal,
   // 这里只在切会话 / 切模型时把当前会话的值同步过去，并把旧版本 / 导入会话里不在目录内的值退回默认。
   function syncImageModelSelect() {
     let want = store.state.imageModel;
-    if (!IMAGE_MODELS.some((m) => m.id === want)) {
+    if (!isImageGenSelection(want)) {
       want = DEFAULT_IMAGE_MODEL;
       store.state.imageModel = want;
     }

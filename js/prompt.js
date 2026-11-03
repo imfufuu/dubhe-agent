@@ -34,7 +34,7 @@ export function formatRuntime({ now, model, imageModel, filesNote, webNote, rela
   const lines = ['# Dubhe Agent runtime', '底层框架：Dubhe Helix 3.0 · DC（Dubhe Cambrian，天枢·寒武；前身 Helix 2.5 / 天枢2.5）'];
   if (now) lines.push(`当前时间：${now instanceof Date ? now.toISOString() : String(now)}`);
   if (model) lines.push(`Session model: ${model}`);
-  if (imageModel) lines.push(`生图模型：${imageModel}（generate_image 必须用这个 ID，不要传 model 参数；仅用于照片/插画/海报等栅格画面，统计图/流程图/思维导图/架构图禁止用生图）`);
+  if (imageModel) lines.push(`生图模型：${imageModel}。generate_image 不要传 model 参数；仅用于照片/插画/海报等栅格画面，统计图/流程图/思维导图/架构图禁止用生图。`);
   lines.push('渲染/运行时精确细节按需调用knowledge_search，不整库预装；输出任何:::围栏或Markdown扩展（含颜色、折叠、渐变、动效等）前，若本会话未检索过其精确语法，先用围栏名调用knowledge_search，禁止凭记忆猜写。');
   const extra = join([filesNote, webNote, relayNote, toolTableNote]);
   return extra ? `${lines.join('\n')}\n\n${extra}` : lines.join('\n');

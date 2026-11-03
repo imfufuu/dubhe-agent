@@ -1195,17 +1195,6 @@ export function validateToolResultPost({
   };
 }
 
-// ── 9. 失败分类（不是所有失败都该重试）──────────────────────────────────
-export const FAILURE_KINDS = Object.freeze({
-  INVALID_ARGS: 'INVALID_ARGS',
-  ENVIRONMENT: 'ENVIRONMENT',
-  TRANSIENT: 'TRANSIENT',
-  PERMISSION: 'PERMISSION',
-  DATA: 'DATA',
-  FILE_NOT_FOUND: 'FILE_NOT_FOUND',
-  SIDE_EFFECT_UNCERTAIN: 'SIDE_EFFECT_UNCERTAIN',
-});
-
 export const FAILURE_KIND_META = Object.freeze({
   INVALID_ARGS: { label: '参数错误', handling: '修正参数后最多重试一次', retryable: true, maxRetries: 1, verifyFirst: false },
   ENVIRONMENT: { label: '环境错误', handling: '不重试：解释原因并给出恢复路径', retryable: false, maxRetries: 0, verifyFirst: false },
@@ -1831,19 +1820,6 @@ export function summarizeExecutionRecord({ machine = null, budget = null, toolRu
   };
 }
 
-export function formatExecutionRecordLine(record) {
-  if (!record) return '';
-  const bits = [
-    `阶段=${record.state}`,
-    `转移=${(record.transitions || []).length}`,
-    `工具=${record.toolCallCount}（失败 ${record.failedCount} / 拦截 ${record.blockedCount} / 重试 ${record.retryCount}）`,
-    `风险 L2×${record.riskCounts ? record.riskCounts.L2 : 0}·L3×${record.riskCounts ? record.riskCounts.L3 : 0}`,
-  ];
-  if (record.silentFailure && record.silentFailure.silent) bits.push(`静默失败=${record.silentFailure.failedTools.join('|')}`);
-  if (record.auditDigest) bits.push(`审计=${String(record.auditDigest).slice(0, 10)}`);
-  return `【执行内核 v${record.kernelVersion}】${bits.join(' · ')}`;
-}
-
 // ── 15. P0 验收自检（不夸大：只报告能验证的不变量）───────────────────────
 export function evaluateExecutionKernelAcceptance({ toolNames = [], sampleTurnId = 'turn-acceptance', smoke = true } = {}) {
   const checks = [];
@@ -1941,9 +1917,3 @@ export function evaluateExecutionKernelAcceptance({ toolNames = [], sampleTurnId
   };
 }
 
-export function formatExecutionKernelAcceptanceReport(result = evaluateExecutionKernelAcceptance()) {
-  return [
-    `【天枢·寒武 v${result.kernelVersion} · P0 执行内核自检（${result.passed}/${result.total} 通过）】`,
-    ...result.checks.map((c) => `  ${c.ok ? '✓' : '✗'} ${c.label}\n    · ${c.detail}`),
-  ].join('\n');
-}

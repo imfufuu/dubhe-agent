@@ -4,9 +4,28 @@ import { getLanguage, getIntlLocale, normalizeLanguage } from './locale.js';
 export const USD_TO_CNY_RATE = 6.718;
 export const USD_TO_CNY_RATE_DATE = '2026-10-23';
 export const CURRENCY_KEY = 'dubhe-price-currency';
-export const CURRENCY_PREFERENCES = Object.freeze(['auto', 'USD', 'CNY']);
+export const CURRENCY_PREFERENCES = Object.freeze(['auto', 'USD', 'CNY', 'EUR', 'JPY', 'GBP', 'HKD', 'KRW']);
+// 每 1 USD 兑换的各币种数量（仅展示用，账单仍按 USD 内部计价）。
+// CNY 沿用 PBOC 中间价；其余为 ECB 2026-11-02 欧元基准汇率（EUR/USD 1.1216、USD/JPY 等）交叉折算。
+export const USD_RATES_DATE = '2026-11-02';
+export const USD_RATES = Object.freeze({
+  USD: 1,
+  CNY: USD_TO_CNY_RATE,
+  EUR: 0.891583,
+  JPY: 157.8994,
+  GBP: 0.745185,
+  HKD: 7.846113,
+  KRW: 1342.903,
+});
+const ZERO_DECIMAL_CCY = new Set(['JPY', 'KRW']);
 const listeners = new Set();
 let override = null;
+
+export function usdToCurrency(amountUsd, currency) {
+  const n = Number(amountUsd);
+  const rate = USD_RATES[currency];
+  return Number.isFinite(n) && Number.isFinite(rate) ? n * rate : NaN;
+}
 
 export function usdToCny(amountUsd) {
   const n = Number(amountUsd);
@@ -36,7 +55,7 @@ export function onCurrencyChange(fn) { listeners.add(fn); return () => listeners
 /** Auto keeps the established zh→CNY / en→USD behavior; all added locales default to USD. */
 export function getDisplayCurrency(language = getLanguage()) {
   const preference = getCurrencyPreference();
-  if (preference === 'USD' || preference === 'CNY') return preference;
+  if (preference !== 'auto') return preference;
   return normalizeLanguage(language, 'zh') === 'zh' ? 'CNY' : 'USD';
 }
 
@@ -45,11 +64,16 @@ function currencyParts(amountUsd, language, explicitCurrency) {
     ? explicitCurrency
     : getDisplayCurrency(language);
   const numeric = Number(amountUsd);
-  const amount = currency === 'CNY' ? usdToCny(numeric) : numeric;
+  const amount = currency === 'USD' ? numeric : usdToCurrency(numeric, currency);
   return { currency, amount, locale: getIntlLocale(language) };
 }
 
 function formatAmount(amount, currency, locale, zero = false) {
+  if (ZERO_DECIMAL_CCY.has(currency)) {
+    // 日元 / 韩元没有小数位：大额取整，小额保留两位
+    const max = zero || amount >= 10 ? 0 : 2;
+    return new Intl.NumberFormat(locale, { style: 'currency', currency, currencyDisplay: 'symbol', minimumFractionDigits: 0, maximumFractionDigits: max }).format(amount);
+  }
   const digits = zero || amount === 0 ? 4 : amount < 0.01 ? 4 : amount < 1 ? 4 : 2;
   const minimumFractionDigits = digits === 2 ? 2 : (amount < 0.01 || zero || amount === 0 ? 4 : 0);
   return new Intl.NumberFormat(locale, {

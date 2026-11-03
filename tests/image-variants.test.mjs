@@ -5,7 +5,7 @@ import { IMAGE_MODELS, IMAGE_FAMILIES, imageFamilyOf, resolveImageVariant, DEFAU
 import { JEV_MODEL, JEV_VERSIONS, setActiveJevModel, getActiveJevModel, buildSystemOneBody, choice } from '../js/jev.js';
 
 test('生图菜单按家族归并：GPT Image 2 / GPT Image 2.5 / Nano Banana 三项', () => {
-  assert.deepEqual(IMAGE_FAMILIES.map((f) => f.id), ['gpt-image-2', 'gpt-image-2.5', 'nano-banana']);
+  assert.deepEqual(IMAGE_FAMILIES.map((f) => f.id), ['gpt-image-2', 'gpt-image-2.5', 'nano-banana', 'midjourney']);
   for (const f of IMAGE_FAMILIES) {
     assert.ok(IMAGE_MODELS.some((m) => m.id === f.defaultModel), `${f.id} 默认变体必须在目录中`);
     assert.equal(imageFamilyOf(f.defaultModel), f.id, `${f.defaultModel} 归属 ${f.id}`);
@@ -63,4 +63,18 @@ test('决策层：提供 jev-1.14.0（默认）与 jev-1.13.0 两个版本，切
   } finally {
     setActiveJevModel(JEV_MODEL);
   }
+});
+
+// 会话保存的是「系列」：2.5 系列不再被降成 sunburst；Agent 按描述在写实 / 插画变体之间自动选
+import { resolveImageModel, isImageGenSelection, imageModelRuntimeDescription } from '../js/config.js';
+test('生图系列：会话保存系列 ID，Agent 按描述自动选写实 / 插画变体', () => {
+  assert.ok(isImageGenSelection('gpt-image-2.5'));
+  assert.equal(resolveImageModel('gpt-image-2.5', DEFAULT_IMAGE_MODEL).id, 'gpt-image-2.5');
+  assert.equal(resolveImageVariant('gpt-image-2.5', { prompt: '一只戴帽子的卡通插画猫' }), 'gpt-image-2.5-flare');
+  assert.equal(resolveImageVariant('gpt-image-2.5', { prompt: '雨夜街头的写实人像照片' }), 'gpt-image-2.5-sunburst');
+  assert.equal(resolveImageVariant('gpt-image-2.5', { style: 'illustration' }), 'gpt-image-2.5-flare', '显式 style 优先');
+  assert.equal(resolveImageVariant('gpt-image-2.5', { prompt: '插画', resolution: '4K' }), 'gpt-image-2.5-flare-4k-upscale');
+  // 历史变体 ID 仍按原行为
+  assert.equal(resolveImageVariant('gpt-image-2.5-flare', { prompt: '写实照片' }), 'gpt-image-2.5-flare', '变体角色优先于描述');
+  assert.match(imageModelRuntimeDescription('gpt-image-2.5'), /GPT Image 2\.5 系列.*style=illustration/);
 });

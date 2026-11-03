@@ -273,12 +273,6 @@ export function formatResumePlan(plan, { maxSteps = 4 } = {}) {
   return lines.join('\n');
 }
 
-export function formatCheckpointLine(cp) {
-  if (!cp) return '';
-  const okSteps = (cp.completedSteps || []).filter((s) => (s.status || 'succeeded') === 'succeeded').length;
-  return `【检查点 ${cp.checkpointId}】阶段=${cp.executionState || '-'} · 完成 ${okSteps}/${(cp.completedSteps || []).length} 步 · 产物 ${(cp.artifacts || []).length} 个 · 状态摘要 ${String(cp.stateDigest || '').slice(0, 10)}`;
-}
-
 // 轨迹级检查点质量：用于遥测（检查点是否可续、漂移多少）
 export function summarizeCheckpointHealth({ checkpoints = [], files = {}, capabilities = null } = {}) {
   const latest = checkpoints.length ? checkpoints[checkpoints.length - 1] : null;

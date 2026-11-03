@@ -111,10 +111,3 @@ export function withReasoningStrategy(messages, { thinking = false, level = 'med
   if (at < 0) return [{ role: 'system', text: reasoningStrategy(level) }, ...messages];
   return messages.map((m, i) => i === at ? { ...m, text: `${m.text || ''}\n\n${reasoningStrategy(level)}` } : m);
 }
-export function reasoningControlHint(modelId, level) {
-  if (['smart_router', '__smart_router__'].includes(modelId)) return '随路由模型适配原生控制 + 分级验证';
-  const c = reasoningControlFor(modelId, level);
-  if (c.kind === 'budget') return `原生思考预算 ${c.native} + 分级验证`;
-  if (c.kind === 'effort') return `原生 ${c.native} + 分级验证（非输出预算）`;
-  return '分级验证引导（软控制，非原生预算）';
-}

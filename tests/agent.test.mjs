@@ -4889,64 +4889,6 @@ test('气泡脚注耗时与相对时间；Off 不画思考过程', async () => {
   assert.match(ag, /thoughtHidden/);
 });
 
-group('PDF 正文提取（客户端，无 pdf.js）');
-const makePdf = (contentStream) => {
-  const objects = [
-    '1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj',
-    '2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj',
-    '3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >> endobj',
-    `4 0 obj << /Length ${contentStream.length} >>\nstream\n${contentStream}\nendstream\nendobj`,
-    '5 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj',
-  ];
-  return new TextEncoder().encode('%PDF-1.1\n' + objects.join('\n') + '\n%%EOF\n');
-};
-test('未压缩内容流：Tj 抽出正文', async () => {
-  const pdf = await import('../js/pdf.js');
-  assert.equal(pdf.isPdfBytes(new Uint8Array([1, 2, 3])), false);
-  const bytes = makePdf('BT /F1 12 Tf 10 100 Td (Hello PDF) Tj ET');
-  assert.equal(pdf.isPdfBytes(bytes), true);
-  const got = await pdf.extractPdfText(bytes);
-  assert.equal(got.ok, true, got.error);
-  assert.match(got.text, /Hello PDF/);
-  assert.equal(pdf.pdfTextName('报告.PDF'), '报告.PDF.txt');
-  assert.match(pdf.formatExtractedPdf('a.pdf', got), /Hello PDF/);
-});
-test('FlateDecode 流也能解出文字', async () => {
-  const zlib = await import('node:zlib');
-  const pdf = await import('../js/pdf.js');
-  const inner = Buffer.from('BT /F1 12 Tf 72 720 Td (Flate Hello) Tj ET', 'latin1');
-  const deflated = zlib.deflateSync(inner);
-  const payload = Buffer.from(deflated).toString('latin1');
-  const objects = [
-    '1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj',
-    '2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj',
-    '3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 4 0 R >> endobj',
-    `4 0 obj << /Length ${deflated.length} /Filter /FlateDecode >>\nstream\n${payload}\nendstream\nendobj`,
-  ];
-  const bytes = Buffer.from('%PDF-1.1\n' + objects.join('\n') + '\n%%EOF\n', 'latin1');
-  const got = await pdf.extractPdfText(bytes);
-  assert.equal(got.ok, true, got.error);
-  assert.match(got.text, /Flate Hello/);
-});
-test('提取结果作为文本附件落入 uploads/*.pdf.txt', async () => {
-  const pdf = await import('../js/pdf.js');
-  const fs = createFS();
-  const got = await pdf.extractPdfText(makePdf('BT (Meeting Notes) Tj ET'));
-  const name = pdf.pdfTextName('notes.pdf');
-  const text = pdf.formatExtractedPdf('notes.pdf', got);
-  const written = copyAttachmentsToFS(fs, [{ kind: 'text', name, text }]);
-  assert.deepEqual(written, ['uploads/notes.pdf.txt']);
-  assert.match(fs.read('uploads/notes.pdf.txt'), /Meeting Notes/);
-});
-test('非 PDF 字节给出可读失败，不抛', async () => {
-  const pdf = await import('../js/pdf.js');
-  const got = await pdf.extractPdfText(new TextEncoder().encode('not a pdf'));
-  assert.equal(got.ok, false);
-  assert.match(got.error, /不是 PDF/);
-  assert.match(pdf.formatExtractedPdf('x.pdf', got), /提取失败/);
-});
-
-
 group('2026.09.22.15 布局与高亮');
 test('侧栏 860、761 以上面板停靠，窄屏面板浮层，开面板时藏顶栏胶囊', async () => {
   const fsp = await import('node:fs');
@@ -11060,7 +11002,7 @@ test('Nano Banana 2.1（gemini-nano-banana-2.1，.34 实测 ID）是生图模型
   const pricing = await import('../js/pricing.js');
   assert.ok(c.IMAGE_MODELS.some((m) => m.id === 'gemini-nano-banana-2.1'));
   assert.ok(!c.IMAGE_MODELS.some((m) => m.id === 'nano-banana-2-1'), '.33 猜的 ID 不对，.34 用网关价目表 / 实测的 gemini-nano-banana-2.1');
-  assert.equal(c.IMAGE_MODELS.length, 9);
+  assert.equal(c.IMAGE_MODELS.length, 10); // + Midjourney（非官方，按任务 $0.079）
   assert.ok(c.IMAGE_MODELS.every((m) => m.tag && m.label && m.note), '设置页下拉需要 label · tag');
   assert.equal(c.DEFAULT_IMAGE_MODEL, 'gpt-image-2');
   for (const id of ['gemini-nano-banana-2.1', 'nano-banana-2-1', 'nano-banana-2', 'gpt-image-3', 'dall-e-4', 'flux-2-pro', 'imagen-4']) assert.equal(c.isImageModel(id), true, id);

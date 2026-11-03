@@ -18,11 +18,6 @@ import { formatToolDirectory } from './tool-catalog.js';
 
 export const EXECUTION_CONTEXT_VERSION = 'exec-context-2.5.1';
 
-/** 上下文的固定分区：报告/面板按这个顺序渲染，缺分区显示「未记录」而不是塌掉。 */
-export const CONTEXT_SECTIONS = Object.freeze([
-  'identity', 'intent', 'capability', 'budget', 'risk', 'memory', 'policy', 'experiment', 'audit', 'recovery',
-]);
-
 /** 可检出的状态分裂类型（报错口径要稳定，测试与面板都按 code 断言）。 */
 export const CONTEXT_SPLIT_CODES = Object.freeze({
   capabilityWithoutTool: 'capability-declared-without-tool',
@@ -382,23 +377,6 @@ export function describeExecutionContext(ctx) {
     + ` · 意图=${ctx.intent.taskClass}${scope.length ? ` · 约束[${scope.join(' | ')}]` : ''}`
     + ` · 策略=${ctx.policy.registryVersion || '未钉住'}`
     + (b.web ? '' : ' · Web 不可用');
-}
-
-/** 两份上下文之间的差异（同轮内用户中途改设置、实验换臂时必须能说清「变了什么」）。 */
-export function diffExecutionContexts(a, b) {
-  const changes = [];
-  const walk = (x, y, path) => {
-    const keys = new Set([...Object.keys(x || {}), ...Object.keys(y || {})]);
-    for (const k of keys) {
-      const xv = x ? x[k] : undefined;
-      const yv = y ? y[k] : undefined;
-      const p = path ? `${path}.${k}` : k;
-      if (xv && yv && typeof xv === 'object' && typeof yv === 'object' && !Array.isArray(xv) && !Array.isArray(yv)) { walk(xv, yv, p); continue; }
-      if (JSON.stringify(xv) !== JSON.stringify(yv)) changes.push({ path: p, from: xv, to: yv });
-    }
-  };
-  walk(a, b, '');
-  return { changed: changes.length > 0, count: changes.length, changes };
 }
 
 /** 面板/报告用的上下文分区打印（缺分区如实显示「未记录」，不假装有值）。 */

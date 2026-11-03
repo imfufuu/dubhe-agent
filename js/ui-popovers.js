@@ -106,7 +106,7 @@ export function installPopovers({ store }) {
     const b = tokenBreakdown(store.state.messages, estimateTokens, sysTok);
     const n = (x) => (x >= 1000 ? `${(x / 1000).toFixed(1)}k` : String(x || 0));
     const rows = [
-      ['系统', b.system], ['历史', b.history], ['工具结果', b.tools], ['本轮', b.current], ['合计', b.total],
+      ['系统', b.system], ['历史', b.history], ['工具结果', b.tools], ['识图', b.vision], ['本轮', b.current], ['合计', b.total],
     ];
     let html = rows.map(([k, v], i) => `<div class="tok-row${i === rows.length - 1 ? ' total' : ''}"><span>${k}</span><span>${n(v)}</span></div>`).join('');
     if (turnInfo && turnInfo.summary) {

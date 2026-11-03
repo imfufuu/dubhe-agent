@@ -89,6 +89,7 @@ registerLanguagePack('en', {
   "服务商": "Provider",
   "系统": "System",
   "工具结果": "Tool results",
+  "识图": "Vision",
   "本轮": "This turn",
   "合计": "Total",
   "（再点一次收起）": "(click again to collapse)",

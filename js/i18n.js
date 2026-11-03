@@ -12,8 +12,6 @@ import './i18n-packs/ko.js';
 import './i18n-packs/ru.js';
 import './i18n-packs/ar.js';
 
-// Missing translations fall back in this order: selected language → English → original Chinese source.
-export const UI_TRANSLATION_FALLBACK = Object.freeze(['requested-language', 'English', 'original-source']);
 const EN_RULES = [
   [/^(Dubhe Agent) · 构建 (.+)$/, '$1 · Build $2'],
   [/^(Dubhe Agent V1\.\d+) · 构建 (.+) · 独立项目，与 TeamoRouter 互不隶属$/, '$1 · Build $2 · Independent of TeamoRouter'],

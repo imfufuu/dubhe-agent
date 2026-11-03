@@ -4,7 +4,6 @@ import { changedLines } from './editdiff.js?v=2026.10.25.1';
 // (including long lines) is available; the DOM renderer patches it at most every 50ms.
 // tailLines remains an explicit legacy utility, NOT the editing display policy.
 export const EDIT_PREVIEW_POLICY_VERSION = 'edit-preview-4.0.0';
-export const EDIT_PREVIEW_SCHEMA_VERSION = 'edit-preview-schema-2';
 export const PREVIEW_LINES = 10;
 export const PREVIEW_SCAN_CHARS = 4000;
 export const PREVIEW_LINE_MAX = 240;

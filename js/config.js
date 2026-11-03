@@ -30,7 +30,6 @@ export const ANTHROPIC_VERSION = '2023-06-01';
 // 另有运行时自学：某模型真实返回过 hidden thinking 后也会被标记（见 agent.js observedHiddenThink）。
 export const ENCRYPTED_THINKING_RE = /(?:^|\/)(?:o[134](?:-|$)|o\d-mini)/i;
 export const MAX_TOKENS = 8192;          // Anthropic 协议必填 max_tokens
-export const THINKING_BUDGET = 4096;     // 思考 token 预算（Anthropic budget_tokens）
 export const TOOL_LOOP_MAX = 0;          // 0 = 不限制（有上限会掐死多步 Agent）
 export const SUBAGENT_LOOP_MAX = 0;      // 0 = 不限制
 export const REQUEST_TIMEOUT_MS = 600000; // 官方服务器最长支持 600s
@@ -138,6 +137,7 @@ export const IMAGE_MODELS = [
   { id: 'gpt-image-2.5-sunburst-4k-upscale', family: 'gpt-image-2.5', role: 'upscale-realistic', label: 'GPT Image 2.5 Sunburst 4K Upscale', tag: '写实 · 4K', note: '写实 4K 升采样，按张 $0.02（非升采样 4K 约 $0.0714/张）', tagEn: 'Realistic · 4K', noteEn: 'Realistic 4K upscale, $0.02/image (native 4K about $0.0714)' },
   { id: 'gpt-image-2.5-flare-4k-upscale', family: 'gpt-image-2.5', role: 'upscale-illustration', label: 'GPT Image 2.5 Flare 4K Upscale', tag: '插画 · 4K', note: '插画 4K 升采样，按张 $0.02（非升采样 4K 约 $0.0572/张）', tagEn: 'Illustration · 4K', noteEn: 'Illustration 4K upscale, $0.02/image (native 4K about $0.0572)' },
   { id: 'gemini-3-pro-image', family: 'nano-banana', role: 'pro', label: 'Gemini 3 Pro Image', tag: '精细 · Pro', note: 'Gemini 3 Pro Image · 按 Token 计费，质量档最高（耗时更长）', tagEn: 'Detailed · Pro', noteEn: 'Gemini 3 Pro Image · token billing, highest quality (slower)' },
+  { id: 'midjourney', family: 'midjourney', role: 'artistic', label: 'Midjourney', tag: '非官方 · 艺术', note: 'Midjourney（非官方通道，经 TeamoRouter）· 按任务 $0.079，约 1 分钟出图，仅文生图', tagEn: 'Unofficial · Artistic', noteEn: 'Midjourney (unofficial, via TeamoRouter) · $0.079 per task, about a minute, text-to-image only' },
 ];
 export const DEFAULT_IMAGE_MODEL = 'gpt-image-2';
 // 模型家族：菜单里每个家族只占一项，具体变体（写实/插画/4K 升采样/Pro）由 Agent 按需求自动选择。
@@ -145,7 +145,9 @@ export const IMAGE_FAMILIES = Object.freeze([
   { id: 'gpt-image-2', label: 'GPT Image 2', tag: '均衡 · 默认', note: '均衡 · 默认；4K 自动走升采样变体', tagEn: 'Balanced · Default', noteEn: 'Balanced default; 4K uses the upscale variant', defaultModel: 'gpt-image-2' },
   { id: 'gpt-image-2.5', label: 'GPT Image 2.5', tag: '写实 / 插画', note: '写实或插画两个变体，由 Agent 按描述自动选；4K 走升采样', tagEn: 'Realistic / Illustration', noteEn: 'Realistic or illustration variant chosen by Agent; 4K uses upscale', defaultModel: 'gpt-image-2.5-sunburst' },
   { id: 'nano-banana', label: 'Nano Banana', tag: 'Gemini 原生', note: 'Nano Banana 2 / 2.1 / 3 Pro 三档，由 Agent 按质量与速度需求选择', tagEn: 'Gemini native', noteEn: 'Nano Banana 2 / 2.1 / 3 Pro, chosen by quality and speed', defaultModel: 'gemini-3.1-flash-image' },
+  { id: 'midjourney', label: 'Midjourney', tag: '非官方 · 艺术', note: '非官方通道，按任务 $0.079；仅文生图，约 1 分钟出图', tagEn: 'Unofficial · Artistic', noteEn: 'Unofficial channel, $0.079 per task; text-to-image only, about a minute', defaultModel: 'midjourney' },
 ]);
+export function isMidjourneyModel(id) { return String(id || '') === 'midjourney'; }
 export function imageFamilyOf(id) {
   const key = String(id || '');
   if (IMAGE_FAMILIES.some((f) => f.id === key)) return key;
@@ -156,14 +158,18 @@ const parseImagePixels = (s) => { const m = String(s || '').match(/^(\d{3,5})\s*
 /** 解析本次生图实际使用的变体：family（或其任一变体 ID）+ 风格/分辨率提示 → 具体模型 ID。
  *  style: auto | realistic | illustration | pro | fast | quality；resolution: 1K | 2K | 4K 或像素尺寸。
  *  4K 时 GPT 家族改走升采样变体（按张 $0.02，比原生 4K 便宜）。 */
-export function resolveImageVariant(familyOrModel, { style = 'auto', resolution = '', size = '' } = {}) {
+const ILLUS_HINT_RE = /插画|卡通|动漫|动画|漫画|绘画|水彩|贴纸|矢量|线稿|illustrat|anime|cartoon|manga|sticker|vector|watercolor|drawing/i;
+export function resolveImageVariant(familyOrModel, { style = 'auto', resolution = '', size = '', prompt = '' } = {}) {
   const fam = imageFamilyOf(familyOrModel);
   const def = IMAGE_FAMILIES.find((f) => f.id === fam);
   if (!def) return DEFAULT_IMAGE_MODEL;
+  if (fam === 'midjourney') return 'midjourney';
   // 传入的是具体变体（如 gpt-image-2.5-flare）且未指定风格时，沿用该变体的角色
   const hitVariant = IMAGE_MODELS.find((m) => m.id === String(familyOrModel || ''));
   const roleStyle = hitVariant && String(style || 'auto').toLowerCase() === 'auto' ? String(hitVariant.role || '').replace(/^upscale-/, '') : '';
-  const st = roleStyle && roleStyle !== 'upscale' && roleStyle !== 'default' ? roleStyle : String(style || 'auto').toLowerCase();
+  let st = roleStyle && roleStyle !== 'upscale' && roleStyle !== 'default' ? roleStyle : String(style || 'auto').toLowerCase();
+  // style 为 auto 时，按描述自动判断写实 / 插画（用户不必指定变体）
+  if (st === 'auto' && prompt) st = ILLUS_HINT_RE.test(String(prompt)) ? 'illustration' : 'realistic';
   const res = String(resolution || '').trim().toUpperCase();
   const wants4k = res === '4K' || parseImagePixels(size) > 2048 || parseImagePixels(resolution) > 2048 || /upscale/.test(String(hitVariant?.role || ''));
   if (fam === 'gpt-image-2') return wants4k ? 'gpt-image-2-4k-upscale' : 'gpt-image-2';
@@ -206,10 +212,6 @@ export function resolveVisionModel(id) {
 export function resolveVideoModel(id) {
   return VIDEO_MODELS.some((m) => m.id === id) ? id : DEFAULT_VIDEO_MODEL;
 }
-export function visionModelLabel(id) {
-  const hit = VISION_MODELS.find((m) => m.id === id) || VIDEO_MODELS.find((m) => m.id === id);
-  return hit ? hit.label : String(id || '');
-}
 export const DEFAULT_CHAT_MODEL = SMART_ROUTER_ID;
 // GPT Image：宽x高像素。Nano Banana 另认 16:9 / 1K / 2K 等（见 api.js nanoImageConfig）
 export const IMAGE_SIZES = ['auto', '1024x1024', '1536x1024', '1024x1536', '2048x2048', '16:9', '9:16', '4:3', '3:4', '1K', '2K', '4K'];
@@ -221,6 +223,15 @@ export const IMAGE_RESOLUTIONS = ['auto', '1K', '2K', '4K'];
 export const IMAGE_FORMATS = ['png', 'jpeg', 'webp'];
 export const IMAGE_BACKGROUNDS = ['auto', 'transparent', 'opaque'];
 export function isImageGenModel(id) { return IMAGE_MODELS.some((m) => m.id === id); }
+// 会话保存的生图选择：系列 ID（推荐）或历史变体 ID
+export function isImageGenSelection(id) { return isImageGenModel(id) || IMAGE_FAMILIES.some((f) => f.id === id); }
+// 写进运行时提示词的生图说明：系列写明变体规则；变体写明 ID
+export function imageModelRuntimeDescription(id) {
+  const fam = IMAGE_FAMILIES.find((f) => f.id === id);
+  if (fam && fam.id === 'midjourney') return 'Midjourney（非官方通道，仅文生图，不支持参考图编辑；按任务计费）';
+  if (fam) return `${fam.label} 系列（系列内变体由你按描述自动选择：写实/照片 → style=realistic，插画/卡通/动漫 → style=illustration，4K → resolution=4K；默认 ${fam.defaultModel}）`;
+  return `${imageModelLabel(id)}（ID ${id}）`;
+}
 export function imageModelLabel(id) {
   const hit = IMAGE_MODELS.find((m) => m.id === id);
   return hit ? hit.label : String(id || '');
@@ -260,6 +271,9 @@ const IMAGE_MODEL_ALIASES = (() => {
   put('nano banana 2 1', 'gemini-nano-banana-2.1');
   put('nanobanana21', 'gemini-nano-banana-2.1');
   put('nano-banana-2-1', 'gemini-nano-banana-2.1'); // 模型菜单里曾见过的写法，一并归一
+  // 模型系列放最后注册：已有的变体别名（如 Nano Banana → 2）优先，系列 ID 与系列名作为兜底
+  // 模型系列（菜单里选的就是系列；Agent 在系列内自动选变体）
+  for (const f of IMAGE_FAMILIES) { put(f.id.toLowerCase(), f.id); put(imageModelAliasKey(f.label), f.id); }
   return map;
 })();
 

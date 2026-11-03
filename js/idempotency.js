@@ -188,13 +188,6 @@ export function planReplay({ entry = null, contract = null, userText = '', curre
   };
 }
 
-export function formatLedgerLine(ledger) {
-  if (!ledger) return '';
-  const snap = ledger.snapshot(6);
-  const counts = snap.reduce((acc, e) => { acc[e.status] = (acc[e.status] || 0) + 1; return acc; }, {});
-  return `【幂等账本】共 ${ledger.size} 键 · 最近 ${snap.length}：${Object.entries(counts).map(([k, v]) => `${k}×${v}`).join(' · ') || '空'}`;
-}
-
 export function digestResultText(text) {
   return sha256Hex(String(text == null ? '' : text)).slice(0, 16);
 }

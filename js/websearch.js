@@ -22,29 +22,6 @@
 // 在 Pages 子资源缓存下会出现「新调用方 + 旧被调用方」的混版 → ESM link 期直接白屏。
 // 新文件没有旧缓存可比对，安全；api.js 只在内部用它，不对外新增导出。
 
-/** 各家协议的原生联网规格 */
-export const WEB_CAPS = [
-  {
-    id: 'anthropic-web-search',
-    label: 'Anthropic 服务器工具 web_search_20250305',
-    match: (m) => /^claude-/i.test(m),
-    endpoint: 'messages',
-    // 服务器工具由 Anthropic 侧执行：结果以 server_tool_use / web_search_tool_result 块回流。
-    // 这些块**不要**在下个回合重放（实测网关侧 encrypted_content 为空串，重放只会惹 400）。
-    searchTool: () => [{ type: 'web_search_20250305', name: 'web_search', max_uses: 5 }],
-    serverBlockTypes: ['server_tool_use', 'web_search_tool_result', 'web_search_result'],
-  },
-  {
-    id: 'openai-responses-web-search',
-    label: 'OpenAI Responses API tools:[{type:"web_search"}]',
-    match: (m) => /^gpt-/i.test(m),
-    endpoint: 'responses',
-    searchTool: () => [{ type: 'web_search', search_context_size: 'medium' }],
-    // 让响应里带上来源（web_search_call.action.sources），前端才能显示引用与出处
-    include: () => ['web_search_call.action.sources'],
-  },
-];
-
 /** 当前模型有没有原生联网格式（没有就返回 null，让上层明确告知用户） */
 export function webCapFor(_model) {
   return null; // 原生网页搜索已下线（各模型不稳定）
@@ -244,8 +221,3 @@ export function claimsWebSearch(text) {
   return WEB_CLAIM.some((re) => re.test(t));
 }
 
-/** UI 文案：这一轮的联网是以什么格式发生的 */
-export function webCapNote(cap) {
-  if (!cap) return '当前模型（网关实测）没有可用的原生联网格式，本轮不联网；要联网请换 Claude 或 GPT 系列';
-  return `联网：${cap.label}`;
-}

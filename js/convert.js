@@ -1,12 +1,3 @@
-// ─── 媒体格式转换（V1.8.1 新增 · convert_file 工具的引擎）────────────────────────────
-// 三条通路，能本地做的绝不下载依赖：
-//   · canvas：图片互转（png/jpg/webp，含 SVG/位图 → 位图），纯浏览器图像管线；
-//   · WebAudio：任意可解码音频 → WAV（16bit PCM），无需任何外部库；
-//   · ffmpeg.wasm（@ffmpeg/core 0.12.10，jsDelivr 固定版本、独立 classic Worker 加载）：
-//     其余音视频互转 / 容器重封装 / 剪辑 / 提取音轨 / GIF。首次使用时按需下载（core.js 112KB
-//     + wasm 32MB，随后可复用浏览器缓存），失败原样回报，绝不静默降格为「假装成功」。
-// 计划与参数拼装都是纯函数，可在无 DOM 环境单测。
-export const FFMPEG_BASE = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/umd';
 export const MAX_CONVERT_INPUT = 64 * 1024 * 1024;
 
 export const IMAGE_TO = Object.freeze({ png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp' });

@@ -9,7 +9,7 @@ import { contextBudgetFor } from './context.js';
 import { ICON } from './icons.js';
 import { sanitizeSvgMarkup, svgSourceFromValue } from './svg-safety.js';
 import { prepareMarkdownExtensions, parsePandocAttributes, pandocAttributesHtml } from './markdown-extensions.js?v=2026.10.25.1';
-import { blockWrapper, colorStyleFor, fxKind, sanitizeCustomCss } from './md-fx.js?v=2026.10.25.1';
+import { blockWrapper, colorStyleFor, fxKind, sanitizeCustomCss, splitInlineFence } from './md-fx.js?v=2026.10.25.1';
 import { CHART_ALIAS, parseChartInfo, parseDiagramInfo, renderQuickChart, renderQuickDiagram, CHART_DIRECT_ALIASES } from './quickviz.js?v=2026.10.25.1';
 
 export const $ = (sel, el = document) => el.querySelector(sel);
@@ -73,16 +73,6 @@ export const editPreviewMeta = (preview) => [
 export const editPreviewFoot = (preview) => preview.writes > 1
   ? `本轮对该路径写入 ${preview.samePathWrites} 次${preview.paths.length > 1 ? `，共涉及 ${preview.paths.length} 个文件` : ''}`
   : '';
-export const editPreviewHtml = (preview, live) => {
-  if (!preview) return '';
-  const rows = (preview.changes || []).map((l) => `<div class="ep-line ${l.kind === 'del' ? 'ep-del' : 'ep-add'}"><span class="ep-no">${esc(String(l.no))}</span><span class="ep-sign">${l.kind === 'del' ? '−' : '+'}</span><span class="ep-tx">${esc(l.text) || '&nbsp;'}</span></div>`).join('');
-  const meta = editPreviewMeta(preview), foot = editPreviewFoot(preview);
-  return `<div class="edit-preview" data-policy="${esc(preview.policyVersion || '')}" data-status="${esc(preview.status || '')}">`
-    + `<div class="ep-head mono"><span class="ep-path">${esc(preview.path || '(路径未定)')}</span>${meta ? `<span class="ep-meta">${esc(meta)}</span>` : ''}</div>`
-    + `<div class="ep-body">${rows || '<div class="ep-line"><span class="ep-tx ep-empty">（无可显示的行改动）</span></div>'}${live && !preview.complete ? '<span class="ep-caret" aria-hidden="true"></span>' : ''}</div>`
-    + (foot ? `<div class="ep-foot mono">${esc(foot)}</div>` : '')
-    + '</div>';
-};
 const parseChoiceOpts = choiceOptions;
 const peelChoices = extractChoices;
 const choiceHtml = (blocks) => {
@@ -657,7 +647,8 @@ function closeUnfinishedWidgetFence(source) {
   const lines = String(source || '').split('\n');
   let openBlocks = 0;
   for (const line of lines) {
-    if (isStreamableWidgetDirective(line)) { openBlocks++; continue; }
+    // 单行已闭合（行末带 `:::`）的写法不计入未闭合块
+    if (isStreamableWidgetDirective(line) && !/[ \t]:::[ \t]*$/.test(line)) { openBlocks++; continue; }
     if (openBlocks > 0 && /^[ \t]{0,3}:::[ \t]*(?:>.*)?$/.test(line)) openBlocks--;
   }
   return openBlocks ? `${source}\n:::` : source;
@@ -818,6 +809,14 @@ export function renderMarkdown(src, options = {}) {
   const colors = [];
   // 渐变 / 动效 / 微交互块（语法见 md-fx.js）
   const fxBlocks = [];
+  // 单行写法（开头行即带正文与结束 `:::`）：先于多行规则处理，避免与下一个 `:::` 误配对
+  t = t.replace(/^:::(gradient|fx|card)[ \t]+(.+?)[ \t]+:::[ \t]*$/gm, (whole, kind, rest) => {
+    const sp = splitInlineFence(kind, rest);
+    const w = sp && blockWrapper(kind, sp.arg, {});
+    if (!w) return whole;
+    fxBlocks.push({ ...w, body: sp.body });
+    return `\n\n\uE000FXB${fxBlocks.length - 1}\uE000\n\n`;
+  });
   t = t.replace(/^:::(gradient|fx|card)[ \t]+(.+)\n([\s\S]*?)^:::[ \t]*$/gm, (whole, kind, arg, body) => {
     let payload = {};
     let content = body;

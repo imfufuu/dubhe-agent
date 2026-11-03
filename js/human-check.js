@@ -120,8 +120,3 @@ export function solveHumanChallenge({ origin, siteKey, signal } = {}) {
   return pending;
 }
 
-export function _resetHumanCheckForTests() {
-  cached = null;
-  pending = null;
-  scriptPromise = null;
-}

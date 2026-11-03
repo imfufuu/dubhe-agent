@@ -118,8 +118,6 @@ export const GATEWAYS = Object.freeze([
 
 const BY_ID = new Map(GATEWAYS.map((g) => [g.id, g]));
 export function getGateway(id = DEFAULT_GATEWAY_ID) { return BY_ID.get(String(id || '')) || BY_ID.get(DEFAULT_GATEWAY_ID); }
-export function isGatewayId(id) { return BY_ID.has(String(id || '')); }
-export function gatewayLabel(id) { return getGateway(id).name; }
 export function gatewayBaseUrl(id, overrides = {}) {
   const spec = getGateway(id);
   const raw = overrides && typeof overrides === 'object' ? overrides[spec.id] : overrides;
