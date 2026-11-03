@@ -158,7 +158,7 @@ test('project window: import files/folders wired, binary and duplicate files are
   const src = readFileSync(new URL('../js/project-mode.js', import.meta.url), 'utf8');
   assert.match(src, /webkitdirectory: true/);
   assert.match(src, /async function importFiles\(input, \{ folder = false \} = \{\}\)/);
-  assert.match(src, /isBinaryContent\(text\)\) \{ skipped\+\+; continue; \}/);
+  assert.match(src, /head\.includes\(0\)/); // 二进制按 NUL 字节判断，存为 data URL 导入
   assert.match(src, /taken\.has\(path\)/);
   assert.match(src, /svgIcon\(ICON\.save\)/);
   const css = readFileSync(new URL('../css/styles.css', import.meta.url), 'utf8');

@@ -15,6 +15,26 @@ import {
 } from './project-run.js';
 
 const POLL_MS = 900;
+const PM_IMPORT_MAX_BYTES = 20 * 1024 * 1024; // 单个导入文件上限（超出则跳过并计数）
+const EXT_MIME = {
+  png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp', svg: 'image/svg+xml',
+  mp3: 'audio/mpeg', wav: 'audio/wav', ogg: 'audio/ogg', m4a: 'audio/mp4', flac: 'audio/flac',
+  mp4: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime', pdf: 'application/pdf', zip: 'application/zip',
+};
+// 空文件夹用占位文件 .keep 表示：树里保留文件夹，但不把占位文件列出来
+const isPlaceholder = (p) => /(^|\/)\.keep$/.test(String(p));
+const mimeOf = (file) => file.type || EXT_MIME[String(file.name || '').split('.').pop().toLowerCase()] || 'application/octet-stream';
+function readDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => resolve(String(fr.result).replace(/^data:[^;,]*/, 'data:' + mimeOf(file)));
+    fr.onerror = () => reject(fr.error || new Error('read failed'));
+    fr.readAsDataURL(file);
+  });
+}
+function fmtBytes(n) {
+  return n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : n >= 1024 ? Math.round(n / 1024) + ' KB' : n + ' B';
+}
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const ICON = {
   save: '<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/>',
@@ -22,6 +42,8 @@ const ICON = {
   output: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 15h18"/>',
   file: '<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M12 18v-6M9 15l3-3 3 3"/>',
   folder: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M12 17v-5M9.5 14.5 12 12l2.5 2.5"/>',
+  folderPlus: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M12 11v5M9.5 13.5h5"/>',
+  side: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/>',
 };
 function svgIcon(inner) {
   const s = document.createElementNS(SVG_NS, 'svg');
@@ -93,6 +115,8 @@ export function openProjectMode({ store, agent }) {
   const projName = h('span', { class: 'pm-proj-name' }, T('项目', 'Project'));
   const projCount = h('span', { class: 'pm-proj-count' });
   const btnSave = h('button', { class: 'pm-btn primary', type: 'button', title: T('保存（Ctrl+S）', 'Save (Ctrl+S)'), onclick: () => saveActive() }, [svgIcon(ICON.save), T('保存', 'Save')]);
+  const btnSide = h('button', { class: 'pm-icon pm-side-toggle', type: 'button', title: T('折叠 / 展开侧栏（Ctrl+B）', 'Toggle sidebar (Ctrl+B)'), 'aria-label': T('折叠 / 展开侧栏', 'Toggle sidebar'), 'aria-expanded': 'true', onclick: () => toggleSide() }, [svgIcon(ICON.side)]);
+  const btnNewFolder = h('button', { class: 'pm-icon', type: 'button', title: T('新建文件夹', 'New folder'), 'aria-label': T('新建文件夹', 'New folder'), onclick: () => startCreate('folder') }, [svgIcon(ICON.folderPlus)]);
   const btnNew = h('button', { class: 'pm-icon', type: 'button', title: T('新建文件', 'New file'), 'aria-label': T('新建文件', 'New file'), onclick: () => startCreate() }, '+');
   const btnRefresh = h('button', { class: 'pm-icon', type: 'button', title: T('刷新', 'Refresh'), 'aria-label': T('刷新', 'Refresh'), onclick: () => { state.lastSnap = null; sync(); } }, '↻');
   const importFileInput = h('input', { type: 'file', multiple: true, hidden: true, onchange: (e) => importFiles(e.target) });
@@ -104,6 +128,8 @@ export function openProjectMode({ store, agent }) {
   const btnStop = h('button', { class: 'pm-btn', type: 'button', hidden: true, title: T('停止运行', 'Stop'), onclick: () => stopRun() }, T('■ 停止', '■ Stop'));
   const btnOut = h('button', { class: 'pm-btn', type: 'button', title: T('显示 / 隐藏输出面板', 'Show / hide output panel'), onclick: () => setOutOpen(!state.outOpen) }, [svgIcon(ICON.output), T('输出', 'Output')]);
 
+  // 媒体预览区（图片 / 音频 / 视频 / PDF）；不支持预览的二进制文件显示信息卡片与下载按钮
+  const mediaView = h('div', { class: 'pm-media', hidden: true });
   const outSum = h('div', { class: 'pm-out-sum' });
   const outProbs = h('div', { class: 'pm-probs' });
   const outLines = h('div', { class: 'pm-out-lines', role: 'log', 'aria-live': 'polite' });
@@ -127,6 +153,7 @@ export function openProjectMode({ store, agent }) {
 
   root.append(
     h('header', { class: 'pm-top' }, [
+      btnSide,
       h('span', { class: 'pm-brand' }, 'DUBHE'),
       projName,
       projCount,
@@ -137,12 +164,12 @@ export function openProjectMode({ store, agent }) {
     ]),
     h('div', { class: 'pm-body' }, [
       h('aside', { class: 'pm-explorer', 'aria-label': T('资源管理器', 'Explorer') }, [
-        h('div', { class: 'pm-ex-head' }, [h('span', {}, T('资源管理器', 'EXPLORER')), btnImportFile, btnImportDir, btnNew, btnRefresh]),
+        h('div', { class: 'pm-ex-head' }, [h('span', {}, T('资源管理器', 'EXPLORER')), btnImportFile, btnImportDir, btnNewFolder, btnNew, btnRefresh]),
         explorerBody,
         importFileInput,
         importDirInput,
       ]),
-      h('section', { class: 'pm-main' }, [tabsBar, editorWrap, emptyNote]),
+      h('section', { class: 'pm-main' }, [tabsBar, editorWrap, mediaView, emptyNote]),
     ]),
     h('footer', { class: 'pm-status' }, [statusLang, statusPos, statusDirty, h('span', { class: 'pm-spacer' }), statusMsg]),
   );
@@ -180,16 +207,17 @@ export function openProjectMode({ store, agent }) {
   }
 
   function renderHeader() {
-    const entries = workspaceEntries(files());
+    const entries = workspaceEntries(files()).filter((e) => !isPlaceholder(e.path));
     projCount.textContent = T(`${entries.length} 个文件`, `${entries.length} files`);
-    btnSave.disabled = !current();
+    const cur = current();
+    btnSave.disabled = !cur || cur.kind === 'media';
   }
 
   // ── 资源管理器 ──
   let treeKey = '';
   function renderTree({ force = false } = {}) {
     const entries = workspaceEntries(files());
-    const rows = explorerRows(entries, state.collapsed);
+    const rows = explorerRows(entries, state.collapsed).filter((r) => !isPlaceholder(r.path));
     const editing = !!(state.creating || state.renaming);
     // 正在输入文件名时不重建（否则输入框被替换，内容与焦点丢失）；列表没有变化也不重建（否则轮询会打断点击）
     const key = JSON.stringify([
@@ -244,8 +272,8 @@ export function openProjectMode({ store, agent }) {
     const input = h('input', {
       class: 'pm-input',
       type: 'text',
-      placeholder: T('文件名，如 src/app.js', 'File name, e.g. src/app.js'),
-      'aria-label': T('新文件名', 'New file name'),
+      placeholder: state.creating && state.creating.kind === 'folder' ? T('文件夹名，如 src/components', 'Folder name, e.g. src/components') : T('文件名，如 src/app.js', 'File name, e.g. src/app.js'),
+      'aria-label': state.creating && state.creating.kind === 'folder' ? T('新文件夹名', 'New folder name') : T('新文件名', 'New file name'),
     });
     input.addEventListener('keydown', (e) => {
       if (e.isComposing || e.keyCode === 229) return; // 输入法候选确认时的回车不提交
@@ -269,8 +297,8 @@ export function openProjectMode({ store, agent }) {
     return input;
   }
 
-  function startCreate() {
-    state.creating = { dir: state.selected && !files()[state.selected] ? state.selected : parentDir(state.selected) };
+  function startCreate(kind = 'file') {
+    state.creating = { kind, dir: state.selected && !files()[state.selected] ? state.selected : parentDir(state.selected) };
     renderTree({ force: true });
   }
 
@@ -289,19 +317,42 @@ export function openProjectMode({ store, agent }) {
       const path = joinPath(dir, rel);
       const segOk = rel.split('/').filter(Boolean).every((seg) => validateName(seg).ok);
       if (!segOk || !isWorkspacePath(path) || taken.has(path)) { skipped++; continue; }
-      let text = '';
-      try { text = await file.text(); } catch { skipped++; continue; }
-      if (isBinaryContent(text)) { skipped++; continue; }
-      try { agent.sandboxWrite(path, text); taken.add(path); done++; } catch { skipped++; }
+      if (file.size > PM_IMPORT_MAX_BYTES) { skipped++; continue; }
+      try {
+        // NUL 字节即视为二进制：存为 data URL（图片 / 音视频 / PDF 可预览，其余仅保存）
+        const head = new Uint8Array(await file.slice(0, 4096).arrayBuffer());
+        const content = head.includes(0) ? await readDataUrl(file) : await file.text();
+        agent.sandboxWrite(path, content); taken.add(path); done++;
+      } catch { skipped++; }
     }
     state.lastSnap = null;
     sync();
     flash(skipped
-      ? T(`已导入 ${done} 个文件，跳过 ${skipped} 个（二进制、重名或名称不合法）`, `Imported ${done} file(s), skipped ${skipped} (binary, duplicate or invalid name)`)
+      ? T(`已导入 ${done} 个文件，跳过 ${skipped} 个（重名、名称不合法或超过 20 MB）`, `Imported ${done} file(s), skipped ${skipped} (duplicate, invalid name or over 20 MB)`)
       : T(`已导入 ${done} 个文件`, `Imported ${done} file(s)`));
   }
 
+  function commitCreateFolder(raw) {
+    const dir = state.creating ? state.creating.dir : '';
+    state.creating = null;
+    const parts = String(raw || '').trim().split('/').filter(Boolean);
+    if (!parts.length) return flash(T('名称不能为空', 'Name is required'));
+    const names = parts.map((seg) => validateName(seg));
+    const bad = names.find((c) => !c.ok);
+    if (bad) return flash(bad.error);
+    const path = joinPath(dir, names.map((c) => c.name).join('/'));
+    if (!isWorkspacePath(path)) return flash(T('路径不合法', 'Invalid path'));
+    const snap = files();
+    if (Object.keys(snap).some((p) => p === path || p.startsWith(path + '/'))) return flash(T('同名文件或文件夹已存在', 'A file or folder with that name exists'));
+    try { agent.sandboxWrite(path + '/.keep', ''); } catch (err) { return flash(err.message); }
+    state.collapsed.delete(path);
+    state.lastSnap = null;
+    sync();
+    flash(T('已新建文件夹 ' + path, 'Created folder ' + path));
+  }
+
   function commitCreate(raw) {
+    if (state.creating && state.creating.kind === 'folder') return commitCreateFolder(raw);
     const dir = state.creating ? state.creating.dir : '';
     state.creating = null;
     const parts = String(raw || '').trim().split('/').filter(Boolean);
@@ -358,10 +409,9 @@ export function openProjectMode({ store, agent }) {
   function openFile(path) {
     const content = files()[path];
     if (typeof content !== 'string') return flash(T('这是目录或不存在的文件', 'That is a folder or a missing file'));
-    if (isBinaryContent(content)) return flash(T('二进制文件不在编辑器中打开（可用 Agent 的 read_file / analyze_* 工具查看）', 'Binary files cannot be edited here (ask the agent to inspect them)'));
     let tab = tabOf(path);
     if (!tab) {
-      tab = { path, value: content, saved: content, dirty: false, gone: false };
+      tab = { path, value: content, saved: content, dirty: false, gone: false, kind: isBinaryContent(content) ? 'media' : 'text' };
       state.tabs.push(tab);
     }
     state.active = path;
@@ -374,6 +424,15 @@ export function openProjectMode({ store, agent }) {
   }
 
   function showTab(tab, { keepSelection = false } = {}) {
+    if (tab.kind === 'media') {
+      renderMedia(tab);
+      textarea.hidden = true;
+      mediaView.hidden = false;
+      emptyNote.hidden = true;
+      updateStatus();
+      return;
+    }
+    mediaView.hidden = true;
     const start = textarea.selectionStart;
     const end = textarea.selectionEnd;
     const scrollTop = textarea.scrollTop;
@@ -405,7 +464,31 @@ export function openProjectMode({ store, agent }) {
     renderTree();
   }
 
+  function renderMedia(tab) {
+    if (mediaView._path === tab.path && mediaView._value === tab.value) return;
+    mediaView._path = tab.path; mediaView._value = tab.value;
+    const mime = (/^data:([^;,]*)/.exec(tab.value) || [])[1] || 'application/octet-stream';
+    const name = tab.path.split('/').pop();
+    const bytes = Math.floor(String(tab.value).length * 3 / 4);
+    const info = mime + ' · ' + fmtBytes(bytes);
+    let view;
+    if (/^image\//.test(mime)) view = h('img', { class: 'pm-media-img', src: tab.value, alt: name });
+    else if (/^audio\//.test(mime)) view = h('audio', { controls: true, src: tab.value });
+    else if (/^video\//.test(mime)) view = h('video', { class: 'pm-media-img', controls: true, src: tab.value });
+    else if (mime === 'application/pdf') view = h('iframe', { class: 'pm-media-frame', src: tab.value, title: name });
+    else view = h('div', { class: 'pm-media-card' }, [
+      h('p', {}, T(name + ' 暂不支持预览', name + ' cannot be previewed')),
+      h('p', { class: 'pm-muted' }, info),
+    ]);
+    const dl = h('a', { class: 'pm-btn', href: tab.value, download: name }, [svgIcon(ICON.file), T('下载', 'Download')]);
+    mediaView.replaceChildren(
+      h('div', { class: 'pm-media-bar' }, [h('span', { class: 'pm-muted' }, name + ' · ' + info), h('span', { class: 'pm-spacer' }), dl]),
+      h('div', { class: 'pm-media-body' }, [view]),
+    );
+  }
+
   function showEmpty() {
+    mediaView.hidden = true;
     textarea.value = '';
     textarea.hidden = true;
     gutter.textContent = '';
@@ -513,7 +596,7 @@ export function openProjectMode({ store, agent }) {
 
   function saveActive() {
     const tab = current();
-    if (!tab) return;
+    if (!tab || tab.kind === 'media') return;
     try {
       agent.sandboxWrite(tab.path, tab.value);
     } catch (err) {
@@ -697,6 +780,11 @@ export function openProjectMode({ store, agent }) {
     else if (state.diags.length) flash(T(`${state.diags.length} 个问题，点击输出面板中的条目可跳转`, `${state.diags.length} problem(s); click one in the output panel to jump`));
   }
 
+  function toggleSide() {
+    const collapsed = root.classList.toggle('pm-side-collapsed');
+    btnSide.setAttribute('aria-expanded', String(!collapsed));
+  }
+
   function flash(message) {
     statusMsg.textContent = String(message || '');
     clearTimeout(flash.t);
@@ -706,6 +794,7 @@ export function openProjectMode({ store, agent }) {
   function onKey(e) {
     if (!root.isConnected) return;
     if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) { e.preventDefault(); saveActive(); return; }
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'b' || e.key === 'B')) { e.preventDefault(); toggleSide(); return; }
     if (((e.ctrlKey || e.metaKey) && e.key === 'Enter') || e.key === 'F5') { e.preventDefault(); runActive(); return; }
     if (e.key === 'Escape' && !state.creating && !state.renaming) {
       e.preventDefault();
@@ -714,14 +803,47 @@ export function openProjectMode({ store, agent }) {
   }
   document.addEventListener('keydown', onKey, true);
 
-  function close() {
-    if (closing) return;
-    const dirty = state.tabs.filter((t) => t.dirty);
+  let askingClose = false;
+  // 未保存修改：由用户明确选择。返回 'save' | 'discard' | 'cancel'
+  function askUnsaved(paths) {
+    return new Promise((resolve) => {
+      const done = (v) => { document.removeEventListener('keydown', esc, true); wrap.remove(); resolve(v); };
+      const esc = (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done('cancel'); } };
+      const wrap = h('div', { class: 'pm-confirm', role: 'dialog', 'aria-modal': 'true', 'aria-label': T('未保存的修改', 'Unsaved changes') }, [
+        h('div', { class: 'pm-confirm-box' }, [
+          h('p', {}, T('以下文件有未保存的修改：' + paths.join('、'), 'Unsaved changes in: ' + paths.join(', '))),
+          h('div', { class: 'pm-confirm-acts' }, [
+            h('button', { class: 'pm-btn', type: 'button', onclick: () => done('cancel') }, T('取消', 'Cancel')),
+            h('button', { class: 'pm-btn', type: 'button', onclick: () => done('discard') }, T('丢弃并关闭', 'Discard and close')),
+            h('button', { class: 'pm-btn primary', type: 'button', onclick: () => done('save') }, T('保存并关闭', 'Save and close')),
+          ]),
+        ]),
+      ]);
+      document.addEventListener('keydown', esc, true);
+      root.append(wrap);
+      wrap.querySelector('.pm-btn.primary').focus();
+    });
+  }
+
+  async function close() {
+    if (closing || askingClose) return;
+    const dirty = state.tabs.filter((t) => t.dirty && t.kind !== 'media');
     if (dirty.length) {
-      const win = document.defaultView;
-      if (win && typeof win.confirm === 'function' && !win.confirm(T(`还有 ${dirty.length} 个文件未保存，仍要关闭？`, `${dirty.length} file(s) unsaved. Close anyway?`))) return;
+      askingClose = true;
+      let choice = 'cancel';
+      try { choice = await askUnsaved(dirty.map((t) => t.path)); } finally { askingClose = false; }
+      if (choice === 'cancel') return;
+      if (choice === 'save') {
+        for (const t of dirty) {
+          try { agent.sandboxWrite(t.path, t.value); } catch (err) { return flash(T('保存失败：' + err.message, 'Save failed: ' + err.message)); }
+          t.saved = t.value; t.dirty = false; t.gone = false;
+        }
+        state.lastSnap = null;
+      }
     }
+    if (closing) return;
     closing = true;
+
     clearInterval(timer);
     document.removeEventListener('keydown', onKey, true);
     if (active === instance) active = null;

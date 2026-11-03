@@ -328,11 +328,13 @@ function mathHtml(html, display, open = false) {
 // ── Markdown 渲染：markdown-it（本地打包 assets/md/，完整 CommonMark + GFM 表格）
 //    + KaTeX 公式；两者任一未加载时回退到内置精简渲染器（先转义再解析，无 XSS 面）──
 let mdEngine; // undefined=未初始化 null=不可用
-export function getMd() {
-  if (mdEngine === undefined) {
-    if (typeof markdownit === 'undefined') { mdEngine = null; }
+// breaks: 用户消息用（单个换行保留为 <br>，不被 Markdown 吞掉）；其余保持标准 Markdown 语义
+let mdEngineBreaks;
+export function getMd({ breaks = false } = {}) {
+  if ((breaks ? mdEngineBreaks : mdEngine) === undefined) {
+    if (typeof markdownit === 'undefined') { if (breaks) mdEngineBreaks = null; else mdEngine = null; }
     else {
-      const md = markdownit({ html: false, linkify: true, breaks: false, typographer: false });
+      const md = markdownit({ html: false, linkify: true, breaks, typographer: false });
       // 只识别显式协议链接（http(s)://）；关闭模糊匹配，否则 report.md、index.html 等文件名会被当成域名
       md.linkify.set({ fuzzyLink: false, fuzzyEmail: false });
       md.renderer.rules.link_open = (tokens, idx, options, env, self) => {
@@ -429,10 +431,10 @@ export function getMd() {
           tok.children.unshift(cb);
         }
       });
-      mdEngine = md;
+      if (breaks) mdEngineBreaks = md; else mdEngine = md;
     }
   }
-  return mdEngine;
+  return breaks ? mdEngineBreaks : mdEngine;
 }
 
 // ── /system 回复格式化（.18）：行级结构化——命令行/结果行/小节标题，不再挤成一团 ──
@@ -941,7 +943,7 @@ export function renderMarkdown(src, options = {}) {
     return out;
   };
 
-  const md = getMd();
+  const md = getMd({ breaks: !!(options && options.userBreaks) });
   if (md) {
     let html = md.render(t);
     html = restoreWidgets(html);

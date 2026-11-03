@@ -174,7 +174,7 @@ export function mountUI(store, agent) {
       if (wrap) paintAssistant(wrap, m);
       else appendMessage(m, { scroll: false });
     }
-    flushDeferredAssistants(); scrollToBottom();
+    syncCompletedToolFolds(); flushDeferredAssistants(); scrollToBottom(); // 回合结束：先重算折叠的执行态（清掉残留的 live），再锚定到底部
   }
   function flushDeferredAssistants() {
     if (presentationStopped) return;
@@ -1067,7 +1067,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     wrap.dataset.id = m.id;
     if (m.transientModeration || (m.moderation && m.moderation.blocked)) wrap.classList.add('msg-moderation');
     if (m.role === 'user') {
-      wrap.innerHTML = `<div class="bubble md-body">${renderMarkdown(m.text)}${renderAttachments(m.attachments)}</div>
+      wrap.innerHTML = `<div class="bubble md-body">${renderMarkdown(String(m.text || '').replace(/^\n+|\n+$/g, ''), { userBreaks: true })}${renderAttachments(m.attachments)}</div>
         <div class="msg-user-bar">
         ${m.jev && m.jev.summary ? `<div class="jev-chip" title="TypeSafe Jev 对本轮的校准分类">Jev · ${esc(m.jev.summary)}</div>` : ''}
         <div class="msg-actions msg-actions-user">
@@ -1656,7 +1656,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
         } else if (node.previousElementSibling !== afterEl) {
           afterEl.after(node);
         }
-        const exploring = !!liveLabels && getBusy() && exploringInFlight(cluster.length ? cluster : [m], store.state.messages);
+        const exploring = !!liveLabels && getBusy() && exploringInFlight(fileCluster(name).length ? fileCluster(name) : [m], store.state.messages);
         const label = exploring ? (paths.length === 1 ? liveLabels[0] : `${liveLabels[1]} ${paths.length}`) : (paths.length === 1 ? one : `${many} ${paths.length}`);
         // Keep the reading header/list alive during output deltas; rebuilding them
         // would restart the text-polish animation on every streamed chunk.
@@ -1669,7 +1669,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
         node._activeCalls = fileCluster(name).flatMap((x) => x.toolCalls || []).filter((c) => toolFamily(c) === 'explored');
         syncFileFold(node);
         dropEarlierFold(cls, extractor);
-      } else if (node) node.remove();
+      } else if (node && !(liveLabels && getBusy() && exploringInFlight(fileCluster(name), store.state.messages))) node.remove();
       return $(`.${cls}`, wrap) || afterEl;
     };
     // 联网 / 生成类工具（搜索、抓取、生图、生视频）：与 Explored File(s) 同样的折叠行，逐条列出调用。
@@ -2359,7 +2359,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     } else if (!clipped) composer.scrollTop = 0;
     else composer.scrollTop = Math.min(previousScroll, composer.scrollHeight);
   }
-  const shiftEnterGuard = installShiftEnterGuard(composer, () => { autoGrow({ follow: true }); welcomeMotion.sync(); });
+  const shiftEnterGuard = installShiftEnterGuard(composer, () => { autoGrow({ follow: composer.selectionEnd >= composer.value.length }); welcomeMotion.sync(); }); // 光标在文末才跟随
   autoGrow();
   const composerShell = composer.closest('.composer');
   if (typeof ResizeObserver === 'function' && composerShell) {
