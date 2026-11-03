@@ -140,7 +140,7 @@ export function planVideoRequest({ model, mode, prompt, seconds, resolution, asp
 }
 
 // POST /v1/videos 的 JSON 请求体。seconds 按文档为字符串整数。
-export function buildVideoBody(plan, prompt, imageDataUrl, { endImageUrl = '', audio } = {}) {
+export function buildVideoBody(plan, prompt, imageDataUrl, { endImageUrl = '', audio, extras } = {}) {
   const body = { model: plan.model, prompt: String(prompt).trim(), seconds: String(plan.seconds), size: plan.size };
   // 文档：input_reference 为 {"image_url": URL 或 data URL}
   if (imageDataUrl) body.input_reference = { image_url: imageDataUrl };
@@ -148,15 +148,18 @@ export function buildVideoBody(plan, prompt, imageDataUrl, { endImageUrl = '', a
   if (endImageUrl) body.end_image_url = endImageUrl;
   if (typeof audio === 'boolean') body.audio = audio;
   if (plan.negativePrompt) body.negative_prompt = plan.negativePrompt;
+  // 其余生成参数（已由 pickVideoExtras 校验）；不覆盖 model / prompt / seconds / size
+  for (const [k, v] of Object.entries(extras || {})) if (!(k in body)) body[k] = v;
   return body;
 }
 
 // POST /v1/videos/quote 的请求体：字段与 /v1/videos 一致的生成参数，但 duration 为 "4s" 形式，并带上同一份媒体以保证报价对应。
-export function buildVideoQuoteBody(plan, imageDataUrl, { endImageUrl = '', audio } = {}) {
+export function buildVideoQuoteBody(plan, imageDataUrl, { endImageUrl = '', audio, extras } = {}) {
   const body = { model: plan.model, duration: `${plan.seconds}s`, aspect_ratio: plan.aspectRatio, resolution: plan.resolution };
   if (typeof audio === 'boolean') body.audio = audio;
   if (imageDataUrl) body.image_url = imageDataUrl;
   if (endImageUrl) body.end_image_url = endImageUrl;
+  for (const [k, v] of Object.entries(extras || {})) if (!(k in body)) body[k] = v;
   return body;
 }
 
@@ -181,3 +184,96 @@ export function videoJobError(job) {
 export const VIDEO_POLL_INTERVAL_MS = 5000;
 export const VIDEO_MAX_WAIT_MS = 15 * 60 * 1000;
 export const VIDEO_SANDBOX_MAX_BYTES = 16 * 1024 * 1024;
+
+// ── 其余生成参数（Seedance / MiniMax 共用请求格式；字段名即请求体键名）──
+// 未提供则不发送，沿用模型默认。范围依据 video-openapi.json；模型级限制以网关 GET /models 为准，
+// 网关拒绝时原样把错误返回给 Agent。媒体类字段接受 URL、data URL 或沙箱内路径（由调用方解析）。
+export const VIDEO_EXTRA_SPEC = Object.freeze({
+  image_strength: { type: 'number', min: 0, max: 1 },
+  reference_image_urls: { type: 'media[]', max: 30 },
+  reference_video_urls: { type: 'media[]', max: 10 },
+  reference_audio_urls: { type: 'media[]', max: 10 },
+  reference_document_urls: { type: 'media[]', max: 1 },
+  elements: { type: 'elements', max: 4 },
+  scene_image_urls: { type: 'media[]', max: 4 },
+  keyframes: { type: 'keyframes', max: 10 },
+  camera_trajectory: { type: 'object[]', min: 2, max: 12 },
+  omni_reference_task_type: { type: 'string' },
+  upscale_factor: { type: 'integer', enum: [1, 2, 4] },
+  enhancement_model: { type: 'string' },
+  target_fps: { type: 'integer', min: 16, max: 120 },
+  slowdown_factor: { type: 'integer', enum: [1, 2, 4, 8] },
+  softness: { type: 'number', min: 1, max: 5 },
+  creativity: { type: 'number', min: 0, max: 1 },
+  realism: { type: 'number', min: 0, max: 1 },
+  sharp: { type: 'number', min: 0, max: 1 },
+  compression: { type: 'number', min: 0, max: 1 },
+  noise: { type: 'number', min: 0, max: 1 },
+  halo: { type: 'number', min: 0, max: 1 },
+  grain: { type: 'number', min: 0, max: 0.1 },
+  recover_detail: { type: 'number', min: 0, max: 1 },
+  h264_output: { type: 'boolean' },
+  output_format: { type: 'string', enum: ['mp4', 'prores'] },
+  reference_video_total_duration: { type: 'number', min: 0 },
+  consents: { type: 'object' },
+});
+
+const isPlainObject = (v) => v != null && typeof v === 'object' && !Array.isArray(v);
+
+// 校验并规范化额外参数。resolveMedia(value) → 可用的 URL / data URL，无法解析时返回 ''。
+// 返回 { extras, errors }：extras 只含通过校验且有值的字段。
+export function pickVideoExtras(args = {}, { resolveMedia = (v) => String(v || '') } = {}) {
+  const extras = {};
+  const errors = [];
+  const media = (name, v) => {
+    const s = String(v || '').trim();
+    const out = s ? resolveMedia(s) : '';
+    if (!out) errors.push(`${name}：无法读取「${s}」（需为 http(s) URL、data URL 或沙箱内存在的文件）`);
+    return out;
+  };
+  for (const [name, spec] of Object.entries(VIDEO_EXTRA_SPEC)) {
+    const raw = args[name];
+    if (raw === undefined || raw === null || raw === '') continue;
+    if (spec.type === 'number' || spec.type === 'integer') {
+      const n = Number(raw);
+      if (!Number.isFinite(n) || (spec.type === 'integer' && !Number.isInteger(n))) { errors.push(`${name} 须为${spec.type === 'integer' ? '整数' : '数字'}（收到 ${raw}）`); continue; }
+      if ((spec.min != null && n < spec.min) || (spec.max != null && n > spec.max)) { errors.push(`${name} 须在 ${spec.min ?? '-∞'}–${spec.max ?? '∞'} 之间（收到 ${raw}）`); continue; }
+      if (spec.enum && !spec.enum.includes(n)) { errors.push(`${name} 只能是 ${spec.enum.join(' / ')}（收到 ${raw}）`); continue; }
+      extras[name] = n;
+    } else if (spec.type === 'boolean') {
+      if (typeof raw !== 'boolean') { errors.push(`${name} 须为 true 或 false`); continue; }
+      extras[name] = raw;
+    } else if (spec.type === 'string') {
+      const s = String(raw).trim();
+      if (spec.enum && !spec.enum.includes(s)) { errors.push(`${name} 只能是 ${spec.enum.join(' / ')}（收到 ${raw}）`); continue; }
+      if (s) extras[name] = s;
+    } else if (spec.type === 'object') {
+      if (!isPlainObject(raw)) { errors.push(`${name} 须为对象`); continue; }
+      extras[name] = raw;
+    } else if (spec.type === 'media[]') {
+      const arr = Array.isArray(raw) ? raw : [raw];
+      if (arr.length > spec.max) { errors.push(`${name} 最多 ${spec.max} 项（收到 ${arr.length}）`); continue; }
+      const urls = arr.map((x) => media(name, x)).filter(Boolean);
+      if (urls.length) extras[name] = urls;
+    } else if (spec.type === 'object[]') {
+      if (!Array.isArray(raw) || !raw.every(isPlainObject)) { errors.push(`${name} 须为对象数组`); continue; }
+      if (raw.length > spec.max || (spec.min != null && raw.length < spec.min)) { errors.push(`${name} 需要 ${spec.min ?? 0}–${spec.max} 项（收到 ${raw.length}）`); continue; }
+      extras[name] = raw;
+    } else if (spec.type === 'elements') {
+      if (!Array.isArray(raw) || !raw.every(isPlainObject)) { errors.push('elements 须为对象数组'); continue; }
+      if (raw.length > spec.max) { errors.push(`elements 最多 ${spec.max} 项（收到 ${raw.length}）`); continue; }
+      extras[name] = raw.map((e) => ({
+        ...(e.frontal_image_url ? { frontal_image_url: media('elements.frontal_image_url', e.frontal_image_url) } : {}),
+        ...(Array.isArray(e.reference_image_urls) ? { reference_image_urls: e.reference_image_urls.slice(0, 3).map((x) => media('elements.reference_image_urls', x)) } : {}),
+        ...(e.video_url ? { video_url: media('elements.video_url', e.video_url) } : {}),
+      }));
+    } else if (spec.type === 'keyframes') {
+      if (!Array.isArray(raw) || !raw.every(isPlainObject)) { errors.push('keyframes 须为 { image_url, frame_index } 数组'); continue; }
+      if (raw.length > spec.max) { errors.push(`keyframes 最多 ${spec.max} 项（收到 ${raw.length}）`); continue; }
+      const idx = raw.map((k) => k.frame_index);
+      if (new Set(idx).size !== idx.length || idx.some((i) => !Number.isInteger(i) || i < 0)) { errors.push('keyframes 的 frame_index 须为互不相同的非负整数'); continue; }
+      extras[name] = raw.map((k) => ({ image_url: media('keyframes.image_url', k.image_url), frame_index: k.frame_index }));
+    }
+  }
+  return { extras, errors };
+}

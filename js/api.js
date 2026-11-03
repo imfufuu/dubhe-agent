@@ -1258,6 +1258,13 @@ function isNanoImageModel(id) {
   const m = String(id || '').toLowerCase();
   return m === 'gemini-3.1-flash-image' || /nano[-_ ]?banana/.test(m);
 }
+function nanoThinkingLevel(model, level) {
+  const m = String(model || '').toLowerCase();
+  const allowed = /nano[-_ ]?banana[-_ ]?2[.-]1/.test(m) ? ['minimal', 'medium', 'high']
+    : /3[.-]1[-_ ]flash[-_ ](lite[-_ ])?image|flash[-_ ]image/.test(m) ? ['minimal', 'high'] : [];
+  const v = String(level || '').trim().toLowerCase();
+  return allowed.includes(v) ? v : '';
+}
 function nanoImageConfig(size, quality) {
   let aspectRatio = '1:1';
   let imageSize = '1K';
@@ -1326,7 +1333,7 @@ function parseGeminiImage(json, format = 'png') {
   }
   return { images, ...images[0], created: 0, usage: json.usageMetadata || json.usage || null };
 }
-async function generateNanoImage({ model, apiKey, prompt, size, quality, images, n, signal, timeoutMs, format, onRetry, gatewayId = DEFAULT_GATEWAY_ID, gatewayBaseUrl = '' }) {
+async function generateNanoImage({ model, apiKey, prompt, size, quality, images, thinkingLevel, n, signal, timeoutMs, format, onRetry, gatewayId = DEFAULT_GATEWAY_ID, gatewayBaseUrl = '' }) {
   const { aspectRatio, imageSize } = nanoImageConfig(size, quality);
   const parts = [{ text: String(prompt || '') }];
   for (const img of images || []) {
@@ -1344,6 +1351,9 @@ async function generateNanoImage({ model, apiKey, prompt, size, quality, images,
     },
   };
   const mid = String(model || 'gemini-3.1-flash-image');
+  // thinking_level 按模型表：2.1 支持 minimal/medium/high；3.1 Flash(Lite) Image 支持 minimal/high；不支持的取值不发送
+  const lvl = nanoThinkingLevel(mid, thinkingLevel);
+  if (lvl) body.generationConfig.thinkingConfig = { thinkingLevel: lvl };
   // Nano Banana 2.1（gemini-nano-banana-2.1）实测不接受 imageSize '512'（上游 503）：退到 1K
   if (/nano[-_ ]?banana[-_ ]?2[.-]1/.test(mid.toLowerCase()) && body.generationConfig.imageConfig.imageSize === '512') body.generationConfig.imageConfig.imageSize = '1K';
   const nativePath = `models/${encodeURIComponent(mid)}:generateContent`;
@@ -1370,17 +1380,20 @@ async function generateNanoImage({ model, apiKey, prompt, size, quality, images,
 
 // 文生图：size 为像素尺寸（16 的倍数、最大边 ≤3840、长宽比 ≤3:1），auto/缺省交给模型
 // n>1 时网关在 data[] 内返回多张，全部落地（不要只取第一张而丢掉其余）
-export async function generateImage({ model, apiKey, prompt, size, quality, background, format = 'png', n, signal, timeoutMs = IMAGE_TIMEOUT_MS, onRetry, gatewayId = DEFAULT_GATEWAY_ID, gatewayBaseUrl = '' } = {}) {
+export async function generateImage({ model, apiKey, prompt, size, quality, background, moderation, outputCompression, thinkingLevel, format = 'png', n, signal, timeoutMs = IMAGE_TIMEOUT_MS, onRetry, gatewayId = DEFAULT_GATEWAY_ID, gatewayBaseUrl = '' } = {}) {
   if (isNanoImageModel(model)) {
     if (!['teamorouter', 'gemini'].includes(gatewayId)) throw new Error(`Nano Banana 需要 TeamoRouter 或 Gemini 网关；当前网关为「${getGateway(gatewayId).name}」`);
-    return generateNanoImage({ model, apiKey, prompt, size, quality, n, signal, timeoutMs, format, onRetry, gatewayId, gatewayBaseUrl });
+    return generateNanoImage({ model, apiKey, prompt, size, quality, thinkingLevel, n, signal, timeoutMs, format, onRetry, gatewayId, gatewayBaseUrl });
   }
   const body = { model, prompt, output_format: format };
   if (size && size !== 'auto' && /^\d+x\d+$/i.test(size)) body.size = size;
   if (quality && quality !== 'auto') body.quality = quality;
   if (background && background !== 'auto') body.background = background;
+  // 官方参数：moderation 仅 low/auto；output_compression 仅 jpeg/webp 有效（0-100）
+  if (moderation && moderation !== 'auto') body.moderation = moderation;
+  if ((format === 'jpeg' || format === 'webp') && Number.isInteger(outputCompression) && outputCompression >= 0 && outputCompression <= 100) body.output_compression = outputCompression;
   const count = Number(n);
-  if (Number.isFinite(count) && count > 1) body.n = Math.min(4, Math.max(2, Math.floor(count)));
+  if (Number.isFinite(count) && count > 1) body.n = Math.min(10, Math.max(2, Math.floor(count)));
   const path = gatewayPath(gatewayId, 'images');
   const json = await postImageWithRetry(path, {
     apiKey, body: JSON.stringify(body), signal, timeoutMs, format, gatewayId, gatewayBaseUrl,

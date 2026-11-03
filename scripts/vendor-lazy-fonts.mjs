@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // 生成「懒加载字体」资产（assets/fonts-lazy/）。
 // 来源（版本已固定，许可证见各包 LICENSE）：
-//   @fontsource/noto-sans-jp|kr|sc 5.3.1、@fontsource/noto-naskh-arabic 5.3.0、
+//   @fontsource/noto-sans-jp|kr|sc|serif-sc 5.3.1、@fontsource/noto-naskh-arabic 5.3.0、
 //   @fontsource/noto-sans-hebrew 5.3.0、@fontsource/noto-sans-thai 5.3.0、@fontsource/noto-sans-devanagari 5.3.0（OFL）
 //   @free-fonts/babelstone-han 1.1.0 的 Extra 字族（扩展 B–J 区；MIT AND Arphic-1999）
 // 用法：node scripts/vendor-lazy-fonts.mjs   （需要能访问 npm 注册表）
@@ -23,6 +23,8 @@ const FONTSOURCE = [
   { id: 'sans-jp', pkg: '@fontsource/noto-sans-jp', version: '5.3.1', family: 'Noto Sans JP' },
   { id: 'sans-kr', pkg: '@fontsource/noto-sans-kr', version: '5.3.1', family: 'Noto Sans KR' },
   { id: 'sans-sc', pkg: '@fontsource/noto-sans-sc', version: '5.3.1', family: 'Noto Sans SC' },
+  // 宋体风格（思源宋体）：Agent 输出正文所用的衬线中文字族，全平台一致，不依赖系统宋体
+  { id: 'serif-sc', pkg: '@fontsource/noto-serif-sc', version: '5.3.1', family: 'Noto Serif SC' },
   { id: 'arabic', pkg: '@fontsource/noto-naskh-arabic', version: '5.3.0', family: 'Noto Naskh Arabic' },
   { id: 'hebrew', pkg: '@fontsource/noto-sans-hebrew', version: '5.3.0', family: 'Noto Sans Hebrew' },
   { id: 'thai', pkg: '@fontsource/noto-sans-thai', version: '5.3.0', family: 'Noto Sans Thai' },

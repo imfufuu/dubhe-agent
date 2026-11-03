@@ -141,6 +141,12 @@ jobs:
       - name: tests/video-and-attachments.test.mjs · 视频生成（generate_video）与子智能体附件
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/video-and-attachments.test.mjs
+      - name: tests/image-params.test.mjs · 生图官方参数（GPT Image / Nano Banana）按模型发送
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/image-params.test.mjs
+      - name: tests/cjk-fonts.test.mjs · 宋体风格（Noto Serif SC）与扩展 B 区（BabelStone）字体注册
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/cjk-fonts.test.mjs
       - name: tests/moderation-prewarm.test.mjs · 图像审核按需加载，避免与本地 C++ 抢内存
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/moderation-prewarm.test.mjs

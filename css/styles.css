@@ -55,7 +55,9 @@
   --warn: #b65d31;
   --ring: rgba(41, 40, 35, .72); /* 键盘焦点描边（.36）：比纯 --fg 柔和一档，深浅模式各有一个值 */
   --font: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, "Noto Sans SC", "Noto Sans JP", "Noto Sans KR", "BabelStone Han Extra", "Noto Naskh Arabic", "Noto Sans Hebrew", "Noto Sans Thai", "Noto Sans Devanagari", sans-serif;
-  --chat-font: "Dubhe Serif", "Noto Serif SC", "Songti SC", Georgia, "Noto Sans SC", "Noto Sans JP", "Noto Sans KR", serif;
+  /* Agent 输出正文：宋体风格（Noto Serif SC 随应用懒加载分发，系统宋体作备选）；
+     扩展 B–J 区字符由 BabelStone Han Extra 兜底（仅此字族覆盖这些码位） */
+  --chat-font: "Noto Serif SC", "Songti SC", "SimSun", "NSimSun", "宋体", Georgia, "BabelStone Han Extra", "Noto Sans SC", "Noto Sans JP", "Noto Sans KR", serif;
   --sans: var(--font);
   --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
   --ease: cubic-bezier(.22,.61,.36,1);
@@ -454,18 +456,18 @@ html { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
 .sess-empty .files-empty-text { font-size: var(--ui-fs-11_5px, 11.5px); max-width: 180px; }
 /* 空状态插画的动态效果：背后的卡片轻摆、前景卡片轻浮、火花闪烁（仅作用于本插画）。
    fe-back 自带 rotate(-5 80 60) 属性，动画关键帧需用同一中心与角度，否则会覆盖属性。 */
-.sess-empty-art .fe-back { transform-box: view-box; transform-origin: 80px 60px; animation: sessEmptySway 6s ease-in-out infinite; }
-.sess-empty-art .fe-stack { transform-box: fill-box; animation: sessEmptyFloat 4.2s ease-in-out infinite; }
-.sess-empty-art .fe-sparks path, .sess-empty-art .fe-sparks circle { transform-box: fill-box; transform-origin: center; animation: sessEmptyTwinkle 2.8s ease-in-out infinite; }
-.sess-empty-art .fe-sparks path:nth-child(2) { animation-delay: -1.1s; }
-.sess-empty-art .fe-sparks circle { animation-delay: -2s; }
+.files-empty-art.sess-empty-art .fe-back { transform-box: view-box; transform-origin: 80px 60px; animation: sessEmptySway 6s ease-in-out infinite; }
+.files-empty-art.sess-empty-art .fe-stack { transform-box: fill-box; animation: sessEmptyFloat 4.2s ease-in-out infinite; }
+.files-empty-art.sess-empty-art .fe-sparks path, .files-empty-art.sess-empty-art .fe-sparks circle { transform-box: fill-box; transform-origin: center; animation: sessEmptyTwinkle 2.8s ease-in-out infinite; }
+.files-empty-art.sess-empty-art .fe-sparks path:nth-child(2) { animation-delay: -1.1s; }
+.files-empty-art.sess-empty-art .fe-sparks circle { animation-delay: -2s; }
 @keyframes sessEmptySway { 0%, 100% { transform: rotate(-5deg); } 50% { transform: rotate(-2.5deg); } }
 @keyframes sessEmptyFloat { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
 @keyframes sessEmptyTwinkle { 0%, 100% { opacity: .3; transform: scale(.85); } 50% { opacity: .95; transform: scale(1.12); } }
 @media (prefers-reduced-motion: reduce) {
-  html:not([data-motion="on"]) .sess-empty-art * { animation: none !important; }
+  html:not([data-motion="on"]) .files-empty-art.sess-empty-art * { animation: none !important; }
 }
-html[data-motion="off"] .sess-empty-art * { animation: none !important; }
+html[data-motion="off"] .files-empty-art.sess-empty-art * { animation: none !important; }
 
 .mini-btn {
   min-height: 24px; line-height: 1.35;
@@ -689,6 +691,8 @@ html[data-motion="off"] .sess-empty-art * { animation: none !important; }
 .main { container-type: inline-size; }
 @container (max-width: 860px) { .msg-assistant:not(.msg-collapsed) { padding-inline: clamp(16px, 4vw, 24px); } }
 .msg-assistant .md-body { font-family: var(--chat-font, Georgia, serif); }
+/* :::font 宋体 块：与正文同一宋体字体栈（之前没有任何样式规则，块内字体不会变化） */
+.md-font-song { font-family: var(--chat-font, Georgia, serif); }
 .msg-assistant:has(+ .msg-assistant) { margin-bottom: 8px; }
 .msg-assistant.tools-continue { margin-bottom: 0; }
 .msg-assistant + .msg-assistant { margin-top: 0; }

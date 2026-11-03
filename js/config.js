@@ -213,7 +213,9 @@ export function visionModelLabel(id) {
 export const DEFAULT_CHAT_MODEL = SMART_ROUTER_ID;
 // GPT Image：宽x高像素。Nano Banana 另认 16:9 / 1K / 2K 等（见 api.js nanoImageConfig）
 export const IMAGE_SIZES = ['auto', '1024x1024', '1536x1024', '1024x1536', '2048x2048', '16:9', '9:16', '4:3', '3:4', '1K', '2K', '4K'];
-export const IMAGE_QUALITIES = ['auto', 'low', 'medium', 'high'];
+export const IMAGE_QUALITIES = ['auto', 'low', 'medium', 'high', 'xhigh', 'max']; // xhigh/max 仅 gpt-image-2.5 系列
+export const IMAGE_MODERATIONS = ['auto', 'low'];
+export const NANO_THINKING_LEVELS = ['minimal', 'medium', 'high'];
 export const IMAGE_STYLES = ['auto', 'realistic', 'illustration', 'pro', 'quality', 'fast'];
 export const IMAGE_RESOLUTIONS = ['auto', '1K', '2K', '4K'];
 export const IMAGE_FORMATS = ['png', 'jpeg', 'webp'];
