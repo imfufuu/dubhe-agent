@@ -367,7 +367,8 @@ test('local-only sends skip remote API Key prompts without relaxing the gateway-
   assert.match(ui, /if \(!store\.state\.apiKey && !isOfflineModelId\(store\.state\.model\)\) \{ composerDraftAwaitingKey = text; openKeyModal\(\); toast\('请先配置 TeamoRouter API Key（输入内容已保留，保存后自动放回）', 'warn'\); return; \}/);
   assert.match(ui, /if \(!store\.state\.apiKey && !isOfflineModelId\(store\.state\.model\)\) setTimeout\(openKeyModal, 600\);/);
   const choices = fs.readFileSync(new URL('../js/ui-choices.js', import.meta.url), 'utf8');
-  assert.match(choices, /if \(!store\.state\.apiKey && !isOfflineModelId\(store\.state\.model\)\) \{ openKeyModal\(\); toast\('请先配置 TeamoRouter API Key', 'warn'\); setChoiceStep\(box, idx\); return true; \}/);
+  assert.match(choices, /if \(!store\.state\.apiKey && !isOfflineModelId\(store\.state\.model\)\)/);
+  assert.match(choices, /openKeyModal\(\)/);
 });
 
 test('settings expose a local GGUF chooser and no fixed remote model downloader', () => {

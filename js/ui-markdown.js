@@ -83,11 +83,17 @@ const choiceHtml = (blocks) => {
   const groups = safe.map((block, i) => {
     const q = esc(block.title || `问题 ${i + 1}`);
     const opts = parseChoiceOpts(block.body);
-    const buttons = opts.map((o) => `<button type="button" class="choice-opt" data-choice-send="${esc(o)}">${esc(o)}</button>`).join('');
-    return `<div class="choice-qblock${i === 0 ? ' active' : ''}" data-choice-idx="${i}"><div class="choice-qrow"><span class="choice-step">${i + 1}/${count}</span><div class="choice-q">${q}</div></div><div class="choice-opts">${buttons}</div></div>`;
+    const buttons = opts.map((o) => {
+      const image = /^!\[([^\]]*)\]\(([^\s)]+)\)(?:\s+(.+))?$/.exec(o);
+      const src = image && safeImgSrc(image[2]);
+      const sb = image && sandboxPath(image[2]);
+      const label = image ? (image[3] || image[1] || image[2]) : o;
+      return `<button type="button" class="choice-opt${src || sb ? ' choice-image' : ''}" data-choice-send="${esc(label)}">${src ? `<img src="${esc(src)}" alt="" loading="lazy">` : (sb ? `<img data-sandbox="${esc(sb)}" alt="" loading="lazy">` : '')}<span>${esc(label)}</span></button>`;
+    }).join('');
+    return `<div class="choice-qblock${i === 0 ? ' active' : ''}" data-choice-idx="${i}"><div class="choice-qrow"><span class="choice-step">${i + 1}/${count}</span><div class="choice-q">${q}</div></div><div class="choice-opts">${buttons}</div><label class="choice-other-label">${messageLocaleText('其他输入（可选）', 'Other input (optional)')}<input class="choice-other" type="text" maxlength="2000"></label></div>`;
   }).join('');
   const label = esc(count > 1 ? `选择框（${count} 个问题）` : (safe[0].title || '请选择'));
-  return `<div class="choice-box${count > 1 ? ' multi' : ''}" role="group" aria-label="${label}" data-choice-count="${count}" data-choice-step="0" data-choice-answers="[]"><div class="choice-head"><div class="choice-title">${count > 1 ? `请选择 · ${count} 题` : '请选择'}</div></div><div class="choice-summary" data-choice-summary></div>${groups}<div class="choice-nav"><button type="button" class="choice-back" data-choice-back disabled>← 回退</button><span class="choice-progress" data-choice-progress>1 / ${count}</span></div></div>`;
+  return `<div class="choice-box${count > 1 ? ' multi' : ''}" role="group" aria-label="${label}" data-choice-count="${count}" data-choice-step="0" data-choice-answers="[]"><div class="choice-head"><div class="choice-title">${count > 1 ? `请选择 · ${count} 题` : '请选择'}</div></div><div class="choice-summary" data-choice-summary></div>${groups}<div class="choice-nav"><button type="button" class="choice-back" data-choice-back disabled>← 回退</button><span class="choice-progress" data-choice-progress>1 / ${count}</span><button type="button" class="choice-next" data-choice-next${count === 1 ? " hidden" : ""}>${messageLocaleText("下一题", "Next")}</button><button type="button" class="choice-submit" data-choice-submit>${messageLocaleText("提交", "Submit")}</button></div></div>`;
 };
 
 // :::chart 围栏正则：直接别名按长度降序，避免「柱状」抢先吃掉「柱状图」

@@ -70,5 +70,7 @@ export function fileCardIconHtml(a = {}, { safeImgSrc = (s) => s, esc = (s) => S
     const poster = safeImgSrc(a.poster);
     return `<span class="fc-ico fc-thumb fc-video">${poster ? `<img src="${poster}" alt="">` : '<span class="fc-glyph">▶</span>'}<span class="fc-play" aria-hidden="true"></span></span>`;
   }
-  return `<span class="fc-ico fc-${cat}" data-cat="${cat}" title="${esc(FILE_CARD_LABEL[cat])}"><span class="fc-badge">${esc(fileCardBadge(a))}</span></span>`;
+  if (cat === 'audio' || cat === 'video' || cat === 'image') return `<span class="fc-ico fc-${cat}" data-cat="${cat}" title="${esc(FILE_CARD_LABEL[cat])}"><span class="fc-badge">${esc(fileCardBadge(a))}</span></span>`;
+  const badge = esc(fileCardBadge(a));
+  return `<span class="fc-ico fc-${cat}" data-cat="${cat}" title="${esc(FILE_CARD_LABEL[cat])}"><svg class="fc-file-svg" viewBox="0 0 28 28" aria-hidden="true"><path d="M6 2.5h10l6 6v17H6z" fill="var(--bg)" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M16 2.5v6h6" fill="none" stroke="currentColor" stroke-width="1.3"/><text x="14" y="19" text-anchor="middle" fill="currentColor" font-size="${badge.length > 3 ? 5 : 6.5}" font-weight="700">${badge}</text></svg></span>`;
 }
