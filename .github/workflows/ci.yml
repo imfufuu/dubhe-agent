@@ -42,6 +42,9 @@ jobs:
       - name: tests/local_desktop_checks.py · 本机桌面交互（键位 / 参数 / 平台命令构造 / Linux 会话检查）
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/local_desktop_checks.py
+      - name: tests/interaction-regressions.test.mjs · 交互回归
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/interaction-regressions.test.mjs
       - name: tests/agent.test.mjs · 主单测
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/agent.test.mjs

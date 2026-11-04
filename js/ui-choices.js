@@ -1,87 +1,59 @@
 import { $, $$, esc } from './ui-markdown.js?v=2026.10.25.1';
 import { isOfflineModelId } from './offline-model-config.js';
+import { uiText as t } from './locale.js';
+
+// Read-only summaries survive message repaint and session reload.
+export function choiceSummaryHtml(items, ignored = false) {
+  if (ignored) items = items.map(item => ({ ...item, answer: t('未回答', 'Not answered') }));
+  return `<div class="choice-result-title">${esc(ignored ? t('未回答选择框', 'Choices not answered') : t('选择摘要', 'Choice summary'))}</div>` + items.map(item =>
+    `<div class="choice-result-row"><div class="choice-result-question">${esc(item.question)}</div><div>${esc(item.answer || t('未选择', 'Not selected'))}</div>${item.other ? `<div class="choice-result-other">${esc(t('其他', 'Other'))}: ${esc(item.other)}</div>` : ''}</div>`).join('');
+}
+const choiceReplyText = items => items.map(x => `${x.question}\n${x.answer || t('其他', 'Other')}${x.other ? `\n${t('其他', 'Other')}: ${x.other}` : ''}`).join('\n\n');
 export function installChoiceHandler({ root, store, agent, getBusy, openKeyModal, toast }) {
-  function readChoiceAnswers(box) {
-    try { return JSON.parse(box.dataset.choiceAnswers || '[]'); } catch { return []; }
-  }
-  function writeChoiceAnswers(box, answers) {
-    box.dataset.choiceAnswers = JSON.stringify((answers || []).map((x) => String(x || '')));
-  }
-  function setChoiceStep(box, step) {
-    if (!box) return;
-    const blocks = $$('.choice-qblock', box);
-    const count = blocks.length || Number(box.dataset.choiceCount || 1) || 1;
-    const idx = Math.max(0, Math.min(count - 1, Number(step) || 0));
+  const read = box => { try { return JSON.parse(box.dataset.choiceAnswers || '[]'); } catch { return []; } };
+  function setStep(box, step) {
+    const blocks = $$('.choice-qblock', box), answers = read(box);
+    const idx = Math.max(0, Math.min(blocks.length - 1, step));
     box.dataset.choiceStep = String(idx);
-    blocks.forEach((b, i) => b.classList.toggle('active', i === idx));
-    const answers = readChoiceAnswers(box);
-    const summary = $('[data-choice-summary]', box);
-    if (summary) {
-      summary.innerHTML = answers.length
-        ? answers.map((a, i) => a ? `<button type="button" class="choice-pill" data-choice-jump="${i}" title="回到第 ${i + 1} 题"><b>${i + 1}</b>${esc(a)}</button>` : '').join('')
-        : '';
-    }
     blocks.forEach((b, i) => {
-      const ans = answers[i] || '';
-      for (const opt of $$('.choice-opt', b)) opt.classList.toggle('selected', !!ans && opt.getAttribute('data-choice-send') === ans);
+      b.classList.toggle('active', i === idx);
+      for (const opt of $$('.choice-opt', b)) opt.classList.toggle('selected', opt.dataset.choiceSend === answers[i]);
     });
-    const back = $('[data-choice-back]', box);
-    if (back) back.disabled = idx <= 0;
-    const progress = $('[data-choice-progress]', box);
-    if (progress) progress.textContent = `${idx + 1} / ${count}`;
+    $('[data-choice-back]', box).disabled = idx === 0;
+    $('[data-choice-progress]', box).textContent = `${idx + 1} / ${blocks.length}`;
+    $('[data-choice-next]', box).hidden = idx === blocks.length - 1;
+    $('[data-choice-summary]', box).innerHTML = blocks.map((b, i) => answers[i] ? `<button type="button" class="choice-pill" data-choice-jump="${i}"><b>${i + 1}</b>${esc(answers[i])}</button>` : '').join('');
   }
-  function choiceReplyText(box) {
-    const answers = readChoiceAnswers(box);
-    const qs = $$('.choice-qblock', box).map((b, i) => (($('.choice-q', b) || {}).textContent || `问题 ${i + 1}`).trim());
-    return answers.map((a, i) => `${qs[i] || `问题 ${i + 1}`}：${a}`).join('\n');
-  }
-  const msgList = root;
-  return (e) => {
+  return e => {
+    const box = e.target.closest('.choice-box');
+    if (!box || !root.contains(box)) return false;
+    const source = box.closest('.msg[data-id]');
+    const owner = store.state.messages.find(x => String(x.id) === source?.dataset.id);
+    if (getBusy() || !owner || owner.role !== 'assistant' || owner.cancelled || owner.error || owner.toolCalls?.length || !owner.done) return true;
     const opt = e.target.closest('[data-choice-send]');
     if (opt) {
-      if (getBusy()) return true;
-      const source = opt.closest('.msg[data-id]');
-      const owner = store.state.messages.find(x => String(x.id) === source?.dataset.id);
-      if (!owner || owner.role !== 'assistant' || owner.cancelled || owner.error || owner.toolCalls?.length || !owner.done) return true;
-      const box = opt.closest('.choice-box');
-      const block = opt.closest('.choice-qblock');
-      if (!box || !block) return true;
-      const text = opt.getAttribute('data-choice-send') || '';
-      if (!text) return true;
-      const idx = Number(block.dataset.choiceIdx || box.dataset.choiceStep || 0) || 0;
-      const count = Number(box.dataset.choiceCount || $$('.choice-qblock', box).length || 1) || 1;
-      const answers = readChoiceAnswers(box);
-      answers.length = idx;
-      answers[idx] = text;
-      writeChoiceAnswers(box, answers);
-      if (idx + 1 < count) {
-        setChoiceStep(box, idx + 1);
-        return true;
-      }
-      if (!store.state.apiKey && !isOfflineModelId(store.state.model)) { openKeyModal(); toast('请先配置 TeamoRouter API Key', 'warn'); setChoiceStep(box, idx); return true; }
-      const reply = choiceReplyText(box) || text;
-      for (const b of $$('.choice-box', msgList)) b.remove();
+      const idx = Number(opt.closest('.choice-qblock').dataset.choiceIdx), answers = read(box);
+      answers[idx] = opt.dataset.choiceSend;
+      box.dataset.choiceAnswers = JSON.stringify(answers);
+      setStep(box, Math.min(idx + 1, Number(box.dataset.choiceCount) - 1));
+      return true;
+    }
+    if (e.target.closest('[data-choice-back]')) { setStep(box, Number(box.dataset.choiceStep) - 1); return true; }
+    if (e.target.closest('[data-choice-next]')) { const idx = Number(box.dataset.choiceStep); const block = $$('.choice-qblock', box)[idx]; if (!read(box)[idx] && !$('.choice-other', block).value.trim()) { toast(t('请先回答当前问题', 'Please answer this question first'), 'warn'); return true; } setStep(box, idx + 1); return true; }
+    const jump = e.target.closest('[data-choice-jump]');
+    if (jump) { setStep(box, Number(jump.dataset.choiceJump)); return true; }
+    if (e.target.closest('[data-choice-submit]')) {
+      const answers = read(box);
+      const items = $$('.choice-qblock', box).map((b, i) => ({ question: $('.choice-q', b).textContent.trim(), answer: answers[i] || '', other: $('.choice-other', b).value.trim() }));
+      const missing = items.findIndex(x => !x.answer && !x.other);
+      if (missing >= 0) { setStep(box, missing); toast(t('请回答每个问题后提交', 'Please answer every question before submitting'), 'warn'); return true; }
+      if (!store.state.apiKey && !isOfflineModelId(store.state.model)) { openKeyModal(); toast(t('请先配置 API Key', 'Please configure an API key'), 'warn'); return true; }
+      const boxes = $$('.choice-box', source);
+      const resultIndex = boxes.indexOf(box);
+      const results = { ...(owner.choiceResults || {}), [resultIndex]: items };
+      store.updateMessage(owner.id, { choiceResults: results });
+      const reply = choiceReplyText(items);
       agent.send(reply, []);
-      return true;
-    }
-    const back = e.target.closest('[data-choice-back]');
-    if (back) {
-      e.preventDefault();
-      const box = back.closest('.choice-box');
-      if (!box) return true;
-      const target = Math.max(0, (Number(box.dataset.choiceStep || 0) || 0) - 1);
-      const answers = readChoiceAnswers(box);
-      answers.length = target; // 回退即清掉目标题及其后的旧选择状态
-      writeChoiceAnswers(box, answers);
-      setChoiceStep(box, target);
-      return true;
-    }
-    const choiceJump = e.target.closest('[data-choice-jump]');
-    if (choiceJump) {
-      e.preventDefault();
-      const box = choiceJump.closest('.choice-box');
-      if (!box) return true;
-      setChoiceStep(box, Number(choiceJump.getAttribute('data-choice-jump') || 0));
       return true;
     }
     return false;

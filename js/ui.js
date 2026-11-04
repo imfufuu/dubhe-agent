@@ -2,7 +2,7 @@ import { syncMessageRhythm } from './ui-message-rhythm.js?v=2026.10.25.1';
 import { animateMessageSend } from './ui-send-animation.js?v=2026.10.25.1';
 import { installCaretEffect } from './ui-caret.js';
 import { publicPlanHtml } from './ui-publicplan.js';
-import { installChoiceHandler } from './ui-choices.js?v=2026.10.25.1';
+import { installChoiceHandler, choiceSummaryHtml } from './ui-choices.js?v=2026.10.25.1';
 import { installSharing } from './ui-share.js?v=2026.10.25.1';
 import { uiText as localeText, getLanguage, onLanguageChange } from './locale.js';
 import { formatDate, formatDateTime, formatNumber, formatTime, pluralize, t } from './i18n.js?v=2026.10.25.1';
@@ -61,10 +61,8 @@ import { installPopovers } from './ui-popovers.js?v=2026.10.25.1';
 import { installCommandPalette } from './ui-command-palette.js?v=2026.10.25.1';
 import { installSystemCommands } from './ui-system-commands.js?v=2026.10.25.1';
 import { decorateGeoMap, installMapInteractions } from './quickmap.js?v=2026.10.25.1';
-
 // 预览窗刷新节流：直播时每 ~50ms 合并更新（换文件/收尾立即刷）
 const EDIT_PREVIEW_REFRESH_MS = PREVIEW_REFRESH_MS;
-
 // P4：Markdown / 消息片段渲染与 DOM 小工具已拆到 ui-markdown.js（纯函数，不依赖 mountUI 闭包）
 import {
   $, $$, el, esc, safeImgSrc, sanitizeSvgRaw, hydrateSandboxMedia, bindFoldRows,
@@ -72,10 +70,8 @@ import {
 } from './ui-markdown.js?v=2026.10.25.1';
 export { renderMarkdown, videoBlobUrl }; // 兼容旧导入路径（tests / 外部调用方）
 import { renderGeoMapSvg } from './quickviz.js?v=2026.10.25.1';
-
 import { toast, MAX_TOAST_STACK } from './ui-common.js?v=2026.10.25.1';
 export { toast, MAX_TOAST_STACK };
-
 // 这些工具不进 Ran Commands，而是各自的文件折叠（Explored / Edited File(s)）
 const FILE_FOLD_TOOLS = new Set(['write_file', 'read_file', 'analyze_image', 'analyze_pdf', 'analyze_svg', 'analyze_video', 'analyze_audio', 'knowledge_search']);
 const SESSION_TURN_FORMS = {
@@ -85,7 +81,6 @@ const SESSION_TURN_FORMS = {
   ru: { one: '{count} раунд', few: '{count} раунда', many: '{count} раундов', other: '{count} раунда' },
   ar: { zero: '{count} جولة', one: '{count} جولة', two: '{count} جولتان', few: '{count} جولات', many: '{count} جولة', other: '{count} جولة' },
 };
-
 // 「本轮回复」纯文本：上一条用户消息之后的全部非临时助手消息，按时间顺序拼接。
 // 每段取已渲染 DOM 的 innerText，表格/代码/列表保留排版；DOM 缺失时回退到原始文本。
 function turnPlainText(m, wrap) {
@@ -101,7 +96,6 @@ function turnPlainText(m, wrap) {
   if (parts.length) return parts.join('\n\n');
   return String(wrap?.querySelector(':scope > .md-body')?.innerText || m.text || '');
 }
-
 export function mountUI(store, agent) {
   let feedbackUI, sharingUI;
   const msgList = $('#messages');
@@ -194,7 +188,6 @@ export function mountUI(store, agent) {
     for (const fold of $$('.ran-commands', msgList)) syncRanCommandsFold(fold);
     for (const fold of $$('.edited-files, .explored-files, .searched-library, .web-activity', msgList)) syncFileFold(fold);
   }
-
   // 未决的高风险确认卡（每个回合结束时由 agent 作废；重绘消息时一并清掉，避免残留旧卡）
   const confirmNodes = new Map();
   const clearConfirmCards = () => {
@@ -212,7 +205,6 @@ export function mountUI(store, agent) {
       let ok = false; try { ok = await relayAvailable(); } catch { ok = false; }
       store.state.relayOk = ok; if (ok) store.state.settings.webEnabled = true; store.notify(); syncWeb(); },
   });
-
   let rafPending = false;
   const pendingPaints = new Map();
   const schedulePaint = (m) => {
@@ -227,7 +219,6 @@ export function mountUI(store, agent) {
       flushDeferredAssistants(); scrollToBottom();
     });
   };
-
   // ── 主题 ──
   const SUN_SVG = '<svg class="pill-ico ico-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m4.93 19.07 1.41-1.41"/><path d="m17.66 6.34 1.41-1.41"/></svg>';
   const MOON_SVG = '<svg class="pill-ico ico-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z"/></svg>';
@@ -290,7 +281,6 @@ export function mountUI(store, agent) {
     store.state.settings.theme = store.state.settings.theme === 'light' ? 'dark' : 'light';
     applyTheme(); store.notify();
   });
-
   const { inSystem, isSystemIsolated, leaveSystemChannel, selectModel, chatModels, updateModelBtn, renderModelMenu, refreshModels, syncGateway } = installModelPicker({
     store, agent, toast, getBusy, openKeyModal, rebuildMessages, renderSessions, renderFiles: () => renderFiles(), updateStats, syncCapLine, syncWeb: () => syncWeb(),
   });
@@ -305,7 +295,6 @@ export function mountUI(store, agent) {
       : '代码沙箱已关闭：不再执行代码，文件读写、生图与子智能体委派仍可用');
   });
   syncSandbox();
-
   // 联网：需探测到可用 relay（本地 server.py 或 Worker）才可开；搜索/爬虫工具按 Worker health 特性单独裁剪。
   // 原生网页搜索请求字段仍关闭，网页检索走显式 Worker 工具。
   const GLOBE_SVG = '<svg class="pill-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3.2 9.5h17.6"/><path d="M3.2 14.5h17.6"/><path d="M12 3a14 14 0 0 1 0 18 14 14 0 0 1 0-18"/></svg>';
@@ -396,7 +385,6 @@ export function mountUI(store, agent) {
     });
     syncWeb();
   }
-
   // 思考模式：关闭 或 Mini/Low/Medium/High/Max/Ultra（按模型家族映射协议参数）
   const thinkingToggle = $('#thinking-toggle');
   const thinkMenu = $('#think-menu');
@@ -463,7 +451,6 @@ export function mountUI(store, agent) {
   });
   window.addEventListener('resize', closeThinkMenu);
   syncThinking();
-
   const fastToggle = $('#fast-toggle');
   const syncFast = () => {
     fastToggle.classList.toggle('on', store.state.settings.fastMode);
@@ -475,7 +462,6 @@ export function mountUI(store, agent) {
     toast(store.state.settings.fastMode ? '快速模式开启（service_tier=fast，2x 计费，仅 GPT 系列）' : '快速模式关闭');
   });
   syncFast();
-
   // ── API Key 弹窗（role=dialog + Esc 关闭 + 焦点圈定，a11y P2-3）──
   const keyModal = $('#key-modal');
   const keyInput = $('#key-input');
@@ -587,7 +573,6 @@ const fmtAdminExp = (ms) => {
   keyInput.addEventListener('input', syncAdminPhraseField);
   keyInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#key-save').click(); });
   if (adminPhraseInput) adminPhraseInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#key-save').click(); });
-
   // ── 会话记录（侧栏只做记录与切换；回滚全部在对话区）─────────────────
   function sessionActivityAt(s) {
     const msgs = (s && Array.isArray(s.messages)) ? s.messages : [];
@@ -707,7 +692,6 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     memSelected = new Set();
     commitMemory(next);
   });
-
   onLanguageChange(() => { if ($('#session-list')) renderSessions(); });
   // 侧栏只列「有内容的」会话：空的「新对话」草稿在用户发出第一条消息之前不进列表
   //（store.listableSessions 负责过滤，「＋ 新建」也会复用空草稿，不堆 invisible 记录）
@@ -763,7 +747,6 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     }
     renderMemory();
   }
-
   // 就地改名：Enter 提交、Esc 取消、失焦提交；改名后 titleSource='user'，
   // Agent 的自动总结不再覆盖它
   function startRename(node, s) {
@@ -837,7 +820,6 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     composer.focus();
   });
   renderSessions();
-
   // ── 回滚撤销浮条（对话区内，回滚后出现 8 秒）+ 粒子粉碎动画（Requirement 6）──
   const undoPill = $('#undo-pill');
   let undoTimer = null;
@@ -871,7 +853,6 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       rebuildMessages();
     }
   }
-
   // ── 侧栏 & 沙箱面板收起体系 ───────────────────────────────────────────
   // 右面板 ≥761px 停靠；侧栏 ≤860px 抽屉；手机面板全屏。
   const sidebar = $('.sidebar');
@@ -880,7 +861,6 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
   const fab = $('#sidebar-fab');
   const mqSidebar = window.matchMedia('(max-width: 860px)');
   const mqPanel = window.matchMedia('(max-width: 760px)');
-
   function updateBackdrop() {
     const show = (mqSidebar.matches && sidebar.classList.contains('sidebar-open'))
       || (mqPanel.matches && !panel.classList.contains('collapsed'));
@@ -972,8 +952,6 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
   // 初始：面板默认收起；侧栏宽屏展开、窄屏隐藏（由 fab 打开）
   setPanelCollapsed(true);
   updateBackdrop();
-
-
   // 品牌图标加载失败兜底（捕获阶段监听资源错误）：替换为首字母徽章
   document.addEventListener('error', (e) => {
     const t = e.target;
@@ -995,7 +973,6 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     openFileViewer(path);
   };
   renderFiles();
-
   // ── 消息渲染 ──────────────────────────────────────────────────────────
   function loadLastSuggest() {
     try { return JSON.parse(sessionStorage.getItem('dubhe.suggest.last') || '[]'); } catch { return []; }
@@ -1053,7 +1030,6 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     renderWelcomePrompts(pickEmptyPicks());
     welcomeMotion.sync({ empty: true });
   }
-
   function clearEmpty() {
     const e = $('.empty-state', msgList); if (e) e.remove();
     const quick = $('#welcome-quick-prompts');
@@ -1061,7 +1037,6 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     welcomeMotion.sync({ empty: false });
   }
   window.addEventListener('dubhe:user-salutation-changed', () => { if (!store.state.messages.length) paintWelcomeGreeting(); });
-
   function messageNode(m) {
     const wrap = el('div', `msg msg-${m.role} enter`);
     wrap.dataset.id = m.id;
@@ -1102,7 +1077,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
         headName = 'system-commands';
         headIcon = `<span class="sys-gear">${ICON.system || '⚙'}</span>`;
       } else if (headModel === 'Moderator') {
-        headName = 'Moderator · 审核员';
+        headName = 'moderator';
         headIcon = providerIcon(providerOf(headModel));
       } else if (headIsRouter) {
         headName = SMART_ROUTER_LABEL;
@@ -1144,7 +1119,6 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     }
     return wrap;
   }
-
   // ── 「重试并联网检索」：上游模型偶发不调用服务端搜索（直接回「我上不了网」）时的补救 ──
   // 真机对照实验里，提问里写明「先联网检索再回答」能明显提高命中率，所以这里一键改写重问；
   // 不放在通用 .act 处理器里 —— 提示条是在动作条之后才挂上去的，那时监听器已经绑定完了。
@@ -1161,9 +1135,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     toast('已改写提问（先联网检索再回答），正在重试…', 'ok', 1800);
     agent.regenerate();
   }
-
   const BUDGET_CHANNEL_LABEL = { toolCalls: '工具调用', retries: '重试次数', durationMs: '墙钟时长', parallelTasks: '并发任务', memoryWrites: '记忆写入', externalSideEffects: '外部副作用', tokens: 'Token 消耗' };
-
   function toolIds(chip) {
     return String(chip && (chip.dataset.callIds || chip.dataset.callId) || '').split(',').filter(Boolean);
   }
@@ -1291,7 +1263,6 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     } else chip.classList.toggle('expanded', chip._userToggle);
     syncRanCommandsFold(chip.closest('.ran-commands'));
   }
-
   // 2026.10.9.1（第 4 条）：详情 = COMMAND / STDOUT / STDERR 三窗口（见 toolwindows.js），每个窗口右上角一枚复制按钮。
   // 一条命令一个芯片（不再按工具名合并）；chip._win 保存三段原文，复制按钮直接读它，不从 DOM 里抠文本。
   // 只有真实且可展示的思考内容才作为命令分组分隔。
@@ -1335,7 +1306,10 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     if (live && !noOutputYet && !toolMenuBusy && String(m.text || '').trim()) { const tail = /<\/(p|li|h[1-6]|blockquote|td|th)>\s*$/.exec(html); html = tail ? html.slice(0, tail.index) + '<span class="cursor"></span>' + tail[0] : html + '<span class="cursor"></span>'; }
     // Cancellation is a tail after text AND tool/file output, never a prefix.
     const lengthCapped = /^(length|max_tokens|max_output_tokens)$/i.test(String(m.finishReason || ''));
-    if (m.done && !m.cancelled && !String(m.text || '').trim() && !(m.toolCalls && m.toolCalls.length) && !m.error) {
+    const after = store.state.messages.slice(store.state.messages.findIndex(x => x.id === m.id) + 1);
+    const nextUser = after.findIndex(x => x.role === 'user');
+    const laterAssistant = after.slice(0, nextUser < 0 ? undefined : nextUser).some(x => x.role === 'assistant');
+    if (!m._displayFragment && !getBusy() && !laterAssistant && m.done && !m.cancelled && !String(m.text || '').trim() && !(m.toolCalls && m.toolCalls.length) && !m.error) {
       html += lengthCapped
         ? '<div class="trunc-note">输出在长度上限前结束，未收到可见正文。请点击「重新生成」重试。</div>'
         : '<div class="trunc-note">模型未返回可见答复。请点击「重新生成」重试。</div>';
@@ -1349,9 +1323,14 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     const msgs = store.state.messages;
     const idx = msgs.findIndex((x) => x.id === m.id);
     const followedByUser = idx >= 0 && msgs.slice(idx + 1).some((x) => x.role === 'user' && !x.silent);
-    for (const box of $$('.choice-box', body)) {
-      if (!m.done || followedByUser || m.cancelled || m.error || (m.toolCalls && m.toolCalls.length) || getBusy()) box.remove();
-    }
+    $$('.choice-box', body).forEach((box, i) => {
+      if (followedByUser && m.done && !m.cancelled && !m.error && !(m.toolCalls && m.toolCalls.length)) {
+        const items = m.choiceResults?.[i];
+        box.classList.add('choice-result');
+        const questions = $$('.choice-q', box).map(q => ({ question: q.textContent.trim() }));
+        box.innerHTML = choiceSummaryHtml(items || questions, !items);
+      } else if (!m.done || m.cancelled || m.error || (m.toolCalls && m.toolCalls.length) || getBusy()) box.remove();
+    });
     // GPT only: parse its chained-bold summary markers. Other models show their complete reasoning as escaped plain text.
     const owner = String(m.id);
     const reasoningModel = m.model || store.state.model;
@@ -1790,12 +1769,12 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     syncCompletedToolFolds();
     // meta（无 msg-head 的续消息没有该节点；多轮工具调用时汇总整轮 token 与官方预估价格到本轮首条 msg-head）
     paintTurnMeta(wrap, m);
+    if (!m._displayFragment) placeChecklistCompletion(wrap, m);
     paintFoot(wrap, m);
     syncAssistantShell(wrap);
     // 复制/回滚/重新生成的显隐统一交给 refreshActionVisibility（回合结束才显示）
     refreshActionVisibility(); settleTurnToolbars(msgList, store.state.messages);
   }
-
   function syncAssistantShell(w) {
     if (!w || !w.classList.contains('msg-assistant')) return;
     const hasHead = !!$('.msg-head', w);
@@ -1822,7 +1801,6 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     const emptyShell = !hasHead && !hasBody && !hasReason && !hasChips && !hasExplored && !hasEdited && !hasSearched && !hasFoot && !hasTail;
     w.classList.toggle('msg-collapsed', emptyShell);
   }
-
   function collectTurnCostInfo(m) {
     const msgs = store.state.messages || [];
     const idx = msgs.findIndex((x) => x.id === m.id);
@@ -1896,7 +1874,6 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     });
     return { headMsg, turnDone: turnDone || (!!m.done && !getBusy()), hasUsage: hasAnyUsage, summary };
   }
-
   function paintTurnMeta(wrap, m) {
     const info = collectTurnCostInfo(m);
     const targetWrap = (info.headMsg && msgNodes.get(info.headMsg.id)) || wrap;
@@ -2084,7 +2061,8 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     const scrollSnapshot = captureMessageScroll();
     pendingSendOrigin = null; sendAnimation?.cancel(); sendAnimation = null;
     cancelRollbackAnim();
-    clearConfirmCards(); syncPresentationScope(); pendingPaints.clear();
+    const pendingCards = getBusy() ? [...confirmNodes.values()].filter(n => !n.classList.contains('resolved')) : [];
+    if (!pendingCards.length) clearConfirmCards(); syncPresentationScope(); pendingPaints.clear();
     for (const node of $$('.edited-files', msgList)) if (node._previewTimer != null) clearTimeout(node._previewTimer);
     msgNodes.clear(); msgList.innerHTML = '';
     clearEmpty();
@@ -2112,6 +2090,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       if (m.role === 'tool' || m.silent) continue;
       appendMessage(m);
     }
+    for (const card of pendingCards) msgList.appendChild(card);
     for (const n of $$('.msg', msgList)) n.classList.remove('enter');
     // 把 tool 结果回填到芯片（需要在可见范围内查找）
     for (const m of store.state.messages) if (m.role === 'tool') attachToolResult(m);
@@ -2155,7 +2134,8 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
   let busyTimer = null;
   const stopBusyTicker = () => { if (busyTimer) { clearInterval(busyTimer); busyTimer = null; } };
   function paintStatus(s) {
-    const [label] = STATUS[s] || STATUS.idle;
+    const [baseLabel] = STATUS[s] || STATUS.idle;
+    const label = [...confirmNodes.values()].some(n => !n.classList.contains('resolved')) ? localeText('等待执行权限确认', 'Waiting for execution permission') : baseLabel;
     statusText.innerHTML = `${esc(label)}${DOTS}<span class="selapsed mono"></span>`;
     paintElapsed();
   }
@@ -2324,6 +2304,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
   function autoGrow({ follow = false } = {}) {
     const shell = composer.closest('.composer');
     const previousScroll = composer.scrollTop;
+    shell?.classList.remove('is-multiline'); // measure at the compact width, not the expanded grid width
     composer.style.height = 'auto';
     const compactStyle = getComputedStyle(composer);
     const compactLineHeight = Number.parseFloat(compactStyle.lineHeight) || 24;
@@ -2774,7 +2755,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       const msg = (m && m.id) ? m : [...store.state.messages].reverse().find((x) => x.role === 'user' && !msgNodes.has(x.id));
       if (!msg || !msg.id || msgNodes.has(msg.id)) return;
       if (!msg.silent) {
-        for (const box of $$('.choice-box', msgList)) box.remove();
+        for (const [id, wrap] of msgNodes) { const old = store.state.messages.find(x => x.id === id); if (old?.role === 'assistant' && wrap.querySelector('.choice-box')) paintAssistant(wrap, old); }
         const origin = pendingSendOrigin; pendingSendOrigin = null;
         appendMessage(msg, { scroll: !origin });
         if (origin) {
@@ -2840,9 +2821,9 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     onToolStart() { scrollToBottom(); },
     // ── P1 高风险操作确认卡（执行内核 · 最小信息格式 + 三个决定）──
     onConfirmationRequest(call, requestText, key) {
-      clearConfirmCards();
       const node = el('div', 'confirm-card');
       node.dataset.key = String(key || '');
+      node.setAttribute('role', 'alert');
       node.innerHTML = [
         '<div class="confirm-title">⚠ 执行内核：该操作需要你的确认</div>',
         `<pre class="confirm-body">${esc(requestText || '')}</pre>`,
@@ -2856,7 +2837,11 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       const settle = (decision, label) => {
         const res = (() => { try { return agent.resolveConfirmation(node.dataset.key, decision, label); } catch { return { ok: false }; } })();
         node.classList.add('resolved');
-        node.querySelectorAll('button').forEach((b) => { b.disabled = true; });
+        node.querySelector('.confirm-body')?.remove();
+        node.querySelector('.confirm-actions')?.remove();
+        node.querySelector('.confirm-note')?.remove();
+        paintStatus(agent.getStatus());
+        if (!res || res.ok === false) { decision = 'deny'; label = localeText('确认已过期，操作未执行', 'Confirmation expired; operation not executed'); }
         const tag = el('div', `confirm-result ${decision === 'deny' ? 'deny' : 'allow'}`, esc(label));
         node.appendChild(tag);
         if (!res || res.ok === false) toast('该确认已过期或回合已结束，操作未执行（默认拒绝）', 'warn', 4200);
@@ -2867,14 +2852,18 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       node.querySelector('[data-decision="deny"]').addEventListener('click', () => settle('deny', '已拒绝执行'));
       msgList.appendChild(node);
       confirmNodes.set(node.dataset.key, node);
-      scrollToBottom();
+      paintStatus(agent.getStatus());
+      scrollToBottom(true);
     },
     onConfirmationResolved(call, rec) {
       const node = [...confirmNodes.values()].find((n) => n && n.dataset.key === String(rec && rec.key || ''));
       if (!node) return;
       if (node.classList.contains('resolved')) return;
-      node.querySelectorAll('button').forEach((b) => { b.disabled = true; });
       node.classList.add('resolved');
+      node.querySelector('.confirm-body')?.remove();
+      node.querySelector('.confirm-actions')?.remove();
+      node.querySelector('.confirm-note')?.remove();
+      paintStatus(agent.getStatus());
       const timeout = rec && rec.decision === 'timeout';
       node.appendChild(el('div', `confirm-result ${timeout ? 'deny' : 'allow'}`, esc(timeout ? '等待确认超时：未执行（默认拒绝）' : `已处理：${rec && rec.decision || ''}`)));
       scrollToBottom();

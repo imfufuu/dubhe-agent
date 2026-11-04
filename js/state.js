@@ -802,6 +802,7 @@ export function createStore(onChange) {
     importSession(data) {
       if (!data || !Array.isArray(data.messages) || !data.messages.length) return null;
       const s = newSession('');
+      const importedIds = new Map(data.messages.filter(m => m?.id != null).map(m => [String(m.id), uid()]));
       s.messages = data.messages
         .filter((m) => m && (m.role === 'user' || m.role === 'assistant' || m.role === 'tool'))
         .map((m) => {
@@ -814,7 +815,7 @@ export function createStore(onChange) {
             };
           }) : [];
           return {
-            id: uid(), role: m.role, text: m.text || '',
+            id: importedIds.get(String(m.id)) || uid(), role: m.role, text: m.text || '',
             content: typeof m.content === 'string' ? m.content : (m.content || ''),
             model: m.model, // 保留每条消息实际使用的模型（会话头展示用）
             userModel: m.userModel, router: m.router, transport: m.transport, fastMode: m.fastMode, gatewayId: m.gatewayId,
@@ -827,6 +828,9 @@ export function createStore(onChange) {
             interrupted: !!m.interrupted || m.done === false,
             error: typeof m.error === 'string' ? m.error : undefined,
             finishReason: m.finishReason, execution: m.execution, publicPlan: m.publicPlan, feedback: normalizeFeedback(m.feedback),
+            outputOrder: m.outputOrder, toolOrderIndices: m.toolOrderIndices, choiceResults: m.choiceResults,
+            checklist: m.checklist, checklistCreatedCount: m.checklistCreatedCount, checklistCompletion: m.checklistCompletion,
+            checklistDoneCallId: m.checklistDoneCallId, checklistDoneMessageId: importedIds.get(String(m.checklistDoneMessageId)) || undefined,
             reasoning: m.reasoning,
             reasoningMs: m.reasoningMs,
             reasoningLevel: m.reasoningLevel,

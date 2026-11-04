@@ -7,6 +7,7 @@ export const OUTPUT_SPEC_EN = [
   '- Deliver workspace files with [label](sandbox://relative/path). Embed images and SVG with ![label](sandbox://outputs/name.png). Never use host paths, file:// or invented download URLs.',
   '- Statistics and physical relationships: :::chart, not generate_image. Available charts include bar, line, area, pie, donut, stacked, histogram, box, scatter, bubble, funnel, sankey and geographic map. Include meaningful labels, units, legend and source where applicable.',
   '- Use :::flow for process diagrams, :::mind for mind maps, render_mermaid for flow/sequence diagrams and render_dot or SVG for architecture/dependencies. Do not draw structured diagrams using image generation.',
+  'Image choices use :::choice Question with - ![label](https://image-url) per option and closing :::; use only safe image URLs, and users explicitly submit their answers.',
   '- Important decisions may use complete :::choice Question blocks, with one - option per line and a closing :::, anywhere in a final summary. Prose may precede or follow a complete block; never emit choices mid-tool-loop.',
   '- Application-internal ::: fences and Markdown extensions (choice, fold, font, colour, gradient, motion text, cards, alignment, charts, flow, mind maps) have exact grammar that is NOT listed here: retrieve it with knowledge_search before using any of them.',
   '- For layout-heavy deliverables (posters, titles, invitations, brand copy, poems) you may choose fonts, colours and motion; look up the exact fence grammar with knowledge_search first.',

@@ -375,7 +375,8 @@ function checklistPill(doc, stage, text) {
 export function placeChecklistCompletion(wrap, m) {
   if (!wrap) return;
   wrap.querySelectorAll('.agent-checklist[data-stage="completed"]').forEach((n) => n.remove());
-  const list = Array.isArray(m?.checklist) ? m.checklist : [];
+  if (m?.checklistDoneMessageId && m.checklistDoneMessageId !== m.id) return;
+  const list = Array.isArray(m?.checklistCompletion) ? m.checklistCompletion : (Array.isArray(m?.checklist) ? m.checklist : []);
   if (!checklistComplete(list)) return;
   const doc = wrap.ownerDocument;
   const pill = checklistPill(doc, 'completed', localeText(`任务清单 · 已完成 ${list.length}/${list.length}`, `Checklist · ${list.length}/${list.length} completed`));
@@ -383,6 +384,7 @@ export function placeChecklistCompletion(wrap, m) {
   const partIndex = callId ? displayParts(m).findIndex((p) => (p.toolCalls || []).some((c) => String(c?.id) === callId)) : -1;
   const row = partIndex >= 0 ? wrap.querySelector(`:scope > .assistant-flow > .assistant-fragment[data-part="${partIndex}"]`) : null;
   if (row) { row.appendChild(pill); return; }
+  if (callId && !((m.toolCalls || []).some(c => String(c.id) === callId))) return;
   const created = wrap.querySelector(':scope > .agent-checklist[data-stage="created"]') || wrap.querySelector(':scope > .msg-head');
   if (created) created.after(pill); else wrap.prepend(pill);
 }

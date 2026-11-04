@@ -80,13 +80,19 @@ async function request(path, { method = 'POST', headers = {}, body, signal, gate
       throw err;
     }
   }
-  const tryFetch = (url) => fetch(url, { method, headers, body, signal });
+  // Check every actual destination, including automatic failover, before sending a model request.
+  let requestedModel = '';
+  try { requestedModel = typeof body === 'string' ? JSON.parse(body)?.model : body?.get?.('model'); } catch { /* non-model request */ }
+  const tryFetch = (url) => {
+    if (isCnUnavailableModel(url, requestedModel)) { const err = new Error(localeText('该模型在当前地区不可用', 'This model is not available in the current region')); err.code = 'REGION_UNAVAILABLE'; throw err; }
+    return fetch(url, { method, headers, body, signal });
+  };
   const base = gatewayBase();
   try {
     transport = 'direct';
     return await tryFetch(base + path);
   } catch (err) {
-    if (signal?.aborted) throw err;
+    if (signal?.aborted || err?.code === 'REGION_UNAVAILABLE') throw err;
     if (isNetworkError(err)) {
       const alt = otherGatewayBase();
       try {
@@ -105,6 +111,13 @@ async function request(path, { method = 'POST', headers = {}, body, signal, gate
     }
     throw err;
   }
+}
+
+// TeamoRouter mainland node does not serve these overseas model families.
+export function isCnUnavailableModel(url, model) {
+  let host = ''; try { host = new URL(url).hostname.toLowerCase(); } catch { return false; }
+  if (host !== 'api.teamorouter.cn') return false;
+  return /^(?:[^/]+\/)?(?:claude|gpt|chatgpt|o1(?:\b|-)|o3(?:\b|-)|o4(?:\b|-)|gemini|grok|dall-e|midjourney|mj-|imagen|veo|sora|nano-banana)/i.test(String(model || '').trim());
 }
 
 // Shared non-streaming transport for tools that must use the exact same gateway as the turn.
@@ -1508,6 +1521,7 @@ async function generateMidjourney({ prompt, size, apiKey, signal }) {
   const t = withTimeout(signal, MJ_SUBMIT_TIMEOUT_MS);
   let submitted;
   try {
+    if (isCnUnavailableModel(gatewayBase(), 'midjourney')) throw new Error(localeText('该模型在当前地区不可用', 'This model is not available in the current region'));
     const r = await fetch(gatewayBase() + '/mj/submit/imagine', { method: 'POST', headers, body: buildMjSubmitBody(text), signal: t.signal, redirect: 'manual' });
     if (r.type === 'opaqueredirect' || (r.status >= 300 && r.status < 400)) throw new Error('Midjourney 提交被重定向，已拒绝（未重试）。');
     const raw = await r.text().catch(() => '');

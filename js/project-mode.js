@@ -49,8 +49,8 @@ function svgIcon(inner) {
   const s = document.createElementNS(SVG_NS, 'svg');
   s.setAttribute('class', 'pm-ic');
   s.setAttribute('viewBox', '0 0 24 24');
-  s.setAttribute('width', '14');
-  s.setAttribute('height', '14');
+  s.setAttribute('width', '18');
+  s.setAttribute('height', '18');
   s.setAttribute('fill', 'none');
   s.setAttribute('stroke', 'currentColor');
   s.setAttribute('stroke-width', '2');
@@ -199,7 +199,7 @@ export function openProjectMode({ store, agent }) {
           if (tab.path === state.active) showTab(tab, { keepSelection: true });
         }
       }
-      if (state.selected && !Object.prototype.hasOwnProperty.call(snap, state.selected) && !snap[state.selected + '/']) state.selected = '';
+      if (state.selected && !Object.prototype.hasOwnProperty.call(snap, state.selected) && !Object.keys(snap).some(p => p.startsWith(state.selected + '/'))) state.selected = '';
     }
     renderTree();
     renderTabs();
@@ -280,9 +280,10 @@ export function openProjectMode({ store, agent }) {
       if (e.key === 'Enter') { e.preventDefault(); commitCreate(input.value); }
       if (e.key === 'Escape') { e.preventDefault(); state.creating = null; renderTree({ force: true }); }
     });
-    input.addEventListener('blur', () => { setTimeout(() => { if (state.creating) { state.creating = null; renderTree({ force: true }); } }, 0); });
+    const creation = state.creating;
+    input.addEventListener('blur', () => { if (state.creating !== creation) return; if (input.value.trim()) commitCreate(input.value); if (state.creating === creation) { state.creating = null; renderTree({ force: true }); } });
     queueMicrotask(() => input.focus());
-    return h('div', { class: 'pm-tree-row create' }, [input]);
+    return h('div', { class: 'pm-tree-row create', title: state.creating?.dir || '/' }, [h('span', { class: 'pm-create-dir', text: (state.creating?.dir || '/') + ' /' }), input]);
   }
 
   function renameInput(row) {
@@ -293,12 +294,15 @@ export function openProjectMode({ store, agent }) {
       if (e.key === 'Escape') { e.preventDefault(); state.renaming = ''; renderTree({ force: true }); }
     });
     input.addEventListener('click', (e) => e.stopPropagation());
+    input.addEventListener('blur', () => { if (state.renaming === row.path) commitRename(row.path, input.value); });
     queueMicrotask(() => { input.focus(); input.select(); });
     return input;
   }
 
   function startCreate(kind = 'file') {
-    state.creating = { kind, dir: state.selected && !files()[state.selected] ? state.selected : parentDir(state.selected) };
+    state.renaming = '';
+    state.creating = { kind, dir: state.selected && !Object.prototype.hasOwnProperty.call(files(), state.selected) ? state.selected : parentDir(state.selected) };
+    if (state.creating.dir) state.collapsed.delete(state.creating.dir);
     renderTree({ force: true });
   }
 
@@ -308,7 +312,7 @@ export function openProjectMode({ store, agent }) {
     const list = [...(input.files || [])];
     input.value = '';
     if (!list.length) return;
-    const dir = state.selected && !files()[state.selected] ? state.selected : parentDir(state.selected);
+    const dir = state.selected && !Object.prototype.hasOwnProperty.call(files(), state.selected) ? state.selected : parentDir(state.selected);
     const taken = new Set(Object.keys(files()));
     let done = 0;
     let skipped = 0;
@@ -334,7 +338,6 @@ export function openProjectMode({ store, agent }) {
 
   function commitCreateFolder(raw) {
     const dir = state.creating ? state.creating.dir : '';
-    state.creating = null;
     const parts = String(raw || '').trim().split('/').filter(Boolean);
     if (!parts.length) return flash(T('名称不能为空', 'Name is required'));
     const names = parts.map((seg) => validateName(seg));
@@ -343,8 +346,9 @@ export function openProjectMode({ store, agent }) {
     const path = joinPath(dir, names.map((c) => c.name).join('/'));
     if (!isWorkspacePath(path)) return flash(T('路径不合法', 'Invalid path'));
     const snap = files();
-    if (Object.keys(snap).some((p) => p === path || p.startsWith(path + '/'))) return flash(T('同名文件或文件夹已存在', 'A file or folder with that name exists'));
+    if (Object.keys(snap).some((p) => p === path || p.startsWith(path + '/') || path.startsWith(p + '/'))) return flash(T('同名文件或文件夹已存在', 'A file or folder with that name exists'));
     try { agent.sandboxWrite(path + '/.keep', ''); } catch (err) { return flash(err.message); }
+    state.creating = null;
     state.collapsed.delete(path);
     state.lastSnap = null;
     sync();
@@ -354,14 +358,14 @@ export function openProjectMode({ store, agent }) {
   function commitCreate(raw) {
     if (state.creating && state.creating.kind === 'folder') return commitCreateFolder(raw);
     const dir = state.creating ? state.creating.dir : '';
-    state.creating = null;
     const parts = String(raw || '').trim().split('/').filter(Boolean);
     const check = validateName(parts[parts.length - 1]);
-    if (!check.ok) return flash(check.error);
+    if (!check.ok || parts.some(p => !validateName(p).ok)) return flash(check.error || T('名称不合法', 'Invalid name'));
     const path = joinPath(dir, parts.slice(0, -1).concat(check.name).join('/'));
     if (!isWorkspacePath(path)) return flash(T('路径不合法', 'Invalid path'));
-    if (Object.prototype.hasOwnProperty.call(files(), path)) return flash(T('同名文件已存在', 'A file with that name exists'));
+    if (Object.keys(files()).some(p => p === path || p.startsWith(path + '/') || path.startsWith(p + '/'))) return flash(T('同名文件或文件夹已存在', 'A file or folder with that name exists'));
     try { agent.sandboxWrite(path, ''); } catch (err) { return flash(err.message); }
+    state.creating = null;
     state.lastSnap = null;
     openFile(path);
     flash(T(`已新建 ${path}`, `Created ${path}`));
@@ -370,19 +374,20 @@ export function openProjectMode({ store, agent }) {
   function commitRename(from, raw) {
     state.renaming = '';
     const check = validateName(raw);
-    if (!check.ok) return flash(check.error);
+    if (!check.ok) { renderTree({ force: true }); return flash(check.error); }
     const to = joinPath(parentDir(from), check.name);
     if (to === from) return renderTree({ force: true });
-    if (!isWorkspacePath(to) || Object.prototype.hasOwnProperty.call(files(), to)) return flash(T('目标名称不可用', 'Name not available'));
     const snap = files();
-    const content = snap[from];
-    if (typeof content !== 'string') return renderTree({ force: true }); // 目录重命名暂不支持，保持原状
+    const paths = Object.keys(snap).filter(p => p === from || p.startsWith(from + '/'));
+    if (!isWorkspacePath(to) || !paths.length || Object.keys(snap).some(p => !paths.includes(p) && (p === to || p.startsWith(to + '/')))) { renderTree({ force: true }); return flash(T('目标名称不可用', 'Name not available')); }
+    const written = [];
     try {
-      agent.sandboxWrite(to, content);
-      agent.sandboxRemove(from);
-    } catch (err) { return flash(err.message); }
-    const tab = tabOf(from);
-    if (tab) { tab.path = to; if (state.active === from) state.active = to; }
+      for (const path of paths) { const target = to + path.slice(from.length); agent.sandboxWrite(target, snap[path]); written.push(target); }
+    } catch (err) { for (const path of written) try { agent.sandboxRemove(path); } catch {} renderTree({ force: true }); return flash(err.message); }
+    for (const path of paths) agent.sandboxRemove(path);
+    for (const tab of state.tabs) if (tab.path === from || tab.path.startsWith(from + '/')) tab.path = to + tab.path.slice(from.length);
+    if (state.active === from || state.active.startsWith(from + '/')) state.active = to + state.active.slice(from.length);
+    state.selected = to;
     state.lastSnap = null;
     sync();
     flash(T(`已重命名为 ${to}`, `Renamed to ${to}`));
@@ -399,7 +404,7 @@ export function openProjectMode({ store, agent }) {
       try { agent.sandboxRemove(p); } catch { /* 已不存在 */ }
       if (tabOf(p)) closeTab(p, { silent: true });
     }
-    if (state.selected === path) state.selected = '';
+    if (state.selected === path || state.selected.startsWith(path + '/')) state.selected = '';
     state.lastSnap = null;
     sync();
     flash(T('已删除', 'Deleted'));

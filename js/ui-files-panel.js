@@ -43,13 +43,21 @@ function syncFullscreenButton(viewer) {
   button.setAttribute('aria-pressed', String(on));
 }
 
-function setViewerFullscreen(viewer, fullscreen) {
+export function setViewerFullscreen(viewer, fullscreen) {
   if (!viewer) return;
   const wasFullscreen = viewer.classList.contains('fv-fullscreen');
   if (wasFullscreen === !!fullscreen) return;
   const before = viewer.getBoundingClientRect();
   try { viewer._fullscreenAnimation?.cancel(); } catch { /* noop */ }
   viewer._fullscreenAnimation = null;
+  if (fullscreen) {
+    viewer._fullscreenPlaceholder = document.createComment('file viewer');
+    viewer.parentNode.insertBefore(viewer._fullscreenPlaceholder, viewer);
+    document.body.appendChild(viewer);
+  } else if (viewer._fullscreenPlaceholder) {
+    viewer._fullscreenPlaceholder.replaceWith(viewer);
+    viewer._fullscreenPlaceholder = null;
+  }
   viewer.classList.toggle('fv-fullscreen', !!fullscreen);
   const after = viewer.getBoundingClientRect();
   if (motionAllowed(document) && typeof viewer.animate === 'function' && before.width > 0 && before.height > 0 && after.width > 0 && after.height > 0) {
@@ -527,7 +535,7 @@ export function installFilesPanel({ store, agent, toast, fmtSize, highlightCode,
       try { viewer._fullscreenAnimation?.cancel(); } catch { /* noop */ }
       viewer._fullscreenAnimation = null;
       viewer.classList.remove('open');
-      viewer.classList.remove('fv-fullscreen');
+      setViewerFullscreen(viewer, false);
     }
   }
   // Esc：全屏预览先退出全屏（不关查看器）；再按一次关闭查看器（与灯箱一致）

@@ -10,6 +10,7 @@ export function createAssistantFootPainter(store) {
     if (!foot) return;
     if (message.role !== 'assistant' || !message.done || message.toolCalls?.length) { foot.hidden = true; foot.textContent = ''; foot.title = ''; return; }
 
+    if (message.transientModeration || message.moderation?.blocked || /^moderator$/i.test(message.model || '')) { foot.hidden = true; foot.textContent = ''; foot.title = ''; return; }
     const messages = store.state.messages || [];
     const at = messages.findIndex((item) => item.id === message.id);
     const [lo] = turnRange(messages, at < 0 ? messages.length - 1 : at);

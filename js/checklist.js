@@ -77,10 +77,14 @@ export function recordChecklistCall(store, messageId, args, toolCallId = '') {
   // 创建时的项数只记一次：之后调整项目不会改写「已创建 N 项」的历史标记
   const createdCount = prev && Number.isFinite(prev.checklistCreatedCount) ? prev.checklistCreatedCount : list.length;
   const patch = { checklist: list.map((item) => ({ ...item })), checklistCreatedCount: createdCount };
+  const callOwner = (store.state.messages || []).find(m => m.role === 'assistant' && m.toolCalls?.some(c => String(c.id) === String(toolCallId))) || prev;
+  const previousOwnerId = prev?.checklistDoneMessageId;
+  if (previousOwnerId && previousOwnerId !== messageId && (!checklistComplete(list) || previousOwnerId !== callOwner?.id)) store.updateMessage(previousOwnerId, { checklistCompletion: null, checklistDoneCallId: '' });
   // 记下「真正把清单全部确认完成」的那次 checklist 调用，「已完成」标签据此落在输出流的对应位置
   const wasDone = !!prev && checklistComplete(prev.checklist);
-  if (!checklistComplete(list)) patch.checklistDoneCallId = '';
-  else if (!wasDone || !prev?.checklistDoneCallId) patch.checklistDoneCallId = String(toolCallId || '');
+  if (!checklistComplete(list)) { patch.checklistDoneCallId = ''; patch.checklistDoneMessageId = ''; }
+  else if (!wasDone || !prev?.checklistDoneCallId) { patch.checklistDoneCallId = String(toolCallId || ''); patch.checklistDoneMessageId = callOwner?.id || messageId; }
+  if (checklistComplete(list) && callOwner && callOwner.id !== messageId && (!wasDone || !prev?.checklistDoneCallId)) store.updateMessage(callOwner.id, { checklistCompletion: list.map(item => ({ ...item })), checklistDoneCallId: String(toolCallId || '') });
   store.updateMessage(messageId, patch);
   return list;
 }

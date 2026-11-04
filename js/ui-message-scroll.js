@@ -18,7 +18,7 @@ export function createMessageScrollManager({ msgList, jumpBtn, isAnimating = () 
     const firstVisible = [...msgList.querySelectorAll('.msg')].find((node) => node.getBoundingClientRect().bottom > boxTop);
     const rect = firstVisible?.getBoundingClientRect();
     return {
-      follow: followLatest && distance < 160,
+      follow: followLatest,
       top: msgList.scrollTop,
       anchorId: firstVisible?.dataset.id || '',
       anchorOffset: rect ? rect.top - boxTop : 0,
@@ -48,10 +48,9 @@ export function createMessageScrollManager({ msgList, jumpBtn, isAnimating = () 
 
   function scrollToBottom(force, behavior = 'auto') {
     if (!msgList || isAnimating()) return;
-    const near = msgList.scrollHeight - msgList.scrollTop - msgList.clientHeight < 160;
     if (force) followLatest = true;
-    if (!(force || (followLatest && near))) return;
-    if (behavior === 'smooth') msgList.scrollTo({ top: msgList.scrollHeight, behavior: 'smooth' });
+    if (!(force || followLatest)) return;
+    if (behavior === 'smooth') { msgList.scrollTo({ top: msgList.scrollHeight, behavior: 'auto' }); lastMessageScrollTop = msgList.scrollTop; }
     else {
       msgList.scrollTop = msgList.scrollHeight;
       lastMessageScrollTop = msgList.scrollTop;
