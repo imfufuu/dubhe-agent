@@ -5,7 +5,7 @@
 // 本模块只影响界面的折叠分段，不改变发给模型的上下文。
 export const HISTORY_WINDOW_MAX_CHARS = 4096;
 
-const isVisible = (m) => !!m && (m.role === 'user' || m.role === 'assistant') && !m.silent;
+const isVisible = (m) => !!m && (m.role === 'user' || m.role === 'assistant') && !m.silent && !m.choiceReply;
 const isCutPoint = (m) => !!m && (m.role === 'user' || m.role === 'assistant');
 const codepoints = (s) => Array.from(String(s || '')).length;
 const bodyChars = (m) => (isVisible(m) && typeof m.text === 'string' ? codepoints(m.text) : 0);

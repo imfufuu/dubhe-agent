@@ -84,6 +84,7 @@ export const CAPABILITY_REGISTRY = Object.freeze({
   // ── 记忆 ──
   remember: R('invariantCore', 'memory'),
   // ── 网页（中继 + 联网开关；search / crawl / file 再按 Worker health 能力位）──
+  curl: R('curlHttp', 'network'),
   fetch_url: R('webFetch', 'network', { core: 9, parallel: true, heavy: true, tags: ['web'] }),
   search_web: R('workerSearch', 'network', { core: 10, parallel: true }),
   crawl_site: R('siteCrawler', 'network'),
@@ -108,7 +109,7 @@ export const LEGACY_TOOL_ALIASES = Object.freeze({
   qr_code: { tool: 'data_tool', kind: 'qr', parallel: false, readOnly: false },
 });
 
-export const CAPABILITY_GROUPS = Object.freeze(['invariantCore', 'webFetch', 'workerSearch', 'siteCrawler', 'fileDownload', 'codeSandbox', 'localBrowser', 'localMachine', 'subagentSwarm']);
+export const CAPABILITY_GROUPS = Object.freeze(['invariantCore', 'webFetch', 'curlHttp', 'workerSearch', 'siteCrawler', 'fileDownload', 'codeSandbox', 'localBrowser', 'localMachine', 'subagentSwarm']);
 export const CAPABILITY_KINDS = Object.freeze(['local', 'fs-read', 'fs-write', 'exec', 'network', 'remote', 'cost', 'memory', 'render']);
 
 /** kind → execution.js 契约里允许的 sideEffect（测试据此做三方一致性校验） */

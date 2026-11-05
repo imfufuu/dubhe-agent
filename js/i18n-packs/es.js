@@ -2,6 +2,7 @@
 import { registerLanguagePack } from './registry.js';
 
 registerLanguagePack('es', {
+  "查看系列内模型": "Mostrar modelos de esta familia",
   "任务": "Tareas",
   "任务清单": "Lista de verificación",
   "复杂任务开始时，Agent 会在这里列出清单并实时更新状态。": "Cuando empieza una tarea compleja, el agente muestra aquí su lista de verificación y actualiza el estado en tiempo real.",

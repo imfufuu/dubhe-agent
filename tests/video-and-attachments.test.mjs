@@ -113,7 +113,7 @@ test('TOOL_DEFS：generate_video 已登记，参数与文档一致', () => {
   assert.equal(def.parameters.properties.seconds.maximum, 30);
   assert.ok(def.parameters.properties.resolution.enum.includes('768p'));
   assert.equal(def.parameters.properties.model, undefined, '不暴露 model 参数，统一用设置里的模型');
-  assert.equal(TOOL_DEFS.length, 51);
+  assert.equal(TOOL_DEFS.length, 52);
 });
 
 test('generate_video 端到端（桩网关）：提交 → 轮询 → 下载 → 写入 outputs/，带幂等键', async () => {
@@ -221,6 +221,7 @@ test('工具分类：generate_video 与 generate_image 同属 web 折叠（不�
   assert.equal(toolFamily({ name: 'generate_image' }), 'web');
   assert.equal(toolFamily({ name: 'search_web' }), 'web');
   assert.equal(toolFamily({ name: 'fetch_url' }), 'web');
+  assert.equal(toolFamily({ name: 'curl' }), 'web');
 });
 
 test('负面提示词：未登记为支持的模型不发送 negative_prompt，并标记为已丢弃', () => {

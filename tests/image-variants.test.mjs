@@ -76,5 +76,90 @@ test('生图系列：会话保存系列 ID，Agent 按描述自动选写实 / �
   assert.equal(resolveImageVariant('gpt-image-2.5', { prompt: '插画', resolution: '4K' }), 'gpt-image-2.5-flare-4k-upscale');
   // 历史变体 ID 仍按原行为
   assert.equal(resolveImageVariant('gpt-image-2.5-flare', { prompt: '写实照片' }), 'gpt-image-2.5-flare', '变体角色优先于描述');
-  assert.match(imageModelRuntimeDescription('gpt-image-2.5'), /GPT Image 2\.5 系列.*style=illustration/);
+  const desc = imageModelRuntimeDescription('gpt-image-2.5');
+  for (const m of IMAGE_MODELS.filter(m => m.family === 'gpt-image-2.5')) assert.ok(desc.includes(m.id));
+});
+
+
+test('all image families resolve directly and their prompt includes only their own variants', () => {
+  for (const family of IMAGE_FAMILIES) {
+    assert.equal(resolveImageModel(family.id).id, family.id);
+    const desc = imageModelRuntimeDescription(family.id);
+    for (const model of IMAGE_MODELS) {
+      if (model.family === family.id && family.id !== 'midjourney') assert.ok(desc.includes(model.id), `${family.id}: ${model.id}`);
+      if (model.family !== family.id) assert.ok(!desc.includes(`${model.id} (`), `${family.id} must not include ${model.id}`);
+    }
+  }
+  assert.match(imageModelRuntimeDescription('midjourney'), /网关尚未接通/);
+});
+
+test('agent request carries the selected family variants, and the tool sends the selected 4K variant', async () => {
+  const { createStore } = await import('../js/state.js');
+  const { createAgent } = await import('../js/agent.js');
+  const store = createStore();
+  store.state.apiKey = 'test-key';
+  store.state.model = 'gpt-5.6-sol';
+  store.state.imageModel = 'gpt-image-2.5';
+  Object.assign(store.state.settings, { webEnabled: false, jevEnabled: false, autoReview: false });
+  const calls = [];
+  const originalFetch = globalThis.fetch;
+  const event = obj => `data: ${JSON.stringify(obj)}\n\n`;
+  const sse = text => new Response(text + 'data: [DONE]\n\n', { headers: { 'content-type': 'text/event-stream' } });
+  const toolTurn = sse(event({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_img', function: { name: 'generate_image', arguments: JSON.stringify({ prompt: 'cartoon cat', variant: 'gpt-image-2.5-flare-4k-upscale' }) } }] } }] }) + event({ choices: [{ delta: {}, finish_reason: 'tool_calls' }] }));
+  const finalTurn = sse(event({ choices: [{ delta: { content: 'Done' }, finish_reason: 'stop' }] }));
+  let chatCalls = 0;
+  globalThis.fetch = async (url, options) => {
+    const body = JSON.parse(options.body);
+    calls.push({ url: String(url), body });
+    if (String(url).includes('/images/generations')) return new Response(JSON.stringify({ data: [{ b64_json: 'aGVsbG8=' }] }), { status: 200 });
+    return chatCalls++ === 0 ? toolTurn : finalTurn;
+  };
+  try {
+    await createAgent(store, {}).send('画一张4K卡通插画猫');
+    const chat = calls.find(c => c.url.includes('/chat/completions'));
+    assert.ok(chat, 'actual chat request captured');
+    assert.ok(chat.body.tools.find(t => t.function.name === 'generate_image').function.parameters.properties.variant);
+    const prompt = JSON.stringify(chat.body.messages);
+    const system = chat.body.messages.find(m => m.role === 'system').content;
+    assert.match(system, /gpt-image-2\.5-flare/);
+    assert.doesNotMatch(system, /gemini-3\.1-flash-image/);
+    for (const m of IMAGE_MODELS.filter(m => m.family === 'gpt-image-2.5')) assert.ok(prompt.includes(m.id), m.id);
+    assert.match(prompt, /:::chart bar/);
+    const image = calls.find(c => c.url.includes('/images/generations'));
+    assert.ok(image, JSON.stringify(calls));
+    assert.equal(image.body.model, 'gpt-image-2.5-flare-4k-upscale');
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test('session restore retains family selection and migrates the incorrect Kimi ID', async () => {
+  const { createStore } = await import('../js/state.js');
+  const store = createStore();
+  const first = store.state.activeSessionId;
+  store.state.imageModel = 'gpt-image-2.5';
+  store.state.model = 'kimi-k3.1-pro[1M]';
+  store.notify();
+  const second = store.createSession();
+  assert.ok(store.switchSession(first));
+  assert.equal(store.state.imageModel, 'gpt-image-2.5');
+  assert.equal(store.state.model, 'kimi-k3[1M]');
+  assert.ok(store.switchSession(second.id));
+});
+
+test('explicit Flare variant reaches gateway; cross-family variant is rejected before network', async () => {
+  const { executeTool } = await import('../js/tools.js');
+  const { createFS } = await import('../js/sandbox.js');
+  const original = globalThis.fetch; const calls = [];
+  globalThis.fetch = async (url, options) => {
+    calls.push(JSON.parse(options.body));
+    return new Response(JSON.stringify({ data: [{ b64_json: 'aGVsbG8=' }] }), { status: 200 });
+  };
+  try {
+    const ctx = { fs: createFS(), apiKey: 'test', imageModel: 'gpt-image-2.5', gatewayId: 'teamorouter' };
+    await executeTool('generate_image', { prompt: 'a realistic photograph', variant: 'gpt-image-2.5-flare' }, ctx);
+    assert.equal(calls[0].model, 'gpt-image-2.5-flare', 'explicit variant beats prompt heuristics');
+    const result = await executeTool('generate_image', { prompt: 'a cat', variant: 'gpt-image-2' }, ctx);
+    assert.match(result, /不属于当前选定系列/);
+    assert.equal(calls.length, 1);
+    assert.match(imageModelRuntimeDescription('gpt-image-2.5', { gatewayId: 'gemini' }), /没有可用变体/);
+  } finally { globalThis.fetch = original; }
 });

@@ -1,6 +1,6 @@
 # Dubhe Agent Cloudflare Relay
 
-Cloudflare Worker 中继（module syntax），为静态站点提供单页抓取、有限网页搜索与同源小站点爬取。当前版本 **1.7.1**。
+Cloudflare Worker 中继（module syntax），为静态站点提供单页抓取、有限网页搜索与同源小站点爬取。当前版本 **1.9.0**。
 
 ## 部署
 
@@ -40,6 +40,22 @@ location.reload();
 | GET | `/api/crawl?url=...&max_pages=...&max_depth=...&max_bytes=...&max_chars=...` | 同源 BFS 爬取；默认 3 页/深度 1，硬上限 5 页/深度 2；每页最多 800 KB 输入、16,000 字正文 |
 
 Search 响应包含 provider、fallback/warning、标题、URL、摘要和来源。Crawl 响应按页返回标题、描述、正文、深度、截断状态及失败项。Crawler 只跟随同源 HTTP(S) 文本链接，跳过常见二进制扩展；**不执行 JavaScript、不渲染浏览器、不遵循 robots.txt、不处理登录态，也不是通用全网爬虫**。
+
+## 独立 curl / HTTP 工具（需重新部署并配置）
+
+`curl` 是结构化 HTTP 工具，不执行 curl 命令或 shell。Worker 中 `/api/curl` **默认关闭**；为防止公开中继变成无验证的通用请求代理，必须同时在 Worker 配置 `CURL_ENABLED=true`、`TURNSTILE_SITE_KEY` 和 Secret `TURNSTILE_SECRET`。配置并重新部署仓库内 `relay/worker.js`；`worker-dashboard.js` 不支持此接口。
+
+例如在 Cloudflare Dashboard 的 Worker → Settings → Variables and Secrets 中设置：
+
+- 变量 `CURL_ENABLED`：`true`。
+- 变量 `TURNSTILE_SITE_KEY`：自己的 Turnstile 站点 Site Key（公开值；要允许 Dubhe Agent 网页域名）。
+- Secret `TURNSTILE_SECRET`：同一站点的 Secret Key。不要写进仓库或聊天。
+
+或者用 Wrangler 的 `secret put` 管理 Secret，再使用 `wrangler.toml` 的 `[vars]` 或部署参数提供两个变量。部署时保留已有的其他环境变量，例如 `SEARXNG_URL`。部署完成后检查 `/api/health`：当 `CURL_ENABLED=true` 时会出现 `"curl"`；这只是能力声明，实际调用仍要求 Turnstile 配置完整，否则 `/api/curl` 返回 503。在应用中配置这个 Worker 的地址、打开「联网」并刷新或重探；每次请求都必须人工确认，Turnstile 首次访问时也可能要求验证。默认本地 `server.py` 不提供此接口，但前端会另行探测配置的 Worker。
+
+支持 GET、HEAD、POST、PUT、PATCH、DELETE，非敏感自定义头及 UTF-8 文本请求体。请求 JSON 最多 128 KiB，响应文本最多 256 KiB，上游超时 25 秒；HTTP 4xx/5xx 状态和文本保留，不自动重试、不自动跟随重定向。识别为二进制的响应不会放入文本，请用 `download_file` 下载公开文件。并非完整 curl：不支持 shell 命令、文件上传、内网、Cookie 或认证头；需要带凭据的私有 API 当前不可用。参数、响应会经过 Worker 和目标服务器，并可能保存进对话；不要在 URL、请求体或头中放密码、Token 或其他敏感信息。Worker 拒绝常见认证头，但无法识别所有形式的秘密。
+
+Worker 对 URL 做字面私网检查，不自动跟随重定向；Cloudflare Workers 不能通用解析 DNS，不能保证防住所有私有 DNS 或 DNS 重绑定。Turnstile 是防滥用措施，不是私密认证；公开部署还应对 `/api/curl` 配置 WAF/Rate Limiting。写请求超时后目标可能已经执行，应先核验状态，不要盲目重试。
 
 ## 可选防人机（Cloudflare Turnstile）
 

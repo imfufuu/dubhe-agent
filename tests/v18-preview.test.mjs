@@ -83,9 +83,9 @@ test('reduced-motion popover is immediate and does not create animations', () =>
 test('live catalog snapshot includes TeamoRouter V4.1 Flash 1017 and evidence-based low-cost labels', async () => {
   const { MODEL_CATALOG, MODEL_CATALOG_BY_ID } = await import('../js/model-catalog.js');
   const { FALLBACK_MODELS, resolveModelAlias } = await import('../js/config.js');
-  assert.equal(MODEL_CATALOG.length,67);assert.equal(new Set(MODEL_CATALOG.map(m=>m.id)).size,67);
+  assert.equal(MODEL_CATALOG.length,68);assert.equal(new Set(MODEL_CATALOG.map(m=>m.id)).size,68);
   assert.deepEqual(MODEL_CATALOG.filter(m=>m.newlyListed).map(m=>m.id).sort(),['MiniMax-M3','claude-haiku-5-5','doubao-seed-2.0-lite','gemini-4-argon','grok-4.7','kimi-k3.1-pro','mimo-v2.6-flash','mimo-v2.6-pro']);
-  assert.equal(FALLBACK_MODELS.length,56);assert.equal(FALLBACK_MODELS.some(m=>m.id.startsWith('kimi')),true);
+  assert.equal(FALLBACK_MODELS.length,57);assert.equal(FALLBACK_MODELS.some(m=>m.id.startsWith('kimi')),true);
   for(const [id,provider] of [['doubao-seed-2.1-pro','Doubao'],['kimi-k3','Kimi'],['MiniMax-M3','MiniMax'],['qwen3.8-max','Qwen']]) {
     const model=MODEL_CATALOG_BY_ID.get(id);assert.equal(model?.provider,provider,id);assert.ok(FALLBACK_MODELS.some(m=>m.id===id),id+' offline fallback');
   }
@@ -124,7 +124,8 @@ test('TeamoRouter user-confirmed IDs survive partial/empty price responses; offl
   assert.ok(mergeAvailableModels(['future-chat-model'],FALLBACK_MODELS).some(m=>m.id==='future-chat-model'),'live directory may introduce additional models');
   const kimiFallback=mergeAvailableModels(['kimi-k3','kimi-k3[1M]'],FALLBACK_MODELS).map(m=>m.id);
   assert.ok(kimiFallback.includes('kimi-k3'),'current Kimi K3 is available');
-  assert.ok(!kimiFallback.includes('kimi-k3[1M]'),'historical 1M variant stays retired');
+  assert.ok(kimiFallback.includes('kimi-k3[1M]'));
+  assert.ok(!kimiFallback.includes('kimi-k3.1-pro[1M]'));
 });
 test('MiMo models from the user-confirmed list stay available when the public price snapshot omits them', async () => {
   const { mergeAvailableModels, MODEL_CATALOG_BY_ID, TEAMOROUTER_CONFIRMED_MODEL_IDS } = await import('../js/model-catalog.js');
@@ -215,20 +216,17 @@ test('文档页新增独立「使用规范」分区：四大条款齐备，成�
   assert.match(lang, /Deepfake pornography/, '英文版深伪色情绝对禁止');
 });
 
-test('提示词三层齐声禁止瞎猜应用内围栏语法：先 knowledge_search 再输出，检索失败退回纯 Markdown', async () => {
+test('双语提示词主动发现围栏，复杂格式仍按需检索', async () => {
   const { coreSystemPrompt } = await import('../js/prompt-core.js');
-  const zh = coreSystemPrompt(new Date(), { language: 'zh' });
-  const en = coreSystemPrompt(new Date(), { language: 'en' });
-  assert.match(zh, /禁止凭记忆或训练印象猜写应用内:::围栏语法/);
-  assert.match(zh, /topic=rendering/);
-  assert.match(zh, /退回纯Markdown表格\/列表/);
-  assert.match(en, /Never guess app-internal ::: fence grammar/);
-  assert.match(en, /fall back to plain Markdown tables\/lists/);
   const { formatRuntime } = await import('../js/prompt.js');
-  // 第 12 条：通用规则（不再逐条列举围栏名），要求先用围栏名调用 knowledge_search
-  assert.match(formatRuntime({ now: new Date(), language: 'zh' }), /输出任何:::围栏或Markdown扩展.{0,60}先用围栏名调用knowledge_search/);
-  assert.match(formatRuntime({ now: new Date(), language: 'en' }), /never guess fence syntax from memory/i);
   const { compactOutputSpec } = await import('../js/config.js');
-  assert.match(compactOutputSpec('zh'), /禁止凭记忆猜写/);
-  assert.match(compactOutputSpec('en'), /never guess fence syntax from memory/i);
+  for (const language of ['zh', 'en']) {
+    const prompt = coreSystemPrompt(new Date(), { language });
+    assert.match(prompt, /:::chart bar/);
+    assert.match(prompt, /:::diagram mind/);
+    assert.match(prompt, /:::fx glow/);
+    assert.match(prompt, /knowledge_search/);
+    assert.match(formatRuntime({ language }), /knowledge_search/);
+    assert.match(compactOutputSpec(language), /knowledge_search/);
+  }
 });

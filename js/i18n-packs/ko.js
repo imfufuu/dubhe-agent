@@ -2,6 +2,7 @@
 import { registerLanguagePack } from './registry.js';
 
 registerLanguagePack('ko', {
+  "查看系列内模型": "이 제품군의 모델 보기",
   "任务": "작업",
   "任务清单": "체크리스트",
   "复杂任务开始时，Agent 会在这里列出清单并实时更新状态。": "복잡한 작업이 시작되면 에이전트가 여기에 체크리스트를 표시하고 상태를 실시간으로 업데이트합니다.",

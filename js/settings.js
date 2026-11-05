@@ -15,7 +15,7 @@ import { JEV_MODEL, JEV_VERSIONS, setActiveJevModel } from './jev.js';
 // 设置弹窗：API Key / 中继地址 / 主题 / 字号 / 沙箱 / 联网 / 快速 / 思考 / 识图·音视频解析模型 / 清空数据 / 关于
 import { APP_RELEASE, APP_VERSION, STORAGE_KEY, VISION_MODELS, VIDEO_MODELS, IMAGE_MODELS, IMAGE_FAMILIES, imageFamilyOf, DEFAULT_IMAGE_MODEL, isImageGenModel, isImageGenSelection, imageModelLabel, resolveVisionModel, resolveVideoModel } from './config.js?v=2026.10.25.1';
 import { DEFAULT_GATEWAY_ID, getGateway, validateGatewayApiKey, validateGatewayBaseUrl, gatewayModelListLabel, defaultModelForGateway } from './gateway-registry.js?v=2026.10.25.1';
-import { currentRelay, resetRelayProbe, RELAY_OVERRIDE_KEY } from './net.js';
+import { currentRelay, relayState, resetRelayProbe, RELAY_OVERRIDE_KEY } from './net.js';
 import { DEFAULT_TURN_BUDGET } from './execution.js?v=2026.10.25.1';
 import { NEXUS_ARCHITECTURE_SPEC } from './nexus.js';
 import { readLocal, writeLocal, removeLocal } from './legacy-keys.js';
@@ -171,6 +171,28 @@ function syncSeg(sel, v) {
   host.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
 }
 
+export function aboutRelayText(relay, state, offline = false) {
+  if (offline) return localeText('离线', 'Offline');
+  if (relay) return relay.label === 'origin' ? localeText('同源 /api', 'Same-origin /api') : relay.base;
+  if (state?.ok == null) return localeText('正在探测…', 'Checking…');
+  return localeText('未连接', 'Not connected');
+}
+function syncAboutRelay() {
+  const el = $('#set-about-relay');
+  if (el) el.textContent = aboutRelayText(currentRelay(), relayState(), isNetworkOffline());
+}
+let relayCheckSequence = 0;
+async function runSettingsRelayCheck() {
+  const seq = ++relayCheckSequence;
+  const promise = relayCheck();
+  syncAboutRelay();
+  const msg = await promise;
+  if (seq === relayCheckSequence) {
+    const el = $('#set-relay-msg'); if (el) el.textContent = msg;
+    syncAboutRelay();
+  }
+}
+
 async function relayCheck() {
   if (isNetworkOffline()) return localeText('离线状态：不探测中继。', 'Offline: relay probing is disabled.');
   try {
@@ -223,6 +245,17 @@ function syncMultimodalSelects(store) {
   fillModelSelect($('#set-vgen-model'), VIDEO_GEN_MENU, videoMenuIdOf(vgen));
   // 生图菜单按模型家族展示；具体变体（写实/插画/4K 升采样…）由 Agent 的 generate_image 自动选择
   fillModelSelect($('#set-image-model'), IMAGE_FAMILIES.map((f) => ({ id: f.id, label: f.label, tag: f.tag, note: f.note, tagEn: f.tagEn, noteEn: f.noteEn })), imageFamilyOf(image) || 'gpt-image-2');
+  const variantList = $('#set-image-variants');
+  if (variantList) {
+    const family = imageFamilyOf(image) || 'gpt-image-2';
+    variantList.replaceChildren(...IMAGE_MODELS.filter(m => m.family === family).map(m => {
+      const li = document.createElement('li');
+      li.textContent = `${m.label} · ${m.id}` + (family === 'midjourney' ? localeText('（网关尚未接通）', ' (gateway not yet connected)') : '');
+      return li;
+    }));
+    const heading = $('#set-image-variants-title');
+    if (heading) heading.textContent = localeText('查看系列内模型', 'Show models in this family');
+  }
   fillModelSelect($('#set-vision-model'), VISION_MODELS, vision);
   fillModelSelect($('#set-av-model'), VIDEO_MODELS, av);
   // 决策层：Jev 版本（每轮路由判断 + 内容审核的 Jev 调用共用）
@@ -468,8 +501,7 @@ export function openSettingsModal({ store } = {}) {
   $('#set-about-ver').textContent = APP_RELEASE;
   $('#set-about-build').textContent = APP_VERSION;
   if ($('#set-about-arch')) $('#set-about-arch').textContent = `${NEXUS_ARCHITECTURE_SPEC.name.split('（')[0]} · ${NEXUS_ARCHITECTURE_SPEC.codename.short}（${NEXUS_ARCHITECTURE_SPEC.codename.zh}）`;
-  const rel = currentRelay();
-  $('#set-about-relay').textContent = rel ? (rel.label === 'origin' ? '同源 /api' : rel.base) : '未连接';
+  syncAboutRelay();
   try {
     let raw = '';
     for (const key of [`${STORAGE_KEY}-v2`, STORAGE_KEY]) {
@@ -494,7 +526,7 @@ export function openSettingsModal({ store } = {}) {
     const build = $('#set-about-commit');
     if (build) build.textContent = localeText('离线状态：不检查更新或构建清单。', 'Offline: update and build-manifest checks are disabled.');
   } else {
-    relayCheck().then((msg) => { const el = $('#set-relay-msg'); if (el) el.textContent = msg; });
+    runSettingsRelayCheck();
     loadBuildInfo().then((info) => paintBuildInfo($('#set-about-commit'), info, APP_VERSION));
   }
 }
@@ -572,9 +604,11 @@ export function mountSettings(store, { onRelayChanged, onKeySaved, onSettingChan
     if (offline && $('#set-cache-update-status')) $('#set-cache-update-status').textContent = localeText('离线状态：不检查更新，也不清除离线应用资源。', 'Offline: update checks are disabled and cached app resources are preserved.');
   };
   syncNetworkControls();
+  window.addEventListener('dubhe:relay-status', syncAboutRelay);
   window.addEventListener('dubhe:network-state', () => {
     renderOfflineModelUI();
     syncNetworkControls();
+    syncAboutRelay();
   });
   window.addEventListener('dubhe:offline-model-status', (event) => renderOfflineModelUI(event.detail));
   // 设置页改了开关 / 档位 / 主题后通知外部（main.js → ui.syncToolbar）：顶栏 pill、能力行、主题按钮要跟着变，
@@ -908,8 +942,7 @@ export function mountSettings(store, { onRelayChanged, onKeySaved, onSettingChan
     }
     const v = $('#set-relay').value.trim();
     if (v) writeLocal(RELAY_OVERRIDE_KEY, v); else removeLocal(RELAY_OVERRIDE_KEY);
-    const msg = await relayCheck();
-    const el = $('#set-relay-msg'); if (el) el.textContent = msg;
+    await runSettingsRelayCheck();
     onRelayChanged && onRelayChanged();
   });
   $('#set-relay').addEventListener('blur', () => $('#set-relay').dispatchEvent(new Event('change')));

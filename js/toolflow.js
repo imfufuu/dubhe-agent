@@ -15,7 +15,7 @@ export function recordOutputTool(message, index) {
   else order.push({ kind: 'tools', indices: [index] });
 }
 // 联网检索 / 网页抓取 / 生成类工具：与 Explored File(s) 相同，合并为一个可展开的折叠行（不再散落为命令芯片）。
-export const WEB_TOOL_NAMES = new Set(['search_web', 'fetch_url', 'generate_image', 'generate_video']);
+export const WEB_TOOL_NAMES = new Set(['search_web', 'fetch_url', 'curl', 'generate_image', 'generate_video']);
 export function toolFamily(call) {
   if (call?.name === 'write_file') return 'edited';
   // 任务清单不进命令菜单：由消息内的清单卡片实时展示（ui-toolflow.js syncChecklistBlock）

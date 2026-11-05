@@ -1,3 +1,4 @@
+import { focusForegroundWorkspace } from './modal-selection.js';
 import { text as localeText } from './locale.js';
 import { formatNumber } from './i18n.js?v=2026.10.25.1';
 // Local-only canvas editor used by the explicit camera capture entry.
@@ -152,6 +153,7 @@ export function openPhotoEditor(file, options = {}) {
         </footer>
       </section>`;
     doc.body.appendChild(modal);
+    focusForegroundWorkspace(modal, doc);
     const raf = typeof win.requestAnimationFrame === 'function' ? win.requestAnimationFrame.bind(win) : (fn) => setTimeout(fn, 16);
     raf(() => raf(() => modal.classList.add('open')));
 

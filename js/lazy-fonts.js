@@ -1,8 +1,8 @@
 // Dubhe Agent · 懒加载字体（assets/fonts-lazy/index.css）的筛选与导出嵌入
 // 应用内由浏览器按 unicode-range 懒下载；分享导出是单文件 HTML，只嵌入文档实际用到的字符所在分片。
 
-// 与 scripts/vendor-lazy-fonts.mjs 一致：码位 < U+0590 的分片不在索引中，这里的阈值仅用于忽略拉丁字符
-export const LAZY_FONT_MIN_CODEPOINT = 0x0590;
+// Latin faces are also embedded when used; the remaining families still use unicode-range subsets.
+export const LAZY_FONT_MIN_CODEPOINT = 0x0000;
 
 export function parseRanges(spec) {
   return String(spec || '').split(',').map((seg) => seg.trim()).filter(Boolean).map((seg) => {

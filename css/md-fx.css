@@ -23,7 +23,10 @@
 }
 @keyframes md-fx-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
 
-.md-fx-glow { animation: md-fx-glow 2.4s ease-in-out infinite; }
+.md-fx-glow, .md-fx-glow :where(p, h1, h2, h3, h4, h5, h6, li, a, strong, em, code, span:not(.chunk-tail):not(.cursor)) {
+  text-shadow: 0 0 4px currentColor;
+  animation: md-fx-glow 2.4s ease-in-out infinite;
+}
 @keyframes md-fx-glow {
   0%, 100% { text-shadow: 0 0 4px currentColor; }
   50% { text-shadow: 0 0 14px currentColor, 0 0 28px currentColor; }
@@ -38,14 +41,14 @@
 .md-fx-typewriter { animation: md-fx-reveal 1.6s steps(24, end) both; }
 @keyframes md-fx-reveal { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
 
-.md-fx-neon {
+.md-fx-neon, .md-fx-neon :where(p, h1, h2, h3, h4, h5, h6, li, a, strong, em, code, span:not(.chunk-tail):not(.cursor)) {
+  text-shadow: 0 0 6px currentColor, 0 0 16px currentColor;
   animation: md-fx-neon 1.8s steps(1, end) infinite;
 }
 @keyframes md-fx-neon {
-  0%, 100% { opacity: 1; text-shadow: 0 0 6px currentColor, 0 0 16px currentColor; }
-  8% { opacity: .55; text-shadow: none; }
-  12% { opacity: 1; }
-  60% { opacity: .8; text-shadow: 0 0 3px currentColor; }
+  0%, 12%, 100% { text-shadow: 0 0 6px currentColor, 0 0 16px currentColor; }
+  8% { text-shadow: none; }
+  60% { text-shadow: 0 0 3px currentColor; }
 }
 
 .md-fx-rainbow {

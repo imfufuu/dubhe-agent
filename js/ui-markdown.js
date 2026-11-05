@@ -791,6 +791,7 @@ export function renderMarkdown(src, options = {}) {
     hebrew: 'hebrew', 希伯来文: 'hebrew', 希伯来语: 'hebrew',
     thai: 'thai', 泰文: 'thai', 泰语: 'thai',
     devanagari: 'devanagari', hindi: 'devanagari', 天城文: 'devanagari', 印地文: 'devanagari',
+    flags: 'flags', babelstoneflags: 'flags', 旗帜: 'flags', roman: 'roman', babelstoneroman: 'roman', tangut: 'tangut', wenhai: 'tangut', babelstonetangutwenhai: 'tangut', 西夏文: 'tangut', khitan: 'khitan', babelstonekhitansmalllinear: 'khitan', 契丹小字: 'khitan', pigpen: 'pigpen', babelstonepigpen: 'pigpen', goblin: 'goblin', babelstonegoblin: 'goblin',
     hanext: 'han-ext', babelstone: 'han-ext', 扩展汉字: 'han-ext', 生僻字: 'han-ext', 扩展区汉字: 'han-ext',
   };
   const fonts = [];

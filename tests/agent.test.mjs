@@ -5446,7 +5446,7 @@ test('run_git 无中继仍在工具表，且 net.js 含内置沙箱 Git 引擎',
   const ag = fsp.readFileSync(new URL('../js/agent.js', import.meta.url), 'utf8');
   const net = fsp.readFileSync(new URL('../js/net.js', import.meta.url), 'utf8');
   const tools = fsp.readFileSync(new URL('../js/tools.js', import.meta.url), 'utf8');
-  assert.match(ag, /RELAY_ONLY_TOOLS = new Set\(\['fetch_url', 'search_web', 'crawl_site', 'download_file', 'pull_github_project'\]\)/);
+  assert.match(ag, /RELAY_ONLY_TOOLS = new Set\(\['fetch_url', 'search_web', 'crawl_site', 'download_file', 'pull_github_project', 'curl'\]\)/);
   assert.match(ag, /内置沙箱 Git/);
   assert.match(net, /function localGitRun/);
   assert.match(net, /git version DubheGit/);
@@ -6045,8 +6045,8 @@ test('Req 3：全模型官方价格查询（识图与生图单独处理）与单
 
   // 新增国产模型使用供应商公开标准价；CNY 价目归一到 USD 内部口径，界面再按语言显示。
   const catalog = await import('../js/model-catalog.js');
-  assert.equal(catalog.TEAMOROUTER_CONFIRMED_MODEL_IDS.length, 54);
-  assert.equal(new Set(catalog.TEAMOROUTER_CONFIRMED_MODEL_IDS).size, 54, 'TeamoRouter 确认清单无重复');
+  assert.equal(catalog.TEAMOROUTER_CONFIRMED_MODEL_IDS.length, 55);
+  assert.equal(new Set(catalog.TEAMOROUTER_CONFIRMED_MODEL_IDS).size, 55, 'TeamoRouter 确认清单无重复');
   const mergedConfirmed = catalog.mergeAvailableModels([], [], true, { gatewayId: 'teamorouter' });
   for (const id of catalog.TEAMOROUTER_CONFIRMED_MODEL_IDS) {
     assert.ok(catalog.MODEL_CATALOG_BY_ID.has(id), `${id} 应有目录数据`);
@@ -6628,7 +6628,7 @@ test('2026.10.24：支持固定对话目录（DeepSeek 两个免费档继续下�
     assert.ok(fallbackIds.has(id), `FALLBACK_MODELS 缺少模型：${id}`);
   }
   const chatModels = cfg.FALLBACK_MODELS.filter((m) => m.id !== cfg.SMART_ROUTER_ID && !cfg.isImageModel(m.id));
-  assert.equal(chatModels.length, 54, '排除智能路由、识图/生图专用模型后应恰好包含用户确认的 54 个固定对话模型（不含 DeepSeek 免费档）');
+  assert.equal(chatModels.length, 55, '排除智能路由、识图/生图专用模型后应恰好包含用户确认的 55 个固定对话模型（不含 DeepSeek 免费档）');
   assert.ok(!fallbackIds.has('deepseek-v4-flash-free') && !fallbackIds.has('deepseek-flash-free'), 'DeepSeek 两个免费模型必须下架');
 
   // Claude 与 GPT 新模型热度与组内版本优先级排序验证
@@ -8850,7 +8850,7 @@ test('estimateTokens：同一消息对象重复估算走缓存，字段变化后
 group('V1.7.1 续：同波按类别限流 / ui.js 拆分契约');
 test('runWithCategoryLimits：网络类 ≤ 4、本地 ≤ 8 并发，结果按原序回填，单个失败不拖累其它', async () => {
   const { runWithCategoryLimits, plannedConcurrency, NETWORK_TOOLS, PARALLEL_LIMITS } = await import('../js/agent.js');
-  assert.deepEqual([...NETWORK_TOOLS].sort(), ['crawl_site', 'download_file', 'fetch_url', 'pull_github_project', 'search_web']);
+  assert.deepEqual([...NETWORK_TOOLS].sort(), ['crawl_site', 'curl', 'download_file', 'fetch_url', 'pull_github_project', 'search_web']);
   assert.deepEqual(PARALLEL_LIMITS, { network: 4, default: 8 });
   const items = [...Array(10)].map((_, i) => ({ index: i, name: 'fetch_url' })).concat([...Array(12)].map((_, i) => ({ index: 10 + i, name: 'regex' })));
   const active = { net: 0, loc: 0 }; const peak = { net: 0, loc: 0 };
@@ -9185,7 +9185,7 @@ test('analyze_video 工具：定义 / 契约 / 并行与访问表 / 执行路径
   assert.match(def.description, /不要传 model/);
   assert.match(def.description, /16MB/);
   assert.deepEqual(Object.keys(def.parameters.properties).sort(), ['path', 'prompt']);
-  assert.equal(TOOL_DEFS.length, 51, '51 工具（本机桌面新增 local_desktop；V1.9 新增 patch_apply / dom_inspect / chart_render；视频生成新增 generate_video；复杂任务清单新增 checklist；本机能力新增 run_shell / take_screenshot / local_files）：工具目录与 XLSX 能力均登记到能力表和执行契约');
+  assert.equal(TOOL_DEFS.length, 52, '51 工具（本机桌面新增 local_desktop；V1.9 新增 patch_apply / dom_inspect / chart_render；视频生成新增 generate_video；复杂任务清单新增 checklist；本机能力新增 run_shell / take_screenshot / local_files）：工具目录与 XLSX 能力均登记到能力表和执行契约');
   const c = ex.getToolContract('analyze_video');
   assert.equal(c.sideEffect, 'remote');
   assert.equal(c.external, true);
@@ -9276,7 +9276,7 @@ test('视频附件：上传时抽帧（海报 + 均匀 5 帧），帧只给审�
   assert.match(ua, /doneBusy\(\);\s*\n\s*renderAttachChips\(\);[^\n]*\n\s*toast\(`\$\{f\.name\}：已作为视频附件加入/, '完成后收掉忙碌提示、先画芯片再提示');
   assert.doesNotMatch(ua, /帧待审核|抽帧审核|通过审核后/, '用户提示不念内部审核流程（.27）');
   assert.match(ua, /attach-chip-thumb is-video/.source ? /attach-chip-thumb\$\{a\.source === 'video' \? ' is-video' : ''\}/ : /x/, '芯片用海报缩略图');
-  assert.match(agent, /if \(a && Array\.isArray\(a\.frames\)\) \{ videoFrames\.set\(a, a\.frames\); delete a\.frames; \}/, '帧在入消息前摘掉');
+  assert.match(agent, /prepareTurnAttachments\(attachments\)/, '帧在入消息前摘掉');
   assert.match(agent, /const moderation = await runContentModeration\(userText, forModeration\);/);
   assert.match(agent, /a\.kind === 'image' \|\| a\.source === 'video'/, '审核异常时视频回合也 fail-closed');
 });
@@ -9351,7 +9351,7 @@ test('download_file 工具：定义 / 契约 / 能力门控 / 网络类限流 / 
   assert.match(agentSrc, /if \(t\.name === 'download_file' \|\| t\.name === 'pull_github_project'\) return relayOk && settings\.webEnabled !== false && relaySupports\('file'\);/);
   const toolrunnerSrc = fsp.readFileSync(new URL('../js/toolrunner.js', import.meta.url), 'utf8');
   assert.match(toolrunnerSrc, /case 'download_file': return \{ reads: \[\], writes: a\.path \? strList\(a\.path\) : \[ACCESS_ANY\] \};/);
-  assert.match(agentSrc, /RELAY_ONLY_TOOLS = new Set\(\['fetch_url', 'search_web', 'crawl_site', 'download_file', 'pull_github_project'\]\)/);
+  assert.match(agentSrc, /RELAY_ONLY_TOOLS = new Set\(\['fetch_url', 'search_web', 'crawl_site', 'download_file', 'pull_github_project', 'curl'\]\)/);
   const cfgSrc = fsp.readFileSync(new URL('../js/config.js', import.meta.url), 'utf8');
   assert.match(cfgSrc, /- download_file：把 http\(s\) 链接指向的文件/);
   // 执行：非法 URL 直接失败，不发请求
@@ -9368,7 +9368,7 @@ test('net.js relayDownload：走声明 file 能力的 Worker，超限拒绝，�
   assert.equal(net.fileNameFromUrl('https://a.b/', 'application/pdf'), 'download.pdf');
   assert.equal(net.fileNameFromUrl('https://a.b/%E6%B5%8B%E8%AF%95.zip'), '测试.zip');
   const caps = net.relayCapabilities();
-  assert.deepEqual(Object.keys(caps).sort(), ['crawl', 'file', 'search']);
+  assert.deepEqual(Object.keys(caps).sort(), ['crawl', 'curl', 'file', 'search']);
   const bad = await net.relayDownload({ url: 'not-a-url' });
   assert.equal(bad.ok, false);
   assert.match(bad.error, /只接受 http\(s\)/);
@@ -9925,6 +9925,7 @@ test('deriveToolWhitelistFromBits 与整轮上下文 deriveToolWhitelist 逐项�
   }
   const off = ec.deriveToolWhitelistFromBits({ relay: true, web: true, sandbox: true, dispatch: false, search: true, crawl: false, file: true, localCpp: false }, TOOL_DEFS);
   assert.deepEqual(off.dropped, [
+    { name: 'curl', reason: 'relay-curl-unavailable' },
     { name: 'browser_sandbox', reason: 'local-browser-unavailable' },
     { name: 'crawl_site', reason: 'relay-crawl-unavailable' },
     { name: 'execute_cpp', reason: 'local-cpp-off' },
@@ -10009,8 +10010,8 @@ test('端到端：中继在线但只声明 fetch/search 时，【联网】段列
     assert.equal(calls.length, 1);
     const sys = calls[0].body.messages.filter((m) => m.role === 'system').map((m) => (typeof m.content === 'string' ? m.content : JSON.stringify(m.content))).join('\n');
     assert.match(sys, /本轮已开启；中继健康检查通过/);
-    assert.match(sys, /实际网页工具表：fetch_url（读取单个网页）、search_web（网页搜索）。未列出的 crawl_site（中继未声明 crawl） \/ download_file（中继未声明 file） \/ pull_github_project（中继未声明 file） 本轮不可用。/);
-    assert.match(sys, /【工具表】本轮已禁用 \d+ 个：[^\n]*crawl_site（中继未声明 crawl）、download_file（中继未声明 file）、pull_github_project（中继未声明 file）/);
+    assert.match(sys, /实际网页工具表：fetch_url（读取单个网页）、search_web（网页搜索）。未列出的 crawl_site（中继未声明 crawl） \/ download_file（中继未声明 file） \/ pull_github_project（中继未声明 file） \/ curl（中继未启用 curl） 本轮不可用。/);
+    assert.match(sys, /【工具表】本轮已禁用 \d+ 个：[^\n]*crawl_site（中继未声明 crawl）、curl（中继未启用 curl）、download_file（中继未声明 file）、pull_github_project（中继未声明 file）/);
     const sent = (calls[0].body.tools || []).map((t) => (t.function && t.function.name) || t.name);
     assert.ok(sent.includes('fetch_url') && sent.includes('search_web') && !sent.includes('crawl_site') && !sent.includes('download_file') && !sent.includes('pull_github_project'));
     const pv = agent.previewToolTable({ text: '随便聊聊' });
@@ -10894,11 +10895,11 @@ test('能力登记处：TOOL_DEFS ↔ 登记表 ↔ execution.js 契约三方一
   // 派生表（集合）必须与 Helix 2.5 手抄的清单一致——登记处是重构不是改行为
   const same = (a, b) => assert.deepEqual([...a].sort(), [...b].sort());
   same(reg.PARALLEL_TOOL_NAMES, ['skill_library', 'knowledge_search', 'read_file', 'list_files', 'search_files', 'get_current_time', 'get_browser_environment', 'fetch_url', 'search_web', 'regex', 'hash', 'codec', 'unicode', 'evaluate_expression', 'diff_text', 'dom_inspect', 'json_tool', 'date_calc', 'convert_units', 'analyze_image', 'text_tool']);
-  same(reg.NETWORK_TOOL_NAMES, ['fetch_url', 'search_web', 'crawl_site', 'download_file', 'pull_github_project']);
+  same(reg.NETWORK_TOOL_NAMES, ['curl', 'fetch_url', 'search_web', 'crawl_site', 'download_file', 'pull_github_project']);
   same(reg.READ_ONLY_TOOL_NAMES, ['skill_library', 'knowledge_search', 'read_file', 'list_files', 'search_files', 'get_current_time', 'regex', 'hash', 'codec', 'unicode', 'evaluate_expression', 'diff_text', 'dom_inspect', 'json_tool', 'csv_tool', 'date_calc', 'text_tool', 'convert_units', 'data_tool']);
   same(reg.HEAVY_TOOL_NAMES, ['document_tool', 'xlsx_tool', 'browser_sandbox', 'write_file', 'delete_file', 'copy_file', 'zip_files', 'unzip_file', 'convert_file', 'patch_apply', 'chart_render', 'execute_javascript', 'execute_python', 'execute_cpp', 'generate_image', 'generate_video', 'local_desktop', 'dispatch_subagent', 'fetch_url', 'run_git', 'analyze_image', 'render_mermaid', 'render_dot', 'execute_sql', 'run_shell', 'take_screenshot']);
   assert.deepEqual([...reg.CORE_TOOL_NAMES], ['execute_javascript', 'execute_python', 'execute_cpp', 'write_file', 'read_file', 'list_files', 'delete_file', 'copy_file', 'fetch_url', 'search_web', 'analyze_image', 'dispatch_subagent', 'knowledge_search', 'skill_library', 'tool_library', 'checklist'], '稳定核心顺序末尾增加工具目录 Schema');
-  assert.deepEqual(Object.keys(reg.CAPABILITY_GATED_TOOL_GROUPS), ['invariantCore', 'webFetch', 'workerSearch', 'siteCrawler', 'fileDownload', 'codeSandbox', 'localBrowser', 'localMachine', 'subagentSwarm']);
+  assert.deepEqual(Object.keys(reg.CAPABILITY_GATED_TOOL_GROUPS), ['invariantCore', 'webFetch', 'curlHttp', 'workerSearch', 'siteCrawler', 'fileDownload', 'codeSandbox', 'localBrowser', 'localMachine', 'subagentSwarm']);
   assert.deepEqual([...reg.CAPABILITY_GATED_TOOL_GROUPS.codeSandbox], ['execute_javascript', 'execute_python', 'execute_cpp']);
   assert.deepEqual([...reg.CAPABILITY_GATED_TOOL_GROUPS.webFetch], ['fetch_url']);
   // 消费方确实在用派生表（不是各自又抄了一份）

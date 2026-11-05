@@ -20,13 +20,14 @@ test('choices wait for submit, preserve back navigation and other text, and pers
   assert.match(box.querySelector('img').src, /^data:image\/png/);
   const msg = { id: 'a', role: 'assistant', done: true };
   const store = { state: { messages: [msg], apiKey: 'key', model: 'test' }, updateMessage(id, patch) { Object.assign(msg, patch); } };
-  let sent = ''; const warnings = [];
-  const handler = installChoiceHandler({ root, store, agent: { send: text => { sent = text; } }, getBusy: () => false, openKeyModal: () => {}, toast: text => warnings.push(text) });
+  let sent = ''; let sendOptions; const warnings = [];
+  const handler = installChoiceHandler({ root, store, agent: { send: (text, attachments, options) => { sent = text; sendOptions = options; } }, getBusy: () => false, openKeyModal: () => {}, toast: text => warnings.push(text) });
   const click = selector => handler({ target: box.querySelector(selector) });
   click('[data-choice-send="A"]'); assert.equal(sent, '');
   box.querySelectorAll('.choice-other')[1].value = 'extra';
   click('[data-choice-back]'); click('[data-choice-send="B"]');
   click('[data-choice-submit]');
+  assert.deepEqual(sendOptions, { choiceReply: true });
   assert.match(sent, /First\nB/); assert.match(sent, /Second[\s\S]*extra/);
   assert.equal(msg.choiceResults[0][0].answer, 'B');
   const summary = choiceSummaryHtml(msg.choiceResults[0]);
@@ -91,7 +92,7 @@ test('follow stays at tail as content grows, but respects an intentional scroll 
 });
 
 test('document icons use SVG and moderator footer never inherits another message reasoning', () => {
-  assert.match(fileCardIconHtml({ name: 'report.pdf' }), /<svg/);
+  assert.match(fileCardIconHtml({ name: 'report.pdf' }), /file-icons\/pdf\.svg/);
   const dom = new JSDOM('<div><div class="msg-foot"></div></div>');
   const msg = { id: 'moderator', role: 'assistant', model: 'Moderator', done: true };
   createAssistantFootPainter({ state: { messages: [{ id: 'a', role: 'assistant', reasoning: 'thought' }, msg] } })(dom.window.document.querySelector('div'), msg);
@@ -132,4 +133,68 @@ test('project mode renames on blur and creates an empty file in the selected dir
   } finally {
     await instance?.close(); dom.window.close(); Object.assign(globalThis, previous);
   }
+});
+
+
+test('choice replies remain in model context but are not separate share entries', async () => {
+  const { buildOpenAIMessages } = await import('../js/api.js');
+  const { shareableMessages } = await import('../js/ui-share.js');
+  const reply = { id: 'r', role: 'user', text: 'Question\nAnswer', choiceReply: true };
+  assert.match(JSON.stringify(buildOpenAIMessages([reply])), /Question/);
+  assert.equal(shareableMessages([reply]).length, 0);
+  assert.equal(shareableMessages([{ ...reply, choiceReply: false }]).length, 1);
+});
+
+test('foreground workspace drops hidden page selections without disabling native selection', async () => {
+  const { focusForegroundWorkspace } = await import('../js/modal-selection.js');
+  const dom = new JSDOM('<p id="behind">hidden content</p><section id="modal"><textarea>editable text</textarea></section>');
+  const doc = dom.window.document, range = doc.createRange();
+  range.selectNodeContents(doc.querySelector('#behind'));
+  doc.getSelection().addRange(range);
+  const root = doc.querySelector('#modal');
+  focusForegroundWorkspace(root, doc);
+  assert.equal(doc.getSelection().toString(), '');
+  assert.equal(doc.activeElement, root);
+  const input = root.querySelector('textarea'); input.focus(); input.setSelectionRange(0, 8);
+  assert.equal(input.value.slice(input.selectionStart, input.selectionEnd), 'editable');
+  dom.window.close();
+});
+
+test('new BabelStone faces are selectable and preserved in offline share font selection', async () => {
+  const { selectLazyFaces, codepointsOf } = await import('../js/lazy-fonts.js');
+  const { readFileSync } = await import('node:fs');
+  const css = readFileSync(new URL('../assets/fonts-lazy/index.css', import.meta.url), 'utf8');
+  for (const [sample, expected] of [['A', 'roman.woff2'], ['𘀀', 'wenhai.woff2'], ['𘬀', 'khitan.ttf'], ['🇺🇸', 'flags.woff2'], ['\uE000', 'goblin.woff2']]) {
+    assert.ok(selectLazyFaces(css, codepointsOf(sample)).some(face => face.url.includes(expected)), expected);
+  }
+  const styles = readFileSync(new URL('../css/styles.css', import.meta.url), 'utf8');
+  const mono = /--mono:\s*([^;]+)/.exec(styles)[1];
+  assert.ok(mono.indexOf('BabelStone Han Extra') < mono.indexOf('ui-monospace'));
+});
+
+
+test('turn attachment preparation isolates moderation frames without mutating the caller', async () => {
+  const { prepareTurnAttachments } = await import('../js/turn-input.js');
+  const video = { name: 'clip.mp4', source: 'video', frames: ['frame1'], poster: 'poster' };
+  const plain = { name: 'plain.txt', text: 'hello' };
+  const result = prepareTurnAttachments([video, plain]);
+  assert.deepEqual(video.frames, ['frame1']);
+  assert.equal('frames' in result.attachments[0], false);
+  assert.deepEqual(result.forModeration[0].frames, ['frame1']);
+  assert.equal(result.attachments[1], plain);
+});
+
+
+test('share snapshot includes the saved choice summary, not live buttons', async () => {
+  const dom = new JSDOM('<!doctype html><html><body></body></html>');
+  const previous = globalThis.document; globalThis.document = dom.window.document;
+  try {
+    const { snapshotMessage } = await import('../js/share-document.js');
+    const message = { id: 'a', role: 'assistant', text: ':::choice Pick\n- Yes\n- No\n:::', choiceResults: { 0: [{ question: 'Pick', answer: 'Yes' }] } };
+    const result = snapshotMessage(message, [message], { read() { return null; } });
+    assert.match(result.textContent, /Pick/);
+    assert.match(result.textContent, /Yes/);
+    assert.equal(result.querySelector('[data-choice-submit]'), null);
+    assert.ok(result.querySelector('.choice-result'));
+  } finally { globalThis.document = previous; dom.window.close(); }
 });

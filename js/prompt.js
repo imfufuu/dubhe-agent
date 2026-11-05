@@ -28,14 +28,14 @@ export function assembleSystemLayers({
 
 export function formatRuntime({ now, model, imageModel, filesNote, webNote, relayNote, toolTableNote, language = getLanguage() } = {}) {
   if (language === 'en') {
-    const lines = ['# Dubhe Agent runtime', 'Framework: Dubhe Helix 3.0 · DC (Dubhe Cambrian)', now ? `Current time: ${now instanceof Date ? now.toISOString() : String(now)}` : '', model ? `Session model: ${model}` : '', imageModel ? `Configured image model: ${imageModel}; generate_image uses this ID, never pass a model argument.` : '', 'Exact rendering/runtime details: knowledge_search (retrieve only the relevant topic). Retrieve the exact grammar before emitting any :::chart/map/flow/mind/font block; never guess fence syntax from memory.'];
+    const lines = ['# Dubhe Agent runtime', 'Framework: Dubhe Helix 3.0 · DC (Dubhe Cambrian)', now ? `Current time: ${now instanceof Date ? now.toISOString() : String(now)}` : '', model ? `Session model: ${model}` : '', imageModel ? `Configured image family: ${imageModel}; generate_image chooses within this family, never pass a model argument.` : '', 'Use the built-in rendering quick guide proactively when helpful; use knowledge_search for advanced grammar and exact data formats.'];
     return join([...lines, filesNote, webNote, relayNote, toolTableNote]);
   }
   const lines = ['# Dubhe Agent runtime', '底层框架：Dubhe Helix 3.0 · DC（Dubhe Cambrian，天枢·寒武；前身 Helix 2.5 / 天枢2.5）'];
   if (now) lines.push(`当前时间：${now instanceof Date ? now.toISOString() : String(now)}`);
   if (model) lines.push(`Session model: ${model}`);
   if (imageModel) lines.push(`生图模型：${imageModel}。generate_image 不要传 model 参数；仅用于照片/插画/海报等栅格画面，统计图/流程图/思维导图/架构图禁止用生图。`);
-  lines.push('渲染/运行时精确细节按需调用knowledge_search，不整库预装；输出任何:::围栏或Markdown扩展（含颜色、折叠、渐变、动效等）前，若本会话未检索过其精确语法，先用围栏名调用knowledge_search，禁止凭记忆猜写。');
+  lines.push('合适时主动使用系统提示中的客户端围栏快捷语法；复杂数据格式或不确定之处按需调用 knowledge_search，不要臆造语法。');
   const extra = join([filesNote, webNote, relayNote, toolTableNote]);
   return extra ? `${lines.join('\n')}\n\n${extra}` : lines.join('\n');
 }

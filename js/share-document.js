@@ -1,3 +1,4 @@
+import { choiceSummaryHtml } from './ui-choices.js?v=2026.10.25.1';
 import { publicPlanMarkdown } from './publicplan.js';
 import { renderGeoMapSvg } from './quickviz.js?v=2026.10.25.1';
 import { decorateGeoMap } from './quickmap.js?v=2026.10.25.1';
@@ -57,6 +58,12 @@ export function snapshotMessage(m, messages, fs, { tools = false, reasoning = fa
   else node.innerHTML = `<div class="msg-head"><span class="avatar">${avatar}</span><span class="msg-model mono">${esc(model)}</span></div>`
     + (reasoning && m.reasoning ? `<details class="share-reason"><summary>${text('思考过程', 'Reasoning')}</summary><pre>${esc(m.reasoning)}</pre></details>` : '')
     + `<div class="md-body">${body}${m.error ? `<p class="error-notice">${esc(m.error)}</p>` : ''}</div>`;
+  if (m.role === 'assistant') {
+    node.querySelectorAll('.choice-box').forEach((box, i) => {
+      const items = m.choiceResults?.[i];
+      if (items) { box.classList.add('choice-result'); box.innerHTML = choiceSummaryHtml(items); }
+    });
+  }
   hydrateSandboxMedia(node, fs);
   if (tools && m.toolCalls?.length) {
     const box = document.createElement('div'); box.className = 'tool-chips';
@@ -136,7 +143,8 @@ async function embedLazyFonts(textContent) {
     const bytes = new Uint8Array(await res.arrayBuffer());
     let bin = '';
     for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-    out.push(face.block.replace(/url\([^)]*\)/, `url(data:font/woff2;base64,${btoa(bin)})`));
+    const mime = /\.ttf(?:$|[?#])/i.test(face.url) ? 'font/ttf' : 'font/woff2';
+    out.push(face.block.replace(/url\([^)]*\)/, `url(data:${mime};base64,${btoa(bin)})`));
   }
   return out.join('\n');
 }

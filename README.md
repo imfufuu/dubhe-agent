@@ -49,7 +49,7 @@ npm ci && npm test   # 一条命令跑完 tests/ 下全部 .mjs + Python 护栏�
 - **如实披露边界**：旧版 `.doc` 请先在本机另存 `.docx`；不把改后缀当转换。不提供 Office 保真渲染、任意旧稿无损编辑、PDF 安全涂黑、动态 XFA、密码破解或证书签名。PDF 内置字体目前为 Latin，非 Latin 水印/表单/新建正文可能报错。结构检查不是视觉排版验收。
 - **音频分析**：支持 MP3/WAV/M4A/AAC/OGG/FLAC/WebM Audio，单份≤16MB。音视频解析模型合并为一项设置：`analyze_audio` 与 `analyze_video` 共用 Gemini 3.5 Flash Lite、3.8 Flash 或 3.1 Pro 中的一档；`analyze_audio` 与视频一样发送 `file: {filename,file_data}`，返回全文并存入 `internal/ocr/*.audio.md`。时间点/说话人标签为近似分析，不是强制对齐或真实身份认证。
 - **隐私与费用**：文档解析/生成在本地，并不代表整个 Agent 对话离线：提取文字作为工具结果会进入后续网关对话。音频原件及启用视觉识别的 PDF 页图会上传网关。没有本地语音内容审核。音频请求做了协议与流程回归，未冒充真实付费模型质量评测；网关不回传完整用量时明确标记，而非编造每分钟价格。
-- **模型目录**：优先采用网关实时目录，离线时使用经核验快照。DeepSeek 官方 API 目录当前列出 `deepseek-flash` 与 `deepseek-v4-pro`；TeamoRouter 新增 `deepseek-flash-1017`，实测由网关映射到 `deepseek-flash`。热门标签是应用精选，不代表实时使用量或基准测试排名；英文低价标为 Cheap，按公开标价阈值判定。模型列表不显示「新收录」徽标。TeamoRouter 当前目录包含 Doubao Seed 2.1 Pro、Kimi K3、Qwen3.8-Max 与 MiniMax M3；历史 `kimi-k3[1M]` 变体仍停用，旧会话会回到默认路由。目录为公开标价快照，不宣称等于所有账户的实时可用性。
+- **模型目录**：优先采用网关实时目录，离线时使用经核验快照。DeepSeek 官方 API 目录当前列出 `deepseek-flash` 与 `deepseek-v4-pro`；TeamoRouter 新增 `deepseek-flash-1017`，实测由网关映射到 `deepseek-flash`。热门标签是应用精选，不代表实时使用量或基准测试排名；英文低价标为 Cheap，按公开标价阈值判定。模型列表不显示「新收录」徽标。TeamoRouter 当前目录包含 Doubao Seed 2.1 Pro、Kimi K3、Qwen3.8-Max 与 MiniMax M3；`kimi-k3[1M]` 变体已启用；旧的 `kimi-k3.1-pro[1M]` 会迁移至该型号。目录为公开标价快照，不宣称等于所有账户的实时可用性。
 
 ## 自定义供应商与离线本地模型
 
@@ -511,6 +511,7 @@ python3 server.py                                  # 默认：工作区 + 用户
 python3 server.py --local-root D:\projects          # 可重复指定，限定允许的根目录
 ```
 
+- 独立 `curl` HTTP 工具：通过已启用并配置 Turnstile 的新版 Cloudflare Worker 发送非敏感 HTTP 请求，每次确认；需重新部署 `relay/worker.js` 并设置 `CURL_ENABLED=true`，详见 [relay/README.md](relay/README.md)。不支持认证头、内网或二进制上传。
 - `run_shell`：在本机执行一条命令。Windows 优先 Git Bash（`Program Files\Git\bin\bash.exe`），其次 PATH 中的 bash（排除 WSL 启动器），最后 PowerShell；可用 `DUBHE_SHELL` 指定。超时会结束整棵进程树。
 - `take_screenshot`：整屏截图存入沙箱 `outputs/`，之后可用 `analyze_image` 读图。Windows 用 .NET 截屏，macOS 用 `screencapture`；Linux 按会话选工具：X11 优先 `scrot`、其次 ImageMagick `import`、再 `gnome-screenshot`，Wayland 优先 `grim`（wlroots）、再 `gnome-screenshot`。没有图形会话（`DISPLAY` 与 `WAYLAND_DISPLAY` 都为空）时直接报错。
 - `local_files`：list / stat / read / write / mkdir / move / delete。拒绝 `.ssh`、`.aws`、`.netrc` 等敏感路径，路径经 realpath 后必须落在允许根目录内。

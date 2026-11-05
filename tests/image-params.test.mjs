@@ -114,3 +114,12 @@ test('Nano Banana：google_search 仅对 2.1 与 3.1 Flash Image 发送，默认
     // 注：目录未收录 3.1 Flash Lite Image（且 Nano 识别不覆盖它）；若将来加入，需在 nanoGroundingSupported 中排除 lite
   } finally { s.restore(); }
 });
+
+test('Gemini 3 Pro Image uses the native Gemini image route', async () => {
+  const s = stubGemini();
+  try {
+    await generateImage({ model: 'gemini-3-pro-image', apiKey: 'k', prompt: 'p', gatewayId: 'gemini' });
+    assert.match(s.calls[0].url, /gemini-3-pro-image:generateContent/);
+    assert.ok(JSON.parse(s.calls[0].body).contents);
+  } finally { s.restore(); }
+});

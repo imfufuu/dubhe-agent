@@ -54,12 +54,12 @@
   --accent: #d97757;
   --warn: #b65d31;
   --ring: rgba(41, 40, 35, .72); /* 键盘焦点描边（.36）：比纯 --fg 柔和一档，深浅模式各有一个值 */
-  --font: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, "Noto Sans SC", "Noto Sans JP", "Noto Sans KR", "BabelStone Han Extra", "Noto Naskh Arabic", "Noto Sans Hebrew", "Noto Sans Thai", "Noto Sans Devanagari", sans-serif;
+  --font: "BabelStone Han Extra", "BabelStone Tangut Wenhai", "BabelStone Khitan Small Linear", "BabelStone Flags", Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, "Noto Sans SC", "Noto Sans JP", "Noto Sans KR", "BabelStone Han Extra", "Noto Naskh Arabic", "Noto Sans Hebrew", "Noto Sans Thai", "Noto Sans Devanagari", sans-serif;
   /* Agent 输出正文：宋体风格（Noto Serif SC 随应用懒加载分发，系统宋体作备选）；
      扩展 B–J 区字符由 BabelStone Han Extra 兜底（仅此字族覆盖这些码位） */
-  --chat-font: "Noto Serif SC", "Songti SC", "SimSun", "NSimSun", "宋体", Georgia, "BabelStone Han Extra", "Noto Sans SC", "Noto Sans JP", "Noto Sans KR", serif;
+  --chat-font: "BabelStone Flags", "BabelStone Roman", "BabelStone Tangut Wenhai", "BabelStone Khitan Small Linear", "Noto Serif SC", "Songti SC", "SimSun", "NSimSun", "宋体", Georgia, "BabelStone Han Extra", "Noto Sans SC", "Noto Sans JP", "Noto Sans KR", serif;
   --sans: var(--font);
-  --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  --mono: "BabelStone Han Extra", "BabelStone Tangut Wenhai", "BabelStone Khitan Small Linear", "BabelStone Flags", ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, "BabelStone Han Extra", "Noto Sans SC", monospace;
   --ease: cubic-bezier(.22,.61,.36,1);
 }
 html[data-fontsize="small"] {
@@ -696,6 +696,12 @@ html[data-motion="off"] .sess-empty .files-empty-text { animation: none; }
 .main { container-type: inline-size; }
 @container (max-width: 860px) { .msg-assistant:not(.msg-collapsed) { padding-inline: clamp(16px, 4vw, 24px); } }
 .msg-assistant .md-body { font-family: var(--chat-font, Georgia, serif); }
+.md-font-flags { font-family: "BabelStone Flags", var(--chat-font); }
+.md-font-roman { font-family: "BabelStone Roman", var(--chat-font); }
+.md-font-tangut { font-family: "BabelStone Tangut Wenhai", var(--chat-font); }
+.md-font-khitan { font-family: "BabelStone Khitan Small Linear", var(--chat-font); }
+.md-font-goblin { font-family: "BabelStone Goblin", var(--chat-font); }
+.md-font-pigpen { font-family: "BabelStone Pigpen", var(--chat-font); }
 /* :::font 宋体 块：与正文同一宋体字体栈（之前没有任何样式规则，块内字体不会变化） */
 .md-font-song { font-family: var(--chat-font, Georgia, serif); }
 .msg-assistant:has(+ .msg-assistant) { margin-bottom: 8px; }
@@ -3569,3 +3575,20 @@ html[data-motion="off"] .pm-progress.indeterminate .pm-prog-fill { animation: no
 .choice-next { padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; color: var(--fg); }
 .choice-next[hidden] { display: none; }
 .messages { overflow-anchor: none; }
+
+/* Format artwork is shown intact rather than synthesizing a file badge. */
+.fc-format-icon { display: block; width: 26px; height: 26px; object-fit: contain; }
+
+/* Workspaces: avoid accidental selections of toolbar chrome or the duplicated
+   highlight layer. Real inputs and output text retain native selection/copy. */
+.pm-top, .pm-tabs, .pm-ex-head, .pm-tree-row, .pm-status, .pm-hl, .pm-hl *,
+.photo-editor-head, .photo-toolbar, .photo-editor-foot, .scan-bar {
+  user-select: none; -webkit-user-select: none;
+}
+.pm-text, .pm-root input, .photo-editor-modal input, .photo-editor-modal textarea,
+.pm-out-body, .pm-out-body * { user-select: text; -webkit-user-select: text; }
+.md-body button, .md-body button * { user-select: none; -webkit-user-select: none; }
+
+.image-family-details { margin-top: 6px; color: var(--fg-2); font-size: 12px; }
+.image-family-details summary { cursor: pointer; }
+.image-family-details ul { padding-left: 18px; margin: 6px 0 0; overflow-wrap: anywhere; }

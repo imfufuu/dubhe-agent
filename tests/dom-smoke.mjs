@@ -1031,5 +1031,35 @@ ok('GPT 只显示**…**摘要项，不回显原始推理全文', !!gptReason &&
   && [...gptReason.querySelectorAll('.think-summary-item')].map((n) => n.textContent).join('|') === 'Plan|Check constraints'
   && !gptReason.querySelector('.think-full-text'));
 
+// 回合尚未输出就停止：恢复草稿后发送按钮必须同步可用。
+{
+  store.state.messages = [];
+  store.state.checkpoints = [];
+  store.pushMessage({ role: 'user', text: '恢复这段草稿' });
+  store.pushMessage({ role: 'assistant', text: '', cancelled: true, done: true });
+  composer.value = '';
+  ui.setStatus('cancelled');
+  ok('停止前空输入框禁用发送按钮', $('#send-btn').disabled);
+  ui.onCancelled();
+  ok('无输出停止后恢复草稿并启用发送按钮', composer.value === '恢复这段草稿' && !$('#send-btn').disabled);
+}
+
+// 设置页保持打开时，健康状态事件必须立刻重绘「关于」中的中继。
+{
+  const net = await import('../js/net.js');
+  const original = globalThis.fetch;
+  try {
+    globalThis.fetch = async () => new Response(JSON.stringify({ ok: true, capabilities: ['fetch', 'search', 'crawl', 'file', 'curl'] }), { headers: { 'content-type': 'application/json' } });
+    net.resetRelayProbe();
+    await net.relayAvailable();
+    ok('设置关于实时显示已连接中继', $('#set-about-relay').textContent === '同源 /api', $('#set-about-relay').textContent);
+    globalThis.fetch = async () => new Response('', { status: 503 });
+    const recheck = net.noteRelayNetworkError('test');
+    ok('重新探测期间设置关于显示探测中', /探测/.test($('#set-about-relay').textContent), $('#set-about-relay').textContent);
+    await recheck;
+    ok('探测失败后设置关于实时显示未连接', $('#set-about-relay').textContent === '未连接', $('#set-about-relay').textContent);
+  } finally { globalThis.fetch = original; net.resetRelayProbe(); }
+}
+
 console.log(failures ? `\n${failures} 项失败 ❌` : '\nDOM 冒烟测试全部通过 ✅');
 process.exit(failures ? 1 : 0);

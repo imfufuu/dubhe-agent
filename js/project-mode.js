@@ -1,3 +1,4 @@
+import { focusForegroundWorkspace } from './modal-selection.js';
 // Dubhe Agent · 项目模式（第 17 条，参照 VS Code）：代码为主、AI 为辅。
 // 全屏工作区：左侧资源管理器（沙箱工作区文件树）、中间多标签代码编辑器、底部状态栏。
 // 文件直接读写永久沙箱（agent.sandboxWrite / sandboxRemove），侧栏与 Agent 看到的是同一份文件。
@@ -175,6 +176,7 @@ export function openProjectMode({ store, agent }) {
   );
   root.querySelector('.pm-status').before(outPanel);
   (document.body || document.documentElement).appendChild(root);
+  focusForegroundWorkspace(root, document);
 
   // ── 数据 ──
   const files = () => (store.state && store.state.files) || {};

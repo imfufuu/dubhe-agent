@@ -259,6 +259,7 @@ const WEB_SPEC = {
   generate_image: { run: 'Generating', done: 'Generated', one: 'image', many: 'images' },
   generate_video: { run: 'Generating', done: 'Generated', one: 'video', many: 'videos' },
   search_web: { run: 'Searching for', done: 'Searched for', one: '', many: 'queries' },
+  curl: { run: 'Sending', done: 'Sent', one: 'HTTP request', many: 'HTTP requests' },
   fetch_url: { run: 'Fetching', done: 'Fetched', one: 'page', many: 'pages' },
 };
 export function webGroupLabel(rows, running) {

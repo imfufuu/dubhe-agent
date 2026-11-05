@@ -9,6 +9,7 @@
  *
  * 端点：
  *   GET /api/health                    → 版本与 capabilities
+ *   POST /api/curl                     → 受限 HTTP 请求（默认关闭，需 CURL_ENABLED 和 Turnstile）
  *   GET /api/fetch?url=...             → 有 SSRF 护栏的单页抓取（text/raw）
  *   GET /api/search?q=...              → SearXNG（配置时）优先 → DuckDuckGo HTML → DuckDuckGo Lite（POST）→ Brave HTML → Bing RSS 依次回退
  *   GET /api/crawl?url=...             → 同源、有限页数/深度的 HTML 正文抓取
@@ -22,10 +23,11 @@
  *   · 拒绝字面私网/环回/链路本地/保留地址；每次重定向重新校验；无 DNS 重绑定保证
  *   · crawl 仅允许初始站点同源链接；不执行 JavaScript，不下载二进制资源；默认 3 页/1 层
  *   · 每页与总页数均有硬上限；外连仅 HTTP(S)，每个 fetch 最长 25s
+ *   · curl 需显式开启和 Turnstile；不跟随重定向，不接收敏感认证头
  *   · CORS 全开供静态站点直连；公开部署建议再用 Cloudflare Rate Limiting 限流
  */
 
-const WORKER_VERSION = '1.8.0';
+const WORKER_VERSION = '1.9.0';
 const UA = `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0 Safari/537.36 Dubhe-Agent-Relay/${WORKER_VERSION}`;
 const MAX_FETCH_BYTES = 4_000_000;
 const MAX_FILE_BYTES = 16 * 1024 * 1024; // /api/file：与前端视频附件上限一致；Worker 128MB 内存，16MB 一次性缓冲安全
@@ -510,6 +512,76 @@ async function crawlSite({ url, maxPages = 3, maxDepth = 1, maxBytesPerPage = 25
   };
 }
 
+// curl is a bounded HTTP client, not a shell. It is opt-in and requires Turnstile.
+const CURL_REQUEST_BYTES = 128 * 1024;
+const CURL_RESPONSE_BYTES = 256 * 1024;
+const CURL_METHODS = new Set(['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE']);
+const CURL_FORBIDDEN_HEADERS = /^(authorization|proxy-authorization|cookie|set-cookie|host|connection|content-length|transfer-encoding|upgrade|forwarded|x-forwarded-.*|x-real-ip|x-api-key|api-key|cf-.*)$/i;
+function curlEnabled(env) { return String(env.CURL_ENABLED || '').toLowerCase() === 'true' && humanConfigured(env); }
+async function boundedBytes(stream, limit) {
+  if (!stream) return { bytes: new Uint8Array(), truncated: false };
+  const reader = stream.getReader();
+  const chunks = []; let size = 0; let truncated = false;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const remaining = limit - size;
+      if (value.length > remaining) {
+        if (remaining > 0) chunks.push(value.subarray(0, remaining));
+        size += Math.max(0, remaining); truncated = true;
+        await reader.cancel().catch(() => {}); break;
+      }
+      size += value.length; chunks.push(value);
+    }
+  } finally { reader.releaseLock(); }
+  const bytes = new Uint8Array(size); let offset = 0;
+  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
+  return { bytes, truncated };
+}
+async function handleCurl(request) {
+  if (Number(request.headers.get('content-length') || 0) > CURL_REQUEST_BYTES) return json({ error: '请求超过 128 KiB' }, 413);
+  const input = await boundedBytes(request.body, CURL_REQUEST_BYTES);
+  if (input.truncated) return json({ error: '请求超过 128 KiB' }, 413);
+  let data;
+  try { data = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(input.bytes)); }
+  catch { return json({ error: '请求体必须是 UTF-8 JSON 对象' }, 400); }
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return json({ error: '请求体必须是 JSON 对象' }, 400);
+  const method = String(data.method || 'GET').toUpperCase();
+  if (!CURL_METHODS.has(method)) return json({ error: '不支持此 HTTP 方法' }, 400);
+  const target = await guardUrl(data.url);
+  const headers = new Headers();
+  if (data.headers != null && (typeof data.headers !== 'object' || Array.isArray(data.headers))) return json({ error: 'headers 必须是对象' }, 400);
+  const entries = Object.entries(data.headers || {});
+  if (entries.length > 32) return json({ error: '请求头最多 32 个' }, 400);
+  for (const [name, value] of entries) {
+    if (CURL_FORBIDDEN_HEADERS.test(name) || /(?:token|secret|password|credential|api[-_]?key)/i.test(name)) return json({ error: `禁止敏感或受限请求头：${name}` }, 400);
+    if (typeof value !== 'string' || value.length > 2048) return json({ error: '请求头值必须为不超过 2048 字符的字符串' }, 400);
+    try { headers.set(name, value); } catch { return json({ error: '请求头无效' }, 400); }
+  }
+  if (data.body != null && typeof data.body !== 'string') return json({ error: 'body 必须是字符串' }, 400);
+  if ((method === 'GET' || method === 'HEAD') && data.body) return json({ error: 'GET / HEAD 不允许请求体' }, 400);
+  const timeout = AbortSignal.timeout(25000);
+  const signal = request.signal && typeof AbortSignal.any === 'function' ? AbortSignal.any([request.signal, timeout]) : timeout;
+  const init = { method, headers, redirect: 'manual', signal };
+  if (data.body != null && method !== 'GET' && method !== 'HEAD') init.body = data.body;
+  const response = await fetch(target, init);
+  // Never follow redirects: credentials, bodies, or writes must not be silently replayed.
+  const contentType = response.headers.get('content-type') || '';
+  const responseHeaders = {};
+  for (const name of ['content-type', 'content-length', 'location', 'etag', 'last-modified', 'retry-after', 'cache-control']) {
+    const value = response.headers.get(name);
+    if (value) responseHeaders[name] = value.slice(0, 2048);
+  }
+  const textLike = !contentType || /^(text\/|application\/(?:json|[a-z0-9.+-]+\+json|xml|[a-z0-9.+-]+\+xml|javascript|x-www-form-urlencoded))/i.test(contentType);
+  let body = '', truncated = false;
+  if (method !== 'HEAD' && textLike) {
+    const result = await boundedBytes(response.body, CURL_RESPONSE_BYTES);
+    body = new TextDecoder().decode(result.bytes); truncated = result.truncated;
+  } else if (response.body) await response.body.cancel().catch(() => {});
+  return json({ status: response.status, headers: responseHeaders, body, truncated, binary: !textLike, redirect_followed: false });
+}
+
 // ── 带重定向护栏的 fetch ───────────────────────────────────────
 // Cloudflare fetch 自动跟随重定向，但 follow=manual 后我们自己跟，每跳校验。
 async function guardedFetch(urlStr, { limit = MAX_FETCH_BYTES, cache = true, maxRedirects = 5, timeoutMs = FETCH_TIMEOUT_MS, accept = '*/*', signal, allowedOrigin, binary = false, method = 'GET', body = null, contentType = '' } = {}) {
@@ -609,7 +681,7 @@ function fileNameFromUrl(u, contentType) {
 // POST /api/human/verify 校验令牌 → 签发 30 分钟的 HMAC 通行证 → 客户端以 x-dubhe-human 头重试。
 const HUMAN_PASS_TTL_S = 30 * 60;
 const HUMAN_HEADER = 'x-dubhe-human';
-const HUMAN_GATED_PATHS = new Set(['/api/search', '/api/crawl', '/api/file', '/api/fetch']);
+const HUMAN_GATED_PATHS = new Set(['/api/search', '/api/crawl', '/api/file', '/api/fetch', '/api/curl']);
 const TURNSTILE_VERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
 
 function humanConfigured(env) {
@@ -690,7 +762,9 @@ export default {
       return new Response(null, { status: 204, headers: CORS });
     }
     if (request.method === 'POST' && url.pathname === '/api/human/verify') return handleHumanVerify(request, env);
-    if (request.method !== 'GET') return json({ error: '只允许 GET 请求' }, 405);
+    if (request.method !== 'GET' && !(request.method === 'POST' && url.pathname === '/api/curl')) return json({ error: '不支持此请求方法' }, 405);
+    if (url.pathname === '/api/curl' && request.method !== 'POST') return json({ error: '只允许 POST 请求' }, 405);
+    if (url.pathname === '/api/curl' && !curlEnabled(env)) return json({ error: 'curl 未启用：需要 CURL_ENABLED=true 和 Turnstile 配置' }, 503);
     if (url.pathname === '/api/human/config') {
       const on = humanConfigured(env);
       return json({ required: on, siteKey: on ? String(env.TURNSTILE_SITE_KEY) : '', verifyPath: '/api/human/verify', ttl_s: HUMAN_PASS_TTL_S });
@@ -702,7 +776,13 @@ export default {
     }
     if (url.pathname === '/api/health') {
       // Keep this legacy health identifier stable for clients that inspect metadata.
-      return json({ ok: true, relay: 'dubhe-cf-worker', version: WORKER_VERSION, capabilities: ['fetch', 'search', 'crawl', 'file'], limits: { file_bytes: MAX_FILE_BYTES } });
+      const capabilities = ['fetch', 'search', 'crawl', 'file'];
+      if (String(env.CURL_ENABLED || '').toLowerCase() === 'true') capabilities.push('curl');
+      return json({ ok: true, relay: 'dubhe-cf-worker', version: WORKER_VERSION, capabilities, limits: { file_bytes: MAX_FILE_BYTES } });
+    }
+    if (url.pathname === '/api/curl') {
+      try { return await handleCurl(request); }
+      catch (err) { return json({ error: `HTTP 请求失败：${String(err && err.message || err).slice(0, 240)}` }, 502); }
     }
     if (url.pathname === '/api/search') {
       try {

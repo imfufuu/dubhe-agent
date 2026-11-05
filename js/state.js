@@ -3,7 +3,7 @@ import { defaultModelForGateway, isModelForGateway } from './gateway-registry.js
 import { normalizeFeedback } from './feedback.js';
 // ─── 会话状态：多会话记录、消息、检查点（回滚）、持久化 ────────────────
 // 侧栏展示「会话记录」；回滚操作全部发生在对话区（消息级按钮 + 撤销浮条）
-import { STORAGE_KEY, DEFAULT_IMAGE_MODEL, DEFAULT_CHAT_MODEL, isImageModel, isImageGenModel } from './config.js?v=2026.10.25.1';
+import { STORAGE_KEY, DEFAULT_IMAGE_MODEL, DEFAULT_CHAT_MODEL, isImageModel, isImageGenSelection } from './config.js?v=2026.10.25.1';
 import { readLocal } from './legacy-keys.js';
 import { isJevModel } from './jev.js';
 import { blobsSupported, blobPut, blobGet, blobPrune } from './blobstore.js';
@@ -357,6 +357,7 @@ export function createStore(onChange) {
     state.models = state.modelsByGateway[state.gatewayId] || [];
     state.modelsFetchedAt = Number(state.modelsFetchedAtByGateway[state.gatewayId]) || 0;
     state.model = sessionModel(s) || state.model;
+    if (state.gatewayId === 'teamorouter' && state.model === 'kimi-k3.1-pro[1M]') state.model = 'kimi-k3[1M]';
     // Legacy/manual IDs cannot bypass the curated fallback or a successful live per-key listing.
     const availableIds = state.modelsFetchedAt || (state.models || []).length ? (state.models || []) : null;
     if (state.model && !isModelForGateway(state.gatewayId, state.model, availableIds)) {
@@ -367,7 +368,7 @@ export function createStore(onChange) {
     s.model = state.model;
     // 生图模型同样按会话记忆；缺失或非法值回落到默认
     const wantImage = s.imageModel || state.imageModel;
-    state.imageModel = isImageGenModel(wantImage) ? wantImage : DEFAULT_IMAGE_MODEL;
+    state.imageModel = isImageGenSelection(wantImage) ? wantImage : DEFAULT_IMAGE_MODEL;
     s.imageModel = state.imageModel;
     // 思考开关与级别按会话记：切会话时恢复该对话自己的档位
     if (typeof s.thinking === 'boolean') state.settings.thinking = s.thinking;
@@ -828,7 +829,7 @@ export function createStore(onChange) {
             interrupted: !!m.interrupted || m.done === false,
             error: typeof m.error === 'string' ? m.error : undefined,
             finishReason: m.finishReason, execution: m.execution, publicPlan: m.publicPlan, feedback: normalizeFeedback(m.feedback),
-            outputOrder: m.outputOrder, toolOrderIndices: m.toolOrderIndices, choiceResults: m.choiceResults,
+            outputOrder: m.outputOrder, toolOrderIndices: m.toolOrderIndices, choiceResults: m.choiceResults, choiceReply: m.choiceReply === true,
             checklist: m.checklist, checklistCreatedCount: m.checklistCreatedCount, checklistCompletion: m.checklistCompletion,
             checklistDoneCallId: m.checklistDoneCallId, checklistDoneMessageId: importedIds.get(String(m.checklistDoneMessageId)) || undefined,
             reasoning: m.reasoning,

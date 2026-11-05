@@ -2,6 +2,8 @@
 // 回退到 textarea + execCommand('copy')。始终返回 Promise<boolean>，调用方据此给出成功 / 失败提示，
 // 不再出现「点了没反应」——之前 navigator.clipboard 为 undefined 时会同步抛错且没有任何提示。
 export function copyFallback(value) {
+  const active = document.activeElement;
+  const start = active?.selectionStart, end = active?.selectionEnd, direction = active?.selectionDirection;
   const ta = document.createElement('textarea');
   ta.value = String(value ?? '');
   ta.setAttribute('readonly', '');
@@ -15,6 +17,12 @@ export function copyFallback(value) {
   try { ok = document.execCommand('copy'); } catch { ok = false; }
   ta.remove();
   if (saved && sel) { sel.removeAllRanges(); sel.addRange(saved); }
+  if (active?.isConnected && typeof active.focus === 'function') {
+    active.focus({ preventScroll: true });
+    if (typeof start === 'number' && typeof end === 'number' && typeof active.setSelectionRange === 'function') {
+      try { active.setSelectionRange(start, end, direction || 'none'); } catch { /* non-text input */ }
+    }
+  }
   return ok;
 }
 

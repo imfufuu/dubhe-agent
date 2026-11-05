@@ -1,0 +1,1 @@
+File-format artwork: [vscode-icons](https://github.com/vscode-icons/vscode-icons), icons are CC BY-SA 4.0; brand logos remain subject to their owners’ trademark and copyright rights. Source revision: 9eecefcf5dad9da1d6f045da7f6764bb21c434bd. Individual icons are unmodified. The icons represent recognized formats and are not a claim of official endorsement.

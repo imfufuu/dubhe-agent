@@ -4,7 +4,7 @@ import { captureShare } from './share-capture.js';
 import { createZip } from './zip.js';
 import { uiText as text, onLanguageChange } from './locale.js';
 
-export function shareableMessages(messages) { return (messages || []).filter((m) => ['user', 'assistant'].includes(m?.role) && !m.transientModeration); }
+export function shareableMessages(messages) { return (messages || []).filter((m) => ['user', 'assistant'].includes(m?.role) && !m.transientModeration && !m.choiceReply); }
 
 // ── 分享的最小单位是「一轮」（用户消息 + 该轮的全部输出）────────────────────
 // 2026.10.11.1：不再逐条消息分享。用户要的是整轮可读的对话片段；单条消息（尤其半截回答）

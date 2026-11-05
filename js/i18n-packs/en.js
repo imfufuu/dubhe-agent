@@ -3,6 +3,7 @@
 import { registerLanguagePack } from './registry.js';
 
 registerLanguagePack('en', {
+  "查看系列内模型": "Show models in this family",
   "任务": "Tasks",
   "任务清单": "Checklist",
   "复杂任务开始时，Agent 会在这里列出清单并实时更新状态。": "When a complex task starts, the agent lists its checklist here and updates status live.",

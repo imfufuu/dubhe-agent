@@ -142,3 +142,70 @@ test('demo text is moderately faster and the longer pauses remain in tools',()=>
   assert.ok(demoCharacterDelay('。',0)>demoCharacterDelay('中',0));
   const source=fs.readFileSync(new URL('../js/home-demo.js',import.meta.url),'utf8');assert.match(source,/await wait\(1600\)/);assert.match(source,/durationMs \/ lines.length/);
 });
+
+test('large stream deltas are paced, preserve Unicode and event order, and drain within a bounded backlog', async () => {
+  const { createStreamSmoother } = await import('../js/stream-smoothing.js');
+  let clock = 0, id = 0; const timers = new Map(), events = [];
+  const smoother = createStreamSmoother(e => events.push(e), {
+    now: () => clock, intervalMs: 40, maxDelayMs: 4000,
+    schedule: fn => { const k = ++id; timers.set(k, fn); return k; },
+    unschedule: k => timers.delete(k),
+  });
+  smoother.push({ type: 'text', text: 'small' });
+  assert.equal(events[0].text, 'small', 'normal streaming is immediate');
+  const text = '👩猫markdown `*`'.repeat(1500);
+  smoother.push({ type: 'text', text });
+  smoother.push({ type: 'tool_delta', index: 0 });
+  smoother.push({ type: 'text', text: 'after tool' });
+  const finished = smoother.finish();
+  assert.ok(events.length > 1 && events.length < 4, 'large burst only partly visible initially');
+  for (let ticks = 0; timers.size && ticks < 102; ticks++) {
+    clock += 40; const [key, fn] = timers.entries().next().value; timers.delete(key); fn();
+  }
+  await finished;
+  const tool = events.findIndex(e => e.type === 'tool_delta');
+  assert.equal(events.slice(1, tool).map(e => e.text).join(''), text);
+  assert.equal(events.slice(tool + 1).map(e => e.text).join(''), 'after tool');
+  assert.ok(clock <= 4040, `backlog must not drag indefinitely: ${clock}`);
+  for (const ev of events.filter(e => e.type === 'text')) assert.doesNotMatch(ev.text, /[\uD800-\uDBFF]$|^[\uDC00-\uDFFF]/);
+  smoother.dispose();
+});
+
+test('smoother cancellation prevents late callbacks; flush preserves received text on errors', async () => {
+  const { createStreamSmoother } = await import('../js/stream-smoothing.js');
+  const ctrl = new AbortController(), seen = [];
+  const smooth = createStreamSmoother(e => seen.push(e.text), { signal: ctrl.signal });
+  smooth.push({ type: 'text', text: 'x'.repeat(300) });
+  const finished = smooth.finish();
+  ctrl.abort();
+  await assert.rejects(finished, { name: 'AbortError' });
+  const count = seen.length;
+  await new Promise(r => setTimeout(r, 60));
+  assert.equal(seen.length, count);
+  smooth.dispose();
+  const saved = [], second = createStreamSmoother(e => saved.push(e));
+  second.push({ type: 'text', text: 'y'.repeat(300) });
+  second.push({ type: 'finish', reason: 'stop' });
+  second.flush();
+  assert.equal(saved.filter(e => e.type === 'text').map(e => e.text).join(''), 'y'.repeat(300));
+  assert.equal(saved.at(-1).type, 'finish');
+  second.dispose();
+});
+
+test('gateway SSE burst drains gradually before tool and finish events', async () => {
+  const original = globalThis.fetch, events = [];
+  const payload = '汉🙂'.repeat(45);
+  const frame = value => `data: ${JSON.stringify(value)}\n\n`;
+  globalThis.fetch = async () => new Response(
+    frame({ choices: [{ delta: { content: payload } }] }) +
+    frame({ choices: [{ delta: { tool_calls: [{ index: 0, id: 't1', function: { name: 'foo', arguments: '{}' } }] } }] }) +
+    frame({ choices: [{ delta: {}, finish_reason: 'tool_calls' }] }) + 'data: [DONE]\n\n',
+    { headers: { 'Content-Type': 'text/event-stream' } });
+  try {
+    await streamChat({ model: 'gpt-5.6-sol', apiKey: 'test', messages: [{ role: 'user', text: 'test' }], smoothText: true, onEvent: e => events.push(e) });
+    const toolIndex = events.findIndex(e => e.type === 'tool_delta');
+    assert.ok(events.filter(e => e.type === 'text').length > 1);
+    assert.equal(events.slice(0, toolIndex).filter(e => e.type === 'text').map(e => e.text).join(''), payload);
+    assert.ok(events.findIndex(e => e.type === 'finish') > toolIndex);
+  } finally { globalThis.fetch = original; }
+});
