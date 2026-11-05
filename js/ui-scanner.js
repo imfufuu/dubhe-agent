@@ -1,3 +1,4 @@
+import { focusForegroundWorkspace } from './modal-selection.js';
 // ─── 文档扫描（V1.8.1）：摄像头实时取景 → 自动四角检测 → 拖拽微调 → 透视矫正导出 ───
 // 只在有摄像头且 Permissions-Policy 允许的环境出现（ui-devices 控制入口按钮可见性）。
 // 算法在 js/doc-scanner.js（纯函数）；这里只负责相机、UI 与产出 File[]。
@@ -121,6 +122,7 @@ export async function openScanner({ doc = document } = {}) {
       </footer>
     </section>`;
   doc.body.appendChild(modal);
+  focusForegroundWorkspace(modal, doc);
   const $ = (n) => modal.querySelector(`[data-r="${n}"]`);
   const video = modal.querySelector('.scan-video');
   const canvas = $('canvas');

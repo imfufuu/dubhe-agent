@@ -1,3 +1,4 @@
+import { createStreamSmoother } from './stream-smoothing.js';
 // ─── TeamoRouter API 客户端 ────────────────────────────────────────────
 // 协议路由 + SSE 流式解析 + 传输层（浏览器直连 / 服务端代理兜底）
 // 纯函数导出，便于 node 单测（tests/agent.test.mjs）
@@ -594,7 +595,7 @@ export function buildAnthropicPayload(messages, { maxTokens = MAX_TOKENS, includ
 // onThinkingFallback：思考参数被 400 降级时回调（用于向用户提示，避免静默关闭）
 // 首响应超时：HTTP 200 已返回但读流时超过该毫秒数仍未解析到有效 JSON SSE 事件 → 视为连接假死
 export const FIRST_TOKEN_TIMEOUT_MS = 15000;
-export async function streamChat({ model, apiKey, messages, tools, fastMode = false, thinking = false, reasoningLevel = 'medium', temperature, plan = null, iteration = 1, phase = '', subagentId = '', signal, onEvent, onThinkingFallback, webEnabled = false, onWebFallback, gatewayId = DEFAULT_GATEWAY_ID, gatewayBaseUrl = '', firstTokenTimeoutMs = FIRST_TOKEN_TIMEOUT_MS, streamTimeoutMs = REQUEST_TIMEOUT_MS }) {
+export async function streamChat({ model, apiKey, messages, tools, fastMode = false, thinking = false, reasoningLevel = 'medium', temperature, plan = null, iteration = 1, phase = '', subagentId = '', signal, onEvent, onThinkingFallback, webEnabled = false, onWebFallback, gatewayId = DEFAULT_GATEWAY_ID, gatewayBaseUrl = '', firstTokenTimeoutMs = FIRST_TOKEN_TIMEOUT_MS, streamTimeoutMs = REQUEST_TIMEOUT_MS, smoothText = false }) {
   // 废弃/改名模型别名解析（agent 层已做，但子智能体直传时再保底一次）
   model = resolveModelAlias(model);
   if (isNetworkOffline() && !isOfflineModelId(model)) {
@@ -790,10 +791,12 @@ export async function streamChat({ model, apiKey, messages, tools, fastMode = fa
   let sawTerminalEvent = false;
   let sawDone = false;
   let protocolError = null;
+  const smoother = smoothText ? createStreamSmoother((ev) => { if (typeof onEvent === 'function') onEvent(ev); }, { signal }) : null;
   const emitEvent = (ev) => {
     if (ev && (ev.type === 'finish' || ev.type === 'stop')) sawTerminalEvent = true;
     if (ev && ev.type === 'error' && !protocolError) protocolError = new Error(ev.message || 'The model stream reported an error');
-    if (typeof onEvent === 'function') onEvent(ev);
+    if (smoother) smoother.push(ev);
+    else if (typeof onEvent === 'function') onEvent(ev);
   };
   const normalize = endpoint === 'responses' ? createResponsesStream(emitEvent)
     : (protocol === 'anthropic' ? createAnthropicStream(emitEvent) : createOpenAIStream(emitEvent));
@@ -872,6 +875,8 @@ export async function streamChat({ model, apiKey, messages, tools, fastMode = fa
       feed(decoder.decode(value, { stream: true }));
     }
     feed(decoder.decode());
+    clearTimeout(streamTimer); // network is complete; presentation drain is not a network timeout
+    if (smoother) await smoother.finish();
     if (streamTimeoutError) throw streamTimeoutError;
     if (signal?.aborted) throw abortError();
     if (protocolError) throw protocolError;
@@ -882,6 +887,7 @@ export async function streamChat({ model, apiKey, messages, tools, fastMode = fa
     }
   } catch (err) {
     cancelQuiet();
+    if (smoother && !signal?.aborted) smoother.flush(); // preserve all received content on network failure
     if (streamTimeoutError) throw streamTimeoutError;
     if (firstTokenError) throw firstTokenError;
     if (signal?.aborted && (!err || err.name !== 'AbortError')) throw abortError();
@@ -890,6 +896,7 @@ export async function streamChat({ model, apiKey, messages, tools, fastMode = fa
     clearTimeout(streamTimer);
     if (firstTokenTimer) { clearTimeout(firstTokenTimer); firstTokenTimer = null; }
     if (signal) signal.removeEventListener('abort', onAbort);
+    if (smoother) smoother.dispose();
   }
 }
 
@@ -1323,7 +1330,7 @@ function sleepRetry(ms, signal) {
 const NANO_ASPECT = new Set(['1:1', '1:4', '1:8', '2:3', '3:2', '3:4', '4:1', '4:3', '4:5', '5:4', '8:1', '9:16', '16:9', '21:9']);
 function isNanoImageModel(id) {
   const m = String(id || '').toLowerCase();
-  return m === 'gemini-3.1-flash-image' || /nano[-_ ]?banana/.test(m);
+  return m === 'gemini-3.1-flash-image' || m === 'gemini-3-pro-image' || /nano[-_ ]?banana/.test(m);
 }
 function nanoGroundingSupported(model) {
   const m = String(model || '').toLowerCase();

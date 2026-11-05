@@ -106,6 +106,7 @@ export function toolAccessSet(call) {
       return { reads, writes: [`internal/ocr/${base}.ocr.md`] };
     }
     case 'analyze_audio': case 'analyze_video': return { reads: a.path ? strList(a.path) : [ACCESS_ANY], writes: [] };
+    case 'curl': return { reads: [], writes: [] };
     case 'fetch_url': return { reads: [], writes: strList(a.save_path) };
     case 'browser_sandbox': return { reads: [ACCESS_ANY], writes: [ACCESS_ANY] };
     case 'run_shell': return { reads: [ACCESS_ANY], writes: [ACCESS_ANY] };
@@ -557,7 +558,7 @@ export function createToolRunner({ store, emit, getFs, runSubagent } = {}) {
       let autoReviewAllowed = false;
       let autoReviewForcesConfirm = false;
       const sessionAllowedNow = approval === 'allow-session' || exec.confirmGate.isSessionAllowed(call.name);
-      if (shouldAutoReview({ enabled: store.state.settings.autoReview !== false, gatewayId: turn.gatewayId, risk, sessionAllowed: sessionAllowedNow })) {
+      if (call.name !== 'curl' && shouldAutoReview({ enabled: store.state.settings.autoReview !== false, gatewayId: turn.gatewayId, risk, sessionAllowed: sessionAllowedNow })) {
         const lastUser = [...store.state.messages].reverse().find((m) => m.role === 'user');
         const review = await reviewToolCall({ apiKey: turn.apiKey, call, risk, userRequest: lastUser ? lastUser.text : '', signal: turn.signal });
         exec.machine.audit.record('auto-review', {
@@ -588,13 +589,13 @@ export function createToolRunner({ store, emit, getFs, runSubagent } = {}) {
       const needHumanConfirm = !autoReviewAllowed
         && (autoReviewForcesConfirm || guardRequiresConfirmation({ guard: guardMode, risk }))
         // 本机 shell / 本机文件写删：无论档位与自动审批都必须人工确认（fail-closed；&& 优先于 ||，既有语义不变）
-        || localMachineMustConfirm(call.name, call.args);
-      if (needHumanConfirm && !sessionAllowedBySettings && !exec.confirmGate.isSessionAllowed(call.name)) {
+        || localMachineMustConfirm(call.name, call.args) || call.name === 'curl';
+      if (needHumanConfirm && (call.name === 'curl' || (!sessionAllowedBySettings && !exec.confirmGate.isSessionAllowed(call.name)))) {
         const request = formatConfirmationRequest({
           name: call.name, args: call.args,
           reason: risk.reasons[0] || '', impact: undefined,
-          reversibility: risk.irreversible ? '不可自动恢复' : undefined,
-        });
+          reversibility: call.name === 'curl' || risk.irreversible ? '可能产生不可自动撤销的远端操作' : undefined,
+        }) + (call.name === 'curl' ? `\n完整请求参数（会发送至中继与目标）：\n${JSON.stringify(call.args, null, 2)}` : '');
         const confirmKey = `cf-${exec.execCtx.turnId}-${call.id || call.name}`;
         exec.machine.audit.record('confirmation-requested', { name: call.name, key: confirmKey, riskLevel: risk.level, guardMode, reasons: risk.reasons });
         emit('onConfirmationRequest', call, request, confirmKey);
@@ -614,7 +615,7 @@ export function createToolRunner({ store, emit, getFs, runSubagent } = {}) {
         }
         risk.confirmed = true;
         risk.confirmationDecision = decisionRec.decision;
-        if (decisionRec.decision === 'allow-session') {
+        if (decisionRec.decision === 'allow-session' && call.name !== 'curl') {
           // 「本会话允许该工具」写进设置层：既能跨轮生效，也能被用户显式撤销（settings.toolApprovals）
           store.state.settings.toolApprovals = { ...(store.state.settings.toolApprovals || {}), [call.name]: 'allow-session' };
         }

@@ -1,3 +1,4 @@
+import { prepareTurnAttachments } from './turn-input.js';
 import { publicTaskPlan } from './publicplan.js';
 import { feedbackPrompt } from './feedback.js';
 import { getLanguage } from './locale.js';
@@ -157,7 +158,7 @@ const toolsFor = (sandboxEnabled, { localCpp = true } = {}) =>
   (sandboxEnabled ? TOOL_DEFS : TOOL_DEFS.filter((t) => !CODE_TOOL_NAMES.includes(t.name)))
     .filter((t) => localCpp || t.name !== 'execute_cpp');
 // 只在具备中继路由时可用的网页工具；搜索/爬虫还须由 Worker health 明确声明对应特性。
-const RELAY_ONLY_TOOLS = new Set(['fetch_url', 'search_web', 'crawl_site', 'download_file', 'pull_github_project']);
+const RELAY_ONLY_TOOLS = new Set(['fetch_url', 'search_web', 'crawl_site', 'download_file', 'pull_github_project', 'curl']);
 // Helix 3.0：回合的五个显式阶段（runLoop 按此顺序执行；审计事件 turn-pipeline 记录各阶段耗时）
 export const TURN_PIPELINE = Object.freeze(['premise', 'plan', 'select', 'loop', 'finalize']);
 
@@ -178,6 +179,7 @@ function formatWebCapabilityNote({ relayOk, webEnabled, tools, dropped, deferred
   const lazy = (Array.isArray(deferred) ? deferred : []).map((d) => (d && d.name) || d).filter((name) => RELAY_ONLY_TOOLS.has(name) && !names.includes(name));
   if (!names.length && !lazy.length) return WEB_NO_TOOL_NOTE;
   const label = {
+    curl: 'curl（经中继发送 HTTP 请求，逐次确认）',
     fetch_url: 'fetch_url（读取单个网页）',
     search_web: 'search_web（网页搜索）',
     crawl_site: 'crawl_site（同源站点抓取）',
@@ -185,7 +187,7 @@ function formatWebCapabilityNote({ relayOk, webEnabled, tools, dropped, deferred
     pull_github_project: 'pull_github_project（导入公开 GitHub 仓库源码快照）',
   };
   const reasonOf = new Map((Array.isArray(dropped) ? dropped : []).map((d) => [d.name, d.reason]));
-  const unavailable = ['fetch_url', 'search_web', 'crawl_site', 'download_file', 'pull_github_project'].filter((name) => !names.includes(name) && !lazy.includes(name))
+  const unavailable = ['fetch_url', 'search_web', 'crawl_site', 'download_file', 'pull_github_project', 'curl'].filter((name) => !names.includes(name) && !lazy.includes(name))
     .map((name) => (reasonOf.has(name) ? `${name}（${describeDropReason(reasonOf.get(name))}）` : name));
   return `\n\n【联网】本轮已开启；中继健康检查通过。实际网页工具表：${names.map((name) => label[name] || name).join('、') || '（本轮无）'}。${lazy.length ? `${lazy.join(' / ')} 本轮按需未挂载（需要时直接调用，内核会当场挂载）。` : ''}${unavailable.length ? `未列出的 ${unavailable.join(' / ')} 本轮不可用。` : ''}${WEB_FACTS_NOTE}`;
 }
@@ -327,6 +329,8 @@ export function createAgent(store, hooks = {}) {
   // cached 前缀（身份 + 技能目录 + 子智能体指引）按用户回合复用；
   // volatile（记忆/沙箱/时间/联网）每轮迭代重建；ephemeral 只放 Jev/技能正文/预算。
   let cachedPrefix = null;
+  let turnImageSelection = DEFAULT_IMAGE_MODEL;
+  let turnGateway = DEFAULT_GATEWAY_ID;
   // P1：本轮的记忆注入计划（哪些进提示词、哪些因冲突/被取代不采用）。
   // 与 cachedPrefix 同生命周期——即使走快速通道没有 nexusState，也不让被拒记忆漏进提示词。
   let turnMemoryPlan = null;
@@ -387,7 +391,7 @@ export function createAgent(store, hooks = {}) {
       const wsCtx = discoverWorkspaceContext(fs);
       const subGuide = subagentGuide({ allow: canDispatch, ultra: canDispatch && lv === 'ultra' });
       cachedPrefix = assembleSystemLayers({
-        identity: systemPrompt(new Date(), { webEnabled: webOn, allowDispatch: canDispatch, reasoningLevel: lv }),
+        identity: systemPrompt(new Date(), { webEnabled: webOn, allowDispatch: canDispatch, reasoningLevel: lv, imageModel: imageModelRuntimeDescription(turnImageSelection, { gatewayId: turnGateway }) }),
         skillsIndex: formatSkillsIndex(store.state.learnedSkills),
         contextFiles: [subGuide, wsCtx].filter(Boolean).join('\n\n'),
       }).cached;
@@ -462,6 +466,7 @@ export function createAgent(store, hooks = {}) {
       searchEnabled: relaySupports('search'),
       crawlEnabled: relaySupports('crawl'),
       fileEnabled: relaySupports('file'),
+      curlEnabled: relaySupports('curl'),
       localBrowserEnabled: localBrowserAvailable(),
       localMachineEnabled: localMachineAvailable(),
       sandboxEnabled: store.state.settings.sandboxEnabled !== false,
@@ -520,7 +525,7 @@ export function createAgent(store, hooks = {}) {
       runtime: formatRuntime({
         now: new Date(),
         model,
-        imageModel: imageModelRuntimeDescription(store.state.imageModel || DEFAULT_IMAGE_MODEL),
+        imageModel: imageModelRuntimeDescription(turnImageSelection, { gatewayId: turnGateway }),
         // 视频生成模型：设置页「多模态模型」里选定（全局，不随会话）
         videoGenModel: (store.state.settings && store.state.settings.videoGenModel) || null,
         filesNote: fsNote(),
@@ -680,6 +685,7 @@ export function createAgent(store, hooks = {}) {
         .filter((t) => {
           if (t.name === 'browser_sandbox') return localBrowserAvailable();
           if (LOCAL_MACHINE_TOOLS.includes(t.name)) return localMachineAvailable();
+          if (t.name === 'curl') return relayOk && settings.webEnabled !== false && relaySupports('curl');
           if (t.name === 'fetch_url') return relayOk && settings.webEnabled !== false;
           if (t.name === 'search_web') return relayOk && settings.webEnabled !== false && relaySupports('search');
           if (t.name === 'crawl_site') return relayOk && settings.webEnabled !== false && relaySupports('crawl');
@@ -703,7 +709,7 @@ export function createAgent(store, hooks = {}) {
         localCpp: settings.localCppEnabled !== false,
         cppMode: settings.cppMode === 'local' ? 'local' : 'remote',
         webEnabled: !offlineOnly && settings.webEnabled !== false && relayOk,
-        imageModel: imageModelRuntimeDescription(store.state.imageModel || DEFAULT_IMAGE_MODEL),
+        imageModel: store.state.imageModel || DEFAULT_IMAGE_MODEL,
         videoGenModel: (store.state.settings && store.state.settings.videoGenModel) || null,
         // 识图 / 视频识别模型：设置页「多模态模型」全局生效（不随会话）
         visionModel: settings.visionModel || null,
@@ -720,6 +726,8 @@ export function createAgent(store, hooks = {}) {
       fs = tempFS;
       finalAnswerText = ''; // 累积最终回答文本，用于 commit 判断
       cachedPrefix = null;
+      turnImageSelection = turn.imageModel;
+      turnGateway = turn.gatewayId;
       turnMemoryPlan = null;
       // Jev 只在本轮开头跑一次（工具循环里不再打），失败则 jevNote 为空、对话照常。
       jevNote = '';
@@ -763,6 +771,7 @@ export function createAgent(store, hooks = {}) {
             search: relayOk && settings.webEnabled !== false && relaySupports('search'),
             crawl: relayOk && settings.webEnabled !== false && relaySupports('crawl'),
             file: relayOk && settings.webEnabled !== false && relaySupports('file'),
+            curl: relayOk && settings.webEnabled !== false && relaySupports('curl'),
           },
         },
       });
@@ -1058,7 +1067,7 @@ export function createAgent(store, hooks = {}) {
           const pull = () => {
             const pullUsage = {};
             return streamChat({
-                model, apiKey, gatewayId: turn.gatewayId, gatewayBaseUrl: turn.gatewayBaseUrl, tools, signal,
+                model, apiKey, gatewayId: turn.gatewayId, gatewayBaseUrl: turn.gatewayBaseUrl, tools, signal, smoothText: true,
                 fastMode: settings.fastMode,
                 thinking: streamThinking, // 空正文恢复时临时关闭思考，避免再次只消耗 token 不产出正文
                 reasoningLevel: streamThinking ? turn.reasoningLevel : 'off',
@@ -1650,6 +1659,7 @@ export function createAgent(store, hooks = {}) {
       search: webOn && relaySupports('search'),
       crawl: webOn && relaySupports('crawl'),
       file: webOn && relaySupports('file'),
+      curl: webOn && relaySupports('curl'),
       localCpp: settings.localCppEnabled !== false,
       browser: !offlineOnly && localBrowserAvailable(),
       localMachine: localMachineAvailable(),
@@ -1783,7 +1793,7 @@ export function createAgent(store, hooks = {}) {
       if (status === 'moderating') setStatus('cancelled');
     },
 
-    async send(userText, attachments = []) {
+    async send(userText, attachments = [], options = {}) {
       if (isNetworkOffline()) {
         store.state.model = OFFLINE_MODEL_ID;
         const activeSession = (store.state.sessions || []).find((session) => session.id === store.state.activeSessionId);
@@ -1792,18 +1802,18 @@ export function createAgent(store, hooks = {}) {
       // 管理员别名刷新后默认锁定；本地模型不需要 Key，也不进入远程图片审核。
       if (!isOfflineModelId(store.state.model) && isAdminAlias(store.state.apiKey) && !effectiveApiKey(store.state.apiKey)) { emit('onNeedKey'); return; }
       clearTransientModeration();
-      // 视频附件带着 5 张审核抽帧进来：只给审核用，不进消息 / 不落 localStorage（海报图 poster 保留给气泡缩略图）
-      const videoFrames = new Map();
-      for (const a of attachments) {
-        if (a && Array.isArray(a.frames)) { videoFrames.set(a, a.frames); delete a.frames; }
-      }
-      const forModeration = attachments.map((a) => (videoFrames.has(a) ? { ...a, frames: videoFrames.get(a) } : a));
+      // The caller keeps its original attachments. Only moderation receives video frames;
+      // persisted messages and the sandbox receive the frame-free copy.
+      const prepared = prepareTurnAttachments(attachments);
+      attachments = prepared.attachments;
+      const forModeration = prepared.forModeration;
       // 每次发送都追加新的 user 消息：不再替换上一条尚未回答的消息（那会悄悄丢失用户的输入）。
       // 未回答的轮次由中断/失败路径补一条带状态的助手占位消息，保证它可见、可分享。
       let userMsg;
       const checkpoint = store.createCheckpoint(userText || (attachments[0] ? `[附件] ${attachments[0].name}` : ''));
       userMsg = store.pushMessage({
         role: 'user', text: userText,
+        choiceReply: options.choiceReply === true,
         attachments: attachments.length ? attachments : undefined,
         transientModeration: true,
         moderationPending: true,

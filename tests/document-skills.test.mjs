@@ -181,12 +181,12 @@ test('read-only document inspection does not falsely demand filesystem side effe
   assert.equal(r.issues.length, 0);
   const write = validateToolResultPost({ name: 'document_tool', args: { action: 'create' }, result: 'done', fsBefore: { digest: 'same' }, fsAfter: { digest: 'same' } }); assert.ok(write.issues.some(i => i.id === 'side-effect-missing'));
 });
-test('current Kimi K3 is selectable while only the unlisted historical 1M alias stays retired', () => {
-  assert.equal(isRetiredModel('kimi-k3'), false); assert.ok(isRetiredModel('kimi-k3[1M]'));
+test('Kimi K3 [1M] is selectable and the incorrect K3.1 Pro alias is retired', () => {
+  assert.equal(isRetiredModel('kimi-k3'), false); assert.equal(isRetiredModel('kimi-k3[1M]'), false); assert.ok(isRetiredModel('kimi-k3.1-pro[1M]'));
   const models = mergeAvailableModels(['kimi-k3', 'kimi-k3[1M]', 'gemini-3.8-flash'], []);
   assert.equal(models[0].id, '__smart_router__');
   assert.ok(models.some(m => m.id === 'kimi-k3') && models.some(m => m.id === 'gemini-3.8-flash'));
-  assert.ok(!models.some(m => m.id === 'kimi-k3[1M]'), 'the retired historical alias stays hidden');
+  assert.ok(models.some(m => m.id === 'kimi-k3[1M]')); assert.ok(!models.some(m => m.id === 'kimi-k3.1-pro[1M]'));
   assert.match(fs.readFileSync(new URL('../js/state.js', import.meta.url), 'utf8'), /isRetiredModel\(state\.model, state\.gatewayId\)/);
 });
 test('audio billing uses reported usage and labels missing input usage rather than inventing audio minutes', () => {

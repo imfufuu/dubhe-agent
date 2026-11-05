@@ -100,7 +100,7 @@ Pandoc 风格围栏容器可写 `::: {.notice #intro}`，容器内容，最后�
 ## 快捷统计图（交互式内联 SVG）
 关键词：统计图、图表、柱状图、条形图、折线图、面积图、饼图、环形图、堆叠图、直方图、箱线图、散点图、气泡图、漏斗图、桑基图、地图、:::chart、chart、bar、line、pie、sankey、map、plot
 
-围栏格式为 `:::chart 类型 标题`、数据行、`:::`；也可直接用类型别名作围栏，如 `:::bar 标题`、`:::折线图 标题`。`:::chart` 的类型可写英文或对应中文。支持 15 类：`bar` 柱状图、`barh` 横向条形图、`line` 折线图、`area` 面积图、`pie` 饼图、`donut` 环形图、`stacked` 堆叠柱状图、`stacked-area/stackedarea` 堆叠面积图、`histogram` 直方图、`boxplot` 箱线/箱型/盒须图、`scatter` 散点图、`bubble` 气泡图、`funnel` 漏斗图、`sankey` 桑基图、`map` 地图。
+围栏格式为 `:::chart 类型 标题`、数据行、`:::`；也可直接用类型别名作围栏，如 `:::bar 标题`、`:::折线图 标题`。`:::chart` 的类型可写英文或对应中文。直接别名有例外：`map`、`box`、`ring`、`geo`、`stack`、`column`、`lines` 只能作为 `:::chart` 后的类型，不能直接写 `:::map`；地图也可用 `:::地图`。支持 15 类：`bar` 柱状图、`barh` 横向条形图、`line` 折线图、`area` 面积图、`pie` 饼图、`donut` 环形图、`stacked` 堆叠柱状图、`stacked-area/stackedarea` 堆叠面积图、`histogram` 直方图、`boxplot` 箱线/箱型/盒须图、`scatter` 散点图、`bubble` 气泡图、`funnel` 漏斗图、`sankey` 桑基图、`map` 地图。
 
 数据规则：
 - 柱状、条形、折线、面积、饼、环形、堆叠柱、堆叠面积、漏斗与地图：每行“标签, 数值”；多系列时首行写“维度, 系列A, 系列B”，数据行写“标签, 数值A, 数值B”。分隔符可用逗号、制表符或竖线；数值接受负数、小数与百分号。
@@ -142,3 +142,11 @@ Pandoc 风格围栏容器可写 `::: {.notice #intro}`，容器内容，最后�
 - 文字颜色：`:::color #rrggbb`，正文，`:::`。颜色会做对比度检查，对比度不足时自动向中性灰调整，保证可读。
 
 选择建议：标题和海报文案用渐变或动效文字；卡片式的要点用微交互卡片；正文本身保持普通 Markdown，不要整段套动效。
+
+
+## Unicode 文字与旗帜字体
+关键词：BabelStone、旗帜、flag、regional indicator、tag sequence、西夏文、契丹小字、Roman、Pigpen
+
+拉丁正文使用 BabelStone Roman；Unicode 西夏文可用 `:::font Tangut`，本地 Wenhai 字体仅覆盖部分字，不要宣称完整；契丹小字可用 `:::font Khitan`，是横向逐字符显示，非完整字簇排版。`:::font Pigpen` 将普通拉丁字母映射成猪圈密码，不是加密；只用于明确要求的短文本。`:::font Goblin` 使用 Tolkien 哥布林字母，U+E000–E027 为该字体私用连字映射，普通 A–Z 可经 OpenType 组合；仅在明确选择此字体时使用，不要把私用码视为通用 Unicode 字符或与其他 PUA 字体混用。字体也接受完整的 BabelStone 字族名。
+
+旗帜使用 Unicode 字符而不是把国家代码直接写成普通字母：ISO 3166 两位代码的 A–Z 分别映射到 U+1F1E6–U+1F1FF，如 US 为 U+1F1FA U+1F1F8（🇺🇸）；两个旗帜之间用空格或标点分隔。可用 `:::font Flags` 指定字体。地区标签旗帜由 U+1F3F4 加小写字母/数字对应的 tag 字符 U+E0061–U+E007A、U+E0030–U+E0039，再加 U+E007F 结束，例如 GB-SCT 为 U+1F3F4 U+E0067 U+E0062 U+E0073 U+E0063 U+E0074 U+E007F。标签字符不可见，复制时要保留完整序列。本地 BabelStone Flags 3.02 是旧版，仅支持部分旗帜；缺失时依浏览器/系统回退为其他旗帜、区域字母或黑旗，不保证每个代码都有图案。不要将 PUA 旗帜码当作 Unicode 标准映射。

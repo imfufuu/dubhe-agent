@@ -75,18 +75,21 @@ export function patchWllamaAbortMessageHandling(WllamaClass) {
  * 若结构不兼容（找不到 onRecvMsg），直接抛错让加载失败并可见，而不是退回到会悬挂的原始实现。
  */
 export function guardWllamaProxy(runtime) {
+  const existingProxy = runtime.proxy;
   let proxy = null;
   Object.defineProperty(runtime, 'proxy', {
     configurable: true,
     enumerable: true,
     get() { return proxy; },
     set(value) {
-      const proto = value && Object.getPrototypeOf(value);
+      if (value == null) { proxy = value; return; } // Wllama.exit() clears the proxy normally.
+      const proto = Object.getPrototypeOf(value);
       if (!patchWllamaAbortMessageHandling({ prototype: proto })) {
         throw new Error('本地模型运行时与 Wllama 版本不兼容（缺少 onRecvMsg），已停止加载。');
       }
       proxy = value;
     },
   });
+  if (existingProxy != null) runtime.proxy = existingProxy;
   return runtime;
 }

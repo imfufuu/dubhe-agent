@@ -83,3 +83,26 @@ export function revealChunks(root, state, animate) {
     el.classList.add('in');
   }
 }
+
+// Keep completed, non-interactive glow/neon blocks alive across streaming repaints.
+// Recreating them on every token restarts the animation and makes it flash erratically.
+export function replacePreservingEffects(root, html) {
+  const template = root.ownerDocument.createElement('template');
+  template.innerHTML = html;
+  const selector = '.md-fx-glow, .md-fx-neon';
+  const signature = (node) => {
+    const clone = node.cloneNode(true);
+    clone.classList.remove('chunk', 'in');
+    for (const tail of clone.querySelectorAll('.chunk-tail')) tail.replaceWith(...tail.childNodes);
+    clone.normalize();
+    return clone.outerHTML;
+  };
+  const prior = [...root.querySelectorAll(selector)].filter(node =>
+    !node.parentElement.closest(selector) && !node.querySelector('a, button, input, select, textarea, details, [contenteditable]'));
+  for (const next of template.content.querySelectorAll(selector)) {
+    if (next.parentElement?.closest(selector)) continue;
+    const index = prior.findIndex(node => signature(node) === signature(next));
+    if (index !== -1) next.replaceWith(prior.splice(index, 1)[0]);
+  }
+  root.replaceChildren(template.content);
+}

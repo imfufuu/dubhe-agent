@@ -32,7 +32,7 @@ import { reasoningMarkdownSource, localModelLabel, keyDraftFrom, restorableCompo
 import { readThemePreference, writeThemePreference, THEME_STORAGE_KEY } from './theme.js';
 import { autoTitle } from './titler.js';
 import { pickSuggestionCards } from './suggestions.js';
-import { revealChunks } from './ui-chunks.js?v=2026.10.25.1';
+import { revealChunks, replacePreservingEffects } from './ui-chunks.js?v=2026.10.25.1';
 import { unlockAdminKey, adminUnlocked, isAdminAlias, adminExpiresAt, adminPhraseVerified } from './adminkey.js';
 import { shortSuggest } from './commands.js';
 import { getOrCreateUserSalutation, buildWelcomeGreeting } from './user-salutation.js';
@@ -1314,7 +1314,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
         ? '<div class="trunc-note">输出在长度上限前结束，未收到可见正文。请点击「重新生成」重试。</div>'
         : '<div class="trunc-note">模型未返回可见答复。请点击「重新生成」重试。</div>';
     }
-    body.innerHTML = html;
+    replacePreservingEffects(body, html);
     // 正文新增字符淡入
     revealChunks(body, body._chunk || (body._chunk = {}), live && !m.done && document.documentElement.dataset.motion !== 'off');
     body.classList.toggle('empty', !String(html || '').trim());
@@ -1653,8 +1653,8 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     };
     // 联网 / 生成类工具（搜索、抓取、生图、生视频）：与 Explored File(s) 同样的折叠行，逐条列出调用。
     // 只由同一簇的最后一条消息绘制（与路径折叠一致）；结果折在每行的「结果」里，不再逐条占用命令芯片。
-    const WEB_LABELS = { search_web: ['Searched for', 'Searching for'], fetch_url: ['Fetched page', 'Fetching page'], generate_image: ['Generated image', 'Generating image'], generate_video: ['Generated video', 'Generating video'] };
-    const webIcon = (name) => ({ search_web: ICON.globe, fetch_url: ICON.globe, generate_image: ICON.image, generate_video: ICON.video })[name] || ICON.globe || '';
+    const WEB_LABELS = { curl: ['HTTP request', 'HTTP request'], search_web: ['Searched for', 'Searching for'], fetch_url: ['Fetched page', 'Fetching page'], generate_image: ['Generated image', 'Generating image'], generate_video: ['Generated video', 'Generating video'] };
+    const webIcon = (name) => ({ curl: ICON.globe, search_web: ICON.globe, fetch_url: ICON.globe, generate_image: ICON.image, generate_video: ICON.video })[name] || ICON.globe || '';
     const paintWebFold = (afterEl) => {
       let node = $('.web-activity', wrap);
       const cluster = m._displayFragment ? [m] : adjacentToolMessages(msgsAll, m.id, (t) => toolFamily(t) === 'web');
@@ -2068,7 +2068,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     clearEmpty();
     renderEmpty();
     // 收集可见消息（跳过 tool/silent）
-    const visible = store.state.messages.filter((m) => m.role !== 'tool' && !m.silent);
+    const visible = store.state.messages.filter((m) => m.role !== 'tool' && !m.silent && !m.choiceReply);
     // 首屏按正文字数分段（每段不超过 HISTORY_WINDOW_MAX_CHARS）；history.js 在消息边界切分。
     if (!wrapLazyInit) {
       lazyLoadedFrom = historyWindowStart(store.state.messages, LAZY_MAX_CHARS);
@@ -2080,14 +2080,14 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       let skipped = 0;
       for (let i = 0; i < lazyLoadedFrom; i++) {
         const mm = store.state.messages[i];
-        if (mm.role !== 'tool' && !mm.silent) skipped++;
+        if (mm.role !== 'tool' && !mm.silent && !mm.choiceReply) skipped++;
       }
       const seam = renderLazySeam(skipped);
       msgList.appendChild(seam);
     }
     for (let i = lazyLoadedFrom; i < store.state.messages.length; i++) {
       const m = store.state.messages[i];
-      if (m.role === 'tool' || m.silent) continue;
+      if (m.role === 'tool' || m.silent || m.choiceReply) continue;
       appendMessage(m);
     }
     for (const card of pendingCards) msgList.appendChild(card);
@@ -2757,6 +2757,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       if (!msg.silent) {
         for (const [id, wrap] of msgNodes) { const old = store.state.messages.find(x => x.id === id); if (old?.role === 'assistant' && wrap.querySelector('.choice-box')) paintAssistant(wrap, old); }
         const origin = pendingSendOrigin; pendingSendOrigin = null;
+        if (msg.choiceReply) { refreshActionVisibility(); return; }
         appendMessage(msg, { scroll: !origin });
         if (origin) {
           const wrap = msgNodes.get(msg.id);
@@ -2829,7 +2830,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
         `<pre class="confirm-body">${esc(requestText || '')}</pre>`,
         '<div class="confirm-actions">',
         '<button class="confirm-btn allow" data-decision="allow-once">允许本次</button>',
-        '<button class="confirm-btn allow-session" data-decision="allow-session">本会话允许该工具</button>',
+        call?.name === 'curl' ? '' : '<button class="confirm-btn allow-session" data-decision="allow-session">本会话允许该工具</button>',
         '<button class="confirm-btn deny" data-decision="deny">拒绝</button>',
         '</div>',
         '<div class="confirm-note">未选择时不会执行该操作；等待超时按拒绝处理（fail-closed）。</div>',
@@ -2848,7 +2849,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
         scrollToBottom();
       };
       node.querySelector('[data-decision="allow-once"]').addEventListener('click', () => settle('allow-once', '已允许本次执行'));
-      node.querySelector('[data-decision="allow-session"]').addEventListener('click', () => settle('allow-session', '本会话内该工具不再逐次确认'));
+      node.querySelector('[data-decision="allow-session"]')?.addEventListener('click', () => settle('allow-session', '本会话内该工具不再逐次确认'));
       node.querySelector('[data-decision="deny"]').addEventListener('click', () => settle('deny', '已拒绝执行'));
       msgList.appendChild(node);
       confirmNodes.set(node.dataset.key, node);
@@ -2888,7 +2889,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       const userAt = store.state.messages.findLastIndex((m) => m.role === 'user');
       const current = store.state.messages.slice(userAt + 1);
       const pending = unansweredUserTurn(store.state.messages); // 无答复即停止：消息回填输入框并撤下本轮（可撤销）
-      if (pending) { store.rollbackBeforeMessage(pending.id); rebuildMessages(); renderSessions(); updateStats(); if (pending.text && !composer.value.trim()) { composer.value = pending.text; autoGrow(); composer.focus(); } return refreshActionVisibility(); }
+      if (pending) { store.rollbackBeforeMessage(pending.id); rebuildMessages(); renderSessions(); updateStats(); if (pending.text && !composer.value.trim()) { composer.value = pending.text; autoGrow(); syncSendButton(); composer.focus(); } return refreshActionVisibility(); }
       const last = current.slice().reverse().find((m) => m.role === 'assistant' && (m.cancelled || !m.done));
       if (last) {
         const wrap = msgNodes.get(last.id);

@@ -2,6 +2,7 @@
 import { registerLanguagePack } from './registry.js';
 
 registerLanguagePack('fr', {
+  "查看系列内模型": "Afficher les modèles de cette famille",
   "任务": "Tâches",
   "任务清单": "Liste de contrôle",
   "复杂任务开始时，Agent 会在这里列出清单并实时更新状态。": "Quand une tâche complexe démarre, l'agent affiche ici sa liste de contrôle et met à jour l'état en temps réel.",

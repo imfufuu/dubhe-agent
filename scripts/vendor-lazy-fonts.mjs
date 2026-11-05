@@ -103,7 +103,7 @@ const header = [
   ...licenses.map((l) => ` *   ${l}`),
   ' */',
 ].join('\n');
-writeFileSync(path.join(outDir, 'index.css'), `${header}\n\n${rules.join('\n\n')}\n`);
+writeFileSync(path.join(outDir, 'index.css'), `${header}\n\n${rules.join('\n\n')}\n${readFileSync(path.join(outDir, 'babelstone-extra.css'), 'utf8')}\n`);
 writeFileSync(path.join(outDir, 'licenses/README.txt'), `各字族许可证文本见本目录；来源包与版本见 index.css 头部。\n${licenses.join('\n')}\n`);
 rmSync(work, { recursive: true, force: true });
 console.log(`assets/fonts-lazy 已生成：${rules.length} 个 @font-face 分片`);

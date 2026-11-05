@@ -702,7 +702,7 @@ export function checkCapabilityConstraints({ name = '', args = {}, capabilities 
       recovery: '请在本机运行 python3 server.py（Windows 用 python server.py），不要加 --no-local；或改用沙箱内的工具',
     };
   }
-  if (['fetch_url', 'search_web', 'crawl_site', 'download_file', 'pull_github_project'].includes(name)) {
+  if (['fetch_url', 'search_web', 'crawl_site', 'download_file', 'pull_github_project', 'curl'].includes(name)) {
     if (!caps.web.enabled) {
       return {
         allowed: false, decision: 'deny', constraintId: 'capability-web-off',
@@ -710,7 +710,7 @@ export function checkCapabilityConstraints({ name = '', args = {}, capabilities 
         recovery: '启动 `python3 server.py` 或配置可用 Cloudflare Worker，并打开顶栏「联网」；也可改用已提供的本地资料作答',
       };
     }
-    const feature = name === 'search_web' ? 'search' : (name === 'crawl_site' ? 'crawl' : (name === 'download_file' || name === 'pull_github_project' ? 'file' : ''));
+    const feature = name === 'curl' ? 'curl' : name === 'search_web' ? 'search' : (name === 'crawl_site' ? 'crawl' : (name === 'download_file' || name === 'pull_github_project' ? 'file' : ''));
     if (feature && caps.web[feature] === false) {
       const labels = { search: '搜索', crawl: '站点爬取', file: '文件下载' };
       return {
@@ -903,6 +903,7 @@ export const TOOL_CONTRACTS = Object.freeze({
   dom_inspect: contract({ idempotent: true, retryPolicy: 'backoff', timeoutMs: 5000, riskLevel: 'L1' }),
   chart_render: contract({ sideEffect: 'filesystem', idempotent: true, timeoutMs: 15000, riskLevel: 'L2', verifyAfterRun: true }),
   convert_file: contract({ sideEffect: 'filesystem', idempotent: false, timeoutMs: 300000, riskLevel: 'L2', verifyAfterRun: true, note: '媒体格式转换（ffmpeg 首次加载引擎较慢）' }),
+  curl: contract({ sideEffect: 'network', idempotent: false, retryPolicy: 'never', timeoutMs: 35000, riskLevel: 'L3', requiresConfirmation: true, external: true, note: '发送 HTTP 请求，可能产生远端副作用；每次人工确认，不自动重试' }),
   fetch_url: contract({ sideEffect: 'network', idempotent: true, retryPolicy: 'backoff', timeoutMs: 30000, riskLevel: 'L2', external: true }),
   search_web: contract({ sideEffect: 'network', idempotent: true, retryPolicy: 'once', timeoutMs: 30000, riskLevel: 'L2', external: true, note: '搜索词会发送给 Worker 配置的搜索服务，结果需核验' }),
   crawl_site: contract({ sideEffect: 'network', idempotent: true, retryPolicy: 'once', timeoutMs: 60000, riskLevel: 'L2', external: true, note: '严格限制同源、页数与深度的只读抓取' }),
@@ -1148,8 +1149,8 @@ export function fsDigest(fsOrFiles) {
   return { count: paths.length, digest: sha256Hex(lines.join('\n')).slice(0, 32) };
 }
 
-const EXTERNAL_CONTENT_TOOLS = new Set(['search_web', 'fetch_url', 'crawl_site', 'download_file']);
-const EXTERNAL_FAILURE_PREFIX_RE = /^(?:search_web|fetch_url|crawl_site|download_file) 失败[：:]/;
+const EXTERNAL_CONTENT_TOOLS = new Set(['search_web', 'fetch_url', 'crawl_site', 'download_file', 'curl']);
+const EXTERNAL_FAILURE_PREFIX_RE = /^(?:search_web|fetch_url|crawl_site|download_file|curl) 失败[：:]/;
 const TOOL_FAILURE_TEXT_RE = /(?:失败|报错|错误|异常|超时|未执行|拒绝执行|不可用|未找到|找不到|cannot|failed|error|timeout|not\s+allowed|denied)/i;
 
 export function validateToolResultPost({

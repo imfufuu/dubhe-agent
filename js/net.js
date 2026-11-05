@@ -18,7 +18,7 @@ import { fetchRelay } from './human-check.js';
 
 let RELAY = { base: '', fetch: '/api/fetch', git: '/api/git', health: '/api/health' };
 let activeRelay = null; // { base, label, endpoints, capabilities }
-let featureRelays = { search: null, crawl: null, file: null };
+let featureRelays = { search: null, crawl: null, file: null, curl: null };
 let relayOk = null;
 let relayProbe = null;
 // P8 单点依赖：失败不再是「探测一次、永远 false」。
@@ -26,6 +26,7 @@ let relayProbe = null;
 //   · 网页工具（fetch_url / search_web / crawl_site / download_file）遇到网络层错误时调 noteRelayNetworkError()，
 //     立刻作废缓存并触发一次后台重探，恢复发生在失败的地方，而不只是设置页 / 顶栏；
 //   · 状态变化通过 window 事件 dubhe:relay-status 广播，顶栏「联网」胶囊与 store.state.relayOk 跟着走。
+let relayProbeGeneration = 0;
 export const RELAY_FAIL_TTL_MS = 60_000;
 let relayFailedAt = 0;          // 上次判定「无可用中继」的时间（Date.now()）
 let relayLastError = '';        // 上次网络错误摘要（给用户提示用）
@@ -58,7 +59,7 @@ function userRelayOverride() {
 }
 function relayEndpoints(base) {
   const b = String(base || '').replace(/\/+$/, '');
-  return { base: b, fetch: `${b}/api/fetch`, git: `${b}/api/git`, health: `${b}/api/health`, search: `${b}/api/search`, crawl: `${b}/api/crawl`, file: `${b}/api/file` };
+  return { base: b, fetch: `${b}/api/fetch`, git: `${b}/api/git`, health: `${b}/api/health`, search: `${b}/api/search`, crawl: `${b}/api/crawl`, file: `${b}/api/file`, curl: `${b}/api/curl` };
 }
 async function probeRelayEndpoint(endpoints, signal, timeoutMs = 3500) {
   // AbortSignal.any/timeout 老浏览器可能没有，手动派生一个 ctrl
@@ -89,8 +90,10 @@ async function probeRelayEndpoint(endpoints, signal, timeoutMs = 3500) {
 /** 探测可用中继（成功结果缓存；失败结果缓存 RELAY_FAIL_TTL_MS 后自动重探；并发调用共享同一个探测） */
 export async function relayAvailable(signal) {
   if (isNetworkOffline()) {
+    relayProbeGeneration++;
+    relayProbe = null;
     activeRelay = null;
-    featureRelays = { search: null, crawl: null, file: null };
+    featureRelays = { search: null, crawl: null, file: null, curl: null };
     relayOk = false;
     relayFailedAt = nowFn();
     return false;
@@ -99,14 +102,15 @@ export async function relayAvailable(signal) {
   if (relayOk === false && relayFailedAt && (nowFn() - relayFailedAt) < RELAY_FAIL_TTL_MS) return false;
   if (relayProbe) return relayProbe;
   const wasFailed = relayOk === false;
-  relayProbe = (async () => {
+  const generation = relayProbeGeneration;
+  const probePromise = (async () => {
     const candidates = [{ base: '', label: 'origin', endpoints: relayEndpoints('') }];
     const override = userRelayOverride();
     if (override) candidates.push({ base: override, label: 'user', endpoints: relayEndpoints(override) });
     for (const url of PUBLIC_RELAY_CANDIDATES) candidates.push({ base: url, label: 'public', endpoints: relayEndpoints(url) });
     const unique = candidates.filter((c, i, all) => all.findIndex((x) => x.endpoints.base === c.endpoints.base) === i);
     let selected = null;
-    featureRelays = { search: null, crawl: null, file: null };
+    const discovered = { search: null, crawl: null, file: null, curl: null };
     // 先保留既有的中继优先级（同源 → 用户指定 → 公共），同时继续探测至找到声明搜索/爬虫能力的 Worker。
     // 这样本地 server.py 可继续服务 fetch/git，而新增工具不会误打到它的 404 路由。
     for (const c of unique) {
@@ -114,11 +118,14 @@ export async function relayAvailable(signal) {
       if (!probe || !probe.ok) continue;
       const candidate = { ...c, capabilities: probe.capabilities };
       if (!selected) selected = candidate;
-      if (!featureRelays.search && probe.capabilities.includes('search')) featureRelays.search = candidate;
-      if (!featureRelays.crawl && probe.capabilities.includes('crawl')) featureRelays.crawl = candidate;
-      if (!featureRelays.file && probe.capabilities.includes('file')) featureRelays.file = candidate;
-      if (selected && featureRelays.search && featureRelays.crawl && featureRelays.file) break;
+      if (!discovered.search && probe.capabilities.includes('search')) discovered.search = candidate;
+      if (!discovered.crawl && probe.capabilities.includes('crawl')) discovered.crawl = candidate;
+      if (!discovered.file && probe.capabilities.includes('file')) discovered.file = candidate;
+      if (!discovered.curl && probe.capabilities.includes('curl')) discovered.curl = candidate;
+      if (selected && discovered.search && discovered.crawl && discovered.file && discovered.curl) break;
     }
+    if (generation !== relayProbeGeneration) return false;
+    featureRelays = discovered;
     if (selected) {
       activeRelay = selected;
       RELAY = { base: selected.base, ...selected.endpoints };
@@ -128,7 +135,7 @@ export async function relayAvailable(signal) {
       return true;
     }
     activeRelay = null;
-    featureRelays = { search: null, crawl: null, file: null };
+    featureRelays = { search: null, crawl: null, file: null, curl: null };
     // 回落到同源默认值
     RELAY = { base: '', ...relayEndpoints('') };
     relayOk = false;
@@ -136,7 +143,8 @@ export async function relayAvailable(signal) {
     broadcastRelayStatus(false, { ttlMs: RELAY_FAIL_TTL_MS });
     return false;
   })();
-  try { return await relayProbe; } finally { relayProbe = null; }
+  relayProbe = probePromise;
+  try { return await probePromise; } finally { if (relayProbe === probePromise) relayProbe = null; }
 }
 
 /** 当前中继状态快照（UI / 测试用）：ok、失败时间、TTL 剩余、上次网络错误 */
@@ -153,7 +161,7 @@ export function noteRelayNetworkError(reason = '') {
   relayLastError = String(reason || '').slice(0, 160);
   if (relayProbe) return relayProbe; // 已经在探了
   relayOk = null; relayFailedAt = 0;
-  activeRelay = null; featureRelays = { search: null, crawl: null, file: null };
+  activeRelay = null; featureRelays = { search: null, crawl: null, file: null, curl: null };
   RELAY = { base: '', ...relayEndpoints('') };
   broadcastRelayStatus(null, { reprobing: true, reason: relayLastError });
   return relayAvailable().catch(() => false);
@@ -168,12 +176,13 @@ export function currentRelay() { return relayOk && activeRelay ? { base: activeR
 
 /** Worker 特性由 health.capabilities 声明；不要仅凭 /api/health=ok 假设存在新路由。 */
 export function relaySupports(feature) { return !!(relayOk && featureRelays[String(feature || '').toLowerCase()]); }
-export function relayCapabilities() { return { search: relaySupports('search'), crawl: relaySupports('crawl'), file: relaySupports('file') }; }
+export function relayCapabilities() { return { search: relaySupports('search'), crawl: relaySupports('crawl'), file: relaySupports('file'), curl: relaySupports('curl') }; }
 
 /** 重置探测缓存（测试 / 切换环境时用） */
 export function resetRelayProbe() {
+  relayProbeGeneration++;
   relayOk = null; relayProbe = null; activeRelay = null; relayFailedAt = 0;
-  featureRelays = { search: null, crawl: null, file: null };
+  featureRelays = { search: null, crawl: null, file: null, curl: null };
   RELAY = { base: '', ...relayEndpoints('') };
 }
 
@@ -236,6 +245,24 @@ async function relayFeatureJson(feature, params, signal) {
     if (err && err.name === 'AbortError') throw err;
     if (isNetworkLevelError(err)) noteRelayNetworkError(`${key}: ${err && err.message}`);
     return { ok: false, error: `Worker ${key} 请求失败：${err && err.message ? err.message : String(err)}。${RELAY_HINT}` };
+  }
+}
+
+// No automatic retries: even GET may have an external side effect. A Turnstile
+// challenge is returned before the Worker sends the upstream request.
+export async function relayCurl({ url, method = 'GET', headers = {}, body, signal } = {}) {
+  if (!await relayAvailable(signal) || !featureRelays.curl) return { ok: false, error: '中继未声明 curl；请部署并启用支持该能力的 Worker。' };
+  try {
+    const response = await fetchRelay(featureRelays.curl.endpoints.curl, {
+      method: 'POST', signal, headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ url, method, headers, body }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) return { ok: false, error: `${String(payload.error || `中继 HTTP ${response.status}`)}${response.status >= 500 ? '；目标可能已经执行，请先核验，不要盲目重试' : ''}` };
+    return { ok: true, ...payload };
+  } catch (err) {
+    if (err?.name === 'AbortError' && signal?.aborted) throw err;
+    return { ok: false, error: `请求失败或超时，目标可能已执行；不要盲目重试：${String(err?.message || err)}` };
   }
 }
 

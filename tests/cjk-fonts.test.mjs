@@ -27,7 +27,8 @@ test('--chat-font：宋体风格优先，并包含 BabelStone Han Extra（扩展
   const m = styles.match(/--chat-font:\s*([^;]+);/);
   assert.ok(m, '缺少 --chat-font');
   const stack = m[1].split(',').map((s) => s.trim().replace(/"/g, ''));
-  assert.equal(stack[0], 'Noto Serif SC');
+  assert.ok(stack.indexOf('BabelStone Roman') < stack.indexOf('Noto Serif SC'));
+  assert.ok(stack.includes('Noto Serif SC'));
   assert.ok(stack.indexOf('BabelStone Han Extra') > 0);
   assert.equal(stack[stack.length - 1], 'serif');
 });

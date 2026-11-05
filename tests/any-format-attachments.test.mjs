@@ -12,6 +12,8 @@ test('卡片分类：主流格式各归其类，未知格式落到「其它」',
   };
   for (const [name, cat] of Object.entries(cases)) assert.equal(fileCategoryOf({ name }), cat, name);
   assert.equal(fileCategoryOf({ name: 'x.bin', source: 'binary', mime: 'application/octet-stream' }), 'other');
+  assert.equal(fileCategoryOf({ name: 'mystery.xyz123', kind: 'text', mime: 'text/plain' }), 'other');
+  assert.match(fileCardIconHtml({ name: 'mystery.xyz123', kind: 'text' }), /data-cat="other"/);
   assert.equal(fileCategoryOf({ name: 'clip', source: 'video', mime: 'video/mp4' }), 'video');
 });
 
@@ -26,10 +28,12 @@ test('卡片图标：图片用原图、视频用首帧海报，其余用格式�
   assert.match(vid, /src="data:image\/jpeg;base64,BBBB"/);
   const pdf = fileCardIconHtml({ name: 'r<x>.pdf', source: 'pdf' }, { safeImgSrc: safe, esc });
   assert.match(pdf, /fc-pdf/);
-  assert.match(pdf, />PDF</);
+  assert.match(pdf, /file-icons\/pdf\.svg/);
   assert.doesNotMatch(pdf, /<x>/);
   assert.equal(fileCardBadge({ name: 'long.abcdefgh' }), 'ABCD');
-  assert.equal(fileCardBadge({ name: 'README' }), '文件');
+  assert.equal(fileCardBadge({ name: 'README' }), '文本');
+  assert.match(fileCardIconHtml({ name: 'Dockerfile' }), /file-icons\/docker\.svg/);
+  assert.match(fileCardIconHtml({ name: 'no-extension', mime: 'application/json' }), /json_official\.svg/);
 });
 
 test('任意格式附件：对话通道提示 uploads/ 路径与 read_file，不再写「不可读」', () => {

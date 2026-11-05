@@ -137,7 +137,7 @@ export const IMAGE_MODELS = [
   { id: 'gpt-image-2.5-sunburst-4k-upscale', family: 'gpt-image-2.5', role: 'upscale-realistic', label: 'GPT Image 2.5 Sunburst 4K Upscale', tag: '写实 · 4K', note: '写实 4K 升采样，按张 $0.02（非升采样 4K 约 $0.0714/张）', tagEn: 'Realistic · 4K', noteEn: 'Realistic 4K upscale, $0.02/image (native 4K about $0.0714)' },
   { id: 'gpt-image-2.5-flare-4k-upscale', family: 'gpt-image-2.5', role: 'upscale-illustration', label: 'GPT Image 2.5 Flare 4K Upscale', tag: '插画 · 4K', note: '插画 4K 升采样，按张 $0.02（非升采样 4K 约 $0.0572/张）', tagEn: 'Illustration · 4K', noteEn: 'Illustration 4K upscale, $0.02/image (native 4K about $0.0572)' },
   { id: 'gemini-3-pro-image', family: 'nano-banana', role: 'pro', label: 'Gemini 3 Pro Image', tag: '精细 · Pro', note: 'Gemini 3 Pro Image · 按 Token 计费，质量档最高（耗时更长）', tagEn: 'Detailed · Pro', noteEn: 'Gemini 3 Pro Image · token billing, highest quality (slower)' },
-  { id: 'midjourney', family: 'midjourney', role: 'artistic', label: 'Midjourney', tag: '非官方 · 艺术', note: 'Midjourney（非官方通道，经 TeamoRouter）· 按任务 $0.079，约 1 分钟出图，仅文生图', tagEn: 'Unofficial · Artistic', noteEn: 'Midjourney (unofficial, via TeamoRouter) · $0.079 per task, about a minute, text-to-image only' },
+  { id: 'midjourney', family: 'midjourney', role: 'artistic', label: 'Midjourney', tag: '非官方 · 艺术', note: 'Midjourney（非官方通道）· 网关尚未接通，仅保留入口', tagEn: 'Unofficial · Artistic', noteEn: 'Midjourney (unofficial) · gateway not yet connected' },
 ];
 export const DEFAULT_IMAGE_MODEL = 'gpt-image-2';
 // 模型家族：菜单里每个家族只占一项，具体变体（写实/插画/4K 升采样/Pro）由 Agent 按需求自动选择。
@@ -145,7 +145,7 @@ export const IMAGE_FAMILIES = Object.freeze([
   { id: 'gpt-image-2', label: 'GPT Image 2', tag: '均衡 · 默认', note: '均衡 · 默认；4K 自动走升采样变体', tagEn: 'Balanced · Default', noteEn: 'Balanced default; 4K uses the upscale variant', defaultModel: 'gpt-image-2' },
   { id: 'gpt-image-2.5', label: 'GPT Image 2.5', tag: '写实 / 插画', note: '写实或插画两个变体，由 Agent 按描述自动选；4K 走升采样', tagEn: 'Realistic / Illustration', noteEn: 'Realistic or illustration variant chosen by Agent; 4K uses upscale', defaultModel: 'gpt-image-2.5-sunburst' },
   { id: 'nano-banana', label: 'Nano Banana', tag: 'Gemini 原生', note: 'Nano Banana 2 / 2.1 / 3 Pro 三档，由 Agent 按质量与速度需求选择', tagEn: 'Gemini native', noteEn: 'Nano Banana 2 / 2.1 / 3 Pro, chosen by quality and speed', defaultModel: 'gemini-3.1-flash-image' },
-  { id: 'midjourney', label: 'Midjourney', tag: '非官方 · 艺术', note: '非官方通道，按任务 $0.079；仅文生图，约 1 分钟出图', tagEn: 'Unofficial · Artistic', noteEn: 'Unofficial channel, $0.079 per task; text-to-image only, about a minute', defaultModel: 'midjourney' },
+  { id: 'midjourney', label: 'Midjourney', tag: '非官方 · 未接通', note: '网关尚未接通；保留入口，不保证可用', tagEn: 'Unofficial · Unavailable', noteEn: 'Not yet connected on the gateway; retained for future use', defaultModel: 'midjourney' },
 ]);
 export function isMidjourneyModel(id) { return String(id || '') === 'midjourney'; }
 export function imageFamilyOf(id) {
@@ -226,11 +226,14 @@ export function isImageGenModel(id) { return IMAGE_MODELS.some((m) => m.id === i
 // 会话保存的生图选择：系列 ID（推荐）或历史变体 ID
 export function isImageGenSelection(id) { return isImageGenModel(id) || IMAGE_FAMILIES.some((f) => f.id === id); }
 // 写进运行时提示词的生图说明：系列写明变体规则；变体写明 ID
-export function imageModelRuntimeDescription(id) {
-  const fam = IMAGE_FAMILIES.find((f) => f.id === id);
-  if (fam && fam.id === 'midjourney') return 'Midjourney（非官方通道，仅文生图，不支持参考图编辑；按任务计费）';
-  if (fam) return `${fam.label} 系列（系列内变体由你按描述自动选择：写实/照片 → style=realistic，插画/卡通/动漫 → style=illustration，4K → resolution=4K；默认 ${fam.defaultModel}）`;
-  return `${imageModelLabel(id)}（ID ${id}）`;
+export function imageModelRuntimeDescription(id, { gatewayId = 'teamorouter' } = {}) {
+  const family = imageFamilyOf(id) || imageFamilyOf(DEFAULT_IMAGE_MODEL);
+  const info = IMAGE_FAMILIES.find(f => f.id === family);
+  const variants = IMAGE_MODELS.filter(m => m.family === family);
+  const supported = family !== 'midjourney' && (gatewayId === 'teamorouter' || (gatewayId === 'openai' && family !== 'nano-banana') || (gatewayId === 'gemini' && family === 'nano-banana') || (gatewayId === 'custom' && family !== 'nano-banana'));
+  if (!supported) return `${info.label} [${family}]；${family === 'midjourney' ? '仅文生图；' : ''}当前网关尚未接通或未验证此系列，没有可用变体。不得切换其他系列。`;
+  const list = variants.map(m => `${m.id} (${m.label}；${m.tag})`).join(', ');
+  return `${info.label} [${family}]；当前系列可选模型：${list}；使用 generate_image 时可直接在 variant 填上述确切 ID；未指定 variant 时通过 style / resolution 自动路由。不得选择其他系列；网关实际可用性以上游响应为准。`;
 }
 export function imageModelLabel(id) {
   const hit = IMAGE_MODELS.find((m) => m.id === id);
@@ -280,6 +283,7 @@ const IMAGE_MODEL_ALIASES = (() => {
 // 返回 { id, input, corrected, unknown, passthrough }
 export function resolveImageModel(raw, fallback = DEFAULT_IMAGE_MODEL) {
   const input = String(raw == null ? '' : raw).trim();
+  if (IMAGE_FAMILIES.some(f => f.id === input)) return { id: input, input, corrected: false, unknown: false };
   const fb = isImageGenModel(fallback) ? fallback : DEFAULT_IMAGE_MODEL;
   if (!input) return { id: fb, input, corrected: false, unknown: false };
   const key = imageModelAliasKey(input);
@@ -486,6 +490,6 @@ export function outputSpec(language = getLanguage()) { return language === 'en' 
 
 export function compactOutputSpec(language = getLanguage()) {
   return language === 'en'
-    ? 'Use Markdown, fenced runnable code and valid KaTeX. Deliver sandbox:// files and dependencies; avoid raw HTML except sanitized table markup strictly required for merged cells, using <th colspan="2"> or <td rowspan="2"> with an integer span from 1 to 1000; never emit raw data URLs. Summary :::choice blocks may occur anywhere. Use knowledge_search for exact chart/map/flow/mind/font grammar before emitting those blocks; never guess fence syntax from memory — fall back to plain Markdown tables/lists when unsure.'
-    : '使用 Markdown、完整围栏代码与合法 KaTeX；用 sandbox:// 交付文件及依赖。避免原始 HTML；仅在确需合并单元格时使用经安全清理的表格 HTML，例如 <th colspan="2"> 或 <td rowspan="2">，跨度为 1–1000 的整数；不要输出原始 data URL。最终总结 :::choice 可在任意位置。chart/map/flow/mind/font 精确语法先用 knowledge_search 检索，禁止凭记忆猜写；不确定就退回纯 Markdown 表格/列表。';
+    ? 'Use Markdown, fenced runnable code and valid KaTeX. Deliver sandbox:// files and dependencies; avoid raw HTML except sanitized table markup strictly required for merged cells, using <th colspan="2"> or <td rowspan="2"> with an integer span from 1 to 1000; never emit raw data URLs. Summary :::choice blocks may occur anywhere. Use the rendering quick guide proactively; consult knowledge_search for advanced grammar and fall back to plain Markdown when uncertain.'
+    : '使用 Markdown、完整围栏代码与合法 KaTeX；用 sandbox:// 交付文件及依赖。避免原始 HTML；仅在确需合并单元格时使用经安全清理的表格 HTML，例如 <th colspan="2"> 或 <td rowspan="2">，跨度为 1–1000 的整数；不要输出原始 data URL。最终总结 :::choice 可在任意位置。合适时主动使用系统提示中的围栏快捷语法；复杂格式查 knowledge_search，不确定就退回纯 Markdown 表格/列表。';
 }

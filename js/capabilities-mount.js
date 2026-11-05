@@ -22,6 +22,7 @@ export const TOOL_MOUNT_RULES_SOURCE = Object.freeze({
   chart_render: { text: /柱状图|折线图|画(?:一个|个)?图|图表|\bchart\b|\bbar chart\b|\bline chart\b/i },
   convert_file: { text: /格式转换|转换格式|转码|转成|转为|导出为|压缩(?:成|为)|提取音频|提取音轨|音轨|转 ?(?:mp4|webm|mov|mkv|gif|mp3|wav|m4a|aac|ogg|opus|flac|png|jpe?g|webp)|convert|transcode|\bffmpeg\b|\bgif\b|动图|压缩.{0,6}(?:视频|图片|音频)|(?:视频|图片|音频).{0,4}(?:格式|转换)/i, attachments: ['image', 'audio', 'video'] },
   crawl_site: { text: /爬(?:取|虫|一下)|抓取.{0,6}(?:站|网站|整站|文档|所有页)|整站|\bcrawl\b|站点地图|\bsitemap\b|多页/i },
+  curl: { text: /\bcurl\b|\bhttp\s*(?:request|请求)|\b(?:post|patch|put|delete)\s+(?:https?:|请求)|调用.{0,8}接口|请求.{0,8}接口|发送.{0,8}(?:请求|json)|\bapi\b/i },
   download_file: { text: /下载|拉取|\bdownload\b|保存.{0,6}(?:到沙箱|文件)|另存/i },
   pull_github_project: { text: /拉取.{0,12}(?:GitHub|仓库|项目)|下载.{0,12}(?:GitHub|仓库|项目)|导入.{0,12}(?:GitHub|仓库)|\b(?:pull|clone|import|download)\b.{0,48}\b(?:github|repository|repo|project)\b|\b(?:github|repository|repo|project)\b.{0,48}\b(?:pull|clone|import|download)\b/i },
   run_shell: { text: /命令|终端|shell|bash|powershell|\bcmd\b|脚本|安装依赖|\bgit\b|\bnpm\b|\bpip\b|\bpython\b|\bls\b|运行.{0,8}程序/i },

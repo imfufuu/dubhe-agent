@@ -138,3 +138,23 @@ test('wiring: vendored Wllama still binds the worker handler after creating the 
   assert.match(vendor, /this\.proxy = new ProxyToWorker\(/);
   assert.match(vendor, /this\.worker\.onmessage = this\.onRecvMsg\.bind\(this\);/);
 });
+
+test('real Wllama exit clears a guarded proxy and allows reload, while still rejecting incompatible replacements', async () => {
+  const { Wllama } = await import('../assets/vendor/wllama/wllama-3.8.1.js');
+  const ProxyToWorker = await loadRealProxyClass();
+  const runtime = guardWllamaProxy(Object.create(Wllama.prototype));
+  let exits = 0;
+  const proxy = realProxy(ProxyToWorker);
+  proxy.wllamaExit = async () => { exits++; };
+  runtime.proxy = proxy;
+  await runtime.exit();
+  assert.equal(exits, 1);
+  assert.equal(runtime.proxy, null);
+  await runtime.exit();
+  runtime.proxy = realProxy(ProxyToWorker);
+  assert.ok(runtime.proxy);
+  runtime.proxy = undefined;
+  assert.equal(runtime.proxy, undefined);
+  assert.throws(() => { runtime.proxy = {}; }, /缺少 onRecvMsg/);
+  assert.throws(() => guardWllamaProxy({ proxy: {} }), /缺少 onRecvMsg/);
+});

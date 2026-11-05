@@ -34,6 +34,7 @@ export const CONTEXT_SPLIT_CODES = Object.freeze({
 
 const CAPABILITY_TOOLS = Object.freeze([
   ['relay', null],                       // relay 是通道前提，不绑定单一工具
+  ['web', 'curl', 'curl'],
   ['web', 'fetch_url'],                  // 基础网页抓取能力
   ['web', 'search_web', 'search'],       // Worker 可选路由，由 health.capabilities 声明
   ['web', 'crawl_site', 'crawl'],
@@ -46,7 +47,7 @@ const CAPABILITY_TOOLS = Object.freeze([
 // 只在中继（本地服务）可用、且不依赖具体能力位的工具：中继不在就必须摘掉
 import { LOCAL_MACHINE_TOOLS } from './localmachine.js';
 
-export const RELAY_DEPENDENT_TOOLS = Object.freeze(['fetch_url', 'search_web', 'crawl_site', 'download_file', 'pull_github_project']);
+export const RELAY_DEPENDENT_TOOLS = Object.freeze(['fetch_url', 'search_web', 'crawl_site', 'download_file', 'pull_github_project', 'curl']);
 
 // 受沙箱能力位管辖的工具（与 js/tools.js 的 CODE_TOOL_NAMES 必须一致；有单测钉住）
 export const SANDBOX_GATED_TOOLS = Object.freeze(['execute_javascript', 'execute_python', 'execute_cpp', 'browser_sandbox']);
@@ -168,6 +169,7 @@ export function deriveToolWhitelist(ctx, allTools = []) {
     }
     const webConstraints = ctx && ctx.capability && ctx.capability.constraints && ctx.capability.constraints.web;
     // 可选 Worker 路由必须有明确的 health capability 声明；缺省/未知不能推断为可用。
+    if (name === 'curl' && (!webConstraints || webConstraints.curl !== true)) { dropped.push({ name, reason: 'relay-curl-unavailable' }); continue; }
     if (name === 'search_web' && (!webConstraints || webConstraints.search !== true)) {
       dropped.push({ name, reason: 'relay-search-unavailable' });
       continue;
@@ -202,6 +204,7 @@ export const DROP_REASON_LABEL = Object.freeze({
   'relay-search-unavailable': '中继未声明 search',
   'relay-crawl-unavailable': '中继未声明 crawl',
   'relay-file-unavailable': '中继未声明 file',
+  'relay-curl-unavailable': '中继未启用 curl',
   'capability-sandbox-off': '顶栏「沙箱」已关',
   'local-cpp-off': '本地 C++ 已关',
   'local-browser-unavailable': '需本机 server.py 与 Playwright/Chromium',
@@ -218,6 +221,7 @@ export const DROP_REASON_FIX = Object.freeze({
   'relay-search-unavailable': Object.freeze({ kind: 'relay-reprobe', label: '重新探测中继' }),
   'relay-crawl-unavailable': Object.freeze({ kind: 'relay-reprobe', label: '重新探测中继' }),
   'relay-file-unavailable': Object.freeze({ kind: 'relay-reprobe', label: '重新探测中继' }),
+  'relay-curl-unavailable': Object.freeze({ kind: 'relay-reprobe', label: '检查 Worker curl 配置' }),
   'capability-sandbox-off': Object.freeze({ kind: 'sandbox-on', label: '打开沙箱' }),
   'local-cpp-off': Object.freeze({ kind: 'settings', label: '打开设置' }),
   'local-browser-unavailable': Object.freeze({ kind: 'settings', label: '本地浏览器需运行服务' }),
@@ -244,13 +248,13 @@ export function formatDroppedTools(dropped, { max = 16 } = {}) {
  */
 export function deriveToolWhitelistFromBits({
   relay = false, web = false, sandbox = true, dispatch = false,
-  search = false, crawl = false, file = false, localCpp = true, browser = false, localMachine = false,
+  search = false, crawl = false, file = false, curl = false, localCpp = true, browser = false, localMachine = false,
 } = {}, allTools = []) {
   const ctx = {
     capability: {
       bits: { relay: !!relay, web: !!web, sandbox: !!sandbox, dispatch: !!dispatch },
       constraints: {
-        web: { search: search === true, crawl: crawl === true, file: file === true },
+        web: { search: search === true, crawl: crawl === true, file: file === true, curl: curl === true },
         sandbox: { localCpp: localCpp !== false, browser: browser === true },
         localMachine: { enabled: localMachine === true },
       },

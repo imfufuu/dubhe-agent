@@ -109,7 +109,7 @@ test('toolrunner 接线：审批块位于授权复核之后、人工确认之前
   assert.match(src, /shouldAutoReview\(\{ enabled: store\.state\.settings\.autoReview !== false, gatewayId: turn\.gatewayId/);
   assert.match(src, /auto-review-deny/);
   assert.match(src, /const needHumanConfirm = !autoReviewAllowed\s*&&\s*\(autoReviewForcesConfirm \|\| guardRequiresConfirmation/);
-  assert.match(src, /if \(needHumanConfirm && !sessionAllowedBySettings/);
+  assert.match(src, /if \(needHumanConfirm && \(call\.name === 'curl' \|\| \(!sessionAllowedBySettings/);
 });
 
 test('设置：默认开启（state 与设置面板），开关 id 与绑定一致', () => {

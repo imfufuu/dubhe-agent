@@ -7,8 +7,8 @@
 // Kimi K3.1 Pro, MiniMax M3, Xiaomi MiMo V2.6 Pro, and Qwen3.8 Max. Newer releases sort ahead within each supplier.
 // The user's 51-ID TeamoRouter availability list is authoritative; two MiMo IDs absent from the public price response stay included.
 // Cheap: source price input <= $1 AND output <= $5 per million tokens. The UI badge clarifies its curated threshold.
-// The current Kimi K3 is active again; only the unlisted historical [1M] alias remains retired.
-export const RETIRED_MODEL_IDS = new Set(['kimi-k3[1M]']);
+// K3 [1M] is user-confirmed; the incorrect K3.1 Pro [1M] ID is retired.
+export const RETIRED_MODEL_IDS = new Set(['kimi-k3.1-pro[1M]']);
 export const isRetiredModel = (id, gatewayId = 'teamorouter') => gatewayId === 'teamorouter' && RETIRED_MODEL_IDS.has(String(id || '').trim());
 export const MODEL_CATALOG_DATE = '2026-10-24';
 // User-confirmed TeamoRouter availability list. Merge these IDs even if the public pricing endpoint omits an entry.
@@ -24,7 +24,7 @@ export const TEAMOROUTER_CONFIRMED_MODEL_IDS = Object.freeze([
   'gpt-5.4', 'gpt-5.4-mini', 'gpt-5.5', 'gpt-5.6-luna', 'gpt-5.6-sol', 'gpt-5.6-terra',
   'gpt-6.1-terra',
   'gpt-6-astra', 'gpt-6-luna', 'gpt-6-sol', 'gpt-6.1-sol',
-  'grok-4.6', 'grok-4.7', 'kimi-k3', 'kimi-k3.1-pro',
+  'grok-4.6', 'grok-4.7', 'kimi-k3', 'kimi-k3[1M]', 'kimi-k3.1-pro',
   'mimo-v2.6-flash', 'mimo-v2.6-pro',
   'minimax-m3.1-flash',
   'qwen3.7-flash', 'qwen3.7-max', 'qwen3.8-flash', 'qwen3.8-max',
@@ -81,6 +81,7 @@ export const MODEL_CATALOG = [
   {"id":"gpt-image-2.5-sunburst","provider":"OpenAI","displayName":"GPT Image 2.5 Sunburst","channel":"image","listPrice":{"currency":"USD","input":5.0,"output":30.0,"cached_input":1.25}},
   {"id":"grok-4.6","provider":"Grok","displayName":"Grok 4.6","channel":"chat","listPrice":{"currency":"USD","input":2.0,"output":6.0,"cached_input":0.5},"contextWindow":500000},
   {"id":"grok-4.7","provider":"Grok","displayName":"Grok 4.7","channel":"chat","hot":true,"newlyListed":true,"listPrice":{"currency":"USD","input":2.0,"output":6.0,"cached_input":0.5},"contextWindow":500000},
+  {"id":"kimi-k3[1M]","provider":"Kimi","displayName":"Kimi K3 [1M]","channel":"chat","contextWindow":1000000,"listPrice":{"currency":"USD","input":3.0,"output":15.0,"cached_input":0.3,"cache_write":3.0},"priceNote":"用户确认的网关型号；参考 K3 费率估算，实际价格以网关为准。","priceNoteEn":"User-confirmed gateway model; estimate uses K3 rates, actual billing is determined by the gateway."},
   {"id":"kimi-k3.1-pro","provider":"Kimi","displayName":"Kimi K3.1 Pro","channel":"chat","hot":true,"newlyListed":true,"listPrice":{"currency":"USD","input":2.0,"output":10.0,"cached_input":0.2,"cache_write":2.0},"contextWindow":1000000,"priceSource":"official","priceSourceUrl":"https://platform.kimi.ai/docs/pricing/chat","priceNote":"Kimi 官方 K3 系列费率：输入 ¥13.44、输出 ¥67.18、缓存命中 ¥1.34/百万 token；5 分钟写入 ¥13.44，1 小时写入 ¥26.87。默认 TTL 为 5 分钟。","priceNoteEn":"Official K3 rate: $2 input / $10 output / $0.20 cache hit per 1M tokens; cache write is $2 for 5 minutes or $4 for 1 hour. Default TTL is 5 minutes."},
   {"id":"kimi-k3","provider":"Kimi","displayName":"Kimi K3","channel":"chat","listPrice":{"currency":"USD","input":3.0,"output":15.0,"cached_input":0.3,"cache_write":3.0},"priceSource":"official","priceSourceUrl":"https://platform.kimi.ai/docs/pricing/chat","priceNote":"Kimi 官方 K3 系列费率：输入 ¥20.15、输出 ¥100.77、缓存命中 ¥2.02/百万 token；5 分钟写入 ¥20.15，1 小时写入 ¥40.31。默认 TTL 为 5 分钟。","priceNoteEn":"Official K3 rate: $3 input / $15 output / $0.30 cache hit per 1M tokens; cache write is $3 for 5 minutes or $6 for 1 hour. Default TTL is 5 minutes."},
   {"id":"mimo-v2.6-flash","provider":"Xiaomi","displayName":"Xiaomi MiMo V2.6 Flash","channel":"chat","newlyListed":true,"listPrice":{"currency":"USD","input":0.14,"output":0.28,"cached_input":0.0028},"cheap":true,"contextWindow":1000000,"priceSource":"official","priceSourceUrl":"https://mimo.mi.com/docs/price/pay-as-you-go","priceNote":"小米 MiMo 海外实时 API 价，按 2026-10-23 中间价折算：输入 ¥0.94、输出 ¥1.88、缓存命中 ¥0.0188/百万 token；缓存写入当前限时免费。","priceNoteEn":"Xiaomi official overseas real-time rate: $0.14 input / $0.28 output / $0.0028 cache hit per 1M tokens; cache writes are currently free for a limited time."},

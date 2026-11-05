@@ -83,17 +83,17 @@ test('十六进制颜色块：可读则输出按主题变量的样式，否则�
   assert.match(renderMarkdown(':::color red\n红字\n:::'), /md-c-red/, '命名颜色保持原行为');
 });
 
-test('懒加载字体：按码位筛选分片；拉丁字符不触发分片', () => {
+test('懒加载字体：按码位筛选分片，包含拉丁文', () => {
   const css = [
     "@font-face { font-family: 'A'; src: url(./a/one.woff2) format('woff2'); unicode-range: U+4E00-4EFF; }",
     "@font-face { font-family: 'A'; src: url(./a/two.woff2) format('woff2'); unicode-range: U+20000-200FF; }",
     "@font-face { font-family: 'A'; src: url(./a/latin.woff2) format('woff2'); unicode-range: U+0000-00FF; }",
   ].join('\n');
   assert.deepEqual(parseFontFaces(css).map((f) => f.url), ['./a/one.woff2', './a/two.woff2', './a/latin.woff2']);
-  assert.deepEqual(selectLazyFaces(css, [0x4e2d, 0x41]).map((f) => f.url), ['./a/one.woff2']);
+  assert.deepEqual(selectLazyFaces(css, [0x4e2d, 0x41]).map((f) => f.url), ['./a/one.woff2', './a/latin.woff2']);
   assert.deepEqual(selectLazyFaces(css, [0x20001]).map((f) => f.url), ['./a/two.woff2'], '非基本平面字符命中扩展分片');
-  assert.deepEqual(selectLazyFaces(css, [0x41, 0x42]), [], '纯拉丁不下载任何分片');
-  assert.deepEqual(codepointsOf('a中𠀀'), [0x4e2d, 0x20000]);
+  assert.deepEqual(selectLazyFaces(css, [0x41, 0x42]).map(f => f.url), ['./a/latin.woff2']);
+  assert.deepEqual(codepointsOf('a中𠀀'), [0x61, 0x4e2d, 0x20000]);
 });
 
 test('懒加载索引：各字族存在且分片文件都已入库', async () => {
@@ -156,4 +156,39 @@ test('单行渐变围栏：流式未闭合补全不会对已闭合的单行块�
   const html = renderMarkdown(':::gradient sunset 日落标题 :::', { streaming: true });
   assert.doesNotMatch(html, /:::/);
   assert.match(html, /md-gradient/);
+});
+
+test('glow and neon keep their animation nodes across unchanged streaming repaints', async () => {
+  const { JSDOM } = await import('jsdom');
+  const { replacePreservingEffects, revealChunks } = await import('../js/ui-chunks.js');
+  const dom = new JSDOM('<div id="root"></div>', { pretendToBeVisual: true });
+  const root = dom.window.document.getElementById('root');
+  const text = '<div class="md-fx md-fx-neon"><p>Neon</p></div>';
+  replacePreservingEffects(root, text);
+  const node = root.firstElementChild;
+  const state = {};
+  revealChunks(root, state, true);
+  replacePreservingEffects(root, text + '<p>New</p>');
+  assert.equal(root.firstElementChild, node, 'completed block is not restarted on the next token');
+  replacePreservingEffects(root, text.replace('Neon', 'Updated'));
+  assert.notEqual(root.firstElementChild, node, 'changed content is re-rendered');
+  const css = (await import('node:fs')).readFileSync(new URL('../css/md-fx.css', import.meta.url), 'utf8');
+  assert.doesNotMatch(css.match(/@keyframes md-fx-neon\s*\{[\s\S]*?\n\}/)[0], /opacity/);
+  assert.match(css, /\.md-fx-glow :where\(p/);
+});
+
+test('rendering prompt examples are understood by the actual renderer', async () => {
+  for (const [block, expected] of [
+    [':::chart bar 标题\n甲, 10\n乙, 20\n:::', 'md-chart'],
+    [':::diagram flow 标题\n开始 -> 完成\n:::', 'md-flow'],
+    [':::diagram mind 标题\n- 主题\n  - 分支\n:::', 'md-mind'],
+    [':::fx glow\n正文\n:::', 'md-fx-glow'],
+    [':::gradient ocean 120\n正文\n:::', 'md-gradient'],
+    [':::font KaiTi\n正文\n:::', 'md-font'],
+    [':::color red\n正文\n:::', 'md-color'],
+    [':::center\n正文\n:::', 'md-align'],
+    [':::card lift\n正文\n:::', 'md-card-lift'],
+    [':::fold 标题\n正文\n:::', 'fold'],
+    [':::choice 问题\n- A\n- B\n:::', 'choice-box'],
+  ]) assert.ok(renderMarkdown(block).includes(expected), block);
 });

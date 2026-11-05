@@ -1,3 +1,4 @@
+import { FORMAT_ICONS } from './file-format-icons.js';
 // 附件卡片图标（输入框芯片 + 用户气泡共用）。
 // 规则：图片 → 原图缩略；视频 → 首帧海报（poster）+ ▶ 角标；其余 → 按格式归类的彩色标签图标（PDF / DOCX / XLSX / ZIP / 代码 …）。
 // 纯函数 + 字符串 HTML，不依赖 DOM，便于测试。附件格式不做限制：未知格式统一落到「其它」类。
@@ -34,6 +35,9 @@ export function fileCategoryOf(a = {}) {
   const name = String(a.name || a.originalName || '');
   const mime = String(a.mime || '').toLowerCase();
   const ext = fileExtOf(name);
+  const basename = name.split(/[\\/]/).pop().toLowerCase();
+  if (basename === 'dockerfile' || basename === 'makefile') return 'code';
+  if (/^(readme|license|changelog)$/.test(basename)) return 'text';
   if (a.kind === 'image' || a.source === 'svg' || mime.startsWith('image/')) return 'image';
   if (a.source === 'video' || mime.startsWith('video/')) return 'video';
   if (a.source === 'audio' || mime.startsWith('audio/')) return 'audio';
@@ -43,7 +47,7 @@ export function fileCategoryOf(a = {}) {
   if (/spreadsheetml|ms-excel|opendocument\.spreadsheet/.test(mime)) return 'sheet';
   if (/presentationml|ms-powerpoint|opendocument\.presentation/.test(mime)) return 'slide';
   if (ext && EXT_TO_CAT.has(ext)) return EXT_TO_CAT.get(ext);
-  if (a.kind === 'text' || mime.startsWith('text/')) return 'text';
+  if (!ext && mime === 'text/plain') return 'text';
   if (/^application\/(json|xml|yaml|x-yaml|toml|javascript|x-sh|sql)$/.test(mime)) return 'code';
   if (mime.startsWith('font/')) return 'font';
   return 'other';
@@ -71,6 +75,15 @@ export function fileCardIconHtml(a = {}, { safeImgSrc = (s) => s, esc = (s) => S
     return `<span class="fc-ico fc-thumb fc-video">${poster ? `<img src="${poster}" alt="">` : '<span class="fc-glyph">▶</span>'}<span class="fc-play" aria-hidden="true"></span></span>`;
   }
   if (cat === 'audio' || cat === 'video' || cat === 'image') return `<span class="fc-ico fc-${cat}" data-cat="${cat}" title="${esc(FILE_CARD_LABEL[cat])}"><span class="fc-badge">${esc(fileCardBadge(a))}</span></span>`;
-  const badge = esc(fileCardBadge(a));
-  return `<span class="fc-ico fc-${cat}" data-cat="${cat}" title="${esc(FILE_CARD_LABEL[cat])}"><svg class="fc-file-svg" viewBox="0 0 28 28" aria-hidden="true"><path d="M6 2.5h10l6 6v17H6z" fill="var(--bg)" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M16 2.5v6h6" fill="none" stroke="currentColor" stroke-width="1.3"/><text x="14" y="19" text-anchor="middle" fill="currentColor" font-size="${badge.length > 3 ? 5 : 6.5}" font-weight="700">${badge}</text></svg></span>`;
+  // Only known names/extensions and unambiguous format MIME types get a format mark.
+  // Unknown files remain a neutral file, never a fabricated extension logo.
+  const ext = fileExtOf(a.originalName || a.name);
+  const fallbackExt = { pdf: 'pdf', word: 'docx', sheet: 'xlsx', slide: 'pptx', archive: 'zip', font: 'ttf', text: 'txt' }[cat];
+  const name = String(a.originalName || a.name || '').split(/[\\/]/).pop().toLowerCase();
+  const named = { dockerfile: 'docker', readme: 'markdown', license: 'text', changelog: 'text' }[name];
+  const mime = String(a.mime || '').split(';', 1)[0].trim().toLowerCase();
+  const mimeIcon = { 'application/pdf': 'pdf', 'application/json': 'json_official', 'text/html': 'html', 'text/css': 'css', 'text/markdown': 'markdown', 'text/plain': !ext ? 'text' : undefined }[mime];
+  const icon = named || FORMAT_ICONS[ext] || mimeIcon || (!ext ? FORMAT_ICONS[fallbackExt] : undefined);
+  if (icon) return `<span class="fc-ico fc-${cat}" data-cat="${cat}" title="${esc(FILE_CARD_LABEL[cat])}"><img class="fc-format-icon" src="assets/file-icons/${icon}.svg" alt=""></span>`;
+  return `<span class="fc-ico fc-${cat}" data-cat="${cat}" title="${esc(FILE_CARD_LABEL[cat])}"><svg class="fc-file-svg" viewBox="0 0 28 28" aria-hidden="true"><path d="M6 2.5h10l6 6v17H6z" fill="var(--bg)" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M16 2.5v6h6" fill="none" stroke="currentColor" stroke-width="1.3"/></svg></span>`;
 }

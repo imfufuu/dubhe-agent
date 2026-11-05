@@ -53,7 +53,7 @@ export function installChoiceHandler({ root, store, agent, getBusy, openKeyModal
       const results = { ...(owner.choiceResults || {}), [resultIndex]: items };
       store.updateMessage(owner.id, { choiceResults: results });
       const reply = choiceReplyText(items);
-      agent.send(reply, []);
+      agent.send(reply, [], { choiceReply: true });
       return true;
     }
     return false;
