@@ -207,6 +207,7 @@ relayAvailable().then((ok) => { store.state.relayOk = ok; if (ui && ui.syncWeb) 
 probeGatewayHosts().then((r) => {
   if (r.switched && r.by === 'probe') toast(`网关接入点已自动选择：${r.host}`, 'ok', 4000);
   if (ui && ui.updateTransportBadge) ui.updateTransportBadge();
+  if (ui && ui.syncGateway) ui.syncGateway();
 }).catch(() => {});
 
 // 刷新页面后把外置的重数据取回来（附件图片 / 沙箱里的图 / 生成图）：

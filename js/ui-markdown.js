@@ -1,4 +1,5 @@
 import { extractChoices, choiceOptions } from './choices.js';
+import { installFlagRule, protectFlagTablePipes, extractFallbackFlags } from './flag-directive.js?v=2026.10.25.1';
 import { uiText as messageLocaleText } from './locale.js';
 // ─── UI · Markdown / 消息片段渲染（P4 拆分：从 ui.js 模块级抽出，不依赖 mountUI 闭包）────────
 // 拥有：DOM 小工具（$ / $$ / el / esc）、安全链接与沙箱媒体（safeHref / safeImgSrc / sandboxPath / hydrateSandboxMedia）、
@@ -343,6 +344,7 @@ export function getMd({ breaks = false } = {}) {
     if (typeof markdownit === 'undefined') { if (breaks) mdEngineBreaks = null; else mdEngine = null; }
     else {
       const md = markdownit({ html: false, linkify: true, breaks, typographer: false });
+      installFlagRule(md);
       // 只识别显式协议链接（http(s)://）；关闭模糊匹配，否则 report.md、index.html 等文件名会被当成域名
       md.linkify.set({ fuzzyLink: false, fuzzyEmail: false });
       md.renderer.rules.link_open = (tokens, idx, options, env, self) => {
@@ -954,7 +956,7 @@ export function renderMarkdown(src, options = {}) {
 
   const md = getMd({ breaks: !!(options && options.userBreaks) });
   if (md) {
-    let html = md.render(t);
+    let html = md.render(protectFlagTablePipes(t));
     html = restoreWidgets(html);
     html = mdExtensions.restore(html, (x) => md.renderInline(x), (x) => renderMarkdown(x, options));
     html = restoreInlineCodeTokens(html);
@@ -968,6 +970,8 @@ export function renderMarkdown(src, options = {}) {
   // 最小解析器也要遵守 CommonMark 的反斜杠转义；占位符避免被后续强调/链接正则误处理。
   const fallbackEscapes = [];
   t = protectFallbackEscapes(t, fallbackEscapes);
+  const fallbackFlags = [];
+  t = extractFallbackFlags(t, fallbackFlags);
   t = esc(t);
   t = t.replace(/!\[([^\]]*)\]\((sandbox:\/\/[^)]+)\)/gi, (_, alt, src) => {
     const sb = sandboxPath(src);
@@ -993,5 +997,5 @@ export function renderMarkdown(src, options = {}) {
   t = t.replace(/<p>\s*(<(?:h\d|ul|ol|blockquote|pre))/g, '$1').replace(/(<\/(?:h\d|ul|ol|blockquote|pre)>)\s*<\/p>/g, '$1');
   const fallbackInline = (x) => esc(x).replace(/~~([^~]+?)~~/g, '<s>$1</s>').replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>').replace(/\*([^*\n]+)\*/g, '<em>$1</em>');
   const fallbackHtml = restoreInlineCodeTokens(restoreMath(restoreCb(mdExtensions.restore(restoreWidgets(t), fallbackInline, (x) => renderMarkdown(x, options)))));
-  return fallbackHtml.replace(/\uE000ESC(\d+)\uE000/g, (_, i) => esc(fallbackEscapes[+i] || ''));
+  return fallbackHtml.replace(/\uE000FLAG(\d+)\uE000/g, (_, i) => fallbackFlags[+i] || '').replace(/\uE000ESC(\d+)\uE000/g, (_, i) => esc(fallbackEscapes[+i] || ''));
 }

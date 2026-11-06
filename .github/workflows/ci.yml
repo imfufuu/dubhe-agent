@@ -159,6 +159,9 @@ jobs:
       - name: tests/edit-demo.test.mjs · 文件差异与导航演示回归
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/edit-demo.test.mjs
+      - name: tests/flag-directive.test.mjs · 行内旗帜渲染和导出
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/flag-directive.test.mjs
       - name: tests/gateway-models.test.mjs · 网关模型目录与手动 ID 规则
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/gateway-models.test.mjs
