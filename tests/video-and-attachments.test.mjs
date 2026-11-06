@@ -280,3 +280,53 @@ test('折叠变体：Seedance 2.0 Fast / Mini 不单独占菜单项，归入 See
   assert.equal(videoMenuIdOf('seedance-2-0-fast-text-to-video-basic'), 'seedance-2-0-text-to-video-basic');
   assert.equal(videoMenuIdOf('seedance-2-0-mini-image-to-video-basic'), 'seedance-2-0-text-to-video-basic');
 });
+
+test('video runtime lists only selected family, including folded variants, and respects unsupported gateways', async () => {
+  const { videoModelRuntimeDescription } = await import('../js/video-gen.js');
+  for (const family of VIDEO_GEN_MENU) {
+    const desc = videoModelRuntimeDescription(family.id);
+    for (const m of VIDEO_GEN_MODELS) {
+      assert.equal(desc.includes(`${m.id} (`), m.family === family.family, `${family.family} vs ${m.id}`);
+    }
+    assert.match(videoModelRuntimeDescription(family.id, { gatewayId: 'openai' }), /没有可用变体/);
+  }
+});
+
+test('agent system prompt directly includes selected video family models', async () => {
+  const { createStore } = await import('../js/state.js');
+  const { createAgent } = await import('../js/agent.js');
+  const store = createStore(); store.state.apiKey = 'test'; store.state.model = 'gpt-5.6-sol';
+  store.state.settings.videoGenModel = 'seedance-2-5-text-to-video-basic';
+  Object.assign(store.state.settings, { webEnabled: false, jevEnabled: false, autoReview: false });
+  const original = globalThis.fetch; let request;
+  globalThis.fetch = async (_url, init) => {
+    request = JSON.parse(init.body);
+    return new Response('data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n', { headers: { 'content-type': 'text/event-stream' } });
+  };
+  try {
+    await createAgent(store, {}).send('请生成视频');
+    const sys = request.messages.find(m => m.role === 'system').content;
+    for (const m of VIDEO_GEN_MODELS) assert.equal(sys.includes(`${m.id} (`), m.family === 'Seedance 2.5', m.id);
+    assert.ok(request.tools.find(t => t.function.name === 'generate_video').function.parameters.properties.variant);
+  } finally { globalThis.fetch = original; }
+});
+
+test('explicit video variant reaches quote and creation, cross-family variant is rejected', async () => {
+  const original = globalThis.fetch, calls = [];
+  globalThis.fetch = async (url, init) => {
+    calls.push({ url: String(url), body: JSON.parse(init.body) });
+    if (String(url).endsWith('/v1/videos/quote')) return new Response('{}', { status: 404 });
+    return new Response(JSON.stringify({ id: 'vid_test', status: 'failed', error: { message: 'test failure' } }), { status: 200 });
+  };
+  try {
+    const ctx = { fs: createFS(), apiKey: 'test', videoGenModel: DEFAULT_VIDEO_GEN_MODEL, onUi() {} };
+    const variant = 'seedance-2-0-fast-text-to-video-basic';
+    await executeTool('generate_video', { prompt: 'a cat', variant }, ctx);
+    assert.equal(calls.find(c => c.url.endsWith('/v1/videos')).body.model, variant);
+    const count = calls.length;
+    const fail = await executeTool('generate_video', { prompt: 'a cat', variant: 'minimax-h3-text-to-video' }, ctx);
+    assert.match(fail, /不属于当前选定/); assert.equal(calls.length, count);
+    const mismatch = await executeTool('generate_video', { prompt: 'a cat', variant, mode: 'image' }, ctx);
+    assert.match(mismatch, /参考图/); assert.equal(calls.length, count);
+  } finally { globalThis.fetch = original; }
+});

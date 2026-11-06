@@ -11,6 +11,9 @@ import {
   validateName, joinPath, parentDir, explorerRows, isWorkspacePath, PROJECT_RENDER_LINE_CAP,
 } from './project-core.js';
 import { runJavaScript, runPython, runCpp } from './sandbox.js';
+import { createCompressedZip, fileBytesFromValue } from './zip.js';
+import { unpackZipFromDataUrl, unpackZip } from './unzip.js';
+import { planWorkspaceTransfer } from './project-core.js';
 import {
   runnerFor, cppSources, parseDiagnostics, lineStartIndex, runSummary, RUNNER_LABEL,
 } from './project-run.js';
@@ -93,12 +96,13 @@ export function openProjectMode({ store, agent }) {
     outOpen: false,
     running: false,
     controller: null,
+    clipboard: null,   // 内部剪贴板：文件路径与 copy/cut；不访问系统剪贴板
     diags: [],         // 最近一次运行的问题 [{file,line,col,severity,message}]
   };
   let closing = false;
   let timer = 0;
   const root = h('div', { class: 'pm-root', role: 'dialog', 'aria-modal': 'true', 'aria-label': T('项目模式', 'Project mode') });
-  const explorerBody = h('div', { class: 'pm-tree', role: 'tree' });
+  const explorerBody = h('div', { class: 'pm-tree', role: 'tree', tabindex: '0', 'aria-label': T('文件树', 'File tree') });
   const tabsBar = h('div', { class: 'pm-tabs', role: 'tablist' });
   const gutter = h('div', { class: 'pm-gutter', 'aria-hidden': 'true' });
   const textarea = h('textarea', { class: 'pm-text', spellcheck: 'false', autocapitalize: 'off', autocorrect: 'off', 'aria-label': T('代码编辑器', 'Code editor') });
@@ -117,13 +121,9 @@ export function openProjectMode({ store, agent }) {
   const projCount = h('span', { class: 'pm-proj-count' });
   const btnSave = h('button', { class: 'pm-btn primary', type: 'button', title: T('保存（Ctrl+S）', 'Save (Ctrl+S)'), onclick: () => saveActive() }, [svgIcon(ICON.save), T('保存', 'Save')]);
   const btnSide = h('button', { class: 'pm-icon pm-side-toggle', type: 'button', title: T('折叠 / 展开侧栏（Ctrl+B）', 'Toggle sidebar (Ctrl+B)'), 'aria-label': T('折叠 / 展开侧栏', 'Toggle sidebar'), 'aria-expanded': 'true', onclick: () => toggleSide() }, [svgIcon(ICON.side)]);
-  const btnNewFolder = h('button', { class: 'pm-icon', type: 'button', title: T('新建文件夹', 'New folder'), 'aria-label': T('新建文件夹', 'New folder'), onclick: () => startCreate('folder') }, [svgIcon(ICON.folderPlus)]);
-  const btnNew = h('button', { class: 'pm-icon', type: 'button', title: T('新建文件', 'New file'), 'aria-label': T('新建文件', 'New file'), onclick: () => startCreate() }, '+');
   const btnRefresh = h('button', { class: 'pm-icon', type: 'button', title: T('刷新', 'Refresh'), 'aria-label': T('刷新', 'Refresh'), onclick: () => { state.lastSnap = null; sync(); } }, '↻');
   const importFileInput = h('input', { type: 'file', multiple: true, hidden: true, onchange: (e) => importFiles(e.target) });
   const importDirInput = h('input', { type: 'file', multiple: true, hidden: true, webkitdirectory: true, onchange: (e) => importFiles(e.target, { folder: true }) });
-  const btnImportFile = h('button', { class: 'pm-icon', type: 'button', title: T('导入文件', 'Import files'), 'aria-label': T('导入文件', 'Import files'), onclick: () => importFileInput.click() }, [svgIcon(ICON.file)]);
-  const btnImportDir = h('button', { class: 'pm-icon', type: 'button', title: T('导入文件夹', 'Import folder'), 'aria-label': T('导入文件夹', 'Import folder'), onclick: () => importDirInput.click() }, [svgIcon(ICON.folder)]);
   const btnClose = h('button', { class: 'pm-btn', type: 'button', title: T('关闭（Esc）', 'Close (Esc)'), onclick: () => close() }, [svgIcon(ICON.close), T('关闭', 'Close')]);
   const btnRun = h('button', { class: 'pm-btn primary run', type: 'button', title: T('运行当前文件（Ctrl+Enter）', 'Run current file (Ctrl+Enter)'), onclick: () => runActive() }, T('▶ 运行', '▶ Run'));
   const btnStop = h('button', { class: 'pm-btn', type: 'button', hidden: true, title: T('停止运行', 'Stop'), onclick: () => stopRun() }, T('■ 停止', '■ Stop'));
@@ -165,7 +165,7 @@ export function openProjectMode({ store, agent }) {
     ]),
     h('div', { class: 'pm-body' }, [
       h('aside', { class: 'pm-explorer', 'aria-label': T('资源管理器', 'Explorer') }, [
-        h('div', { class: 'pm-ex-head' }, [h('span', {}, T('资源管理器', 'EXPLORER')), btnImportFile, btnImportDir, btnNewFolder, btnNew, btnRefresh]),
+        h('div', { class: 'pm-ex-head' }, [h('span', {}, T('资源管理器', 'EXPLORER')), btnRefresh]),
         explorerBody,
         importFileInput,
         importDirInput,
@@ -182,6 +182,159 @@ export function openProjectMode({ store, agent }) {
   const files = () => (store.state && store.state.files) || {};
   const tabOf = (path) => state.tabs.find((t) => t.path === path) || null;
   const current = () => tabOf(state.active);
+
+  // Explorer operations are intentionally local to the sandbox, never the OS clipboard.
+  let menuNode = null, suppressClick = false, dragging = '';
+  function closeMenu() { if (menuNode) menuNode.remove(); menuNode = null; }
+  function dismissMenu(e) { if (menuNode && !menuNode.contains(e.target)) closeMenu(); }
+  document.addEventListener('pointerdown', dismissMenu, true);
+  const selectDirectory = (path) => { state.selected = path || ''; if (path) state.collapsed.delete(path); };
+  function openMenu(path, isDir, x, y) {
+    closeMenu(); state.selected = path || ''; renderTree();
+    const dir = !path || isDir ? path : parentDir(path);
+    const entries = [];
+    const add = (id, zh, en, fn, disabled = false) => entries.push({ id, label: T(zh, en), fn, disabled });
+    if (path && !isDir) add('open', '打开', 'Open', () => openFile(path));
+    if (!path || isDir) {
+      add('new-file', '新建文件', 'New file', () => { selectDirectory(dir); startCreate(); });
+      add('new-folder', '新建文件夹', 'New folder', () => { selectDirectory(dir); startCreate('folder'); });
+      add('import-file', '导入文件', 'Import files', () => { selectDirectory(dir); importFileInput.click(); });
+      add('import-folder', '导入文件夹', 'Import folder', () => { selectDirectory(dir); importDirInput.click(); });
+    }
+    if (path) {
+      add('rename', '重命名', 'Rename', () => { state.renaming = path; renderTree({ force: true }); });
+      add('copy', '拷贝', 'Copy', () => { state.clipboard = { path, cut: false }; flash(T('已拷贝', 'Copied')); });
+      add('cut', '剪切', 'Cut', () => { state.clipboard = { path, cut: true }; flash(T('已剪切', 'Cut')); });
+    }
+    if (!path || isDir) add('paste', '粘贴', 'Paste', () => pasteInto(dir), !state.clipboard);
+    if (path) {
+      add('compress', '压缩为 ZIP', 'Compress to ZIP', () => compressPath(path));
+      if (!isDir && /\.zip$/i.test(path)) add('extract', '解压缩', 'Extract ZIP', () => extractPath(path));
+      add('delete', '删除', 'Delete', () => removePath(path, isDir));
+    }
+    menuNode = h('div', { class: 'pm-context-menu', role: 'menu', 'aria-label': T('文件操作', 'File operations') });
+    for (const entry of entries) {
+      const button = h('button', { type: 'button', role: 'menuitem', 'data-action': entry.id, disabled: entry.disabled,
+        onclick: (e) => { e.stopPropagation(); closeMenu(); try { Promise.resolve(entry.fn()).catch(err => flash(err.message, true)); } catch (err) { flash(err.message, true); } } }, entry.label);
+      menuNode.append(button);
+    }
+    root.append(menuNode);
+    const rect = menuNode.getBoundingClientRect(), win = document.defaultView;
+    menuNode.style.left = Math.max(4, Math.min(Number(x) || 4, (win?.innerWidth || 1024) - rect.width - 4)) + 'px';
+    menuNode.style.top = Math.max(4, Math.min(Number(y) || 4, (win?.innerHeight || 768) - rect.height - 4)) + 'px';
+    menuNode.querySelector('button:not(:disabled)')?.focus();
+  }
+  function wireTreeItem(item, row) {
+    const isDir = row.type === 'dir'; let hold = null, origin = null;
+    const cancelHold = () => { if (hold) clearTimeout(hold); hold = null; };
+    item.addEventListener('contextmenu', e => { e.preventDefault(); e.stopPropagation(); cancelHold(); openMenu(row.path, isDir, e.clientX, e.clientY); });
+    item.addEventListener('keydown', e => {
+      if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) { e.preventDefault(); e.stopPropagation(); const r = item.getBoundingClientRect(); openMenu(row.path, isDir, r.left, r.bottom); }
+    });
+    item.addEventListener('pointerdown', e => {
+      if (e.pointerType !== 'touch') return;
+      origin = { x: e.clientX, y: e.clientY };
+      cancelHold(); hold = setTimeout(() => { hold = null; suppressClick = true; setTimeout(() => { suppressClick = false; }, 700); openMenu(row.path, isDir, origin.x, origin.y); }, 550);
+    });
+    item.addEventListener('pointermove', e => { if (origin && Math.hypot(e.clientX - origin.x, e.clientY - origin.y) > 10) cancelHold(); });
+    item.addEventListener('pointerup', cancelHold); item.addEventListener('pointercancel', cancelHold);
+    item.addEventListener('dragstart', e => { cancelHold(); dragging = row.path; e.dataTransfer?.setData('text/plain', row.path); if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'; });
+    item.addEventListener('dragend', () => { dragging = ''; });
+    if (isDir) {
+      item.addEventListener('dragover', e => { if (dragging) { e.preventDefault(); e.stopPropagation(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'; } });
+      item.addEventListener('drop', e => { if (!dragging) return; e.preventDefault(); e.stopPropagation(); const from = dragging; dragging = ''; transferPath(from, row.path, false); });
+    }
+  }
+  explorerBody.addEventListener('keydown', e => { if (e.target === explorerBody && (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10'))) { e.preventDefault(); e.stopPropagation(); const r = explorerBody.getBoundingClientRect(); openMenu('', true, r.left, r.top); } });
+  explorerBody.addEventListener('contextmenu', e => { e.preventDefault(); openMenu('', true, e.clientX, e.clientY); });
+  explorerBody.addEventListener('dragover', e => { if (dragging) { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'; } });
+  explorerBody.addEventListener('drop', e => { if (!dragging) return; e.preventDefault(); const from = dragging; dragging = ''; transferPath(from, '', false); });
+  // Long press the empty explorer to operate on the root directory.
+  let rootHold = null, rootOrigin = null;
+  explorerBody.addEventListener('pointerdown', e => {
+    if (e.pointerType !== 'touch' || e.target.closest('.pm-tree-row')) return;
+    rootOrigin = { x: e.clientX, y: e.clientY };
+    rootHold = setTimeout(() => { rootHold = null; openMenu('', true, rootOrigin.x, rootOrigin.y); }, 550);
+  });
+  const cancelRootHold = () => { if (rootHold) clearTimeout(rootHold); rootHold = null; };
+  explorerBody.addEventListener('pointermove', e => { if (rootOrigin && Math.hypot(e.clientX-rootOrigin.x, e.clientY-rootOrigin.y) > 10) cancelRootHold(); });
+  explorerBody.addEventListener('pointerup', cancelRootHold); explorerBody.addEventListener('pointercancel', cancelRootHold);
+
+  function applyWrites(entries, removeSources = false, sourceRoot = '') {
+    const written = [], removed = [];
+    try {
+      for (const entry of entries) { agent.sandboxWrite(entry.to, entry.value); written.push(entry.to); }
+      if (removeSources) {
+        for (const entry of entries) { agent.sandboxRemove(entry.from); removed.push(entry); }
+        const root = sourceRoot || entries[0]?.from;
+        // Keep the source directory visible when moving its last file or folder.
+        const parent = root ? parentDir(root) : '';
+        if (parent && !Object.keys(files()).some(p => p.startsWith(parent + '/'))) {
+          const keep = parent + '/.keep'; agent.sandboxWrite(keep, ''); written.push(keep);
+        }
+      }
+    } catch (err) {
+      let restoreFailed = false;
+      for (const entry of removed) try { agent.sandboxWrite(entry.from, entry.value); } catch { restoreFailed = true; }
+      // If restoration fails, retain destination copies rather than destroying the only remaining data.
+      if (!restoreFailed) for (const path of written) try { agent.sandboxRemove(path); } catch { restoreFailed = true; }
+      state.lastSnap = null; sync();
+      if (restoreFailed) throw new Error(T('操作失败且回滚不完整，请检查源和目标文件：', 'Operation failed and rollback was incomplete; check source and destination: ') + err.message);
+      throw err;
+    }
+  }
+  function transferPath(from, dir, copy) {
+    const plan = planWorkspaceTransfer(files(), from, dir, { copy });
+    if (!plan.ok) { flash(plan.error); return false; }
+    // Copy includes unsaved editor content; move keeps dirty buffers at their new paths.
+    if (copy) for (const entry of plan.entries) { const t = tabOf(entry.from); if (t?.dirty) entry.value = t.value; }
+    try { applyWrites(plan.entries, !copy, from); } catch (err) { flash(err.message, true); return false; }
+    if (!copy) {
+      for (const tab of state.tabs) if (tab.path === from || tab.path.startsWith(from + '/')) tab.path = plan.target + tab.path.slice(from.length);
+      if (state.active === from || state.active.startsWith(from + '/')) state.active = plan.target + state.active.slice(from.length);
+    }
+    state.selected = plan.target; state.lastSnap = null; sync();
+    flash(copy ? T('已拷贝', 'Copied') : T('已移动', 'Moved')); return true;
+  }
+  function pasteInto(dir) {
+    const clip = state.clipboard;
+    if (clip && transferPath(clip.path, dir, !clip.cut) && clip.cut) state.clipboard = null;
+  }
+  function zipDataUrl(bytes) {
+    let data = ''; for (let i = 0; i < bytes.length; i += 0x8000) data += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    return 'data:application/zip;base64,' + btoa(data);
+  }
+  function destinationFree(path, snap = files()) {
+    return isWorkspacePath(path) && !Object.keys(snap).some(p => p === path || p.startsWith(path + '/') || path.startsWith(p + '/'));
+  }
+  async function compressPath(path) {
+    const snap = files();
+    const paths = Object.keys(snap).filter(p => p === path || p.startsWith(path + '/'));
+    if (!paths.length) return flash(T('文件不存在', 'Source not found'));
+    const entries = paths.map(p => ({ name: p.slice(parentDir(path).length ? parentDir(path).length + 1 : 0), bytes: fileBytesFromValue(tabOf(p)?.dirty ? tabOf(p).value : snap[p]).bytes }));
+    const blob = await createCompressedZip(entries), bytes = new Uint8Array(await blob.arrayBuffer());
+    let target = path + '.zip', n = 2;
+    while (!destinationFree(target) && n < 10000) target = path + ' ' + n++ + '.zip';
+    if (!destinationFree(target)) return flash(T('目标已存在', 'Destination exists'));
+    try { agent.sandboxWrite(target, zipDataUrl(bytes)); } catch (err) { return flash(err.message); }
+    state.lastSnap = null; sync(); flash(T('已创建 ', 'Created ') + target);
+  }
+  async function extractPath(path) {
+    const raw = files()[path]; if (typeof raw !== 'string') return flash(T('文件不存在', 'File not found'));
+    const got = raw.startsWith('data:') ? await unpackZipFromDataUrl(raw, { strict: true }) : await unpackZip(new TextEncoder().encode(raw), { strict: true });
+    if (!got.ok) return flash(got.error);
+    const base = path.replace(/\.zip$/i, '') || path + '-extracted';
+    if (!destinationFree(base)) return flash(T('解压目标已存在，不会覆盖', 'Destination exists; nothing overwritten'));
+    const entries = got.files.map(f => ({ to: base + '/' + f.path, value: f.content }));
+    const names = new Set();
+    for (const entry of entries) {
+      if (!isWorkspacePath(entry.to) || names.has(entry.to) || !destinationFree(entry.to)) return flash(T('压缩包路径冲突或不安全', 'Unsafe or conflicting archive paths'));
+      names.add(entry.to);
+    }
+    for (const entry of entries) if (entries.some(other => other !== entry && other.to.startsWith(entry.to + '/'))) return flash(T('压缩包路径冲突', 'Conflicting archive paths'));
+    try { applyWrites(entries); } catch (err) { return flash(err.message); }
+    state.lastSnap = null; sync(); flash(T('已解压到 ', 'Extracted to ') + base);
+  }
 
   function sync() {
     const snap = files();
@@ -231,7 +384,7 @@ export function openProjectMode({ store, agent }) {
     explorerBody.replaceChildren();
     if (state.creating) explorerBody.append(createRow());
     if (!rows.length && !state.creating) {
-      explorerBody.append(h('div', { class: 'pm-tree-empty' }, T('工作区还没有文件。让 Agent 生成文件，或点“+”新建。', 'No files yet. Let the agent create some, or click “+”.')));
+      explorerBody.append(h('div', { class: 'pm-tree-empty' }, T('工作区还没有文件。在此处右键或长按以新建或导入。', 'No files yet. Right-click or long-press here to create or import.')));
       return;
     }
     for (const row of rows) {
@@ -245,11 +398,12 @@ export function openProjectMode({ store, agent }) {
         class: `pm-tree-row${isDir ? ' dir' : ' file'}${row.path === state.active ? ' active' : ''}${state.selected === row.path ? ' selected' : ''}${tab && tab.dirty ? ' dirty' : ''}`,
         role: 'treeitem',
         'aria-level': String(row.depth + 1),
+        tabindex: '0', draggable: 'true', 'data-path': row.path,
         'aria-expanded': isDir ? String(!state.collapsed.has(row.path)) : null,
         style: `padding-left:${8 + row.depth * 12}px`,
         title: row.path,
         onclick: (e) => {
-          if (isRenaming) return;
+          if (isRenaming || suppressClick) { suppressClick = false; return; }
           e.stopPropagation();
           state.selected = row.path;
           if (isDir) {
@@ -261,11 +415,8 @@ export function openProjectMode({ store, agent }) {
         h('span', { class: 'pm-tree-glyph', 'aria-hidden': 'true' }, isDir ? (state.collapsed.has(row.path) ? '▸' : '▾') : ''),
         labelNode,
         !isRenaming && !isDir && tab && tab.dirty ? h('span', { class: 'pm-dot', title: T('未保存', 'Unsaved') }, '●') : null,
-        !isRenaming ? h('span', { class: 'pm-row-acts' }, [
-          h('button', { type: 'button', class: 'pm-mini', title: T('重命名', 'Rename'), 'aria-label': T('重命名', 'Rename'), onclick: (e) => { e.stopPropagation(); state.renaming = row.path; renderTree({ force: true }); } }, '✎'),
-          h('button', { type: 'button', class: 'pm-mini danger', title: T('删除', 'Delete'), 'aria-label': T('删除', 'Delete'), onclick: (e) => { e.stopPropagation(); removePath(row.path, isDir); } }, '×'),
-        ]) : null,
       ]);
+      if (!isRenaming) wireTreeItem(item, row);
       explorerBody.append(item);
     }
   }
@@ -364,7 +515,7 @@ export function openProjectMode({ store, agent }) {
     const check = validateName(parts[parts.length - 1]);
     if (!check.ok || parts.some(p => !validateName(p).ok)) return flash(check.error || T('名称不合法', 'Invalid name'));
     const path = joinPath(dir, parts.slice(0, -1).concat(check.name).join('/'));
-    if (!isWorkspacePath(path)) return flash(T('路径不合法', 'Invalid path'));
+    if (!isWorkspacePath(path) || isPlaceholder(path)) return flash(T('路径不合法', 'Invalid path'));
     if (Object.keys(files()).some(p => p === path || p.startsWith(path + '/') || path.startsWith(p + '/'))) return flash(T('同名文件或文件夹已存在', 'A file or folder with that name exists'));
     try { agent.sandboxWrite(path, ''); } catch (err) { return flash(err.message); }
     state.creating = null;
@@ -376,17 +527,14 @@ export function openProjectMode({ store, agent }) {
   function commitRename(from, raw) {
     state.renaming = '';
     const check = validateName(raw);
-    if (!check.ok) { renderTree({ force: true }); return flash(check.error); }
+    if (!check.ok || check.name === '.keep') { renderTree({ force: true }); return flash(check.error || T('该名称保留', 'Name is reserved')); }
     const to = joinPath(parentDir(from), check.name);
     if (to === from) return renderTree({ force: true });
     const snap = files();
     const paths = Object.keys(snap).filter(p => p === from || p.startsWith(from + '/'));
     if (!isWorkspacePath(to) || !paths.length || Object.keys(snap).some(p => !paths.includes(p) && (p === to || p.startsWith(to + '/')))) { renderTree({ force: true }); return flash(T('目标名称不可用', 'Name not available')); }
-    const written = [];
-    try {
-      for (const path of paths) { const target = to + path.slice(from.length); agent.sandboxWrite(target, snap[path]); written.push(target); }
-    } catch (err) { for (const path of written) try { agent.sandboxRemove(path); } catch {} renderTree({ force: true }); return flash(err.message); }
-    for (const path of paths) agent.sandboxRemove(path);
+    const entries = paths.map(path => ({ from: path, to: to + path.slice(from.length), value: snap[path] }));
+    try { applyWrites(entries, true, from); } catch (err) { renderTree({ force: true }); return flash(err.message); }
     for (const tab of state.tabs) if (tab.path === from || tab.path.startsWith(from + '/')) tab.path = to + tab.path.slice(from.length);
     if (state.active === from || state.active.startsWith(from + '/')) state.active = to + state.active.slice(from.length);
     state.selected = to;
@@ -397,15 +545,25 @@ export function openProjectMode({ store, agent }) {
 
   function removePath(path, isDir) {
     const win = document.defaultView;
-    const label = isDir ? T(`删除目录 ${path} 及其中的文件？`, `Delete folder ${path} and its files?`) : T(`删除 ${path}？`, `Delete ${path}?`);
+    const dirty = state.tabs.some(t => t.dirty && (t.path === path || t.path.startsWith(path + '/')));
+    const label = (isDir ? T(`删除目录 ${path} 及其中的文件？`, `Delete folder ${path} and its files?`) : T(`删除 ${path}？`, `Delete ${path}?`)) + (dirty ? T(' 未保存的修改也将丢失。', ' Unsaved changes will also be lost.') : '');
     if (win && typeof win.confirm === 'function' && !win.confirm(label)) return;
     const targets = isDir
       ? Object.keys(files()).filter((p) => p.startsWith(`${path}/`))
       : [path];
-    for (const p of targets) {
-      try { agent.sandboxRemove(p); } catch { /* 已不存在 */ }
-      if (tabOf(p)) closeTab(p, { silent: true });
+    const backup = targets.map(p => ({ path: p, value: files()[p] }));
+    const removed = [];
+    try {
+      for (const item of backup) { agent.sandboxRemove(item.path); removed.push(item); }
+      const parent = parentDir(path);
+      if (parent && !Object.keys(files()).some(p => p.startsWith(parent + '/'))) agent.sandboxWrite(parent + '/.keep', '');
+    } catch (err) {
+      let restoreFailed = false;
+      for (const item of removed) try { agent.sandboxWrite(item.path, item.value); } catch { restoreFailed = true; }
+      state.lastSnap = null; sync();
+      return flash((restoreFailed ? T('删除失败且回滚不完整，请检查文件：', 'Delete failed and rollback was incomplete; check files: ') : T('删除失败：', 'Delete failed: ')) + err.message, true);
     }
+    for (const p of targets) if (tabOf(p)) closeTab(p, { silent: true });
     if (state.selected === path || state.selected.startsWith(path + '/')) state.selected = '';
     state.lastSnap = null;
     sync();
@@ -414,6 +572,7 @@ export function openProjectMode({ store, agent }) {
 
   // ── 标签与编辑器 ──
   function openFile(path) {
+    if (isPlaceholder(path)) return;
     const content = files()[path];
     if (typeof content !== 'string') return flash(T('这是目录或不存在的文件', 'That is a folder or a missing file'));
     let tab = tabOf(path);
@@ -457,10 +616,20 @@ export function openProjectMode({ store, agent }) {
     textarea.hidden = false;
   }
 
-  function closeTab(path, { silent = false } = {}) {
+  async function closeTab(path, { silent = false } = {}) {
     const tab = tabOf(path);
     if (!tab) return;
-    if (tab.dirty && !silent && !confirmDiscard(path)) return;
+    if (tab.dirty && !silent) {
+      if (askingClose) return;
+      askingClose = true;
+      let choice;
+      try { choice = await askUnsaved([path]); } finally { askingClose = false; }
+      if (choice === 'cancel') return;
+      if (choice === 'save') {
+        try { agent.sandboxWrite(tab.path, tab.value); } catch (err) { return flash(T('保存失败：' + err.message, 'Save failed: ' + err.message)); }
+        tab.saved = tab.value; tab.dirty = false; tab.gone = false;
+      }
+    }
     state.tabs = state.tabs.filter((t) => t.path !== path);
     if (state.active === path) {
       const next = state.tabs[state.tabs.length - 1];
@@ -502,11 +671,6 @@ export function openProjectMode({ store, agent }) {
     emptyNote.hidden = false;
     emptyNote.textContent = T('从左侧打开一个文件开始编辑。', 'Open a file from the explorer to start editing.');
     updateStatus();
-  }
-
-  function confirmDiscard(path) {
-    const win = document.defaultView;
-    return !win || typeof win.confirm !== 'function' || win.confirm(T(`${path} 有未保存的修改，仍要关闭？`, `${path} has unsaved changes. Close anyway?`));
   }
 
   function renderTabs() {
@@ -792,23 +956,32 @@ export function openProjectMode({ store, agent }) {
     btnSide.setAttribute('aria-expanded', String(!collapsed));
   }
 
-  function flash(message) {
+  function flash(message, persistent = false) {
     statusMsg.textContent = String(message || '');
     clearTimeout(flash.t);
-    flash.t = setTimeout(() => { statusMsg.textContent = ''; }, 3200);
+    if (!persistent) flash.t = setTimeout(() => { statusMsg.textContent = ''; }, 3200);
   }
 
   function onKey(e) {
-    if (!root.isConnected) return;
+    if (!root.isConnected || root.querySelector('.pm-confirm')) return;
     if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) { e.preventDefault(); saveActive(); return; }
     if ((e.ctrlKey || e.metaKey) && (e.key === 'b' || e.key === 'B')) { e.preventDefault(); toggleSide(); return; }
     if (((e.ctrlKey || e.metaKey) && e.key === 'Enter') || e.key === 'F5') { e.preventDefault(); runActive(); return; }
+    if (e.key === 'Escape' && menuNode) { e.preventDefault(); e.stopPropagation(); closeMenu(); return; }
     if (e.key === 'Escape' && !state.creating && !state.renaming) {
       e.preventDefault();
       close();
     }
   }
   document.addEventListener('keydown', onKey, true);
+  // Browser navigation/refresh cannot offer our custom save dialog, but it must
+  // still warn before the in-memory editor buffers are lost.
+  const projectWindow = document.defaultView;
+  const onBeforeUnload = (event) => {
+    if (!state.tabs.some(tab => tab.dirty && tab.kind !== 'media')) return;
+    event.preventDefault(); event.returnValue = '';
+  };
+  projectWindow?.addEventListener('beforeunload', onBeforeUnload);
 
   let askingClose = false;
   // 未保存修改：由用户明确选择。返回 'save' | 'discard' | 'cancel'
@@ -852,7 +1025,10 @@ export function openProjectMode({ store, agent }) {
     closing = true;
 
     clearInterval(timer);
+    closeMenu();
+    document.removeEventListener('pointerdown', dismissMenu, true);
     document.removeEventListener('keydown', onKey, true);
+    projectWindow?.removeEventListener('beforeunload', onBeforeUnload);
     if (active === instance) active = null;
     root.classList.add('pm-leaving');
     setTimeout(() => root.remove(), 200);
@@ -867,7 +1043,7 @@ export function openProjectMode({ store, agent }) {
   sync();
   if (!state.tabs.length) {
     const first = explorerRows(workspaceEntries(files()), state.collapsed)
-      .find((row) => row.type === 'file' && !isBinaryContent(files()[row.path]));
+      .find((row) => row.type === 'file' && !isPlaceholder(row.path) && !isBinaryContent(files()[row.path]));
     if (first) openFile(first.path); else showEmpty();
   }
   return instance;

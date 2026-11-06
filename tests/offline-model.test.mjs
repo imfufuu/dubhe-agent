@@ -400,3 +400,27 @@ test('offline bootstrap is installed on all cached entry pages and blocks offsit
   assert.match(bootstrap, /gate\.record\(anchor\.href, 'navigation'\)/);
   assert.match(bootstrap, /abort\(\)/);
 });
+
+test('actual Wllama chooses bundled wasm32 compatibility resources without Memory64, including Firefox', async () => {
+  const restoreNav = setGlobal('navigator', { userAgent: 'Mozilla/5.0 Firefox/130.0', storage: { getDirectory() {} } });
+  const restoreSelf = setGlobal('self', { location: { href: 'https://example.test/app.html' } });
+  const restoreSecure = setGlobal('isSecureContext', true);
+  const originalMemory = WebAssembly.Memory;
+  const originalSuspending = Object.getOwnPropertyDescriptor(WebAssembly, 'Suspending');
+  try {
+    Object.defineProperty(WebAssembly, 'Suspending', { configurable: true, value: function() {} });
+    WebAssembly.Memory = function(spec) { if (spec.address === 'i64') throw new Error('Memory64 unavailable'); return new originalMemory(spec); };
+    const { getOfflineModelEngine } = await import('../js/offline-model.js');
+    const engine = await getOfflineModelEngine();
+    const resources = engine.getWorkerResources();
+    assert.equal(resources.compat, true);
+    assert.match(resources.wasmPath, /assets\/vendor\/wllama\/wllama-compat-3\.8\.1\.wasm$/);
+    assert.match(resources.jsPath, /assets\/vendor\/wllama\/wllama-compat-3\.8\.1\.js$/);
+    const binary = fs.readFileSync(new URL('../assets/vendor/wllama/wllama-compat-3.8.1.wasm', import.meta.url));
+    assert.equal(WebAssembly.validate(binary), true, 'bundled wasm32 binary is structurally valid');
+  } finally {
+    WebAssembly.Memory = originalMemory;
+    if (originalSuspending) Object.defineProperty(WebAssembly, 'Suspending', originalSuspending); else delete WebAssembly.Suspending;
+    restoreSecure(); restoreSelf(); restoreNav();
+  }
+});

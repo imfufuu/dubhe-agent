@@ -245,17 +245,6 @@ function syncMultimodalSelects(store) {
   fillModelSelect($('#set-vgen-model'), VIDEO_GEN_MENU, videoMenuIdOf(vgen));
   // 生图菜单按模型家族展示；具体变体（写实/插画/4K 升采样…）由 Agent 的 generate_image 自动选择
   fillModelSelect($('#set-image-model'), IMAGE_FAMILIES.map((f) => ({ id: f.id, label: f.label, tag: f.tag, note: f.note, tagEn: f.tagEn, noteEn: f.noteEn })), imageFamilyOf(image) || 'gpt-image-2');
-  const variantList = $('#set-image-variants');
-  if (variantList) {
-    const family = imageFamilyOf(image) || 'gpt-image-2';
-    variantList.replaceChildren(...IMAGE_MODELS.filter(m => m.family === family).map(m => {
-      const li = document.createElement('li');
-      li.textContent = `${m.label} · ${m.id}` + (family === 'midjourney' ? localeText('（网关尚未接通）', ' (gateway not yet connected)') : '');
-      return li;
-    }));
-    const heading = $('#set-image-variants-title');
-    if (heading) heading.textContent = localeText('查看系列内模型', 'Show models in this family');
-  }
   fillModelSelect($('#set-vision-model'), VISION_MODELS, vision);
   fillModelSelect($('#set-av-model'), VIDEO_MODELS, av);
   // 决策层：Jev 版本（每轮路由判断 + 内容审核的 Jev 调用共用）

@@ -1,4 +1,5 @@
-// ZIP 解压（STORE + DEFLATE）。新文件，避免给 zip.js 加导出触发混版缓存。
+// ZIP 解压（STORE + DEFLATE）。
+import { crc32 } from './zip.js';
 
 function toU8(bytes) {
   if (!bytes) return new Uint8Array(0);
@@ -88,49 +89,55 @@ function sniffEntry(path, bytes) {
   let binary = false;
   for (let i = 0; i < bytes.length; i++) if (bytes[i] === 0) { binary = true; break; }
   if (binary) return { kind: 'bin', content: `data:application/octet-stream;base64,${u8ToB64(bytes)}` };
-  const text = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
-  return { kind: 'text', content: text };
+  try { return { kind: 'text', content: new TextDecoder('utf-8', { fatal: true }).decode(bytes) }; }
+  catch { return { kind: 'bin', content: `data:application/octet-stream;base64,${u8ToB64(bytes)}` }; }
 }
 
 /**
  * @returns {Promise<{ok:boolean, files:{path:string, kind:string, content:string}[], error?:string}>}
  */
-export async function unpackZip(bytes, { maxUncompressed = 24 * 1024 * 1024 } = {}) {
+export async function unpackZip(bytes, { maxUncompressed = 24 * 1024 * 1024, strict = false } = {}) {
   const u8 = toU8(bytes);
   if (!isZipBytes(u8)) return { ok: false, files: [], error: '不是 ZIP 文件' };
   const eocd = findEocd(u8);
   if (eocd < 0) return { ok: false, files: [], error: 'ZIP 目录损坏（找不到 EOCD）' };
+  if (strict && (u16(u8, eocd + 4) || u16(u8, eocd + 6) || u16(u8, eocd + 8) !== u16(u8, eocd + 10))) return { ok: false, files: [], error: '不支持分卷 ZIP' };
   const count = u16(u8, eocd + 10);
   if (count > 2048) return { ok: false, files: [], error: 'ZIP 文件条目过多' };
   const cdSize = u32(u8, eocd + 12);
   const cdOff = u32(u8, eocd + 16);
   if (cdOff + cdSize > u8.length) return { ok: false, files: [], error: 'ZIP 中央目录越界' };
-  const files = [];
+  const files = [], directories = [];
   let total = 0;
-  let p = cdOff;
+  let p = cdOff, seen = 0;
   const cdEnd = cdOff + cdSize;
   for (let n = 0; n < count && p + 46 <= cdEnd; n++) {
     if (u32(u8, p) !== 0x02014b50) break;
+    seen++;
     const flag = u16(u8, p + 8);
     const method = u16(u8, p + 10);
+    const checksum = u32(u8, p + 16);
     const comp = u32(u8, p + 20);
     const uncomp = u32(u8, p + 24);
     const nameLen = u16(u8, p + 28);
     const extraLen = u16(u8, p + 30);
     const commentLen = u16(u8, p + 32);
     const localOff = u32(u8, p + 42);
+    if (strict && p + 46 + nameLen + extraLen + commentLen > cdEnd) return { ok: false, files: [], error: 'ZIP 中央目录损坏' };
     const nameBytes = u8.subarray(p + 46, p + 46 + nameLen);
     p += 46 + nameLen + extraLen + commentLen;
-    if (flag & 1) continue; // encrypted
+    if (flag & 1) { if (strict) return { ok: false, files: [], error: '不支持加密 ZIP' }; continue; }
     let name;
     try { name = new TextDecoder('utf-8', { fatal: true }).decode(nameBytes); }
     catch { name = new TextDecoder('latin1').decode(nameBytes); }
-    if (name.endsWith('/')) continue;
-    const rel = safeRelPath(name);
+    const directory = name.endsWith('/');
+    const rawName = directory ? name.slice(0, -1) : name;
+    const rel = safeRelPath(rawName);
+    if (strict && (!rel || rawName !== rel)) return { ok: false, files: [], error: 'ZIP 路径不安全或需要规范化' };
+    if (directory) { if (strict) directories.push(rel); continue; }
     if (!rel) continue;
-    if (method !== 0 && method !== 8) continue;
-    if (localOff + 30 > u8.length) continue;
-    if (u32(u8, localOff) !== 0x04034b50) continue;
+    if (method !== 0 && method !== 8) { if (strict) return { ok: false, files: [], error: '不支持的 ZIP 压缩格式' }; continue; }
+    if (localOff + 30 > u8.length || u32(u8, localOff) !== 0x04034b50) { if (strict) return { ok: false, files: [], error: 'ZIP 本地文件头损坏' }; continue; }
     const locName = u16(u8, localOff + 26);
     const locExtra = u16(u8, localOff + 28);
     const dataAt = localOff + 30 + locName + locExtra;
@@ -142,10 +149,15 @@ export async function unpackZip(bytes, { maxUncompressed = 24 * 1024 * 1024 } = 
     } catch (err) {
       return { ok: false, files, error: `解压 ${rel} 失败：${err.message || err}` };
     }
+    if (strict && (raw.length !== uncomp || crc32(raw) !== checksum)) return { ok: false, files: [], error: `ZIP 数据校验失败：${rel}` };
     total += raw.length;
     if (total > maxUncompressed) return { ok: false, files, error: '解压后体积过大' };
     const { kind, content } = sniffEntry(rel, raw);
     files.push({ path: rel, kind, content });
+  }
+  if (strict && (p !== cdEnd || seen !== count)) return { ok: false, files: [], error: 'ZIP 中央目录损坏或条目数不匹配' };
+  if (strict) for (const dir of directories) {
+    if (!files.some(f => f.path.startsWith(dir + '/')) && !directories.some(other => other !== dir && other.startsWith(dir + '/'))) files.push({ path: dir + '/.keep', kind: 'text', content: '' });
   }
   if (!files.length) return { ok: false, files: [], error: 'ZIP 里没有可解压的文件（可能加密或全是目录）' };
   return { ok: true, files };

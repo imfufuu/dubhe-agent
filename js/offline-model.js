@@ -378,8 +378,12 @@ async function createOfflineEngine() {
   });
   // 必须在 loadModel() 创建内部 proxy 时打补丁（见 guardWllamaProxy 注释）
   guardWllamaProxy(runtime);
-  // Wllama's compatibility worker can default to a CDN; this app keeps the runtime assets local.
-  runtime.setCompat(null);
+  // Use the bundled wasm32/Asyncify build when Memory64 or JSPI is unavailable.
+  // Explicit Firefox support avoids falling back to the incompatible wasm64 build.
+  runtime.setCompat({
+    worker: new URL(`../assets/vendor/wllama/wllama-compat-${WLLAMA_VERSION}.js`, import.meta.url).href,
+    wasm: new URL(`../assets/vendor/wllama/wllama-compat-${WLLAMA_VERSION}.wasm`, import.meta.url).href,
+  }, 'firefox_safari');
   return runtime;
 }
 

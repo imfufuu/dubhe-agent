@@ -164,3 +164,58 @@ test('project window: import files/folders wired, binary and duplicate files are
   const css = readFileSync(new URL('../css/styles.css', import.meta.url), 'utf8');
   assert.match(css, /\.pm-btn \{\n  display: inline-flex; align-items: center; gap: 6px; height: 36px;/);
 });
+
+test('workspace transfers reject collisions and descendant moves, and name same-folder copies safely', async () => {
+  const { planWorkspaceTransfer } = await import('../js/project-core.js');
+  const snap = { 'src/a.txt': 'a', 'src/sub/.keep': '', 'other/.keep': '', 'other/a.txt': 'existing' };
+  assert.equal(planWorkspaceTransfer(snap, 'src', 'src/sub').ok, false);
+  assert.equal(planWorkspaceTransfer(snap, 'src/a.txt', 'other').ok, false);
+  assert.equal(planWorkspaceTransfer(snap, 'src/a.txt', 'src', { copy: true }).target, 'src/a copy.txt');
+  assert.equal(planWorkspaceTransfer(snap, 'src', '', { copy: true }).target, 'src copy');
+  assert.equal(planWorkspaceTransfer(snap, 'src/a.txt', 'missing').ok, false);
+  assert.equal(planWorkspaceTransfer(snap, '../secret', 'other').ok, false);
+});
+
+test('strict ZIP extraction preserves binary and rejects unsafe or corrupt archives before writing', async () => {
+  const { createZip } = await import('../js/zip.js');
+  const { unpackZip } = await import('../js/unzip.js');
+  const data = new Uint8Array([0xff, 0xfe, 0xfd, 0x41]);
+  const good = new Uint8Array(await createZip([{ name: 'oddfile', bytes: data }]).arrayBuffer());
+  const result = await unpackZip(good, { strict: true });
+  assert.equal(result.ok, true);
+  assert.equal(result.files[0].content, 'data:application/octet-stream;base64,//79QQ==');
+  const unsafe = new Uint8Array(await createZip([{ name: 'ok.txt', bytes: data }, { name: '../evil', bytes: data }]).arrayBuffer());
+  assert.equal((await unpackZip(unsafe, { strict: true })).ok, false);
+  const corrupt = good.slice(); corrupt[30 + 'oddfile'.length] ^= 1;
+  assert.match((await unpackZip(corrupt, { strict: true })).error, /校验失败/);
+});
+
+test('project ZIP uses native DEFLATE when available and remains readable', async () => {
+  const { createCompressedZip } = await import('../js/zip.js');
+  const { unpackZip } = await import('../js/unzip.js');
+  const content = 'repeatable data '.repeat(2000);
+  const bytes = new Uint8Array(await (await createCompressedZip([{ name: 'file.txt', bytes: new TextEncoder().encode(content) }])).arrayBuffer());
+  if (typeof CompressionStream === 'function') assert.ok(bytes.length < content.length / 2);
+  const out = await unpackZip(bytes, { strict: true });
+  assert.equal(out.ok, true, out.error); assert.equal(out.files[0].content, content);
+});
+
+test('ZIP creation falls back to STORE when raw DEFLATE is unavailable', async () => {
+  const { createCompressedZip } = await import('../js/zip.js');
+  const { unpackZip } = await import('../js/unzip.js');
+  const saved = globalThis.CompressionStream;
+  try {
+    globalThis.CompressionStream = undefined;
+    const zip = await createCompressedZip([{ name: 'x.txt', bytes: new TextEncoder().encode('hello') }]);
+    const result = await unpackZip(new Uint8Array(await zip.arrayBuffer()), { strict: true });
+    assert.equal(result.ok, true); assert.equal(result.files[0].content, 'hello');
+  } finally { globalThis.CompressionStream = saved; }
+});
+
+test('strict ZIP extraction preserves empty directories with internal placeholders', async () => {
+  const { createZip } = await import('../js/zip.js');
+  const { unpackZip } = await import('../js/unzip.js');
+  const archive = createZip([{ name: 'parent/', bytes: new Uint8Array() }, { name: 'parent/empty/', bytes: new Uint8Array() }]);
+  const result = await unpackZip(new Uint8Array(await archive.arrayBuffer()), { strict: true });
+  assert.equal(result.ok, true); assert.deepEqual(result.files.map(f => f.path), ['parent/empty/.keep']);
+});

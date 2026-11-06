@@ -85,6 +85,15 @@ export function resolveVideoGenModel(id) {
   return videoGenModelSpec(id) ? id : DEFAULT_VIDEO_GEN_MODEL;
 }
 
+
+// Report only the selected family's configured variants; catalogue entries are not live availability checks.
+export function videoModelRuntimeDescription(id, { gatewayId = 'teamorouter' } = {}) {
+  const selected = videoGenModelSpec(resolveVideoGenModel(id));
+  if (gatewayId !== 'teamorouter') return `${selected.family}；当前网关未接通视频生成，没有可用变体。`;
+  const list = VIDEO_GEN_MODELS.filter(m => m.family === selected.family)
+    .map(m => `${m.id} (${m.label}；${m.seconds[0]}–${m.seconds[1]}秒；${m.resolutions.join('/')})`).join(', ');
+  return `${selected.family}；当前系列可选模型：${list}；generate_video 的 variant 可直接填写上述确切 ID，mode 选择生成模式；不得跨系列。目录不保证网关实时可用，实际以上游响应为准。`;
+}
 // 同族的图生视频变体（文生视频模型收到参考图时自动切换）
 export function imageVariantOf(id) {
   const spec = videoGenModelSpec(id);

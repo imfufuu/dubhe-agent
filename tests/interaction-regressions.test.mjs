@@ -122,11 +122,13 @@ test('project mode renames on blur and creates an empty file in the selected dir
   let instance;
   try {
     instance = openProjectMode({ store, agent });
-    const rename = document.querySelector('.pm-tree-row.file .pm-mini'); rename.click(); await Promise.resolve();
+    document.querySelector('.pm-tree-row.file').dispatchEvent(new dom.window.MouseEvent('contextmenu', { bubbles: true }));
+    document.querySelector('[data-action=rename]').click(); await Promise.resolve();
     const input = document.querySelector('.pm-input'); input.value = 'new.js'; input.dispatchEvent(new dom.window.Event('blur'));
     assert.ok(Object.hasOwn(store.state.files, 'src/new.js')); assert.equal(Object.hasOwn(store.state.files, 'src/old.js'), false);
     // The selected (empty) file is not confused with a directory.
-    document.querySelector('[aria-label="新建文件"], [aria-label="New file"]').click(); await Promise.resolve();
+    document.querySelector('.pm-tree-row.dir').dispatchEvent(new dom.window.MouseEvent('contextmenu', { bubbles: true }));
+    document.querySelector('[data-action=new-file]').click(); await Promise.resolve();
     const create = document.querySelector('.pm-tree-row.create .pm-input'); create.value = 'other.txt';
     create.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     assert.ok(Object.hasOwn(store.state.files, 'src/other.txt'));
@@ -197,4 +199,118 @@ test('share snapshot includes the saved choice summary, not live buttons', async
     assert.equal(result.querySelector('[data-choice-submit]'), null);
     assert.ok(result.querySelector('.choice-result'));
   } finally { globalThis.document = previous; dom.window.close(); }
+});
+
+test('project explorer context actions, drag, zip and unsaved dialogs preserve data', async () => {
+  const { openProjectMode } = await import('../js/project-mode.js');
+  const dom = new JSDOM('<body></body>', { url: 'https://example.com/', pretendToBeVisual: true });
+  const previous = { document: globalThis.document, window: globalThis.window, getComputedStyle: globalThis.getComputedStyle };
+  globalThis.document = dom.window.document; globalThis.window = dom.window; globalThis.getComputedStyle = dom.window.getComputedStyle;
+  dom.window.confirm = () => true;
+  const store = { state: { files: { 'a-empty/.keep': '', 'docs/file.txt': 'saved', 'target/.keep': '' } } };
+  const agent = { sandboxWrite(path, value) { store.state.files = { ...store.state.files, [path]: value }; }, sandboxRemove(path) { const next = { ...store.state.files }; delete next[path]; store.state.files = next; } };
+  let instance;
+  const row = path => [...document.querySelectorAll('.pm-tree-row')].find(el => el.getAttribute('data-path') === path);
+  const menu = (path, action) => { row(path).dispatchEvent(new dom.window.MouseEvent('contextmenu', { bubbles: true, clientX: 10, clientY: 10 })); const b = document.querySelector(`[data-action="${action}"]`); assert.ok(b, `${action} on ${path}`); b.click(); };
+  const wait = async condition => { for (let i = 0; i < 50 && !condition(); i++) await new Promise(r => setTimeout(r, 10)); assert.ok(condition()); };
+  try {
+    instance = openProjectMode({ store, agent });
+    assert.equal(document.querySelector('.pm-tab-name').textContent, 'file.txt', '.keep must never be opened as an editor tab');
+    assert.equal(document.querySelector('.pm-tree-row[title="a-empty/.keep"]'), null);
+    const editor = document.querySelector('.pm-text'); editor.value = 'unsaved'; editor.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+    assert.match(document.querySelector('.pm-st-dirty').textContent, /未保存|Unsaved/);
+    document.querySelector('.pm-tab .pm-mini').click();
+    assert.ok(document.querySelector('.pm-confirm'), 'closing a dirty tab asks to save, discard or cancel');
+    document.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await Promise.resolve();
+    assert.equal(document.querySelector('.pm-confirm'), null, 'Escape cancels only the active dialog');
+    assert.equal(editor.value, 'unsaved');
+    menu('docs/file.txt', 'copy'); menu('target', 'paste');
+    assert.equal(store.state.files['target/file.txt'], 'unsaved', 'copy includes the editor buffer');
+    menu('docs/file.txt', 'cut');
+    const source = row('docs/file.txt'), target = row('a-empty');
+    const dataTransfer = { setData() {}, effectAllowed: '', dropEffect: '' };
+    const drag = new dom.window.Event('dragstart', { bubbles: true }); Object.defineProperty(drag, 'dataTransfer', { value: dataTransfer }); source.dispatchEvent(drag);
+    const drop = new dom.window.Event('drop', { bubbles: true, cancelable: true }); Object.defineProperty(drop, 'dataTransfer', { value: dataTransfer }); target.dispatchEvent(drop);
+    assert.equal(store.state.files['a-empty/file.txt'], 'saved');
+    assert.equal(store.state.files['docs/file.txt'], undefined);
+    assert.equal(document.querySelector('.pm-tab-name').textContent, 'file.txt');
+    assert.equal(editor.value, 'unsaved', 'moving preserves the dirty tab');
+    document.querySelector('.pm-tab .pm-mini').click();
+    assert.ok(document.querySelector('.pm-confirm'));
+    document.querySelector('.pm-confirm .pm-btn.primary').click(); await Promise.resolve();
+    assert.equal(store.state.files['a-empty/file.txt'], 'unsaved', 'save uses the moved path');
+    menu('a-empty/file.txt', 'compress');
+    await wait(() => !!store.state.files['a-empty/file.txt.zip']);
+    // An existing folder must never be overwritten; extraction is into a separate folder.
+    agent.sandboxRemove('a-empty/file.txt');
+    await new Promise(r => setTimeout(r, 950));
+    menu('a-empty/file.txt.zip', 'extract');
+    await wait(() => store.state.files['a-empty/file.txt/file.txt'] === 'unsaved');
+    const old = { ...store.state.files };
+    menu('a-empty/file.txt.zip', 'extract'); await new Promise(r => setTimeout(r, 20));
+    assert.deepEqual(store.state.files, old, 'existing extraction destination is not overwritten');
+    // Touch long-press opens the same menu.
+    const touch = new dom.window.Event('pointerdown', { bubbles: true });
+    Object.defineProperties(touch, { pointerType: { value: 'touch' }, clientX: { value: 5 }, clientY: { value: 5 } });
+    row('target').dispatchEvent(touch); await new Promise(r => setTimeout(r, 590));
+    assert.ok(document.querySelector('[data-action="paste"]'), 'long press opens the folder menu');
+  } finally { if (instance) { const pending = instance.close(); document.querySelector('.pm-confirm-acts button:nth-child(2)')?.click(); await pending; } dom.window.close(); Object.assign(globalThis, previous); }
+});
+
+test('empty project never opens its internal folder placeholder', async () => {
+  const { openProjectMode } = await import('../js/project-mode.js');
+  const dom = new JSDOM('<body></body>', { url: 'https://example.com/' });
+  const previous = { document: globalThis.document, window: globalThis.window, getComputedStyle: globalThis.getComputedStyle };
+  globalThis.document = dom.window.document; globalThis.window = dom.window; globalThis.getComputedStyle = dom.window.getComputedStyle;
+  const store = { state: { files: { 'empty/.keep': '' } } };
+  const agent = { sandboxWrite() {}, sandboxRemove() {} };
+  let instance;
+  try { instance = openProjectMode({ store, agent }); assert.equal(document.querySelector('.pm-tab'), null); assert.equal(document.querySelector('.pm-text').hidden, true); }
+  finally { await instance?.close(); dom.window.close(); Object.assign(globalThis, previous); }
+});
+
+test('failed move retains destination backups if restoring removed source fails', async () => {
+  const { openProjectMode } = await import('../js/project-mode.js');
+  const dom = new JSDOM('<body></body>', { url: 'https://example.com/' });
+  const previous = { document: globalThis.document, window: globalThis.window, getComputedStyle: globalThis.getComputedStyle };
+  globalThis.document = dom.window.document; globalThis.window = dom.window; globalThis.getComputedStyle = dom.window.getComputedStyle;
+  const store = { state: { files: { 'src/a.txt': 'a', 'src/b.txt': 'b', 'dest/.keep': '' } } }; let failRestore = false;
+  const agent = {
+    sandboxWrite(path, value) { if (failRestore && path === 'src/a.txt') throw new Error('restore failed'); store.state.files = { ...store.state.files, [path]: value }; },
+    sandboxRemove(path) { if (path === 'src/b.txt') { failRestore = true; throw new Error('delete failed'); } const next = { ...store.state.files }; delete next[path]; store.state.files = next; },
+  };
+  let instance;
+  const menu = (path, action) => { const row = [...document.querySelectorAll('.pm-tree-row')].find(el => el.dataset.path === path); row.dispatchEvent(new dom.window.MouseEvent('contextmenu', { bubbles: true })); document.querySelector(`[data-action="${action}"]`).click(); };
+  try {
+    instance = openProjectMode({ store, agent });
+    menu('src', 'cut'); menu('dest', 'paste'); await Promise.resolve();
+    assert.equal(store.state.files['dest/src/a.txt'], 'a', 'the remaining copy survives a failed source restoration');
+    assert.equal(store.state.files['dest/src/b.txt'], 'b');
+    assert.equal(store.state.files['src/b.txt'], 'b');
+    assert.match(document.querySelector('.pm-st-msg').textContent, /回滚不完整|rollback was incomplete/);
+  } finally { if (instance) { const pending = instance.close(); document.querySelector('.pm-confirm-acts button:nth-child(2)')?.click(); await pending; } dom.window.close(); Object.assign(globalThis, previous); }
+});
+
+test('dirty deletion asks for confirmation and closing project can cancel or discard', async () => {
+  const { openProjectMode } = await import('../js/project-mode.js');
+  const dom = new JSDOM('<body></body>', { url: 'https://example.com/' });
+  const previous = { document: globalThis.document, window: globalThis.window, getComputedStyle: globalThis.getComputedStyle };
+  globalThis.document = dom.window.document; globalThis.window = dom.window; globalThis.getComputedStyle = dom.window.getComputedStyle;
+  dom.window.confirm = () => false;
+  const store = { state: { files: { 'docs/file.txt': 'old' } } };
+  const agent = { sandboxWrite(path, value) { store.state.files = { ...store.state.files, [path]: value }; }, sandboxRemove(path) { delete store.state.files[path]; } };
+  let instance;
+  try {
+    instance = openProjectMode({ store, agent });
+    const editor = document.querySelector('.pm-text'); editor.value = 'dirty'; editor.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+    const unload = new dom.window.Event('beforeunload', { cancelable: true }); dom.window.dispatchEvent(unload); assert.equal(unload.defaultPrevented, true, 'navigation warns about unsaved changes');
+    document.querySelector('[data-path="docs/file.txt"]').dispatchEvent(new dom.window.MouseEvent('contextmenu', { bubbles: true }));
+    document.querySelector('[data-action="delete"]').click();
+    assert.equal(store.state.files['docs/file.txt'], 'old'); assert.equal(editor.value, 'dirty');
+    const close1 = instance.close(); document.querySelector('.pm-confirm-acts button').click(); await close1;
+    assert.ok(document.querySelector('.pm-root')); assert.equal(editor.value, 'dirty');
+    const close2 = instance.close(); document.querySelector('.pm-confirm-acts button:nth-child(2)').click(); await close2;
+    assert.ok(document.querySelector('.pm-root.pm-leaving')); assert.equal(store.state.files['docs/file.txt'], 'old');
+    instance = null;
+  } finally { if (instance) { const pending = instance.close(); document.querySelector('.pm-confirm-acts button:nth-child(2)')?.click(); await pending; } dom.window.close(); Object.assign(globalThis, previous); }
 });

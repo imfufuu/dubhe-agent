@@ -87,6 +87,28 @@ const enc = (s) => new TextEncoder().encode(s);
  * @returns {Blob}
  */
 export function createZip(entries = []) {
+  return buildZip(entries.map(e => ({ ...e, packed: null })));
+}
+
+// Use native raw DEFLATE where supported; store already-compressed or unsupported data unchanged.
+export async function createCompressedZip(entries = []) {
+  const prepared = [];
+  for (const entry of entries) {
+    const bytes = entry.bytes || new Uint8Array(0);
+    let packed = null;
+    if (bytes.length && typeof CompressionStream === 'function') {
+      try {
+        const stream = new Blob([bytes]).stream().pipeThrough(new CompressionStream('deflate-raw'));
+        const compressed = new Uint8Array(await new Response(stream).arrayBuffer());
+        if (compressed.length < bytes.length) packed = compressed;
+      } catch { /* Browsers without raw DEFLATE fall back to ZIP STORE. */ }
+    }
+    prepared.push({ ...entry, bytes, packed });
+  }
+  return buildZip(prepared);
+}
+
+function buildZip(entries) {
   const chunks = [];
   const central = [];
   let offset = 0;
@@ -98,24 +120,25 @@ export function createZip(entries = []) {
     const nameBytes = enc(String(e.name).replace(/^\/+/, '').replace(/\\/g, '/'));
     const bytes = e.bytes || new Uint8Array(0);
     const crc = crc32(bytes);
+    const data = e.packed || bytes, method = e.packed ? 8 : 0;
     const { date, time } = dosDateTime(e.date || new Date());
 
     // Local File Header（30B + 名称）
     dv.setUint32(0, 0x04034b50, true);
     dv.setUint16(4, 20, true);          // version needed
     dv.setUint16(6, 0x0800, true);      // flags: UTF-8 文件名
-    dv.setUint16(8, 0, true);            // method: store
+    dv.setUint16(8, method, true);       // STORE or DEFLATE
     dv.setUint16(10, time, true);
     dv.setUint16(12, date, true);
     dv.setUint32(14, crc, true);
-    dv.setUint32(18, bytes.length, true); // compressed size
+    dv.setUint32(18, data.length, true);  // compressed size
     dv.setUint32(22, bytes.length, true); // uncompressed size
     dv.setUint16(26, nameBytes.length, true);
     dv.setUint16(28, 0, true);            // extra len
     const localHeaderOffset = offset;
     push(new Uint8Array(dv.buffer.slice(0, 30)));
     push(nameBytes);
-    push(bytes);
+    push(data);
 
     // Central Directory 记录（46B + 名称）
     const cd = new DataView(new ArrayBuffer(46));
@@ -123,11 +146,11 @@ export function createZip(entries = []) {
     cd.setUint16(4, 20, true);           // version made by
     cd.setUint16(6, 20, true);           // version needed
     cd.setUint16(8, 0x0800, true);       // flags: UTF-8
-    cd.setUint16(10, 0, true);           // method: store
+    cd.setUint16(10, method, true);      // STORE or DEFLATE
     cd.setUint16(12, time, true);
     cd.setUint16(14, date, true);
     cd.setUint32(16, crc, true);
-    cd.setUint32(20, bytes.length, true);
+    cd.setUint32(20, data.length, true);
     cd.setUint32(24, bytes.length, true);
     cd.setUint16(28, nameBytes.length, true);
     cd.setUint16(30, 0, true);           // extra

@@ -3520,7 +3520,7 @@ html[data-motion="off"] .pm-progress.indeterminate .pm-prog-fill { animation: no
 @keyframes pmSweep { from { transform: translateX(-110%); } to { transform: translateX(300%); } }
 
 @media (max-width: 900px) { .pm-ai { width: 260px; flex-basis: 260px; } }
-@media (max-width: 720px) { .pm-explorer { width: 170px; flex-basis: 170px; } .pm-ai { display: none; } .pm-status { display: none; } }
+@media (max-width: 720px) { .pm-explorer { width: 170px; flex-basis: 170px; } .pm-ai { display: none; } .pm-status { min-height: 28px; height: auto; gap: 6px; overflow-wrap: anywhere; } .pm-status .pm-st-lang, .pm-status .pm-st-pos, .pm-status .pm-spacer { display: none; } }
 @media (prefers-reduced-motion: reduce) {
   html:not([data-motion="on"]) .pm-root, html:not([data-motion="on"]) .pm-ai, html:not([data-motion="on"]) .pm-out, html:not([data-motion="on"]) .pm-empty, html:not([data-motion="on"]) .pm-st-msg, html:not([data-motion="on"]) .pm-tree-row.create, html:not([data-motion="on"]) .pm-ai-status.busy { animation: none !important; }
   html:not([data-motion="on"]) .pm-progress.indeterminate .pm-prog-fill { animation: none !important; }
@@ -3589,6 +3589,9 @@ html[data-motion="off"] .pm-progress.indeterminate .pm-prog-fill { animation: no
 .pm-out-body, .pm-out-body * { user-select: text; -webkit-user-select: text; }
 .md-body button, .md-body button * { user-select: none; -webkit-user-select: none; }
 
-.image-family-details { margin-top: 6px; color: var(--fg-2); font-size: 12px; }
-.image-family-details summary { cursor: pointer; }
-.image-family-details ul { padding-left: 18px; margin: 6px 0 0; overflow-wrap: anywhere; }
+
+/* 项目资源管理器的跨设备文件操作菜单 */
+.pm-context-menu { position: fixed; z-index: 10005; min-width: 190px; max-height: min(80vh, 520px); overflow: auto; padding: 5px; border: 1px solid var(--conversation-line); border-radius: 10px; background: var(--conversation-card, var(--bg)); color: var(--fg); box-shadow: 0 10px 32px #0004; }
+.pm-context-menu button { display: block; width: 100%; border: 0; border-radius: 6px; padding: 9px 12px; text-align: left; color: inherit; background: transparent; font: inherit; cursor: pointer; }
+.pm-context-menu button:hover, .pm-context-menu button:focus-visible { background: var(--conversation-card-hover, var(--bg-hover)); outline: none; }
+.pm-context-menu button:disabled { opacity: .4; cursor: default; }

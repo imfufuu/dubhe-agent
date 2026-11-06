@@ -148,3 +148,25 @@ export function parentDir(path) {
 export function explorerRows(entries, collapsed = new Set()) {
   return flattenTree(buildFileTree(entries), { isCollapsed: (p) => collapsed.has(p) });
 }
+
+/** Plan a workspace copy/move without overwriting or writing through a file. */
+export function planWorkspaceTransfer(files, source, destination, { copy = false } = {}) {
+  const snap = files || {};
+  const from = String(source || ''), dir = String(destination || '').replace(/\/$/, '');
+  if (!isWorkspacePath(from) || (dir && !isWorkspacePath(dir))) return { ok: false, error: '非法路径' };
+  const paths = Object.keys(snap).filter(p => p === from || p.startsWith(from + '/'));
+  if (!paths.length) return { ok: false, error: '源文件不存在' };
+  if (dir === from || dir.startsWith(from + '/')) return { ok: false, error: '不能移动或复制到自身或子目录' };
+  if (dir && !Object.keys(snap).some(p => p.startsWith(dir + '/'))) return { ok: false, error: '目标目录不存在' };
+  const base = from.split('/').pop();
+  let target = joinPath(dir, base);
+  if (!copy && target === from) return { ok: false, error: '源和目标相同' };
+  const conflicts = (root) => Object.keys(snap).some(p => p === root || p.startsWith(root + '/') || root.startsWith(p + '/'));
+  if (copy && target === from) {
+    const dot = base.lastIndexOf('.'), stem = dot > 0 ? base.slice(0, dot) : base, ext = dot > 0 ? base.slice(dot) : '';
+    let n = 1;
+    do { target = joinPath(dir, `${stem} copy${n === 1 ? '' : ' ' + n}${ext}`); n++; } while (conflicts(target) && n < 10000);
+  }
+  if (!isWorkspacePath(target) || conflicts(target)) return { ok: false, error: '目标已存在或路径不可用' };
+  return { ok: true, from, target, paths, entries: paths.map(path => ({ from: path, to: target + path.slice(from.length), value: snap[path] })) };
+}

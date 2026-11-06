@@ -70,7 +70,7 @@ function corePath(path) {
     || /^(?:index|app|docs)\.html$/.test(path) || /^demo\/.*\.(?:html|css)$/.test(path)
     || /^assets\/(?:md|hljs|katex)\/.*\.(?:js|css)$/.test(path)
     || /^assets\/(?:skills\/.*\.(?:json|md)|knowledge\/index\.json)$/.test(path)
-    || /^assets\/vendor\/wllama\/wllama-3\.8\.1\.(?:js|wasm)$/.test(path)
+    || /^assets\/vendor\/wllama\/wllama-(?:compat-)?3\.8\.1\.(?:js|wasm)$/.test(path)
     || /^assets\/vendor\/office\/[^/]+\.js$/.test(path)
     || /^assets\/icons\/[^/]+\.svg$/i.test(path) || /^assets\/app-icon-\d+\.png$/i.test(path)
     || /^assets\/katex\/fonts\/.*\.(?:woff2?|ttf|otf)$/i.test(path)
