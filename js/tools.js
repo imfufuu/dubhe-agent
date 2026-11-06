@@ -12,7 +12,7 @@ import { CODE_TOOL_NAMES as REG_CODE_TOOL_NAMES, LEGACY_TOOL_ALIASES as REG_LEGA
 import { runJavaScript, runPython, runCpp, runCppRemote, pythonAvailable, persistenceNote, isSafeFsPath, contentByteSize } from './sandbox.js';
 import { SANDBOX_STORAGE_CAP } from './storagefmt.js';
 import { generateImage, editImage, bytesToDataUrl, dataUrlToBytes, sniffImage, createVideoJob, quoteVideoJob, getVideoJob, fetchVideoContent } from './api.js?v=2026.10.25.1';
-import { VIDEO_GEN_ASPECT_RATIOS, pickVideoExtras, planVideoRequest, buildVideoBody, buildVideoQuoteBody, videoJobState, videoJobError, resolveVideoGenModel, VIDEO_POLL_INTERVAL_MS, VIDEO_MAX_WAIT_MS, VIDEO_SANDBOX_MAX_BYTES } from './video-gen.js';
+import { VIDEO_GEN_ASPECT_RATIOS, pickVideoExtras, planVideoRequest, buildVideoBody, buildVideoQuoteBody, videoJobState, videoJobError, resolveVideoGenModel, videoGenModelSpec, VIDEO_POLL_INTERVAL_MS, VIDEO_MAX_WAIT_MS, VIDEO_SANDBOX_MAX_BYTES } from './video-gen.js';
 import { analyzeImage, analyzeVideo, analyzeAudio, VISION_TOOL_MODEL, VIDEO_TOOL_MODEL } from './vision.js';
 import { sanitizeSvgMarkup, svgSourceFromValue, svgDataUrl, extractSvgText } from './svg-safety.js';
 import { pdfToImages, pdfExtractText } from './pdfpages.js';
@@ -173,7 +173,7 @@ export const TOOL_DEFS = [
   {
     name: 'generate_video',
     description:
-      '调用视频生成模型生成短视频（TeamoRouter /v1/videos）。不要传 model：一律用用户在设置里选定的视频生成模型。' +
+      '调用视频生成模型生成短视频（TeamoRouter /v1/videos）。只能使用用户选定的系列；可用 variant 指定系统提示词中列出的系列内确切模型 ID。' +
       '模式由 mode 选择：text 文生（只给 prompt）、image 图生、reference 参考图生视频（均需 input_image，沙箱内图片路径，如 uploads/x.png）。' +
       '不传 mode 时：有 input_image 则图生，否则文生；mode=text 却给了 input_image 时按图生处理。' +
       '生成通常需要数分钟，上限 15 分钟，且按网关计费：开始前先告诉用户大致耗时与费用，只在用户明确要求生成视频时调用。' +
@@ -182,6 +182,7 @@ export const TOOL_DEFS = [
       type: 'object',
       properties: {
         prompt: { type: 'string', description: '画面、动作、镜头与风格描述' },
+        variant: { type: 'string', description: '可选：当前选中视频系列内的确切模型 ID；不得选择其他系列' },
         mode: { type: 'string', enum: ['text', 'image', 'reference'], description: '生成模式：text 文生 / image 图生 / reference 参考图生视频；不传则自动判断' },
         input_image: { type: 'string', description: '可选：沙箱内参考图路径（image / reference 模式必填）' },
         seconds: { type: 'integer', minimum: 4, maximum: 30, description: '时长（秒）。各模型范围不同：Seedance 2.5 为 4–30，其余多为 4–15；默认 5' },
@@ -1718,8 +1719,13 @@ async function executeToolBody(outerName, outerArgs, ctx) {
           return `视频调用在发起前失败：${message}`;
         }
         const videoExtras = extraPick.extras;
+        const selectedVideo = resolveVideoGenModel(ctx.videoGenModel);
+        const requestedVideo = String(args.variant || '').trim();
+        if (requestedVideo && (!videoGenModelSpec(requestedVideo) || videoGenModelSpec(requestedVideo).family !== videoGenModelSpec(selectedVideo).family)) {
+          return '视频调用在发起前失败：指定的变体不属于当前选定的视频系列。';
+        }
         const plan = planVideoRequest({
-          model: resolveVideoGenModel(ctx.videoGenModel), mode: args.mode,
+          model: requestedVideo || selectedVideo, mode: args.mode,
           prompt, seconds: args.seconds, resolution: args.resolution, aspectRatio: args.aspect_ratio,
           hasImage: !!imageDataUrl, negativePrompt: args.negative_prompt,
         });
@@ -1727,6 +1733,7 @@ async function executeToolBody(outerName, outerArgs, ctx) {
           emit({ status: 'error', error: { message: plan.error } });
           return `视频调用在发起前失败：${plan.error}`;
         }
+        if (requestedVideo && plan.model !== requestedVideo) return '视频调用在发起前失败：指定变体与 mode 或参考图不匹配，请选择该模式的同系列变体。';
         // 显式 size（WIDTHxHEIGHT）优先于由分辨率 + 比例推出的尺寸；格式不符时忽略
         if (typeof args.size === 'string' && /^\d{3,4}x\d{3,4}$/i.test(args.size.trim())) plan.size = args.size.trim().toLowerCase();
         const common = { apiKey: ctx.apiKey, signal: ctx.signal, ...gatewayRequestContext(ctx) };

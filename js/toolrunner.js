@@ -106,7 +106,9 @@ export function toolAccessSet(call) {
       return { reads, writes: [`internal/ocr/${base}.ocr.md`] };
     }
     case 'analyze_audio': case 'analyze_video': return { reads: a.path ? strList(a.path) : [ACCESS_ANY], writes: [] };
-    case 'curl': return { reads: [], writes: [] };
+    // HTTP calls can mutate remote state even for GET. Preserve model order among
+    // them rather than concurrently issuing potentially dependent external requests.
+    case 'curl': return { reads: [], writes: ['@external-http'] };
     case 'fetch_url': return { reads: [], writes: strList(a.save_path) };
     case 'browser_sandbox': return { reads: [ACCESS_ANY], writes: [ACCESS_ANY] };
     case 'run_shell': return { reads: [ACCESS_ANY], writes: [ACCESS_ANY] };

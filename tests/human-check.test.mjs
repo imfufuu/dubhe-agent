@@ -256,3 +256,68 @@ test('a reset invalidates older in-flight relay probes and prevents stale state 
     assert.equal(currentRelay().label, 'origin');
   } finally { globalThis.fetch = realFetch; resetRelayProbe(); }
 });
+
+test('autonomous scheduler preserves order of potentially stateful HTTP requests', async () => {
+  const { planToolWaves } = await import('../js/toolrunner.js');
+  const calls = [
+    { name: 'curl', args: { url: 'https://example.test/a', method: 'POST' } },
+    { name: 'curl', args: { url: 'https://example.test/b', method: 'GET' } },
+    { name: 'write_file', args: { path: 'out.txt', content: 'x' } },
+  ];
+  const waves = planToolWaves(calls);
+  assert.ok(waves.findIndex(w => w.indices.includes(0)) < waves.findIndex(w => w.indices.includes(1)));
+  assert.ok(waves.some(w => w.indices.includes(2)), 'independent local work remains schedulable');
+});
+
+test('specialist loop rejects hallucinated tools before execution, including confirmation-gated curl', async () => {
+  const { runSubagent } = await import('../js/agent.js');
+  const { createFS } = await import('../js/sandbox.js');
+  const original = globalThis.fetch, requests = [];
+  const frame = obj => `data: ${JSON.stringify(obj)}\n\n`;
+  globalThis.fetch = async (url, init) => {
+    assert.match(String(url), /chat\/completions/, 'no direct network or curl execution');
+    requests.push(JSON.parse(init.body));
+    const content = requests.length === 1
+      ? frame({ choices: [{ delta: { tool_calls: [
+        { index: 0, id: 'bad-1', function: { name: 'write_file', arguments: '{"path":"stolen.txt","content":"x"}' } },
+        { index: 1, id: 'bad-2', function: { name: 'curl', arguments: '{"url":"https://example.test/"}' } },
+      ] } }] }) + frame({ choices: [{ delta: {}, finish_reason: 'tool_calls' }] })
+      : frame({ choices: [{ delta: { content: 'Blocked' }, finish_reason: 'stop' }] });
+    return new Response(content + 'data: [DONE]\n\n', { headers: { 'content-type': 'text/event-stream' } });
+  };
+  try {
+    const fs = createFS();
+    await runSubagent({ id: 'test', name: 'Test', tag: 'Test', tools: [], prompt: 'Test' }, 'Test', { apiKey: 'test', model: 'gpt-5.6-sol', fs, sandboxEnabled: true, signal: new AbortController().signal });
+    assert.equal(requests.length, 2);
+    assert.equal(fs.list().some(f => f.path === 'stolen.txt'), false);
+    const messages = requests[1].messages.filter(m => m.role === 'tool');
+    assert.equal(messages.length, 2);
+    assert.ok(messages.every(m => /specialist-tool-not-authorized/.test(m.content)));
+  } finally { globalThis.fetch = original; }
+});
+
+test('specialist cannot bypass risk confirmation for an allowed tool or be given curl directly', async () => {
+  const { runSubagent, subagentTools } = await import('../js/agent.js');
+  const { createFS } = await import('../js/sandbox.js');
+  const def = { id: 'test', name: 'Test', tag: 'Test', tools: ['write_file', 'curl'], prompt: 'Test' };
+  assert.ok(!subagentTools(true, def).some(t => t.name === 'curl'));
+  const original = globalThis.fetch, requests = [];
+  const frame = obj => `data: ${JSON.stringify(obj)}\n\n`;
+  globalThis.fetch = async (_url, init) => {
+    requests.push(JSON.parse(init.body));
+    const response = requests.length === 1
+      ? frame({ choices: [{ delta: { tool_calls: [
+        { index: 0, id: 'c1', function: { name: 'write_file', arguments: '{"path":"uploads/original.txt","content":"changed"}' } },
+        { index: 1, id: 'c2', function: { name: 'write_file', arguments: '{"path":"outputs/new.txt","content":"new"}' } },
+      ] } }] }) + frame({ choices: [{ delta: {}, finish_reason: 'tool_calls' }] })
+      : frame({ choices: [{ delta: { content: 'Done' }, finish_reason: 'stop' }] });
+    return new Response(response + 'data: [DONE]\n\n', { headers: { 'content-type': 'text/event-stream' } });
+  };
+  try {
+    const fs = createFS({ 'uploads/original.txt': 'original' });
+    await runSubagent(def, 'work', { apiKey: 'test', model: 'gpt-5.6-sol', fs, sandboxEnabled: true, signal: new AbortController().signal });
+    assert.equal(fs.read('uploads/original.txt'), 'original');
+    assert.equal(fs.read('outputs/new.txt'), 'new');
+    assert.match(requests[1].messages.find(m => m.role === 'tool' && m.tool_call_id === 'c1').content, /CONFIRMATION_REQUIRED/);
+  } finally { globalThis.fetch = original; }
+});

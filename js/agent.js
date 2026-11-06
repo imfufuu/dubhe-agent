@@ -1,3 +1,4 @@
+import { videoModelRuntimeDescription } from './video-gen.js';
 import { prepareTurnAttachments } from './turn-input.js';
 import { publicTaskPlan } from './publicplan.js';
 import { feedbackPrompt } from './feedback.js';
@@ -94,6 +95,7 @@ import {
   finalizeExecutionTurn,
   summarizeExecutionRecord,
   createConfirmationGate,
+  classifyToolRisk,
   GUARD_MODES,
 } from './execution.js?v=2026.10.25.1';
 // ─── P1（Dubhe Helix 2.5）：执行检查点与恢复 / 幂等账本 / 记忆生命周期 / 轨迹级评测 ───
@@ -212,7 +214,7 @@ export function subagentTools(sandboxEnabled, def, { localCpp = true } = {}) {
   // 但读写文件之类不执行任意代码的工具仍应留给子智能体（旧写法直接给了 null，
   // 等于一关沙箱就把所有子智能体退化成纯推理）。
   const allow = new Set(toolsFor(sandboxEnabled, { localCpp }).map((t) => t.name));
-  const list = TOOL_DEFS.filter((t) => (t.name === 'knowledge_search' || t.name === 'skill_library' || def.tools.includes(t.name)) && t.name !== 'dispatch_subagent' && allow.has(t.name));
+  const list = TOOL_DEFS.filter((t) => (t.name === 'knowledge_search' || t.name === 'skill_library' || def.tools.includes(t.name)) && t.name !== 'dispatch_subagent' && allow.has(t.name) && !classifyToolRisk({ name: t.name }).requiresConfirmation);
   return list.length ? list : null;
 }
 
@@ -220,6 +222,9 @@ export async function runSubagent(def, task, { apiKey, gatewayId = 'teamorouter'
   const offlineOnly = isNetworkOffline() || isOfflineModelId(model);
   const availableSubTools = subagentTools(sandboxEnabled, def, { localCpp });
   const subTools = offlineOnly ? (availableSubTools || []).filter((tool) => isOfflineToolAllowed(tool.name)) : availableSubTools;
+  // A model can hallucinate tools not present in its table; never execute those
+  // directly in the specialist loop (which does not run the parent approval gate).
+  const allowedSubTools = new Set((subTools || []).map(tool => tool.name));
   const memBlock = formatMemory(memory);
   const messages = [
     { role: 'system', text: `${specialistPrompt(def)}\n\n${getLanguage() === 'en' ? `You are ${def.tag}, a Dubhe Agent specialist. Give a final report without small talk. Current time: ${new Date().toISOString()}` : `你是 Dubhe Agent 体系中的「${def.name}」子智能体。直接产出最终报告，不要寒暄。当前时间：${new Date().toISOString()}`}${memBlock ? `\n\n${memBlock}` : ''}\n\n${compactOutputSpec()}` },
@@ -278,8 +283,19 @@ export async function runSubagent(def, task, { apiKey, gatewayId = 'teamorouter'
     const blocks = tb.blocks();
     messages.push({ role: 'assistant', text, toolCalls: calls, ...(blocks.length ? { thinkingBlocks: blocks } : {}) });
     for (const c of calls) {
-      // imageModel 要透传：否则子智能体出图会绕开用户在模型菜单里选定的生图模型
-      const res = await executeTool(c.name, c.args, { fs, onUi: () => {}, apiKey, model, gatewayId, gatewayBaseUrl, imageModel: imageModel || null, videoGenModel: videoGenModel || null, visionModel: visionModel || null, videoModel: videoModel || null, audioModel: audioModel || null, sandboxEnabled, localCpp, cppMode, signal });
+      if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+      let res;
+      if (!allowedSubTools.has(c.name)) {
+        res = JSON.stringify({ code: 'TOOL_UNAVAILABLE', tool: c.name, retryable: false, reason: 'specialist-tool-not-authorized' });
+      } else if (c.args && typeof c.args === 'object' && '__raw' in c.args) {
+        res = JSON.stringify({ code: 'INVALID_TOOL_ARGUMENTS', tool: c.name, retryable: true, reason: 'invalid-json' });
+      } else if (classifyToolRisk({ name: c.name, args: c.args, fs }).requiresConfirmation) {
+        // The parent owns the user confirmation gate; a specialist cannot bypass it.
+        res = JSON.stringify({ code: 'CONFIRMATION_REQUIRED', tool: c.name, retryable: false, reason: 'ask-parent-to-run-with-approval' });
+      } else {
+        // The selected models and capability switches remain locked to the parent turn.
+        res = await executeTool(c.name, c.args, { fs, onUi: () => {}, apiKey, model, gatewayId, gatewayBaseUrl, imageModel: imageModel || null, videoGenModel: videoGenModel || null, visionModel: visionModel || null, videoModel: videoModel || null, audioModel: audioModel || null, sandboxEnabled, localCpp, cppMode, signal });
+      }
       messages.push({ role: 'tool', toolCallId: c.id, name: c.name, content: res });
     }
   }
@@ -331,6 +347,7 @@ export function createAgent(store, hooks = {}) {
   let cachedPrefix = null;
   let turnImageSelection = DEFAULT_IMAGE_MODEL;
   let turnGateway = DEFAULT_GATEWAY_ID;
+  let turnVideoSelection = null;
   // P1：本轮的记忆注入计划（哪些进提示词、哪些因冲突/被取代不采用）。
   // 与 cachedPrefix 同生命周期——即使走快速通道没有 nexusState，也不让被拒记忆漏进提示词。
   let turnMemoryPlan = null;
@@ -391,7 +408,7 @@ export function createAgent(store, hooks = {}) {
       const wsCtx = discoverWorkspaceContext(fs);
       const subGuide = subagentGuide({ allow: canDispatch, ultra: canDispatch && lv === 'ultra' });
       cachedPrefix = assembleSystemLayers({
-        identity: systemPrompt(new Date(), { webEnabled: webOn, allowDispatch: canDispatch, reasoningLevel: lv, imageModel: imageModelRuntimeDescription(turnImageSelection, { gatewayId: turnGateway }) }),
+        identity: systemPrompt(new Date(), { webEnabled: webOn, allowDispatch: canDispatch, reasoningLevel: lv, imageModel: imageModelRuntimeDescription(turnImageSelection, { gatewayId: turnGateway }), videoGenModel: videoModelRuntimeDescription(turnVideoSelection, { gatewayId: turnGateway }) }),
         skillsIndex: formatSkillsIndex(store.state.learnedSkills),
         contextFiles: [subGuide, wsCtx].filter(Boolean).join('\n\n'),
       }).cached;
@@ -727,7 +744,8 @@ export function createAgent(store, hooks = {}) {
       finalAnswerText = ''; // 累积最终回答文本，用于 commit 判断
       cachedPrefix = null;
       turnImageSelection = turn.imageModel;
-      turnGateway = turn.gatewayId;
+      turnGateway = offlineOnly ? 'offline' : turn.gatewayId;
+      turnVideoSelection = turn.videoGenModel;
       turnMemoryPlan = null;
       // Jev 只在本轮开头跑一次（工具循环里不再打），失败则 jevNote 为空、对话照常。
       jevNote = '';

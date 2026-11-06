@@ -11,7 +11,7 @@ Dubhe Agent 本体以 MIT 许可发布（见 [LICENSE](./LICENSE)）。
 | [markdown-it](https://github.com/markdown-it/markdown-it) | 14.3.2 | MIT | Markdown 渲染（`assets/md/markdown-it.min.js`） |
 | [KaTeX](https://katex.org/) | 0.16.21 | MIT | LaTeX 公式渲染（`assets/katex/`，含其 OFL/MIT 双许可字体） |
 | [ONNX Runtime Web](https://github.com/microsoft/onnxruntime) | 1.30.0 | MIT | 浏览器本地 NudeNet 图片审核运行时（`assets/vendor/ort.min.js`、`ort-wasm-simd-threaded.mjs/.wasm`） |
-| [Wllama](https://github.com/ngxson/wllama) | 3.8.1 | MIT（随包 `assets/vendor/wllama/LICENSE`） | 浏览器本地 GGUF 推理运行时（`assets/vendor/wllama/wllama-3.8.1.js/.wasm`）；运行时资源随仓库发行，不依赖 Wllama CDN |
+| [Wllama](https://github.com/ngxson/wllama) | 3.8.1 | MIT（随包 `assets/vendor/wllama/LICENSE`） | 浏览器本地 GGUF 推理运行时（`assets/vendor/wllama/wllama-3.8.1.js/.wasm`）；含同版本 @wllama/wllama-compat 的 wasm32/Asyncify 兼容构建；运行时资源随仓库发行，不依赖 Wllama CDN |
 | [Browsercc](https://github.com/BertalanD/browsercc) | 0.1.1 | MIT wrapper；bundled LLVM/WASI/Emscripten notices 见 `assets/vendor/cpp/` | 本地 C++20 编译器（Clang/LLD WASM、压缩 WASI sysroot） |
 | [browser_wasi_shim](https://github.com/bjorn3/browser_wasi_shim) | 0.4.2 | MIT OR Apache-2.0（两个许可文本均随包） | 在浏览器 Worker 内运行编译出的 WASI Preview 1 程序 |
 | [NudeNet](https://github.com/notAI-tech/nudenet) | 3.4.x model | 上游许可见项目 | 浏览器本地显式裸露检测模型（`assets/moderation/nudenet-320n/`） |
