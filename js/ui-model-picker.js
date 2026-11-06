@@ -13,7 +13,8 @@ import { isJevModel } from './jev.js';
 import { ICON, providerIcon } from './icons.js';
 import { LOCAL_PROVIDER_ICON_SVG } from './icons.js';
 import { ROUTER_ICON_SVG, isSmartRouter, SMART_ROUTER_LABEL, SMART_ROUTER_PROVIDER_LABEL } from './smartrouter.js?v=2026.10.25.1';
-import { fetchModels } from './api.js?v=2026.10.25.1';
+import { fetchModels, isCnUnavailableModel } from './api.js?v=2026.10.25.1';
+import { gatewayBase, GATEWAY_CN } from './endpoint.js';
 import { effectiveApiKey } from './adminkey.js';
 import { formatRate } from './pricing.js';
 import { USD_TO_CNY_RATE, USD_TO_CNY_RATE_DATE } from './currency.js';
@@ -88,6 +89,7 @@ export function installModelPicker({ store, agent, toast, getBusy, openKeyModal,
   function mergedModels() {
     if (isNetworkOffline()) return [localModelRecord()];
     const gatewayId = store.state.gatewayId || DEFAULT_GATEWAY_ID;
+    const cnBase = gatewayId === DEFAULT_GATEWAY_ID && gatewayBase() === GATEWAY_CN ? GATEWAY_CN : '';
     const presets = gatewayFallbackModels(gatewayId);
     const extraIds = gatewayId === 'custom' ? ((store.state.manualModelsByGateway || {})[gatewayId] || []) : [];
     const manualMeta = ((store.state.manualModelMetaByGateway || {})[gatewayId]) || {};
@@ -97,6 +99,9 @@ export function installModelPicker({ store, agent, toast, getBusy, openKeyModal,
       // A live first-party listing is an exact allowlist; otherwise use the checked-in documentation list.
       .filter(m => isModelForGateway(gatewayId, m.id, liveKnown ? (store.state.models || []) : null))
       .filter(m => !HIDDEN_MODELS.has(m.id) && !isImageModel(m.id) && !isJevModel(m.id))
+      // Only the TeamoRouter mainland endpoint has this restriction; direct and custom gateways are independent.
+      .filter(m => !isCnUnavailableModel(cnBase, m.id)
+        && !(cnBase && m.id.toLowerCase() === 'latest' && /^(?:Grok|xAI)$/i.test(m.provider || providerOf(m.id))))
       .map(m => {
         const customProvider = gatewayId === 'custom' && extraIds.includes(m.id);
         const meta = customProvider ? (manualMeta[m.id] || {}) : {};

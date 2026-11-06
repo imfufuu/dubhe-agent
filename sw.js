@@ -72,6 +72,7 @@ function corePath(path) {
     || /^assets\/(?:skills\/.*\.(?:json|md)|knowledge\/index\.json)$/.test(path)
     || /^assets\/vendor\/wllama\/wllama-(?:compat-)?3\.8\.1\.(?:js|wasm)$/.test(path)
     || /^assets\/vendor\/office\/[^/]+\.js$/.test(path)
+    || /^assets\/fonts-lazy\/(?:index\.css|babelstone\/flags(?:-pua)?\.(?:woff2|ttf))$/i.test(path)
     || /^assets\/icons\/[^/]+\.svg$/i.test(path) || /^assets\/app-icon-\d+\.png$/i.test(path)
     || /^assets\/katex\/fonts\/.*\.(?:woff2?|ttf|otf)$/i.test(path)
     || /^fonts\/.*\.(?:css|woff2?|ttf|otf)$/i.test(path);

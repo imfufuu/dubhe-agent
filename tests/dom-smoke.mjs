@@ -67,6 +67,7 @@ const { createStore } = await import(path.join(ROOT, 'js/state.js'));
 const { createAgent, copyAttachmentsToFS } = await import(path.join(ROOT, 'js/agent.js'));
 const { mountUI } = await import(path.join(ROOT, 'js/ui.js'));
 const { ROUTER_ICON_SVG } = await import(path.join(ROOT, 'js/smartrouter.js'));
+const { setGatewayBase, GATEWAY_CN, GATEWAY_GLOBAL } = await import(path.join(ROOT, 'js/endpoint.js'));
 const { createZip } = await import(path.join(ROOT, 'js/zip.js'));
 const { createXlsxWorkbook } = await import(path.join(ROOT, 'js/xlsx.js'));
 
@@ -127,6 +128,53 @@ ok('搜索后仅剩 DeepSeek 分组', $$('#model-menu .dd-group').length === 1 &
 ok('搜索后菜单末尾是分组而不是别的残留', $('#model-menu').lastElementChild.className.startsWith('dd-group'));
 $('#model-search').value = '';
 $('#model-search').dispatchEvent(new window.Event('input', { bubbles: true }));
+
+console.log('\n模型菜单按 TeamoRouter 接入点过滤');
+{
+  const saved = { gatewayId: store.state.gatewayId, models: store.state.models, fetchedAt: store.state.modelsFetchedAt };
+  setGatewayBase(GATEWAY_GLOBAL);
+  store.state.gatewayId = 'teamorouter';
+  store.state.models = ['claude-sonnet-5-5', 'openai/gpt-5.5', 'gemini-3.8-flash', 'grok-4.7', 'deepseek-v4-pro', 'qwen3.8-max'];
+  store.state.modelsFetchedAt = Date.now();
+  ui.syncGateway();
+  ok('.com 显示国外模型和国内模型', ['claude-sonnet-5-5', 'openai/gpt-5.5', 'gemini-3.8-flash', 'grok-4.7', 'deepseek-v4-pro'].every(id => ddItems().includes(id)), ddItems().join(','));
+  click($('#transport-badge'));
+  click($('#model-btn'));
+  ok('手动切换 .cn 后隐藏指定模型并保留其他模型', !ddItems().some(id => /^(?:[^/]+\/)?(?:claude|gpt|gemini|grok)/i.test(id)) && ddItems().includes('deepseek-v4-pro') && ddItems().includes('qwen3.8-max'), ddItems().join(','));
+  store.state.models = [];
+  store.state.modelsFetchedAt = 0;
+  ui.syncGateway();
+  ok('.cn 的本地兜底列表也过滤指定模型', !ddItems().some(id => /^(?:[^/]+\/)?(?:claude|gpt|gemini|grok)/i.test(id)) && ddItems().some(id => id.startsWith('deepseek')));
+  store.state.models = ['claude-sonnet-5-5', 'openai/gpt-5.5', 'gemini-3.8-flash', 'grok-4.7', 'deepseek-v4-pro', 'qwen3.8-max'];
+  store.state.modelsFetchedAt = Date.now();
+  ui.syncGateway();
+  $('#model-search').value = 'claude';
+  $('#model-search').dispatchEvent(new window.Event('input', { bubbles: true }));
+  ok('.cn 搜索也不能显示被隐藏的模型', ddItems().length === 0);
+  setGatewayBase(GATEWAY_GLOBAL, 'failover');
+  window.dispatchEvent(new window.CustomEvent('dubhe:endpoint-switched', { detail: { from: GATEWAY_CN, to: GATEWAY_GLOBAL } }));
+  ok('菜单打开时自动切换 .com 立即恢复搜索结果', ddItems().includes('claude-sonnet-5-5'));
+  setGatewayBase(GATEWAY_CN, 'failover');
+  window.dispatchEvent(new window.CustomEvent('dubhe:endpoint-switched', { detail: { from: GATEWAY_GLOBAL, to: GATEWAY_CN } }));
+  ok('菜单打开时自动切换 .cn 立即隐藏搜索结果', ddItems().length === 0);
+  store.state.gatewayId = 'anthropic';
+  store.state.models = [];
+  store.state.modelsFetchedAt = 0;
+  ui.syncGateway();
+  ok('第一方网关不受 TeamoRouter .cn 影响', ddItems().some(id => id.startsWith('claude')));
+  store.state.gatewayId = 'custom';
+  store.state.models = ['claude-sonnet-5-5'];
+  store.state.modelsFetchedAt = Date.now();
+  ui.syncGateway();
+  ok('自定义网关不受 TeamoRouter .cn 影响', ddItems().includes('claude-sonnet-5-5'));
+  $('#model-search').value = '';
+  $('#model-search').dispatchEvent(new window.Event('input', { bubbles: true }));
+  store.state.gatewayId = saved.gatewayId;
+  store.state.models = saved.models;
+  store.state.modelsFetchedAt = saved.fetchedAt;
+  setGatewayBase(GATEWAY_GLOBAL);
+  ui.syncGateway();
+}
 
 console.log('\n① 会话记录：第一条消息后才入列 + 切换会话恢复各自模型');
 store.state.model = 'claude-opus-5';
@@ -1059,6 +1107,32 @@ ok('GPT 只显示**…**摘要项，不回显原始推理全文', !!gptReason &&
     await recheck;
     ok('探测失败后设置关于实时显示未连接', $('#set-about-relay').textContent === '未连接', $('#set-about-relay').textContent);
   } finally { globalThis.fetch = original; net.resetRelayProbe(); }
+}
+
+// 会话切换走真实首屏窗口计算，再逐段展开，验证回合原子性与计数。
+console.log('\n长历史按完整任务分页');
+{
+  const historySession = store.createSession();
+  store.pushMessage({ role: 'user', text: '最早任务' });
+  store.pushMessage({ role: 'assistant', text: '甲'.repeat(13000), done: true });
+  store.pushMessage({ role: 'assistant', text: '最早任务最终回复', done: true });
+  store.pushMessage({ role: 'user', text: '中间任务' });
+  store.pushMessage({ role: 'assistant', text: '乙'.repeat(7000), done: true });
+  store.pushMessage({ role: 'assistant', text: '中间任务最终回复', done: true });
+  store.pushMessage({ role: 'user', text: '最新任务' });
+  store.pushMessage({ role: 'assistant', text: '丙'.repeat(7000), done: true });
+  store.pushMessage({ role: 'assistant', text: '最新任务最终回复', done: true });
+  store.createSession();
+  ui.renderSessions();
+  const item = $$('.sess-item').find(n => n.textContent.includes('最早任务'));
+  if (item) click(item);
+  const visibleIds = () => $$('#messages .msg').map(n => n.dataset.id);
+  const ms = historySession.messages;
+  ok('首屏显示最新任务完整消息并标记两轮更早任务', !!item && visibleIds().includes(ms[6].id) && visibleIds().includes(ms[8].id) && !visibleIds().includes(ms[3].id) && $('.lazy-load-count')?.textContent === '2');
+  if ($('.lazy-load-more')) click($('.lazy-load-more'));
+  ok('首次展开完整中间任务，计数减少一轮', visibleIds().includes(ms[3].id) && visibleIds().includes(ms[5].id) && !visibleIds().includes(ms[0].id) && $('.lazy-load-count')?.textContent === '1');
+  if ($('.lazy-load-more')) click($('.lazy-load-more'));
+  ok('再次展开完整超长任务并移除接缝', visibleIds().includes(ms[0].id) && visibleIds().includes(ms[2].id) && !$('.lazy-seam'));
 }
 
 console.log(failures ? `\n${failures} 项失败 ❌` : '\nDOM 冒烟测试全部通过 ✅');

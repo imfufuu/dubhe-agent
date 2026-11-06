@@ -3595,3 +3595,7 @@ html[data-motion="off"] .pm-progress.indeterminate .pm-prog-fill { animation: no
 .pm-context-menu button { display: block; width: 100%; border: 0; border-radius: 6px; padding: 9px 12px; text-align: left; color: inherit; background: transparent; font: inherit; cursor: pointer; }
 .pm-context-menu button:hover, .pm-context-menu button:focus-visible { background: var(--conversation-card-hover, var(--bg-hover)); outline: none; }
 .pm-context-menu button:disabled { opacity: .4; cursor: default; }
+
+/* Keep each Unicode flag in its own shaping run, including adjacent RI pairs. */
+.md-flag { display: inline-block; white-space: nowrap; unicode-bidi: isolate; font-family: "BabelStone Flags", sans-serif; font-feature-settings: "ccmp" 1; }
+.md-flag-pua { font-family: "BabelStone Flags PUA", sans-serif; }

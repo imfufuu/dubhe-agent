@@ -47,7 +47,7 @@ import { settleTurnToolbars } from './ui-turn-toolbar.js?v=2026.10.25.1';
 import { relayAvailable, relaySupports, currentRelay, resetRelayProbe, relayState } from './net.js';
 // P3：编辑直播预览模块单独版本化；缺失时不影响核心对话。
 import { buildEditPreview, editFoldLabel, pathsOfEdits, PREVIEW_REFRESH_MS, findTurnTempCommit, discardedForFold, discardedFoldLabel, turnRange } from './editpreview.js?v=2026.10.25.1';
-import { historyWindowStart, previousHistoryWindowStart, HISTORY_WINDOW_MAX_CHARS } from './history.js?v=2026.10.25.1';
+import { historyWindowStart, previousHistoryWindowStart, countHistoryTurns, HISTORY_WINDOW_MAX_CHARS } from './history.js?v=2026.10.25.1';
 import { installLightbox } from './ui-lightbox.js?v=2026.10.25.1';
 import { installFilesPanel } from './ui-files-panel.js?v=2026.10.25.1';
 import { sessionsEmptyState } from './sess-empty-art.js?v=2026.10.25.1';
@@ -2017,11 +2017,11 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
   function renderLazySeam(skipped) {
     const btn = el('button', 'lazy-load-more', `${ICON.chevRight || ''}<span>更早的消息</span>`);
     btn.type = 'button';
-    btn.title = `加载更早的消息（每段正文最多 ${formatNumber(LAZY_MAX_CHARS)} 字）`;
+    btn.title = localeText(`加载更早的对话（每段约 ${formatNumber(LAZY_MAX_CHARS)} 字，完整任务不拆分）`, `Load earlier conversations (about ${formatNumber(LAZY_MAX_CHARS)} characters per section; turns stay together)`);
     const badge = el('span', 'lazy-load-count', skipped > 99 ? '99+' : String(skipped));
     badge.setAttribute('aria-hidden', 'true');
     btn.appendChild(badge);
-    btn.setAttribute('aria-label', `加载更早的 ${skipped} 条消息`);
+    btn.setAttribute('aria-label', localeText(`加载更早的 ${skipped} 轮对话`, `Load ${skipped} earlier conversation turns`));
     btn.addEventListener('click', () => {
       // 记住当前滚动位置的锚点消息，展开后保持视觉位置不跳
       const firstMsg = msgList.querySelector('.msg-user, .msg-assistant');
@@ -2067,21 +2067,15 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     msgNodes.clear(); msgList.innerHTML = '';
     clearEmpty();
     renderEmpty();
-    // 收集可见消息（跳过 tool/silent）
-    const visible = store.state.messages.filter((m) => m.role !== 'tool' && !m.silent && !m.choiceReply);
-    // 首屏按正文字数分段（每段不超过 HISTORY_WINDOW_MAX_CHARS）；history.js 在消息边界切分。
+    // 首屏按正文预算分段，整轮任务不会被拆开（超长任务可超过预算）。
     if (!wrapLazyInit) {
       lazyLoadedFrom = historyWindowStart(store.state.messages, LAZY_MAX_CHARS);
       wrapLazyInit = true;
     }
     // 如果还有更早的消息没渲染，顶部放"展开更早对话"按钮
     if (lazyLoadedFrom > 0) {
-      // 统计 skipped 里有多少可见消息
-      let skipped = 0;
-      for (let i = 0; i < lazyLoadedFrom; i++) {
-        const mm = store.state.messages[i];
-        if (mm.role !== 'tool' && !mm.silent && !mm.choiceReply) skipped++;
-      }
+      // 一轮完整任务在计数中也只算一次。
+      const skipped = countHistoryTurns(store.state.messages.slice(0, lazyLoadedFrom));
       const seam = renderLazySeam(skipped);
       msgList.appendChild(seam);
     }
@@ -2206,11 +2200,13 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     const from = gatewayBase();
     const to = setGatewayBase(null, 'manual');
     updateTransportBadge();
+    renderModelMenu();
     toast(`网关接入点已切换：${to.replace(/^https?:\/\//, '')}（原 ${from.replace(/^https?:\/\//, '')}）`, 'ok', 3200);
   });
   // 请求期发生自动切换（直连失败→换域名）时提示一次
   window.addEventListener('dubhe:endpoint-switched', (e) => {
     updateTransportBadge();
+    renderModelMenu();
     const to = e && e.detail && e.detail.to ? e.detail.to.replace(/^https?:\/\//, '') : '';
     toast(`直连域名不可达，已自动切换到 ${to}`, 'warn', 5000);
   });
@@ -2470,6 +2466,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       const from = gatewayBase();
       const to = setGatewayBase(null, 'manual');
       updateTransportBadge();
+      renderModelMenu();
       toast(`网关接入点已切换：${to.replace(/^https?:\/\//, '')}（原 ${from.replace(/^https?:\/\//, '')}），正在重试…`, 'ok', 3200);
       agent.regenerate();
       return;

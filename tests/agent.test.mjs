@@ -753,43 +753,59 @@ test('importSession：非法数据返回 null 且不改变状态', () => {
   assert.equal(store.state.sessions.length, before);
 });
 
-group('长历史分页：按正文 4096 字分段，超出顺延');
-test('每段正文不超过 4096 字，超出的消息顺延到下一段', async () => {
-  const { historyWindowStart, previousHistoryWindowStart, HISTORY_WINDOW_MAX_CHARS } = await import('../js/history.js');
-  assert.equal(HISTORY_WINDOW_MAX_CHARS, 4096);
+group('长历史分页：约 12288 字，完整任务不拆分');
+test('按完整任务打包，首屏和向前加载都在用户回合边界切分', async () => {
+  const { historyWindowStart, previousHistoryWindowStart, countHistoryTurns, HISTORY_WINDOW_MAX_CHARS } = await import('../js/history.js');
+  assert.equal(HISTORY_WINDOW_MAX_CHARS, 12288);
   const messages = [
     { role: 'user', text: 'a'.repeat(2000) }, { role: 'assistant', text: 'b'.repeat(2000) },
     { role: 'user', text: 'c'.repeat(2000) }, { role: 'assistant', text: 'd'.repeat(2000) },
+    { role: 'user', text: 'e'.repeat(2000) }, { role: 'assistant', text: 'f'.repeat(2000) },
+    { role: 'user', text: 'g'.repeat(2000) }, { role: 'assistant', text: 'h'.repeat(2000) },
   ];
   const start = historyWindowStart(messages);
-  assert.equal(start, 2, '末尾 c、d 共 4000 字未超限；再加 b 会超过 4096，从 c 开始');
-  assert.equal(messages[start].role, 'user');
-  assert.equal(previousHistoryWindowStart(messages, start), 0, '更早的一段（a、b 共 4000 字）从第一条开始');
+  assert.equal(start, 2, '末尾三轮共 12000 字');
+  assert.equal(countHistoryTurns(messages.slice(0, start)), 1, '用户和助手计为一轮');
+  assert.equal(previousHistoryWindowStart(messages, start), 0);
+  assert.equal(historyWindowStart(messages, 8000), 4, '正好达到预算的两轮一起加载');
+  assert.equal(previousHistoryWindowStart(messages, 4, 8000), 0);
 });
-test('工具调用参数与工具结果不计入正文字数', async () => {
+test('超长任务包含全部助手、工具、静默和选项回复消息，向前加载也不拆开', async () => {
+  const { historyWindowStart, previousHistoryWindowStart, countHistoryTurns } = await import('../js/history.js');
+  const messages = [
+    { role: 'user', text: 'old' }, { role: 'assistant', text: 'a'.repeat(13000) },
+    { role: 'tool', content: 'large tool output' }, { role: 'assistant', text: 'continuation' },
+    { role: 'user', silent: true, text: 'hidden prompt' },
+    { role: 'user', choiceReply: true, text: 'hidden choice' }, { role: 'assistant', text: 'after choice' },
+    { role: 'user', text: 'new' }, { role: 'assistant', text: 'answer' },
+  ];
+  assert.equal(historyWindowStart(messages), 7);
+  assert.equal(previousHistoryWindowStart(messages, 7), 0, '超长回合独立且完整');
+  assert.equal(historyWindowStart(messages.slice(0, 7)), 0, '最新回合即便超限也完整显示');
+  assert.equal(countHistoryTurns(messages), 2);
+});
+test('只统计可见正文的 Unicode 字符，工具结果及隐藏消息不占预算', async () => {
   const { historyWindowStart } = await import('../js/history.js');
   const messages = [
-    { role: 'user', text: '问题' }, { role: 'assistant', text: '答复' },
-    { role: 'tool', content: 'x'.repeat(9000) },
-    { role: 'assistant', text: '继续' },
+    { role: 'user', text: '😀😀' }, { role: 'assistant', text: '字' },
+    { role: 'tool', content: 'x'.repeat(50000) }, { role: 'assistant', silent: true, text: 'x'.repeat(50000) },
+    { role: 'user', choiceReply: true, text: 'x'.repeat(50000) },
+    { role: 'user', text: '😀' }, { role: 'assistant', text: '答' },
   ];
-  assert.equal(historyWindowStart(messages), 0, '9000 字工具输出不计入，短对话不切段');
+  assert.equal(historyWindowStart(messages, 5), 0);
+  assert.equal(historyWindowStart(messages, 4), 5);
 });
-test('切点不落在工具结果上（工具结果跟随其调用一起保留或裁掉）', async () => {
-  const { historyWindowStart } = await import('../js/history.js');
+test('导入历史无用户的前缀作为一个整体；只有隐藏内容或空历史不分页', async () => {
+  const { historyWindowStart, previousHistoryWindowStart, countHistoryTurns } = await import('../js/history.js');
   const messages = [
-    { role: 'user', text: 'U'.repeat(100) },
-    { role: 'assistant', text: 'X'.repeat(2000) },
-    { role: 'tool', content: 'T' },
-    { role: 'assistant', text: 'Y'.repeat(3000) },
+    { role: 'tool', content: 'orphan' }, { role: 'assistant', text: 'x'.repeat(10) },
+    { role: 'assistant', text: 'y'.repeat(10) }, { role: 'user', text: 'z' },
   ];
-  assert.equal(historyWindowStart(messages), 3, '窗口从 Y 开始；不能从工具结果开始留下孤立结果');
-});
-test('单条超过 4096 字的消息自成一段，且不被截断', async () => {
-  const { historyWindowStart, previousHistoryWindowStart } = await import('../js/history.js');
-  const oversized = [{ role: 'user', text: 'Q'.repeat(5000) }, { role: 'assistant', text: 'A'.repeat(5000) }];
-  assert.equal(historyWindowStart(oversized), 1, '最新一条超限仍完整保留，且不拖入更早的消息');
-  assert.equal(previousHistoryWindowStart(oversized, 1), 0, '更早的超长消息单独成段，向前加载时完整出现');
+  assert.equal(historyWindowStart(messages, 5), 3);
+  assert.equal(previousHistoryWindowStart(messages, 3, 5), 0);
+  assert.equal(countHistoryTurns(messages), 2);
+  assert.equal(historyWindowStart([{ role: 'tool' }, { role: 'user', silent: true }]), 0);
+  assert.equal(countHistoryTurns([{ role: 'tool' }, { role: 'user', silent: true }]), 0);
   assert.equal(historyWindowStart([]), 0);
 });
 
@@ -11275,7 +11291,7 @@ test('.36 UI：「更早的消息」= 中轴接缝（两侧发丝线 + 居中胶
   has(ui, `seam.appendChild(el('span', 'lazy-seam-line'));`);
   has(ui, 'seam.appendChild(btn);');
   has(ui, '<span>更早的消息</span>', '入口文案不变');
-  has(ui, 'btn.setAttribute(`aria-label` '.replace('`aria-label` ', `'aria-label', `) + '`加载更早的 ${skipped} 条消息`);');
+  has(ui, '`加载更早的 ${skipped} 轮对话`');
   has(ui, `const seam = $('.lazy-seam', msgList);`);
   has(ui, 'if (seam) seam.remove();', '展开到底后连发丝线一起收起');
   assert.ok(!ui.includes('renderLazyLoadMoreBtn'), '旧的内联按钮实现已彻底移除');
