@@ -1480,6 +1480,8 @@ export function classifyToolRisk({ name = '', args = null, contract: contractDef
   }
   if (name === 'local_files') {
     const act = String(a.action || '').toLowerCase();
+    requiresConfirmation = true;
+    reasons.push('访问本机文件可能暴露或修改用户数据，必须逐次确认');
     if (act === 'write') {
       level = maxRisk(level, 'L2');
       reasons.push(`写入本机文件 ${a.path || ''}`);
@@ -1546,7 +1548,7 @@ export function classifyToolRisk({ name = '', args = null, contract: contractDef
   if (level === 'L3') requiresConfirmation = true;
 
   const authorizedByIntent = EXPLICIT_AUTHORIZATION_RE.test(String(userText || ''));
-  if (requiresConfirmation && authorizedByIntent) {
+  if (requiresConfirmation && authorizedByIntent && name !== 'local_files') {
     requiresConfirmation = false;
     reasons.push('用户本轮已明确要求该类操作，按授权放行（仍全程记录）');
   }
@@ -1596,11 +1598,11 @@ export const CONFIRMATION_DECISIONS = Object.freeze({
 });
 export const GUARD_MODES = Object.freeze(['observe', 'strict', 'strict-l2']);
 
-/** 本机能力的操作是否必须经过人工确认（不受档位与自动审批影响）：shell 一律确认；本机文件的写 / 建目录 / 移动 / 删除确认。 */
+/** 本机文件的所有操作（含读取）和 shell 均需逐次人工确认。 */
 export function localMachineMustConfirm(name, args) {
   if (name === 'run_shell') return true;
   if (name === 'local_desktop') return LOCAL_DESKTOP_MUTATING.includes(String((args && args.action) || '').toLowerCase());
-  if (name === 'local_files') return ['write', 'mkdir', 'move', 'delete'].includes(String((args && args.action) || '').toLowerCase());
+  if (name === 'local_files') return true;
   return false;
 }
 

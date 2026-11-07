@@ -112,7 +112,13 @@ export function solveHumanChallenge({ origin, siteKey, signal } = {}) {
             else { status.textContent = '验证未通过，请重试'; globalThis.turnstile.reset(widgetId); }
           }, () => { status.textContent = '校验请求失败，请重试'; globalThis.turnstile.reset(widgetId); });
         },
-        'error-callback': () => { status.textContent = '验证组件出错，请检查网络后重试'; },
+        'error-callback': (code) => {
+          const hostname = globalThis.location?.hostname || 'localhost';
+          status.textContent = String(code) === '110200'
+            ? `验证失败（110200）：网页域名 ${hostname} 未获授权。请在 Turnstile 的 Hostname Management 添加此网页域名；仅添加中继域名不够。`
+            : `验证组件出错${code ? `（${String(code)}）` : ''}，请检查网络后重试。`;
+          return true; // the error is surfaced in the dialog rather than left unhandled
+        },
         'expired-callback': () => { try { globalThis.turnstile.reset(widgetId); } catch { /* noop */ } },
       });
     }).catch(() => { status.textContent = '无法加载验证组件，请检查网络'; });

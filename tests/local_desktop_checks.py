@@ -135,7 +135,7 @@ check("linux: wayland refuses windows", raises(lambda: with_env({"WAYLAND_DISPLA
 check("linux: wayland refuses click", raises(lambda: with_env({"WAYLAND_DISPLAY": "wayland-0"}, all_tools, lambda: LD.check_supported("click", "linux")), "Wayland"))
 check("linux: wayland processes ok", with_env({"WAYLAND_DISPLAY": "wayland-0"}, all_tools, lambda: LD.check_supported("processes", "linux")) is None)
 check("linux: wayland clipboard needs wl-copy", with_env({"WAYLAND_DISPLAY": "wayland-0"}, {}, lambda: raises(lambda: LD.check_supported("clipboard_write", "linux"), "wl-clipboard")))
-check("linux: both displays treated as x11", with_env({"DISPLAY": ":0", "WAYLAND_DISPLAY": "w"}, {}, lambda: LR.linux_session()) == "x11")
+check("screenshot: both displays prefer wayland over XWayland", with_env({"DISPLAY": ":0", "WAYLAND_DISPLAY": "w"}, {}, lambda: LR.linux_session()) == "wayland")
 check("linux: session detection none", with_env({}, {}, lambda: LR.linux_session()) == "none")
 
 # ── 截图工具顺序：X11 与 Wayland 不同 ──
@@ -144,6 +144,10 @@ def first_shot(env, tools):
 check("shot x11 prefers scrot", first_shot({"DISPLAY": ":0"}, ["scrot", "grim"]) == "scrot")
 check("shot x11 falls back to import", first_shot({"DISPLAY": ":0"}, ["import"]) == "import")
 check("shot wayland prefers grim", first_shot({"WAYLAND_DISPLAY": "w"}, ["scrot", "grim"]) == "grim")
+check("shot both displays uses grim", first_shot({"DISPLAY": ":0", "WAYLAND_DISPLAY": "w"}, ["scrot", "grim"]) == "grim")
+with mock.patch.object(LR, "IS_WINDOWS", True), mock.patch.object(LR.shutil, "which", return_value="powershell"):
+    cmd = LR._screenshot_argv("C:/tmp/x.png")[-1]
+    check("windows screenshot uses physical DPI-aware virtual screen bounds", '[DllImport("user32.dll")]' in cmd and cmd.index("SetProcessDpiAwarenessContext([IntPtr](-4))") < cmd.index("::VirtualScreen") and "CopyFromScreen($b.Left,$b.Top" in cmd)
 check("shot no session -> none", with_env({}, {"scrot": "/x"}, lambda: LR._screenshot_argv("/tmp/x.png")) is None)
 
 # ── ps 解析：进程名可含空格，rss 取末列 ──

@@ -519,14 +519,14 @@ python3 server.py --local-root D:\projects          # 可重复指定，限定�
 - 独立 `curl` HTTP 工具：通过已启用并配置 Turnstile 的新版 Cloudflare Worker 发送非敏感 HTTP 请求，每次确认；需重新部署 `relay/worker.js` 并设置 `CURL_ENABLED=true`，详见 [relay/README.md](relay/README.md)。不支持认证头、内网或二进制上传。
 - `run_shell`：在本机执行一条命令。Windows 优先 Git Bash（`Program Files\Git\bin\bash.exe`），其次 PATH 中的 bash（排除 WSL 启动器），最后 PowerShell；可用 `DUBHE_SHELL` 指定。超时会结束整棵进程树。
 - `take_screenshot`：整屏截图存入沙箱 `outputs/`，之后可用 `analyze_image` 读图。Windows 用 .NET 截屏，macOS 用 `screencapture`；Linux 按会话选工具：X11 优先 `scrot`、其次 ImageMagick `import`、再 `gnome-screenshot`，Wayland 优先 `grim`（wlroots）、再 `gnome-screenshot`。没有图形会话（`DISPLAY` 与 `WAYLAND_DISPLAY` 都为空）时直接报错。
-- `local_files`：list / stat / read / write / mkdir / move / delete。拒绝 `.ssh`、`.aws`、`.netrc` 等敏感路径，路径经 realpath 后必须落在允许根目录内。
+- `local_files`：list / stat / read / write / mkdir / move / delete。每次操作（包括读取）都必须人工确认；确认后可访问工作区外的本机路径，仍拒绝 `.ssh`、`.aws`、`.netrc` 等敏感路径。授权只对该次文件操作有效，不扩大 shell 的工作目录权限。此确认由应用前端执行；拥有同源访问及本机 session token 的代码可直接请求文件 API，服务端无法独立证明人工确认，因此不要在该本机页面运行不可信脚本或将服务暴露到共享网络。
 - `local_desktop`：桌面交互，由 `local_desktop.py` 实现。只读：`info`（屏幕与会话）、`windows`（有标题的窗口）、`processes`（按内存排前 40）、`clipboard_read`。会改变桌面、**每次需用户确认**：`focus`（按标题切换窗口）、`clipboard_write`、`open`（网址，或允许根内的文件/文件夹）、`mouse_move`、`click`（左/右/中，可双击）、`scroll`、`key`（如 `ctrl+shift+t`、`alt+f4`）、`type`（任意 Unicode 文本，经剪贴板粘贴并尽量恢复原剪贴板）。
   - Windows（优先）：PowerShell + user32。参数经 `DUBHE_ARGS` 环境变量传入，脚本内不拼接用户文本。
   - macOS：`osascript`、`pbcopy`/`pbpaste`、`ps`；鼠标与双击需要 `brew install cliclick`；暂不支持滚轮。
   - Linux X11：需 `xdotool`、`wmctrl`（窗口）、`xclip`（剪贴板）。`sudo apt install xdotool wmctrl xclip`。
   - Linux Wayland：只支持 `info`、`processes`、`clipboard_*`（需 `wl-clipboard`）。窗口枚举与模拟输入受 Wayland 协议限制，明确拒绝并提示切换到 X11 会话。
 
-每个进程启动时生成随机 token，只通过同源 `/api/local/session` 下发；所有 `/api/local/*`（除 session）都要求该 token，并校验 Host 为回环名、拒绝跨站请求。`run_shell`、以及本机文件的写 / 建目录 / 移动 / 删除，**每次都需要用户确认**，不受顶栏档位与自动审批影响。
+每个进程启动时生成随机 token，只通过同源 `/api/local/session` 下发；所有 `/api/local/*`（除 session）都要求该 token，并校验 Host 为回环名、拒绝跨站请求。`run_shell` 以及本机文件的每次操作（包括读取和列目录）**都需要用户确认**，不受顶栏档位与自动审批影响。
 前端按 health capabilities 探测具体能力，不会把 Worker 新路由误打到旧版本地 relay 的 404。
 
 安全边界：
@@ -683,7 +683,7 @@ npm run audit:mobile  # 真 Chrome 量移动端布局（需 puppeteer）：无�
 ### 在线版（GitHub Pages）
 
 **https://imfufuu.github.io/dubhe-agent/** —— 纯静态部署，浏览器直连 `api.teamorouter.com`（网关已放行 CORS）。
-Python 沙箱首次使用需从 CDN 加载 Pyodide 运行时；本地代理（server.py）在 Pages 上不存在，但不影响直连模式。
+Python 沙箱核心运行时由本站提供，首次使用会按需下载；额外 Python 包仍需访问 Pyodide CDN / PyPI。本地代理（server.py）在 Pages 上不存在，但不影响直连模式。
 
 ### 发布到 GitHub Pages 的步骤
 

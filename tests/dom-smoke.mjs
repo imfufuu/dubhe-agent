@@ -86,6 +86,24 @@ const $ = (s) => window.document.querySelector(s);
 const $$ = (s) => [...window.document.querySelectorAll(s)];
 const click = (n) => n.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
 
+console.log('\n权限卡交互');
+{
+  const original = agent.resolveConfirmation;
+  let decision = '';
+  agent.resolveConfirmation = (key, value) => { decision = value; return { ok: true }; };
+  ui.onConfirmationRequest({ name: 'local_files' }, 'read /tmp/example', 'ui-permission-test');
+  const card = $('.confirm-card[data-key="ui-permission-test"]');
+  ok('本机文件卡显示操作且不提供会话级放行', !!card && card.textContent.includes('/tmp/example') && !card.querySelector('[data-decision="allow-session"]'));
+  click(card.querySelector('[data-decision="allow-once"]'));
+  ok('允许后卡片立即移除', decision === 'allow-once' && !$('.confirm-card[data-key="ui-permission-test"]'));
+  ui.onConfirmationResolved({ name: 'local_files' }, { key: 'ui-permission-test', decision: 'allow-once' });
+  ui.onConfirmationRequest({ name: 'local_files' }, 'delete /tmp/example', 'ui-deny-test');
+  click($('.confirm-card[data-key="ui-deny-test"] [data-decision="deny"]'));
+  ok('拒绝后收起卡片并显示结果', !!$('.confirm-card[data-key="ui-deny-test"].resolved .confirm-result.deny'));
+  $('.confirm-card[data-key="ui-deny-test"]').remove();
+  agent.resolveConfirmation = original;
+}
+
 console.log('\n挂载与初始状态');
 ok('mountUI 返回 hooks 对象', ui && typeof ui.setStatus === 'function');
 ok('UI 挂载成功时通知启动页关闭', bootCompletionCount === 1, `调用 ${bootCompletionCount} 次`);
@@ -1133,6 +1151,22 @@ console.log('\n长历史按完整任务分页');
   ok('首次展开完整中间任务，计数减少一轮', visibleIds().includes(ms[3].id) && visibleIds().includes(ms[5].id) && !visibleIds().includes(ms[0].id) && $('.lazy-load-count')?.textContent === '1');
   if ($('.lazy-load-more')) click($('.lazy-load-more'));
   ok('再次展开完整超长任务并移除接缝', visibleIds().includes(ms[0].id) && visibleIds().includes(ms[2].id) && !$('.lazy-seam'));
+}
+
+console.log('\n工具回退进度保持');
+{
+  const c = { id: 'retry-progress-ui', name: 'execute_python', args: { code: 'pass' }, settled: false };
+  const m = store.pushMessage({ role: 'assistant', text: '', model: 'gpt-5.5', toolCalls: [c], done: false });
+  ui.onAssistantStart(m);
+  ui.onToolEvent(c, { status: 'running', progress: 0.4, note: '下载中' });
+  const bar = $('.tool-call-chip .chip-progress');
+  ui.onToolEvent(c, { status: 'error', note: '暂时失败' });
+  ok('暂时失败未终结时保留原进度节点', !!bar && $('.tool-call-chip .chip-progress') === bar && bar.getAttribute('aria-valuenow') === '40');
+  ui.onToolEvent(c, { status: 'running', progress: -1, note: '正在回退' });
+  ok('回退阶段保留原进度且更新说明', $('.tool-call-chip .chip-progress') === bar && bar.getAttribute('aria-valuenow') === '40' && bar.getAttribute('aria-label') === '正在回退');
+  c.settled = true;
+  ui.onToolEvent(c, { status: 'ok', settled: true, finalOutput: 'ok' });
+  ui.onAssistantDone(m);
 }
 
 console.log(failures ? `\n${failures} 项失败 ❌` : '\nDOM 冒烟测试全部通过 ✅');

@@ -104,9 +104,35 @@ async function timedFetch(url, options = {}) {
   try { return await fetch(url, { ...options, signal: controller.signal }); }
   finally { clearTimeout(timer); activeNetworkControllers.delete(controller); }
 }
-async function matches(response, entry) {
+// The compiler files are large. Integrity must be verified before a response is
+// served, but the verification read must still report real download bytes.
+const CPP_PROGRESS_PATH = /^assets\/vendor\/cpp\/browsercc\/runtime\/(?:clang\.wasm|lld\.wasm|sysroot\.tar)\.gz$/;
+function reportCppAsset(path, loaded, total) {
+  if (!CPP_PROGRESS_PATH.test(path)) return;
+  self.clients.matchAll({ type: 'window', includeUncontrolled: false }).then(clients => {
+    for (const client of clients) client.postMessage({ type: 'dubhe-cpp-asset-progress', path, loaded, total });
+  }).catch(() => {});
+}
+async function matches(response, entry, path = '') {
   if (!response.ok || response.type === 'opaque') return false;
-  const bytes = await response.clone().arrayBuffer();
+  let bytes;
+  if (CPP_PROGRESS_PATH.test(path) && response.body) {
+    const reader = response.clone().body.getReader(), chunks = [];
+    let loaded = 0, last = 0;
+    reportCppAsset(path, 0, entry.size);
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      loaded += value.byteLength;
+      if (loaded > entry.size) { await reader.cancel(); return false; }
+      chunks.push(value);
+      if (Date.now() - last >= 120) { last = Date.now(); reportCppAsset(path, loaded, entry.size); }
+    }
+    bytes = new Uint8Array(loaded);
+    let offset = 0;
+    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+    reportCppAsset(path, loaded, entry.size);
+  } else bytes = await response.clone().arrayBuffer();
   if (bytes.byteLength !== entry.size) return false;
   const hash = [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map(b => b.toString(16).padStart(2, '0')).join('');
   return hash === entry.sha256;
@@ -116,7 +142,7 @@ async function verified(path, entry) {
   for (let attempt = 0; attempt < 2; attempt++) {
     if (attempt) url.searchParams.set('__asset_hash', entry.sha256);
     const res = await timedFetch(url.href, { cache: attempt ? 'reload' : 'force-cache', credentials: 'omit' });
-    if (await matches(res, entry)) return res;
+    if (await matches(res, entry, path)) return res;
   }
   throw Error('Static asset integrity mismatch: ' + path);
 }
@@ -264,7 +290,7 @@ self.addEventListener('fetch', event => {
     const key = external ? req.url : new URL(path, SCOPE).href;
     let cache = await caches.open(CACHE);
     const hit = await cache.match(key);
-    if (hit) return hit; // no conditional request and no background re-download
+    if (hit) { if (CPP_PROGRESS_PATH.test(path)) reportCppAsset(path, manifest.files[path].size, manifest.files[path].size); return hit; } // no conditional request and no background re-download
     if (!await cache.match(META)) {
       manifestPromise = null; manifest = await currentManifest();
       if (!manifest) return networkFetch(req, { cache: 'no-store' });

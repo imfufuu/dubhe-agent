@@ -8639,7 +8639,8 @@ test('Worker 源码：JS 沙箱拆除联网/派生/存储原语并私有化 post
   assert.match(py, /沙箱禁止联网/);
   for (const n of ['XMLHttpRequest', 'WebSocket', 'indexedDB', 'caches']) assert.ok(py.includes(`'${n}'`), `Python 沙箱应移除 ${n}`);
   assert.doesNotMatch(py, /self\.postMessage\(/, 'Python 沙箱不应再直接使用全局 postMessage');
-  assert.match(py, /realImportScripts\(PY_BASE/);
+  assert.match(py, /realImportScripts\(.*pyodide\.js/);
+  assert.match(py, /isLocalRuntime/);
 });
 test('runPython：共享 Pyodide Worker 的并发调用串行化，文件镜像不会互相覆盖', async () => {
   const sandbox = await import('../js/sandbox.js?pyqueue=' + Date.now());

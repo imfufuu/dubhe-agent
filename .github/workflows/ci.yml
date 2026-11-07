@@ -75,6 +75,9 @@ jobs:
       - name: tests/project-mode.test.mjs · 项目模式纯逻辑与接线
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/project-mode.test.mjs
+      - name: tests/convert-retry.test.mjs · FFmpeg 失败与手动重试
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/convert-retry.test.mjs
       - name: tests/copy-text.test.mjs · 复制降级路径（非安全上下文 / 权限拒绝）
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/copy-text.test.mjs

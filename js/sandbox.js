@@ -392,8 +392,7 @@ export function createTempFS(baseFS, { cleanupUnreferencedFiles = false } = {}) 
   return fs;
 }
 
-let pyodideBroken = false; // CDN 加载失败后不再尝试
-export function pythonAvailable() { return !pyodideBroken; }
+export function pythonAvailable() { return true; }
 
 // Package history is not a requirements file. Only the current invocation's
 // explicit packages are sent; the resident Worker reuses already-loaded modules.
@@ -455,7 +454,7 @@ function runInWorker(workerFile, payload, timeoutMs, {
   rpc = null, extraScripts = [], onOutput = null, onPhase = null, signal = null,
   readyToken = 'js-runtime-2', workerType = 'classic', allowBlobFallback = true,
   startupTimeoutMs = SANDBOX_JS_STARTUP_TIMEOUT_MS, executionTimeoutPhase = '',
-  preExecutionTimeoutMs = 0, timeoutMessage = '', preExecutionTimeoutMessage = '', onProgress = null,
+  preExecutionTimeoutMs = 0, timeoutMessage = '', preExecutionTimeoutMessage = '', onProgress = null, externalProgress = null,
 } = {}) {
   return new Promise((resolve) => {
     let settled = false, active = null, triedBlob = false, started = false;
@@ -484,7 +483,7 @@ function runInWorker(workerFile, payload, timeoutMs, {
       if (settled) return;
       settled = true;
       clearTimeout(bootTimer); clearTimeout(execTimer); clearTimeout(attemptTimer);
-      fetchAbort.abort(); signal?.removeEventListener('abort', abort); closeActive();
+      fetchAbort.abort(); signal?.removeEventListener('abort', abort); if (externalProgress) externalProgress.heartbeat = null; closeActive();
       resolve({ ...v, started });
     };
     const bootstrapFail = (detail) => finish({ ok: false, bootstrapFailed: true, logs: [], files: payload.files || {},
@@ -527,8 +526,10 @@ function runInWorker(workerFile, payload, timeoutMs, {
         if (settled || active !== mine || mine.sent) return;
         mine.sent = true; started = true;
         clearTimeout(bootTimer); clearTimeout(attemptTimer); fetchAbort.abort(); onPhase?.('executing');
-        if (executionTimeoutPhase && preExecutionTimeoutMs > 0) armPrepTimer();
-        else armProgramTimeout();
+        if (executionTimeoutPhase && preExecutionTimeoutMs > 0) {
+          armPrepTimer();
+          if (externalProgress) externalProgress.heartbeat = () => { if (!settled && !programStarted) armPrepTimer(); };
+        } else armProgramTimeout();
         let transfer = [];
         if (rpc && typeof MessageChannel === 'function') {
           const channel = new MessageChannel(); mine.port = channel.port1; transfer = [channel.port2];
@@ -637,11 +638,9 @@ let pyBlobTried = false;
 let pyRunQueue = Promise.resolve();
 
 async function runPythonNow(code, fsObj, onProgress, extraPkgs = [], opts = {}) {
-  if (pyodideBroken) {
-    return { ok: false, logs: [], error: { message: 'Pyodide 运行时不可用（CDN 加载失败），请改用 execute_javascript' }, durationMs: 0 };
-  }
   const files = fsObj.export();
   const packages = pythonPackagesForRun(extraPkgs);
+  const runtimeBase = new URL('../assets/vendor/pyodide/0.26.4/', import.meta.url).href;
   const t0 = performance.now();
   // 增量同步：常驻 Worker 已持有上次镜像时只发 diff；Worker 重建 / 上次失败则发全量
   // 不论全量还是增量，Worker 应用完载荷后的镜像都恰好等于 files（delta = diff(镜像, files)）
@@ -651,10 +650,10 @@ async function runPythonNow(code, fsObj, onProgress, extraPkgs = [], opts = {}) 
     usedWorker = worker;
     if (worker === pySyncedWorker && pySynced) {
       sentFull = false;
-      return { code, delta: diffFiles(pySynced, files), packages };
+      return { code, delta: diffFiles(pySynced, files), packages, runtimeBase };
     }
     sentFull = true;
-    return { code, files, packages };
+    return { code, files, packages, runtimeBase };
   };
 
   const codeTimeoutMs = normalizeSandboxTimeoutMs(opts.timeoutMs, SANDBOX_PY_TIMEOUT_MS);
@@ -776,9 +775,9 @@ async function runPythonNow(code, fsObj, onProgress, extraPkgs = [], opts = {}) 
   const loadStageFailure = !out.ok && (out.stage === 'load'
     || (out.stage === undefined && /importScripts|loadPyodide|indexURL/i.test(String(out.error && out.error.message)) && !/Traceback/.test(String(out.error && out.error.message))));
   if (loadStageFailure) {
-    pyodideBroken = true;
+    try { pyWorker?.terminate(); } catch { /* noop */ }
     pyWorker = null;
-    out.error.message += '（已标记 Python 沙箱不可用，本次会话内请使用 execute_javascript）';
+    out.error.message += '（Python 运行时加载失败，可检查本站资源后重试）';
   }
   // 回传形态：新版 filesDelta {set, del}（相对 Worker 镜像），旧版 files 全量
   let workerAfter = null;
@@ -824,11 +823,33 @@ export async function runCpp(code, opts = {}) {
     stdin: opts.stdin == null ? '' : String(opts.stdin),
     args: Array.isArray(opts.args) ? opts.args.map((value) => String(value)) : [],
   };
-  const out = await runInWorker('worker-cpp.js', payload, timeoutMs, {
+  const serviceWorker = globalThis.navigator?.serviceWorker;
+  const cppSizes = { 'clang.wasm.gz': 15010669, 'lld.wasm.gz': 8699033, 'sysroot.tar.gz': 5677607 };
+  const swLoaded = new Map();
+  const externalProgress = { heartbeat: null };
+  let highest = 0;
+  const reportProgress = (p) => {
+    const total = Number(p?.total) || 0, loaded = Number(p?.loaded) || 0;
+    if (total > 0) highest = Math.max(highest, Math.min(1, loaded / total));
+    opts.onProgress?.({ ...p, loaded: total > 0 ? Math.max(loaded, highest * total) : loaded });
+  };
+  const onSwProgress = (event) => {
+    const data = event.data || {};
+    if (data.type !== 'dubhe-cpp-asset-progress') return;
+    const path = String(data.path || '');
+    const name = path.split('/').pop();
+    if (!Object.hasOwn(cppSizes, name) || !path.endsWith(`/cpp/browsercc/runtime/${name}`)) return;
+    externalProgress.heartbeat?.();
+    swLoaded.set(name, Math.max(swLoaded.get(name) || 0, Math.min(cppSizes[name], Number(data.loaded) || 0)));
+    reportProgress({ phase: 'loading-assets', loaded: [...swLoaded.values()].reduce((a, b) => a + b, 0), total: Object.values(cppSizes).reduce((a, b) => a + b, 0) });
+  };
+  serviceWorker?.addEventListener('message', onSwProgress);
+  let out;
+  try { out = await runInWorker('worker-cpp.js', payload, timeoutMs, {
     signal: opts.signal,
     onOutput: opts.onOutput,
     onPhase: opts.onPhase,
-    onProgress: opts.onProgress,
+    onProgress: reportProgress, externalProgress,
     readyToken: 'cpp-runtime-1',
     workerType: 'module',
     allowBlobFallback: false,
@@ -836,7 +857,7 @@ export async function runCpp(code, opts = {}) {
     preExecutionTimeoutMs: SANDBOX_CPP_PREPARATION_TIMEOUT_MS,
     preExecutionTimeoutMessage: `本地 C++ 工具链 ${SANDBOX_CPP_PREPARATION_TIMEOUT_MS / 1000} 秒内无加载或编译进度，沙箱已强制终止`,
     timeoutMessage: `C++ 程序执行超时（>${Math.round(timeoutMs / 1000)}s），沙箱已强制终止`,
-  });
+  }); } finally { serviceWorker?.removeEventListener('message', onSwProgress); }
   return { ...out, durationMs: Math.round(performance.now() - t0) };
 }
 

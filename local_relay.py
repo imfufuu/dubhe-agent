@@ -172,6 +172,11 @@ def _screenshot_argv(out):
     if IS_WINDOWS:
         q = out.replace("'", "''")
         script = (
+            # Set per-monitor DPI awareness before asking Windows for virtual
+            # bounds; otherwise mixed-DPI/high-DPI desktops return logical size
+            # and CopyFromScreen captures only the top-left physical pixels.
+            "Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class DubheDpi { [DllImport(\"user32.dll\")] public static extern bool SetProcessDpiAwarenessContext(IntPtr c); [DllImport(\"user32.dll\")] public static extern bool SetProcessDPIAware(); }';"
+            "try { if (-not [DubheDpi]::SetProcessDpiAwarenessContext([IntPtr](-4))) { [DubheDpi]::SetProcessDPIAware() | Out-Null } } catch { try { [DubheDpi]::SetProcessDPIAware() | Out-Null } catch {} };"
             "Add-Type -AssemblyName System.Windows.Forms,System.Drawing;"
             "$b=[System.Windows.Forms.SystemInformation]::VirtualScreen;"
             "$bmp=New-Object System.Drawing.Bitmap $b.Width,$b.Height;"
@@ -208,11 +213,11 @@ def _screenshot_argv(out):
 
 
 def linux_session():
-    """'x11' | 'wayland' | 'none'；同时存在时按 X11（XWayland）处理。"""
-    if os.environ.get("DISPLAY"):
-        return "x11"
+    """'x11' | 'wayland' | 'none'；Wayland 下 DISPLAY 可能只是 XWayland 的局部视图。"""
     if os.environ.get("WAYLAND_DISPLAY"):
         return "wayland"
+    if os.environ.get("DISPLAY"):
+        return "x11"
     return "none"
 
 
@@ -266,7 +271,8 @@ def _is_within(path, root):
 class LocalFS:
     """受根目录约束的文件操作。所有路径先 realpath，再检查是否落在某个根之内。"""
 
-    def __init__(self, roots):
+    def __init__(self, roots, *, allow_outside=False):
+        self.allow_outside = allow_outside is True
         cleaned = []
         for r in roots:
             real = os.path.realpath(os.path.abspath(os.path.expanduser(str(r))))
@@ -289,14 +295,14 @@ class LocalFS:
         parts = [s.lower() for s in pathlib.PurePath(real).parts]
         if any(part in SENSITIVE_NAMES for part in parts):
             raise LocalError(f"出于安全考虑拒绝访问敏感路径：{raw}")
-        if not any(_is_within(real, root) for root in self.roots):
+        if not self.allow_outside and not any(_is_within(real, root) for root in self.roots):
             raise LocalError(f"路径超出允许的根目录：{raw}")
         if must_exist and not os.path.lexists(real):
             raise LocalError(f"路径不存在：{raw}")
         return real
 
     def _is_root(self, real):
-        return real in self.roots
+        return real in self.roots or os.path.dirname(real) == real
 
     def list(self, path):
         real = self.resolve(path)

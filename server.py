@@ -432,7 +432,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 return self._json(200, {"mime": "image/png", "base64": base64.b64encode(data).decode("ascii"), "bytes": len(data)})
             if route == "/api/local/fs" and method == "POST":
                 body = self._read_local_body()
-                return self._json(200, {"ok": True, "result": LR.fs_action(LOCAL_FS, body.get("action"), body)})
+                # One operation only: the front-end sets this flag solely after an
+                # explicit human approval. This flag is NOT independently verified by the server;
+                # same-origin/token holders are trusted. It does not widen shell/desktop roots.
+                fs = LR.LocalFS(LOCAL_FS.roots, allow_outside=body.get("allowOutside") is True)
+                return self._json(200, {"ok": True, "result": LR.fs_action(fs, body.get("action"), body)})
             if route == "/api/local/desktop" and method == "POST":
                 body = self._read_local_body()
                 if str(body.get("action") or "") == "open":
