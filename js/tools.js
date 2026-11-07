@@ -525,9 +525,9 @@ export const TOOL_DEFS = [
   {
     name: 'local_files',
     description:
-      '操作用户本机文件。只能访问允许的根目录（默认：工作区与用户主目录），拒绝 .ssh、.aws、.netrc 等敏感路径。' +
+      '操作用户本机文件，可在用户逐次确认后访问工作区以外的本机路径；拒绝 .ssh、.aws、.netrc 等敏感路径。' +
       'action：list 列目录 / stat 查看信息 / read 读取（文本；二进制请用 encoding=base64，并可用 sandbox_path 存入沙箱）/ ' +
-      'write 写文件（已存在需 overwrite=true）/ mkdir / move / delete（删除目录需 recursive=true）。write、mkdir、move、delete 每次需用户确认。',
+      'write 写文件（已存在需 overwrite=true）/ mkdir / move / delete（删除目录需 recursive=true）。每次操作（包括读取和列目录）都需用户确认，不能自动放行。',
     parameters: {
       type: 'object',
       properties: {
@@ -1547,12 +1547,13 @@ async function executeToolBody(outerName, outerArgs, ctx) {
       }
       case 'local_files': {
         const action = String(args.action || '').toLowerCase();
+        if (ctx.localFileApproved !== true) { emit({ status: 'error', error: { message: '本机文件操作需要逐次用户确认' } }); return 'local_files 失败：本机文件操作需要逐次用户确认'; }
         emit({ status: 'running', note: `本机文件 ${action}${args.path ? ` ${String(args.path).slice(0, 60)}` : ''}` });
         let r;
         try {
           r = await localFsRequest({
             action, path: args.path, content: args.content, encoding: args.encoding, dest: args.dest,
-            overwrite: args.overwrite === true, recursive: args.recursive === true,
+            overwrite: args.overwrite === true, recursive: args.recursive === true, allowOutside: true,
           }, { signal: ctx.signal });
         } catch (err) {
           if (err && (err.name === 'AbortError' || ctx.signal && ctx.signal.aborted)) throw err;
@@ -2406,8 +2407,14 @@ async function executeToolBody(outerName, outerArgs, ctx) {
         const base = path.replace(/\.[^.]+$/, '').split('/').pop() || 'converted';
         const out = normalizeFsPath(args.out) || `outputs/${base}.${plan.outExt}`;
         const opts = args.options && typeof args.options === 'object' ? args.options : {};
-        emit({ status: 'running', note: plan.mode === 'ffmpeg' ? '转换中（ffmpeg.wasm，首次使用会按需下载引擎）…' : plan.mode === 'canvas' ? '图像转换中…' : 'WAV 解码中…' });
+        emit({ status: 'running', note: plan.mode === 'ffmpeg' ? '转换中（ffmpeg.wasm，首次使用需下载约 30.7 MiB 引擎）…' : plan.mode === 'canvas' ? '图像转换中…' : 'WAV 解码中…' });
         let lastPct = -1;
+        let ffmpegLoading = false;
+        let shownProgress = -1;
+        const conversionProgress = (event) => {
+          if (event.progress >= 0) shownProgress = Math.max(shownProgress, event.progress);
+          emit({ ...event, progress: event.progress < 0 && shownProgress < 0 ? -1 : shownProgress });
+        };
         try {
           const done = await runConversion({
             bytes, mime, plan, opts,
@@ -2415,17 +2422,18 @@ async function executeToolBody(outerName, outerArgs, ctx) {
               const mb = (n) => (Number(n) / 1048576).toFixed(1);
               // 首次加载 ffmpeg core（约 30 MB wasm）：下载字节进度 → 界面进度条；编译阶段为不确定条
               if (p && typeof p === 'object' && p.loading) {
-                if (p.stage === 'init') { emit({ status: 'running', workerStage: 'loading-assets', progress: -1, note: 'ffmpeg 引擎加载中（编译 wasm）…' }); return; }
+                ffmpegLoading = true;
+                if (p.stage === 'init') { conversionProgress({ status: 'running', workerStage: 'loading-assets', progress: 0.75, note: 'ffmpeg 引擎已下载，正在编译 wasm…' }); return; }
                 const total = Number(p.total) || 0;
                 const loaded = Number(p.loaded) || 0;
                 const frac = total > 0 ? Math.min(1, loaded / total) : -1;
-                emit({ status: 'running', workerStage: 'loading-assets', progress: frac,
-                  note: frac >= 0 ? `加载 ffmpeg 引擎 ${Math.round(frac * 100)}%（${mb(loaded)} / ${mb(total)} MB）` : `加载 ffmpeg 引擎…（已下载 ${mb(loaded)} MB）` });
+                conversionProgress({ status: 'running', workerStage: 'loading-assets', progress: frac >= 0 ? frac * 0.75 : -1,
+                  note: frac >= 0 ? `加载 ffmpeg 引擎 ${Math.round(frac * 100)}%（${mb(loaded)} / ${mb(total)} MiB）` : `加载 ffmpeg 引擎…（已下载 ${mb(loaded)} MiB）` });
                 return;
               }
               // 转换执行阶段：0–99 的百分比，同步给界面进度条（首帧 0% 也要显示）
               const pct = Math.round(Number(p) || 0);
-              if (pct !== lastPct) { lastPct = pct; emit({ status: 'running', progress: pct / 100, note: convertProgressNote(pct + '%') }); }
+              if (pct !== lastPct) { lastPct = pct; conversionProgress({ status: 'running', progress: ffmpegLoading ? 0.75 + pct / 400 : pct / 100, note: convertProgressNote(pct + '%') }); }
             },
           });
           fs.write(out, `data:${done.outMime};base64,${u8ToB64(done.bytes)}`);

@@ -159,12 +159,10 @@ export function encodeWav(audioBuffer) {
 // ── ffmpeg Worker：延迟装配 + 单次转换（带超时与整体复用）──────────────────────────
 const FFMPEG_TIMEOUT_MS = 180000;
 let worker = null;
-let workerBad = false;
 let seq = 0;
 const pending = new Map();
 
 function ensureWorker() {
-  if (workerBad) throw new Error('ffmpeg 引擎不可用（本页面此前加载失败；图片 / WAV 转换仍可用）');
   if (worker) return worker;
   const url = new URL('./worker-convert.js', import.meta.url).href;
   const w = new Worker(url);
@@ -179,12 +177,18 @@ function ensureWorker() {
     clearTimeout(p.timer);
     if (m.ok) p.resolve(new Uint8Array(m.bytes));
     else {
-      if (m.fatal) { workerBad = true; try { w.terminate(); } catch { /* noop */ } worker = null; }
-      p.reject(new Error(m.error || 'ffmpeg 转换失败'));
+      const error = new Error(m.error || 'ffmpeg 转换失败');
+      if (m.fatal) {
+        try { w.terminate(); } catch { /* noop */ }
+        if (worker === w) worker = null;
+        for (const [, other] of pending) { clearTimeout(other.timer); other.reject(error); }
+        pending.clear();
+      }
+      p.reject(error);
     }
   };
   w.onerror = () => {
-    workerBad = true;
+    if (worker !== w) return;
     for (const [, p] of pending) { clearTimeout(p.timer); p.reject(new Error('ffmpeg Worker 崩溃')); }
     pending.clear();
     try { w.terminate(); } catch { /* noop */ }

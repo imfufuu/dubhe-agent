@@ -10,7 +10,7 @@ import { installFeedback } from './ui-feedback.js';
 import { installSpeechInput } from './ui-speech.js';
 import { createToolPresentation, presentationCallSettled, turnToolResults } from './toolpresentation.js?v=2026.10.25.1';
 import { paintEditFoldContent, syncEditingFold, toggleEditingFold } from './ui-editpreview.js?v=2026.10.25.1';
-import { exploringInFlight, paintOrderedAssistant, renderToolChipDetail, paintCommandRows, paintKnowledgeFold, webGroupLabel, hasMediaTaskRunning, syncToolMenuCursor, ownerOfTool, paintVisibleTurn, activeToolOwner, persistTurnTiming, paintWebActivity, syncChecklistBlock, placeChecklistCompletion, installChecklistPanel } from './ui-toolflow.js?v=2026.10.25.1';
+import { updateChipProgress, exploringInFlight, paintOrderedAssistant, renderToolChipDetail, paintCommandRows, paintKnowledgeFold, webGroupLabel, hasMediaTaskRunning, syncToolMenuCursor, ownerOfTool, paintVisibleTurn, activeToolOwner, persistTurnTiming, paintWebActivity, syncChecklistBlock, placeChecklistCompletion, installChecklistPanel } from './ui-toolflow.js?v=2026.10.25.1';
 import { classifyToolResult, toolResultFailed } from './toolwindows.js?v=2026.10.25.1';
 import { adjacentToolMessages, appendToolStream, toolFamily, commandRunFor } from './toolflow.js?v=2026.10.25.1';
 import { createRollbackFx } from './ui-rollback-fx.js?v=2026.10.25.1';
@@ -1214,7 +1214,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     const allDone = chip.dataset.cancelled === 'true' || (ids.length > 0 && ids.every(terminal));
     const failed = chip.dataset.cancelled !== 'true' && ids.some((id) => toolCallFailed(chip, id));
     const settled = ids.filter(terminal).length;
-    const running = ids.map((id) => chip._toolStates[id]).find((x) => x && x.status === 'running');
+    const running = ids.map((id) => chip._toolStates[id]).find((x) => x && (x.status === 'running' || (x.settled === false && (x.status === 'error' || x.status === 'ok'))));
     chip.classList.toggle('done', allDone);
     chip.classList.toggle('live', getBusy() && !allDone && chip._userToggle !== false);
     chip.classList.toggle('running', !allDone && !!running);
@@ -1243,16 +1243,9 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
         const raw = running && running.progress != null && Number.isFinite(Number(running.progress)) ? Number(running.progress) : null;
         // -1 = 启动阶段（尚无字节数）：不确定进度条（滑动动画）；0~1 = 确定进度
         const pct = raw == null || raw < 0 ? null : Math.min(1, raw);
-        if (raw === -1) {
-          const note = running.note || '加载中…';
-          const html = `<span class="chip-progress indeterminate" role="progressbar" aria-busy="true" aria-label="${esc(note)}"><i></i></span><span class="chip-note">${esc(note)}</span>`;
-          if (state.dataset.progressHtml !== html) { state.innerHTML = html; state.dataset.progressHtml = html; }
-        } else if (pct != null) {
-          const note = running.note || '加载中…';
-          const html = `<span class="chip-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(pct * 100)}" aria-label="${esc(note)}"><i style="width:${(pct * 100).toFixed(1)}%"></i></span><span class="chip-note">${esc(note)}</span>`;
-          if (state.dataset.progressHtml !== html) { state.innerHTML = html; state.dataset.progressHtml = html; }
+        if (raw === -1 || pct != null) {
+          updateChipProgress(state, running, pct);
         } else {
-          if (state.dataset.progressHtml) { delete state.dataset.progressHtml; state.innerHTML = ''; }
           state.textContent = running ? (running.note || '执行中…') : (settled ? `${settled}/${ids.length}` : '…');
         }
         state.title = running ? (running.note || '') : ''; state.classList.remove('bad');
@@ -2817,53 +2810,66 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     // 起标题失败绝不能冒泡到回合流程（catch 掉，标题自然退回「首条消息截断」）
     autoTitle: () => autoTitle(store).then((r) => { if (r && r.ok) renderSessions(); return r; }, () => ({ ok: false, reason: 'view-error' })),
     onToolStart() { scrollToBottom(); },
-    // ── P1 高风险操作确认卡（执行内核 · 最小信息格式 + 三个决定）──
+    // 高风险操作：清晰呈现实际请求；放行后立即移除卡片，拒绝/超时保留结果。
     onConfirmationRequest(call, requestText, key) {
       const node = el('div', 'confirm-card');
       node.dataset.key = String(key || '');
-      node.setAttribute('role', 'alert');
+      node.setAttribute('role', 'group');
+      node.setAttribute('aria-label', localeText('操作权限请求', 'Permission request'));
+      const title = localeText('需要你的确认', 'Your approval is needed');
+      const detail = localeText('请检查以下操作与影响，确认后才会执行。', 'Review the action and its impact before allowing it.');
+      const once = localeText('允许本次', 'Allow once');
+      const session = localeText('本会话允许', 'Allow for session');
+      const deny = localeText('拒绝', 'Deny');
       node.innerHTML = [
-        '<div class="confirm-title">⚠ 执行内核：该操作需要你的确认</div>',
+        '<div class="confirm-header"><span class="confirm-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 20 6v5c0 4.6-2.8 7.8-8 10-5.2-2.2-8-5.4-8-10V6l8-3Z"/><path d="M12 8v4m0 3h.01"/></svg></span>',
+        `<div><div class="confirm-eyebrow">${esc(localeText('权限请求', 'PERMISSION REQUEST'))}</div><div class="confirm-title">${esc(title)}</div><div class="confirm-description">${esc(detail)}</div></div></div>`,
         `<pre class="confirm-body">${esc(requestText || '')}</pre>`,
+        `<div class="confirm-note">${esc(localeText('未选择或超时将自动拒绝。', 'No action is taken if you do not respond.'))}</div>`,
         '<div class="confirm-actions">',
-        '<button class="confirm-btn allow" data-decision="allow-once">允许本次</button>',
-        call?.name === 'curl' ? '' : '<button class="confirm-btn allow-session" data-decision="allow-session">本会话允许该工具</button>',
-        '<button class="confirm-btn deny" data-decision="deny">拒绝</button>',
+        `<button type="button" class="confirm-btn deny" data-decision="deny">${esc(deny)}</button>`,
+        call?.name === 'curl' || call?.name === 'local_files' ? '' : `<button type="button" class="confirm-btn allow-session" data-decision="allow-session">${esc(session)}</button>`,
+        `<button type="button" class="confirm-btn allow" data-decision="allow-once">${esc(once)}</button>`,
         '</div>',
-        '<div class="confirm-note">未选择时不会执行该操作；等待超时按拒绝处理（fail-closed）。</div>',
       ].join('');
       const settle = (decision, label) => {
         const res = (() => { try { return agent.resolveConfirmation(node.dataset.key, decision, label); } catch { return { ok: false }; } })();
+        if (res && res.ok !== false && decision !== 'deny') {
+          confirmNodes.delete(node.dataset.key); node.remove(); paintStatus(agent.getStatus());
+          return;
+        }
         node.classList.add('resolved');
+        node.querySelector('.confirm-header')?.remove();
         node.querySelector('.confirm-body')?.remove();
         node.querySelector('.confirm-actions')?.remove();
         node.querySelector('.confirm-note')?.remove();
+        if (!res || res.ok === false) label = localeText('确认已过期，操作未执行', 'Confirmation expired; operation not executed');
+        node.appendChild(el('div', 'confirm-result deny', esc(label)));
         paintStatus(agent.getStatus());
-        if (!res || res.ok === false) { decision = 'deny'; label = localeText('确认已过期，操作未执行', 'Confirmation expired; operation not executed'); }
-        const tag = el('div', `confirm-result ${decision === 'deny' ? 'deny' : 'allow'}`, esc(label));
-        node.appendChild(tag);
-        if (!res || res.ok === false) toast('该确认已过期或回合已结束，操作未执行（默认拒绝）', 'warn', 4200);
+        if (!res || res.ok === false) toast(localeText('该确认已过期或回合已结束，操作未执行（默认拒绝）', 'This request expired; the action was not executed.'), 'warn', 4200);
         scrollToBottom();
       };
-      node.querySelector('[data-decision="allow-once"]').addEventListener('click', () => settle('allow-once', '已允许本次执行'));
-      node.querySelector('[data-decision="allow-session"]')?.addEventListener('click', () => settle('allow-session', '本会话内该工具不再逐次确认'));
-      node.querySelector('[data-decision="deny"]').addEventListener('click', () => settle('deny', '已拒绝执行'));
+      node.querySelector('[data-decision="allow-once"]').addEventListener('click', () => settle('allow-once', localeText('已允许本次执行', 'Allowed once')));
+      node.querySelector('[data-decision="allow-session"]')?.addEventListener('click', () => settle('allow-session', localeText('本会话内该工具不再逐次确认', 'Allowed for this session')));
+      node.querySelector('[data-decision="deny"]').addEventListener('click', () => settle('deny', localeText('已拒绝执行', 'Denied')));
       msgList.appendChild(node);
       confirmNodes.set(node.dataset.key, node);
       paintStatus(agent.getStatus());
       scrollToBottom(true);
     },
     onConfirmationResolved(call, rec) {
-      const node = [...confirmNodes.values()].find((n) => n && n.dataset.key === String(rec && rec.key || ''));
-      if (!node) return;
-      if (node.classList.contains('resolved')) return;
+      const node = confirmNodes.get(String(rec?.key || ''));
+      if (!node || node.classList.contains('resolved')) return;
+      if (rec?.decision === 'allow-once' || rec?.decision === 'allow-session') {
+        confirmNodes.delete(node.dataset.key); node.remove(); paintStatus(agent.getStatus()); return;
+      }
       node.classList.add('resolved');
+      node.querySelector('.confirm-header')?.remove();
       node.querySelector('.confirm-body')?.remove();
       node.querySelector('.confirm-actions')?.remove();
       node.querySelector('.confirm-note')?.remove();
+      node.appendChild(el('div', 'confirm-result deny', esc(rec?.decision === 'timeout' ? localeText('等待确认超时：未执行（默认拒绝）', 'Confirmation timed out; action not executed') : localeText('操作未获批准', 'Action not approved'))));
       paintStatus(agent.getStatus());
-      const timeout = rec && rec.decision === 'timeout';
-      node.appendChild(el('div', `confirm-result ${timeout ? 'deny' : 'allow'}`, esc(timeout ? '等待确认超时：未执行（默认拒绝）' : `已处理：${rec && rec.decision || ''}`)));
       scrollToBottom();
     },
     onToolResult(call, result) {
@@ -2941,7 +2947,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
         const previous = chip._toolStates[id] || {};
         chip._toolStates[id] = { ...previous, status: patch.status, settled: call.settled,
           note: call.errorNote || patch.note || previous.note || '',
-          progress: patch.status === 'running' ? (Object.hasOwn(patch, 'progress') ? patch.progress : previous.progress) : null,
+          progress: patch.status === 'running' || call.settled === false ? (Object.hasOwn(patch, 'progress') ? patch.progress : previous.progress) : null,
           durationMs: patch.durationMs != null ? Number(patch.durationMs) : previous.durationMs };
         syncToolChip(chip);
       }

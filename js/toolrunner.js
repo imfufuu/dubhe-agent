@@ -560,7 +560,7 @@ export function createToolRunner({ store, emit, getFs, runSubagent } = {}) {
       let autoReviewAllowed = false;
       let autoReviewForcesConfirm = false;
       const sessionAllowedNow = approval === 'allow-session' || exec.confirmGate.isSessionAllowed(call.name);
-      if (call.name !== 'curl' && shouldAutoReview({ enabled: store.state.settings.autoReview !== false, gatewayId: turn.gatewayId, risk, sessionAllowed: sessionAllowedNow })) {
+      if (call.name !== 'curl' && call.name !== 'local_files' && shouldAutoReview({ enabled: store.state.settings.autoReview !== false, gatewayId: turn.gatewayId, risk, sessionAllowed: sessionAllowedNow })) {
         const lastUser = [...store.state.messages].reverse().find((m) => m.role === 'user');
         const review = await reviewToolCall({ apiKey: turn.apiKey, call, risk, userRequest: lastUser ? lastUser.text : '', signal: turn.signal });
         exec.machine.audit.record('auto-review', {
@@ -590,24 +590,26 @@ export function createToolRunner({ store, emit, getFs, runSubagent } = {}) {
       const sessionAllowedBySettings = approval === 'allow-session';
       const needHumanConfirm = !autoReviewAllowed
         && (autoReviewForcesConfirm || guardRequiresConfirmation({ guard: guardMode, risk }))
-        // 本机 shell / 本机文件写删：无论档位与自动审批都必须人工确认（fail-closed；&& 优先于 ||，既有语义不变）
+        // 本机 shell / 本机文件操作：无论档位与自动审批都必须人工确认（fail-closed；&& 优先于 ||，既有语义不变）
         || localMachineMustConfirm(call.name, call.args) || call.name === 'curl';
-      if (needHumanConfirm && (call.name === 'curl' || (!sessionAllowedBySettings && !exec.confirmGate.isSessionAllowed(call.name)))) {
+      if (needHumanConfirm && (call.name === 'curl' || call.name === 'local_files' || (!sessionAllowedBySettings && !exec.confirmGate.isSessionAllowed(call.name)))) {
         const request = formatConfirmationRequest({
           name: call.name, args: call.args,
           reason: risk.reasons[0] || '', impact: undefined,
           reversibility: call.name === 'curl' || risk.irreversible ? '可能产生不可自动撤销的远端操作' : undefined,
-        }) + (call.name === 'curl' ? `\n完整请求参数（会发送至中继与目标）：\n${JSON.stringify(call.args, null, 2)}` : '');
+        }) + (call.name === 'curl' ? `\n完整请求参数（会发送至中继与目标）：\n${JSON.stringify(call.args, null, 2)}` : '')
+          + (call.name === 'local_files' ? `\n本次本机操作（仅本次授权）：\n${JSON.stringify({ action: call.args?.action, path: call.args?.path || '.', dest: call.args?.dest, encoding: call.args?.encoding, overwrite: call.args?.overwrite, recursive: call.args?.recursive, sandbox_path: call.args?.sandbox_path, content_preview: typeof call.args?.content === 'string' ? call.args.content.slice(0, 2000) : undefined, content_truncated: typeof call.args?.content === 'string' && call.args.content.length > 2000 }, null, 2)}` : '');
         const confirmKey = `cf-${exec.execCtx.turnId}-${call.id || call.name}`;
         exec.machine.audit.record('confirmation-requested', { name: call.name, key: confirmKey, riskLevel: risk.level, guardMode, reasons: risk.reasons });
+        const decisionPending = exec.confirmGate.wait({ key: confirmKey, tool: call.name, requestText: request });
         emit('onConfirmationRequest', call, request, confirmKey);
-        const decisionRec = await exec.confirmGate.wait({ key: confirmKey, tool: call.name, requestText: request });
+        const decisionRec = await decisionPending;
         exec.machine.audit.record('confirmation-decision', {
           name: call.name, key: confirmKey, decision: decisionRec.decision,
           reason: decisionRec.reason || '', waitedMs: decisionRec.waitedMs,
         });
         emit('onConfirmationResolved', call, decisionRec);
-        if (decisionRec.decision !== CONFIRMATION_DECISIONS.ALLOW_ONCE && decisionRec.decision !== CONFIRMATION_DECISIONS.ALLOW_SESSION) {
+        if (decisionRec.decision !== CONFIRMATION_DECISIONS.ALLOW_ONCE && (decisionRec.decision !== CONFIRMATION_DECISIONS.ALLOW_SESSION || call.name === 'local_files')) {
           recordBlocked(call, {
             reason: `用户未放行（${decisionRec.decision}）`,
             failure: { kind: 'PERMISSION', label: '未获确认', handling: '不执行：用户未允许该高风险操作', retryable: false, maxRetries: 0, verifyFirst: false, guidance: '不要重试该调用；如确实需要，请说明影响并请用户明确同意。' },
@@ -662,7 +664,7 @@ export function createToolRunner({ store, emit, getFs, runSubagent } = {}) {
         reason: `契约允许（${pre.contract ? pre.contract.sideEffect : 'unknown'} 副作用 · 超时 ${pre.contract ? pre.contract.timeoutMs : '-'}ms）· 风险 ${risk.level}`,
         risk, idempotencyKey: pre.idempotencyKey,
       });
-      const toolCtx = { ...toolCtxFor(call, turn, exec), execution: exec.execCtx };
+      const toolCtx = { ...toolCtxFor(call, turn, exec), execution: exec.execCtx, localFileApproved: call.name === 'local_files' && risk.confirmed === true && risk.confirmationDecision === 'allow-once' };
       // 幂等账本：执行前登记（in-flight），并发同键调用会命中上面的复用分支
       exec.ledger.claim(opKey, { tool: call.name, turnId: exec.execCtx.turnId, argsSummary: summarizeArgs(call.name, call.args) });
       // 快照必须在启动执行之前取（否则 await 之前的同步写入会让前后快照一致，diff 为空）

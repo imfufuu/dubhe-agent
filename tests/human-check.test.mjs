@@ -321,3 +321,27 @@ test('specialist cannot bypass risk confirmation for an allowed tool or be given
     assert.match(requests[1].messages.find(m => m.role === 'tool' && m.tool_call_id === 'c1').content, /CONFIRMATION_REQUIRED/);
   } finally { globalThis.fetch = original; }
 });
+
+test('Turnstile 110200 explains the application hostname, not only the relay host', async () => {
+  const { JSDOM } = await import('jsdom');
+  const dom = new JSDOM('<body></body>', { url: 'https://app.example.test/' });
+  const previous = { document: globalThis.document, location: globalThis.location, turnstile: globalThis.turnstile };
+  Object.defineProperty(globalThis, 'document', { value: dom.window.document, writable: true, configurable: true });
+  Object.defineProperty(globalThis, 'location', { value: dom.window.location, writable: true, configurable: true });
+  let widget;
+  globalThis.turnstile = { render: (box, opts) => { widget = opts; return 'widget'; }, remove() {} };
+  try {
+    const { solveHumanChallenge } = await import('../js/human-check.js?hostname-test');
+    const pending = solveHumanChallenge({ origin: 'https://relay.example.test', siteKey: 'site' });
+    await Promise.resolve();
+    assert.equal(widget['error-callback']('110200'), true);
+    const message = document.querySelector('.human-check-status').textContent;
+    assert.match(message, /app\.example\.test/);
+    assert.match(message, /Hostname Management/);
+    document.querySelector('.human-check-cancel').click();
+    assert.equal(await pending, '');
+  } finally {
+    for (const [key, value] of Object.entries(previous)) Object.defineProperty(globalThis, key, { value, configurable: true, writable: true });
+    dom.window.close();
+  }
+});

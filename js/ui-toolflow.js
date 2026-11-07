@@ -200,7 +200,7 @@ export function paintCommandRows(chips, { groups, sig, scope, ownerId, commandTo
             const key = String(t.id);
             if (t.status || Number.isFinite(Number(t.durationMs))) child._toolStates[key] = {
               status: t.status, settled: t.settled, note: t.errorNote || t.progressNote || '', durationMs: t.durationMs,
-              progress: t.status === 'running' ? (t.progress ?? null) : null,
+              progress: t.status === 'running' || t.settled === false ? (t.progress ?? null) : null,
             };
             else if (liveToolCallIds.has(key) && !child._toolStates[key]) child._toolStates[key] = { status: 'running', settled: t.settled };
           }
@@ -490,4 +490,30 @@ export function installChecklistPanel(store) {
 export function exploringInFlight(cluster, messages) {
   const calls = (cluster || []).flatMap((x) => x.toolCalls || []);
   return calls.some((c) => toolFamily(c) === 'explored' && !(messages || []).some((x) => x.role === 'tool' && String(x.toolCallId) === String(c.id)));
+}
+
+// Keep the same DOM nodes across updates so CSS progress animations never restart.
+export function updateChipProgress(state, running, pct) {
+  const note = running.note || '加载中…';
+  let bar = state.querySelector('.chip-progress');
+  if (!bar) {
+    // Only create once: updating text or width must not restart the animation.
+    state.innerHTML = '<span class="chip-progress" role="progressbar"><i></i></span><span class="chip-note"></span>';
+    bar = state.querySelector('.chip-progress');
+}
+const noteEl = state.querySelector('.chip-note');
+if (noteEl.textContent !== note) noteEl.textContent = note;
+bar.setAttribute('aria-label', note);
+if (pct != null) {
+  bar.classList.remove('indeterminate');
+  bar.removeAttribute('aria-busy');
+  bar.setAttribute('aria-valuemin', '0'); bar.setAttribute('aria-valuemax', '100');
+  bar.setAttribute('aria-valuenow', String(Math.round(pct * 100)));
+  bar.querySelector('i').style.width = `${(pct * 100).toFixed(1)}%`;
+} else if (!bar.hasAttribute('aria-valuenow')) {
+  bar.classList.add('indeterminate'); bar.setAttribute('aria-busy', 'true');
+} else {
+  // Unknown fallback/initialization: retain the last known bar, rather than resetting it.
+  bar.setAttribute('aria-busy', 'true');
+}
 }

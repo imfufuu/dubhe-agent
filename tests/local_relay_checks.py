@@ -70,6 +70,23 @@ check("sensitive: .ssh refused",
 check("sensitive: .aws refused", expect_error(lambda: fs.read(".aws/credentials"), "敏感路径"))
 check("sensitive: case-insensitive", expect_error(lambda: fs.resolve(".SSH/config", must_exist=False), "敏感路径"))
 
+approved_fs = LR.LocalFS([ws], allow_outside=True)
+check("approved fs: outside read works", approved_fs.read(os.path.join(outside, "secret.txt"))["content"] == "nope")
+check("approved fs: sensitive path still rejected", expect_error(lambda: approved_fs.resolve(os.path.join(outside, ".ssh", "id_rsa"), must_exist=False), "敏感路径"))
+check("approved fs: filesystem root cannot be deleted", expect_error(lambda: approved_fs.delete(os.path.abspath(os.sep), recursive=True), "根目录"))
+if hasattr(os, "symlink"):
+    link = os.path.join(ws, "external-link")
+    try:
+        os.symlink(os.path.join(outside, "secret.txt"), link)
+        check("default fs: outside symlink refused", expect_error(lambda: fs.read(link), "超出"))
+        check("approved fs: outside symlink read allowed", approved_fs.read(link)["content"] == "nope")
+        sensitive_link = os.path.join(ws, "sensitive-link")
+        os.symlink(os.path.join(outside, ".ssh"), sensitive_link)
+        check("approved fs: sensitive symlink rejected", expect_error(lambda: approved_fs.resolve(os.path.join(sensitive_link, "id_rsa"), must_exist=False), "敏感路径"))
+    except OSError:
+        pass  # Windows may not permit symlink creation without developer privileges.
+
+
 # ── 文件：读写删移 ──
 r = fs.read("a/b.txt")
 check("read: text content", r["content"] == "hi" and r["encoding"] == "text")
@@ -168,6 +185,13 @@ st, body = call("POST", "/api/local/shell", {"command": "echo x", "cwd": outside
 check("http: shell cwd outside root refused", st == 400 and "超出" in body.get("error", ""), str(st))
 st, body = call("POST", "/api/local/fs", {"action": "read", "path": os.path.join(outside, "secret.txt")}, token)
 check("http: fs outside root refused", st == 400, str(st))
+st, body = call("POST", "/api/local/fs", {"action": "read", "path": os.path.join(outside, "secret.txt"), "allowOutside": True}, token)
+check("http: approved one-off fs access can read outside roots", st == 200 and body.get("result", {}).get("content") == "nope", str(st))
+st, body = call("POST", "/api/local/fs", {"action": "read", "path": os.path.join(outside, "secret.txt")}, token)
+check("http: one-off fs access does not widen later operations", st == 400, str(st))
+st, body = call("POST", "/api/local/shell", {"command": "echo x", "cwd": outside, "allowOutside": True}, token)
+check("http: file permission never widens shell roots", st == 400, str(st))
+
 st, body = call("POST", "/api/local/fs", {"action": "write", "path": "http.txt", "content": "via-http"}, token)
 check("http: fs write ok", st == 200 and open(os.path.join(ws, "http.txt")).read() == "via-http", str(st))
 st, body = call("POST", "/api/local/desktop", {"action": "windows"})

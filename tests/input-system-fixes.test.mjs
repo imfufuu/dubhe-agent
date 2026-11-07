@@ -94,10 +94,12 @@ test('C++ toolchain download reports byte progress through worker → sandbox �
   // 缓存分支会先 tee() 出一份写入 Cache，计数的是转发给解压流的那一份
   assert.match(workerCpp, /countBytes\(source, \(loaded\)/);
   assert.match(sandbox, /if \(data\?\.__progress\) \{\s*try \{ onProgress\?\.\(data\.__progress\)/);
-  assert.match(sandbox, /onProgress: opts\.onProgress,/);
+  assert.match(sandbox, /onProgress: reportProgress, externalProgress,/);
+  assert.match(sandbox, /dubhe-cpp-asset-progress/);
   assert.match(tools, /onProgress: \(p\) => \{/);
   assert.match(tools, /progress: fraction,/);
-  assert.match(toolflow, /progress: t\.status === 'running' \? \(t\.progress \?\? null\) : null,/);
-  assert.match(ui, /class="chip-progress" role="progressbar"/);
+  assert.match(toolflow, /progress: t\.status === 'running' \|\| t\.settled === false \? \(t\.progress \?\? null\) : null,/);
+  assert.match(ui, /updateChipProgress\(state, running, pct\)/);
+  assert.match(toolflow, /class="chip-progress" role="progressbar"/);
   assert.match(css, /\.chip-state \.chip-progress \{/);
 });

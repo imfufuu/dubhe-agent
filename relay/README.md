@@ -48,7 +48,7 @@ Search 响应包含 provider、fallback/warning、标题、URL、摘要和来源
 例如在 Cloudflare Dashboard 的 Worker → Settings → Variables and Secrets 中设置：
 
 - 变量 `CURL_ENABLED`：`true`。
-- 变量 `TURNSTILE_SITE_KEY`：自己的 Turnstile 站点 Site Key（公开值；要允许 Dubhe Agent 网页域名）。
+- 变量 `TURNSTILE_SITE_KEY`：自己的 Turnstile 站点 Site Key（公开值）；在该 widget 的 Hostname Management 添加**加载应用页面的域名**（例如 `imfufuu.github.io`、自定义站点域名，以及本地使用时的 `localhost` / `127.0.0.1`），而不只是 Worker 的 `relay.dubhe-agent.workers.dev`。110200 表示当前网页 hostname 未获授权，修改需在 Cloudflare 控制台完成。
 - Secret `TURNSTILE_SECRET`：同一站点的 Secret Key。不要写进仓库或聊天。
 
 或者用 Wrangler 的 `secret put` 管理 Secret，再使用 `wrangler.toml` 的 `[vars]` 或部署参数提供两个变量。部署时保留已有的其他环境变量，例如 `SEARXNG_URL`。部署完成后检查 `/api/health`：当 `CURL_ENABLED=true` 时会出现 `"curl"`；这只是能力声明，实际调用仍要求 Turnstile 配置完整，否则 `/api/curl` 返回 503。在应用中配置这个 Worker 的地址、打开「联网」并刷新或重探；每次请求都必须人工确认，Turnstile 首次访问时也可能要求验证。默认本地 `server.py` 不提供此接口，但前端会另行探测配置的 Worker。

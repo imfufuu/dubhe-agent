@@ -316,3 +316,19 @@ test('deploy stamping keeps unchanged module bytes stable across versions, stamp
     assert.equal(stampFiles(version(2), root).length, 0, 'stamping is reproducible and idempotent');
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
+
+test('C++ verification streams progress while retaining integrity and offline cache behavior', async () => {
+  const w = world(), p = 'assets/vendor/cpp/browsercc/runtime/clang.wasm.gz';
+  w.set(1, { ...w.files(), [p]: 'compiler-bytes' });
+  const sw = w.worker(1); await sw.install(); await sw.activate(); w.reset();
+  assert.equal(await (await sw.fetch(p)).text(), 'compiler-bytes');
+  await new Promise(resolve => setImmediate(resolve));
+  const updates = sw.messages().filter(m => m.type === 'dubhe-cpp-asset-progress' && m.path === p);
+  assert.ok(updates.length >= 2);
+  assert.equal(updates[0].loaded, 0);
+  assert.equal(updates.at(-1).loaded, Buffer.byteLength('compiler-bytes'));
+  w.offline(); assert.equal(await (await sw.fetch(p)).text(), 'compiler-bytes');
+  const broken = world(); broken.set(1, { ...broken.files(), [p]: 'correct' });
+  const other = broken.worker(1); await other.install(); broken.corrupt(p, 'damaged');
+  assert.equal((await other.fetch(p)).status, 503, 'unverified compiler bytes are never served');
+});

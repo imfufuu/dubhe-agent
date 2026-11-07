@@ -3,12 +3,26 @@
 // 第三方库按本次 imports / 显式 packages 按需加载；常驻 Worker 去重，不重放历史依赖。
 //
 // 安全加固：
-//   · 运行时与包必须从网上拉，所以 fetch / importScripts 不能整体删除，改为私有化真实引用 +
+//   · 可选的第三方包需联网，所以 fetch / importScripts 不能整体删除，改为私有化真实引用 +
 //     全局替换成「仅允许白名单源」的版本（cdn.jsdelivr.net/pyodide/、pypi.org、files.pythonhosted.org）。
 //     用户 Python 代码经 `import js; js.fetch(...)` / pyodide.http 发往其他域名会被直接拒绝。
 //   · XMLHttpRequest / WebSocket / EventSource / Worker / BroadcastChannel / indexedDB / caches 一律移除。
 //   · 真实 postMessage 私有化，全局置空，防止伪造结果帧；输出做与 JS 沙箱相同的硬上限。
 const PY_BASE = 'https://cdn.jsdelivr.net/pyodide/v0.26.4/full/';
+// The five pinned runtime files ship with the app, so basic Python starts even
+// when the public CDN is unavailable. Third-party wheels still use Pyodide CDN/PyPI.
+const LOCAL_RUNTIME_FILES = new Set(['pyodide.js', 'pyodide.asm.js', 'pyodide.asm.wasm', 'pyodide-lock.json', 'python_stdlib.zip']);
+let localRuntimeBase = '';
+function isLocalRuntime(url) {
+  return !!localRuntimeBase && url.startsWith(localRuntimeBase)
+    && LOCAL_RUNTIME_FILES.has(url.slice(localRuntimeBase.length));
+}
+// Pyodide resolves its built-in wheels relative to indexURL. Keep that URL on
+// the distribution CDN, but map the five pinned core files to the local copy.
+function localizeRuntimeUrl(url) {
+  const name = String(url).startsWith(PY_BASE) ? String(url).slice(PY_BASE.length) : '';
+  return localRuntimeBase && LOCAL_RUNTIME_FILES.has(name) ? localRuntimeBase + name : url;
+}
 const ALLOWED_ORIGINS = [
   /^https:\/\/cdn\.jsdelivr\.net\/pyodide\//,
   /^https:\/\/pypi\.org\//,
@@ -74,27 +88,28 @@ function trackRuntimeResponse(url, res) {
 function urlOf(input) {
   try { return String(input instanceof Request ? input.url : (input && input.url) || input); } catch { return String(input); }
 }
-function allowed(url) { return ALLOWED_ORIGINS.some((re) => re.test(url)); }
+function allowed(url) { return isLocalRuntime(url) || ALLOWED_ORIGINS.some((re) => re.test(url)); }
 
 function lockdown() {
   const protoList = [];
   try { protoList.push(WorkerGlobalScope.prototype); } catch { /* ignore */ }
   try { protoList.push(DedicatedWorkerGlobalScope.prototype); } catch { /* ignore */ }
   const guardedFetch = function fetch(input, init) {
-    const url = urlOf(input);
+    const originalUrl = urlOf(input);
+    const url = localizeRuntimeUrl(originalUrl);
     if (!allowed(url)) {
       networkDenied.push(url);
       return Promise.reject(new TypeError(`沙箱禁止联网：${url.slice(0, 120)}（仅允许 Pyodide CDN 与 PyPI 下载依赖）`));
     }
-    if (runtimeTrack && url.startsWith(PY_BASE)) return realFetch(input, init).then((res) => trackRuntimeResponse(url, res));
-    return realFetch(input, init);
+    if (runtimeTrack && (url.startsWith(PY_BASE) || isLocalRuntime(url))) return realFetch(url === originalUrl ? input : url, init).then((res) => trackRuntimeResponse(url, res));
+    return realFetch(url === originalUrl ? input : url, init);
   };
   const guardedImport = function importScripts(...urls) {
     for (const u of urls) {
       const url = String(u);
       if (!allowed(url)) { networkDenied.push(url); throw new TypeError(`沙箱禁止加载外部脚本：${url.slice(0, 120)}`); }
     }
-    return realImportScripts(...urls);
+    return realImportScripts(...urls.map(localizeRuntimeUrl));
   };
   const removeNames = ['XMLHttpRequest', 'WebSocket', 'EventSource', 'Worker', 'SharedWorker', 'BroadcastChannel', 'indexedDB', 'caches', 'WebTransport', 'RTCPeerConnection', 'RTCDataChannel', 'showDirectoryPicker', 'showOpenFilePicker', 'showSaveFilePicker'];
   for (const proto of protoList) {
@@ -221,7 +236,13 @@ async function ensurePackages(pyodide, packages, code, logs) {
 }
 
 self.addEventListener('message', async (e) => {
-  const { code, files, delta, packages } = e.data || {};
+  const { code, files, delta, packages, runtimeBase } = e.data || {};
+  try {
+    const base = new URL(String(runtimeBase || ''));
+    const origin = new URL(self.location.href).origin;
+    if (base.origin !== origin || !base.pathname.endsWith('/assets/vendor/pyodide/0.26.4/') || base.search || base.hash) throw new Error('invalid runtime path');
+    localRuntimeBase = base.href;
+  } catch { localRuntimeBase = ''; }
   const logs = [];
   // 增量同步：主线程只在 Worker 首次运行（或重建后）发全量 files；之后只发 delta {set, del}。
   // mirror 是 Worker 侧对工作区的镜像，运行结束按 diff 回传 filesDelta，大工作区不再每轮往返全量。
@@ -233,15 +254,16 @@ self.addEventListener('message', async (e) => {
     for (const k of (Array.isArray(delta.del) ? delta.del : [])) delete mirror[k];
   }
   const before = mirror;
-  let stage = 'load'; // load → run：只有运行时加载失败才该让主线程把 Python 沙箱标记为不可用
+  let stage = 'load'; // load → run：区分运行时加载失败与用户代码失败
   try {
     if (!loaded) {
       post({ __progress: '正在加载 Python 运行时…' });
-      realImportScripts(PY_BASE + 'pyodide.js');
+      if (!localRuntimeBase) throw new Error('无法定位本地 Python 运行时');
+      realImportScripts(localRuntimeBase + 'pyodide.js');
       startRuntimeTrack();
       reportRuntime(true); // 立刻告知主线程「运行时加载中」（无字节数，主线程显示不确定进度条）
       try {
-        loaded = await loadPyodide({ indexURL: PY_BASE });
+        loaded = await loadPyodide({ indexURL: PY_BASE, lockFileURL: localRuntimeBase + 'pyodide-lock.json', stdLibURL: localRuntimeBase + 'python_stdlib.zip' });
       } finally {
         reportRuntime(true);
         runtimeTrack = null;

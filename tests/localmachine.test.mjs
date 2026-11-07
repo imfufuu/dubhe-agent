@@ -49,13 +49,13 @@ test('风险分级：local_files 的写 / 删 / 移动升级，读取保持低�
   assert.equal(sh.requiresConfirmation, true);
 });
 
-test('强制确认：shell 永远确认；本机文件仅写 / 建目录 / 移动 / 删除确认；读取与截图不确认', () => {
+test('强制确认：shell 和所有本机文件操作逐次确认；截图不确认', () => {
   assert.equal(EX.localMachineMustConfirm('run_shell', { command: 'ls' }), true);
   for (const action of ['write', 'mkdir', 'move', 'delete']) {
     assert.equal(EX.localMachineMustConfirm('local_files', { action }), true, action);
   }
   for (const action of ['list', 'stat', 'read']) {
-    assert.equal(EX.localMachineMustConfirm('local_files', { action }), false, action);
+    assert.equal(EX.localMachineMustConfirm('local_files', { action }), true, action);
   }
   assert.equal(EX.localMachineMustConfirm('take_screenshot', {}), false);
   assert.equal(EX.localMachineMustConfirm('read_file', { path: 'a' }), false);
@@ -162,4 +162,43 @@ test('local_desktop：工具定义的动作枚举与 Python 端一致', () => {
   assert.ok(m, 'Python 端应声明 MUTATING_ACTIONS');
   const pyWrite = [...m[1].matchAll(/"([a-z_]+)"/g)].map((x) => x[1]).sort();
   assert.deepEqual(pyWrite, [...LM.LOCAL_DESKTOP_MUTATING].sort());
+});
+
+test('Agent 确认逐次绑定本机文件调用，拒绝与会话级放行不触发请求', async () => {
+  const { createStore } = await import('../js/state.js');
+  const { createAgent } = await import('../js/agent.js');
+  const { resetLocalMachineProbe } = await import('../js/localmachine.js');
+  const realFetch = globalThis.fetch, realLocation = globalThis.location;
+  Object.defineProperty(globalThis, 'location', { value: new URL('http://localhost:8000/'), configurable: true, writable: true });
+  const ev = data => 'data: ' + JSON.stringify(data) + '\n\n';
+  const turn = id => new Response(ev({ choices: [{ delta: { tool_calls: [{ index: 0, id, function: { name: 'local_files', arguments: JSON.stringify({ action: 'read', path: `/outside/${id}.txt` }) } }] } }] }) + ev({ choices: [{ delta: {}, finish_reason: 'tool_calls' }] }) + 'data: [DONE]\n\n', { headers: { 'content-type': 'text/event-stream' } });
+  const finish = () => new Response(ev({ choices: [{ delta: { content: 'Done' }, finish_reason: 'stop' }] }) + 'data: [DONE]\n\n', { headers: { 'content-type': 'text/event-stream' } });
+  const responses = [turn('one'), turn('two'), finish(), turn('three'), finish(), turn('four'), finish()];
+  const calls = [], confirmations = [], decisions = ['allow-once', 'allow-once', 'deny', 'allow-session'];
+  globalThis.fetch = async (url, init = {}) => {
+    const u = String(url);
+    if (u === '/api/local/session') return Response.json({ ok: true, token: 'x'.repeat(32), platform: { available: true }, fs: { roots: ['/workspace'] } });
+    if (u === '/api/local/fs') { calls.push(JSON.parse(init.body)); return Response.json({ ok: true, result: { path: '/outside/file.txt', size: 1, content: 'x', encoding: 'text' } }); }
+    if (u.includes('/chat/completions')) return responses.shift();
+    if (u.endsWith('/api/health')) return new Response('', { status: 404 });
+    throw new Error(`unexpected ${u}`);
+  };
+  resetLocalMachineProbe();
+  try {
+    const store = createStore(); store.state.apiKey = 'test'; store.state.model = 'gpt-5.6-sol';
+    Object.assign(store.state.settings, { autoReview: true, executionGuard: 'observe', toolApprovals: { local_files: 'allow-session' } });
+    let agent;
+    agent = createAgent(store, { onConfirmationRequest: (call, text, key) => {
+      confirmations.push({ call, text });
+      // Synchronous resolution tests that the gate is registered before emitting the event.
+      assert.equal(agent.resolveConfirmation(key, decisions.shift()).ok, true);
+    } });
+    await agent.send('允许读取本机文件');
+    await agent.send('继续读取本机文件');
+    await agent.send('再次读取本机文件');
+    assert.equal(confirmations.length, 4);
+    assert.match(confirmations[0].text, /\/outside\/one\.txt/);
+    assert.deepEqual(calls.map(x => x.path), ['/outside/one.txt', '/outside/two.txt']);
+    assert.ok(calls.every(x => x.allowOutside === true));
+  } finally { globalThis.fetch = realFetch; Object.defineProperty(globalThis, 'location', { value: realLocation, configurable: true, writable: true }); resetLocalMachineProbe(); }
 });

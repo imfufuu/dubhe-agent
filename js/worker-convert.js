@@ -1,10 +1,12 @@
 // ─── convert_file 的 ffmpeg 执行体（V1.8.1）───────────────────────────────────────
 // 独立 classic Worker：首次使用时 importScripts 固定版本 UMD core（jsDelivr，immutable 缓存），
 // 之后同一页面内复用；一次只跑一个任务（core 的 MEMFS 是共享的，排队避免互相覆盖 in.bin）。
-// 崩溃 / 加载失败都向上报 fatal，由主线程把引擎标记为不可用，绝不静默重试打满流量。
+// 崩溃 / 加载失败都向上报 fatal；不自动重试，用户下次请求可重新加载。
 const PKG_BASE = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/umd';
 const CORE_URL = `${PKG_BASE}/ffmpeg-core.js`;
 const CORE_WASM_URL = `${PKG_BASE}/ffmpeg-core.wasm`;
+// Exact uncompressed length of @ffmpeg/core@0.12.10 dist/umd/ffmpeg-core.wasm (npm registry).
+const CORE_WASM_BYTES = 32232419;
 
 let corePromise = null;
 // 当前任务 id：加载 core 时用它把下载进度回报给发起任务的主线程（首次加载才会发生）
@@ -18,11 +20,13 @@ function reportLoad(loaded, total, stage) {
   self.postMessage({ id: currentJobId, loading: { stage, loaded, total } });
 }
 
-// 流式读取 wasm 并回报字节进度（Content-Length 缺失或与解码后字节不一致时 total=0，主线程显示不确定条）
+// 流式读取 wasm 并按固定发行版的解压后字节数回报进度。
 async function fetchWasmWithProgress() {
   const res = await fetch(CORE_WASM_URL);
   if (!res.ok || !res.body) return null;
-  const declared = Number(res.headers.get('content-length')) || 0;
+  // Browser streams contain decoded bytes; Content-Length may be compressed or hidden by CORS.
+  // This immutable pinned file has a known decoded size, unlike its wire transfer size.
+  const declared = CORE_WASM_BYTES;
   const reader = res.body.getReader();
   const chunks = [];
   let loaded = 0;
@@ -31,8 +35,9 @@ async function fetchWasmWithProgress() {
     if (done) break;
     chunks.push(value);
     loaded += value.byteLength;
-    reportLoad(loaded, declared && loaded <= declared ? declared : 0, 'download');
+    reportLoad(loaded, declared, 'download');
   }
+  reportLoad(loaded, declared, 'download-complete');
   const buf = new Uint8Array(loaded);
   let off = 0;
   for (const c of chunks) { buf.set(c, off); off += c.byteLength; }
@@ -52,7 +57,7 @@ function loadCore() {
       if (buf && buf.byteLength > 1_000_000 && head[0] === 0x00 && head[1] === 0x61 && head[2] === 0x73 && head[3] === 0x6d) wasmBinary = buf;
     } catch { /* 走下面的统一报错 */ }
     if (!wasmBinary) throw new Error(`下载 ffmpeg-core.wasm 失败（需要网络放行 ${PKG_BASE.replace('https://', '')}）`);
-    reportLoad(0, 0, 'init'); // 下载完成，正在编译 wasm / 初始化（不确定进度）
+    reportLoad(wasmBinary.byteLength, CORE_WASM_BYTES, 'init'); // 下载完成，正在编译 wasm / 初始化（不确定进度）
     const core = await factory({ wasmBinary });
     core.setLogger && core.setLogger(() => { /* 进度噪声不进 UI；错误行在任务里单独取 */ });
     return core;

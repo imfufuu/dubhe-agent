@@ -118,3 +118,22 @@ test('polish is spatial grayscale with an opaque fallback and excludes names', (
   assert.match(rule, /--polish-ink: #252525; --polish-shine: #707070/);
   assert.match(rule, /-webkit-text-fill-color: currentColor/);
 });
+
+test('progress updates reuse DOM nodes and preserve known progress during fallback', async () => {
+  const { JSDOM } = await import('jsdom');
+  const { updateChipProgress } = await import('../js/ui-toolflow.js');
+  const document = new JSDOM('<div></div>').window.document;
+  const state = document.querySelector('div');
+  updateChipProgress(state, { note: 'starting' }, null);
+  const bar = state.querySelector('.chip-progress'), fill = bar.querySelector('i');
+  assert.ok(bar.classList.contains('indeterminate'));
+  updateChipProgress(state, { note: 'download' }, 0.4);
+  assert.equal(state.querySelector('.chip-progress'), bar);
+  assert.equal(bar.querySelector('i'), fill);
+  assert.equal(fill.style.width, '40%');
+  updateChipProgress(state, { note: 'fallback' }, null);
+  assert.equal(state.querySelector('.chip-progress'), bar);
+  assert.equal(fill.style.width, '40%');
+  assert.equal(bar.getAttribute('aria-valuenow'), '40');
+  assert.equal(state.querySelector('.chip-note').textContent, 'fallback');
+});
