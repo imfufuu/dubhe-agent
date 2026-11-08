@@ -3617,3 +3617,49 @@ html[data-motion="off"] .pm-progress.indeterminate .pm-prog-fill { animation: no
 .confirm-btn.deny { color: var(--fg-2); border-color: var(--line); }
 .confirm-card.resolved { box-shadow: none; }
 @media (max-width: 480px) { .confirm-card { padding: 16px; } .confirm-actions { flex-wrap: wrap; } .confirm-actions .allow { flex: 1; } }
+
+/* The same horizontal inset aligns user bubbles with the assistant footer. */
+.msg-user { padding-inline: 0; }
+@container (max-width: 860px) { .msg-user { padding-inline: clamp(16px, 4vw, 24px); } }
+.message-tail { margin-top: 3px; margin-bottom: 8px; }
+.cancelled-tag { margin-left: 0; }
+.pm-tree, .pm-tree-empty, .pm-context-menu, .pm-empty, .pm-gutter, .pm-marks { user-select: none; -webkit-user-select: none; }
+.pm-ex-head { flex-wrap: nowrap; }
+.pm-ex-head > span { flex: 1 1 auto; }
+.pm-side-reopen { display: none; }
+.pm-root.pm-side-collapsed .pm-side-reopen { display: inline-flex; align-self: flex-start; }
+
+/* Single-choice card: calm, full-width rows with an explicit radio indicator. */
+.choice-box:not(.choice-result) { padding: 0; border-radius: 12px; background: var(--bg-soft); }
+.choice-box:not(.choice-result) .choice-head { display: none; }
+.choice-box:not(.choice-result) .choice-summary:empty { display: none; }
+.choice-box:not(.choice-result) .choice-summary { margin: 10px 18px 0; }
+.choice-box:not(.choice-result) .choice-qrow { padding: 18px; margin: 0; align-items: center; border-bottom: 1px solid var(--line); }
+.choice-box:not(.choice-result) .choice-q { font-size: 16px; font-weight: 600; }
+.choice-box:not(.choice-result) .choice-opts { gap: 0; }
+.choice-box:not(.choice-result) .choice-opt { display: flex; align-items: center; gap: 14px; width: 100%; padding: 17px 18px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: transparent; color: var(--fg); transform: none; }
+.choice-box:not(.choice-result) .choice-opt:hover, .choice-box:not(.choice-result) .choice-opt.selected { background: var(--bg-hover); color: var(--fg); }
+.choice-radio { width: 18px; height: 18px; border: 1.5px solid var(--fg-3); border-radius: 50%; flex: 0 0 auto; }
+.choice-opt.selected .choice-radio { border: 5px solid var(--accent); }
+.choice-box:not(.choice-result) .choice-other-label { margin: 0; padding: 12px 18px; }
+.choice-box:not(.choice-result) .choice-nav { margin: 0; padding: 10px 18px; border-top: 1px solid var(--line); }
+.web-activity .web-arg { display: block; -webkit-line-clamp: unset; overflow: visible; }
+@media (max-width: 720px) { .msg-user { padding-inline: 20px; } }
+@media (max-width: 380px) { .msg-user { padding-inline: 18px; } }
+/* Original vector file marks: every tree row, including unknown files and folders. */
+.pm-tree-row { gap: 9px; min-height: 34px; }
+.pm-tree-icon { display: inline-flex; flex: 0 0 21px; width: 21px; height: 21px; align-items: center; justify-content: center; }
+.pm-file-icon { display: block; width: 21px; height: 21px; color: var(--fg-2); }
+.pm-file-icon .fill { fill: currentColor; stroke: currentColor; }
+.pm-file-icon .white { fill: none; stroke: #fff; }
+.pm-file-icon .dark { fill: none; stroke: #2e2b1b; }
+.pm-icon-folder, .pm-icon-folderOpen { color: var(--fg); }
+.pm-icon-ts, .pm-icon-react, .pm-icon-database { color: #1684c5; }
+.pm-icon-js, .pm-icon-json, .pm-icon-env { color: #d5ac18; }
+.pm-icon-css, .pm-icon-config { color: #7045b8; }
+.pm-icon-html, .pm-icon-package { color: #cf4d28; }
+.pm-icon-python { color: #3784a7; }
+.pm-icon-image { color: #ac5790; }
+.pm-icon-audio, .pm-icon-video { color: #b55d80; }
+.pm-icon-archive { color: #aa7d48; }
+.pm-tree-row .pm-tree-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

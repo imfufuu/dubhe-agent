@@ -722,7 +722,7 @@ console.log('\n⑯ 移动端布局：根因修复 + 密度重排（源码级护�
   // 刷新后「对话 + 附件 + 沙箱」都要在：重数据外置到 IndexedDB
   const stateSrc = fs.readFileSync(path.join(ROOT, 'js/state.js'), 'utf8');
   ok('重数据外置到 IndexedDB（附件图/沙箱图/生成图）', /extractBlobs/.test(stateSrc) && /applyBlobs/.test(stateSrc) && /hydrateBlobs/.test(stateSrc)
-    && /createBlobPersistenceQueue/.test(stateSrc) && /blobPersistenceQueue\(entries, keep\)/.test(stateSrc), 'state.js 缺少外置逻辑或有序快照清理');
+    && /createBlobPersistenceQueue/.test(stateSrc) && /blobPersistenceQueue\(entries, keep, commitProject\)/.test(stateSrc), 'state.js 缺少外置逻辑或有序快照清理');
   ok('启动时水合并重绘界面', /hydrateBlobs\(\)\.then/.test(mainSrc || fs.readFileSync(path.join(ROOT, 'js/main.js'), 'utf8'))
     && /afterHydrate/.test(uiSrc));
   // 侧栏面板按钮曾被 textContent='◧' 整体替换，丢掉 pill 的「图标 + 文字」统一外观并被压到 30 多像素宽
@@ -1167,6 +1167,24 @@ console.log('\n工具回退进度保持');
   c.settled = true;
   ui.onToolEvent(c, { status: 'ok', settled: true, finalOutput: 'ok' });
   ui.onAssistantDone(m);
+}
+
+console.log('\n选择摘要与会话草稿');
+{
+  const session = store.createSession();
+  store.pushMessage({ role: 'user', text: '选择问题' });
+  const m = store.pushMessage({ role: 'assistant', done: true, text: ':::choice 第一题\n- 是\n- 否\n:::\n\n:::choice 第二题\n- 甲\n- 乙\n:::', choiceResults: { 0: [{ question: '第一题', answer: '是', other: '' }, { question: '第二题', answer: '', other: '自定义答案' }] } });
+  store.pushMessage({ role: 'user', choiceReply: true, text: '第一题\n是\n\n第二题\n自定义答案' });
+  ui.rebuildMessages();
+  const summary = $(`[data-id="${m.id}"] .choice-result`);
+  ok('真实消息重绘后的选择摘要保留选项和其他输入', !!summary && /第一题[\s\S]*是[\s\S]*第二题[\s\S]*自定义答案/.test(summary.textContent) && !/未选择/.test(summary.textContent), summary?.textContent || '无摘要');
+  const input = $('#composer-input'); input.value = '会话一的草稿'; input.dispatchEvent(new window.Event('input', { bubbles: true }));
+  click($('#new-session'));
+  const second = { id: store.state.activeSessionId };
+  ui.switchSession(session.id);
+  ok('切回会话恢复各自草稿', input.value === '会话一的草稿', input.value);
+  ui.switchSession(second.id);
+  ok('另一会话不混入前一会话草稿', input.value === '', input.value);
 }
 
 console.log(failures ? `\n${failures} 项失败 ❌` : '\nDOM 冒烟测试全部通过 ✅');

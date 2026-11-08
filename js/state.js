@@ -92,6 +92,7 @@ const FILE_KEEP = 16 * 1024; // 沙箱文件 / data URL 超过 16KB 就外置（
 /** 收集当前状态里所有外置 key（水合时按这些 key 去 IDB 取） */
 export function collectBlobKeys(state) {
   const keys = [];
+  for (const k of Object.values(state.project?.blobFiles || {})) keys.push(k);
   for (const s of state.sessions || []) {
     for (const k of Object.values(s.blobFiles || {})) keys.push(k);
     for (const m of s.messages || []) {
@@ -173,7 +174,17 @@ export function extractBlobs(state, { ready = false } = {}) {
     return out;
   });
   const active = sessions.find((s) => s.id === state.activeSessionId) || sessions[0] || { messages: [], files: {} };
-  const light = { ...state, sessions, messages: active.messages, files: active.files };
+  const project = state.project || { files: {} };
+  const projectFiles = { ...(project.files || {}) }, projectBlobFiles = { ...(project.blobFiles || {}) };
+  for (const [path, value] of Object.entries(projectFiles)) {
+    if (typeof value === 'string' && value.length > FILE_KEEP) {
+      const key = projectBlobFiles[path] || `p:legacy:${path}`;
+      projectBlobFiles[path] = key; blobs.push([key, value]); delete projectFiles[path];
+    } else delete projectBlobFiles[path];
+  }
+  const lightProject = { ...project, files: projectFiles, blobFiles: projectBlobFiles };
+  const light = { ...state, project: lightProject, sessions, messages: active.messages, files: active.files };
+  delete light._projectPersistenceError;
   delete light._blobsReady; // 运行时标记，不进快照
   if (active.blobFiles) light.blobFiles = active.blobFiles; else delete light.blobFiles;
   return { light, blobs, keys: collectBlobKeys(light) };
@@ -183,6 +194,12 @@ export function extractBlobs(state, { ready = false } = {}) {
 export function applyBlobs(state, map) {
   if (!map || !map.size) return 0;
   let filled = 0;
+  if (state.project?.blobFiles) {
+    for (const [path, key] of Object.entries(state.project.blobFiles)) {
+      if (!map.has(key)) continue;
+      state.project.files ||= {}; state.project.files[path] = map.get(key); filled++;
+    }
+  }
   for (const s of state.sessions || []) {
     if (s.blobFiles) {
       for (const [path, key] of Object.entries(s.blobFiles)) {
@@ -227,7 +244,7 @@ export function createBlobPersistenceQueue({ put = blobPut, prune = blobPrune } 
     tagged.persistenceStage = stage;
     return tagged;
   };
-  const enqueue = (entries = [], keep = []) => {
+  const enqueue = (entries = [], keep = [], onStored = null) => {
     const ticket = ++revision;
     const task = tail.catch(() => {}).then(async () => {
       const current = () => ticket === revision;
@@ -239,6 +256,8 @@ export function createBlobPersistenceQueue({ put = blobPut, prune = blobPrune } 
           throw tagError(error, 'put');
         }
       }
+      if (!current()) return { skipped: true };
+      if (onStored) { try { await onStored(); } catch (error) { throw tagError(error, 'commit'); } }
       if (!current()) return { skipped: true };
       try { await prune(keep); }
       catch (error) {
@@ -313,6 +332,7 @@ export function createStore(onChange) {
     auditReconcile: null,       // 审计三层目标对账（完整性 / 完备性 / 真实性边界声明）
     lastExecutionContext: null, // 最近一轮的统一执行上下文（能力/约束/工具表裁剪/一致性自检结论）
   };
+  state.project = { name: 'Project', files: {}, blobFiles: {} };
   state.activeSessionId = state.sessions[0].id;
 
   // P1 状态键的形状与容量兜底：坏数据不能让续跑 / 评测 / 记忆面板炸掉
@@ -471,7 +491,7 @@ export function createStore(onChange) {
       // 有 IndexedDB：重数据外置，localStorage 只存轻量状态（不再有 4MB 天花板）。
       // 轻量快照保持同步写入，满足 beforeunload / 回合完成时的即时持久化契约；
       // 大对象 put 与 prune 则由同一队列排序，旧快照不能在新快照之后清理其 key。
-      let entries = [], keep = [], indexReady = false;
+      let entries = [], keep = [], indexReady = false, commitProject = null;
       try {
         const ex = extractBlobs(state, { ready: !!state._blobsReady });
         entries = ex.blobs;
@@ -479,19 +499,40 @@ export function createStore(onChange) {
         // 水合完成前 extractBlobs.blobs 经常是空的（大文件还不在内存里），旧逻辑 keep=[]
         // 会把 IDB 里已有的图全部删掉 —— 刷新后再刷新，附件和沙箱图就没了。
         keep = ex.keys;
+        // Do not publish a new project blob reference until its unique version
+        // has actually reached IndexedDB. An interrupted save keeps the prior
+        // project snapshot instead of pointing at missing or stale data.
+        let previous = null;
+        try { previous = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch { /* first save */ }
+        const oldProject = previous?.project || { name: 'Project', files: {}, blobFiles: {} };
+        const oldKeys = new Set(Object.values(oldProject.blobFiles || {}));
+        const pendingProject = Object.values(ex.light.project.blobFiles || {}).some(key => !oldKeys.has(key));
+        if (pendingProject) {
+          const projectSnapshot = ex.light.project;
+          ex.light.project = oldProject;
+          commitProject = () => {
+            const current = JSON.parse(localStorage.getItem(KEY) || '{}');
+            current.project = projectSnapshot;
+            localStorage.setItem(KEY, JSON.stringify(current));
+          };
+        }
         localStorage.setItem(KEY, JSON.stringify(ex.light));
         indexReady = true;
-      } catch {
-        try { localStorage.setItem(KEY, JSON.stringify(slimState())); } catch { /* 放弃本次持久化 */ }
+      } catch (error) {
+        try { localStorage.setItem(KEY, JSON.stringify(slimState())); state._projectPersistenceError = ''; }
+        catch { state._projectPersistenceError = `本地保存失败：${error.message || error}`; }
       }
       // 无法从坏状态提取完整索引时，不允许用空白白名单清空 IDB；同时作废已排队的旧清理。
       // 旧大对象留待后续成功快照清理。
       if (!indexReady) { blobPersistenceQueue.invalidate(); return; }
-      blobPersistenceQueue(entries, keep).catch((e) => {
+      blobPersistenceQueue(entries, keep, commitProject).then((r) => { if (!r.skipped) state._projectPersistenceError = ''; }).catch((e) => {
         if (e && e.persistenceStage === 'put') {
           // 落库失败（隐私模式 / 配额）：退回把完整状态塞进 localStorage，至少别丢
           console.warn('[persist] IndexedDB 写入失败，退回 localStorage：', e.message);
-          try { localStorage.setItem(KEY, JSON.stringify(state)); } catch { /* 放不下就算了 */ }
+          try { localStorage.setItem(KEY, JSON.stringify(state)); state._projectPersistenceError = ''; }
+          catch { state._projectPersistenceError = `项目无法持久保存：${e.message || e}；请导出文件或释放存储空间。`; }
+        } else if (e && e.persistenceStage === 'commit') {
+          state._projectPersistenceError = `项目索引保存失败：${e.message || e}；请导出文件或释放存储空间。`;
         } else if (e && e.persistenceStage === 'prune') {
           console.warn('[persist] 清理孤儿数据失败：', e.message);
         }
@@ -503,9 +544,10 @@ export function createStore(onChange) {
       // 先预估再决定序列化目标；预估偏低时仍有全量兜底检查
       let json = estimateStateChars() > 4000000 ? JSON.stringify(slimState()) : JSON.stringify(state);
       if (json.length > 4000000) json = JSON.stringify(slimState());
-      localStorage.setItem(KEY, json);
-    } catch {
-      try { localStorage.setItem(KEY, JSON.stringify(slimState())); } catch { /* 放弃本次持久化 */ }
+      localStorage.setItem(KEY, json); state._projectPersistenceError = '';
+    } catch (error) {
+      try { localStorage.setItem(KEY, JSON.stringify(slimState())); state._projectPersistenceError = ''; }
+      catch { state._projectPersistenceError = `本地保存失败：${error.message || error}；请导出文件或释放存储空间。`; }
     }
   };
   // immediate=true 立即同步落盘：beforeunload / 页面隐藏时不能用防抖，
@@ -587,6 +629,9 @@ export function createStore(onChange) {
       }
     }
   } catch { /* 损坏数据忽略 */ }
+  if (!state.project || typeof state.project !== 'object' || Array.isArray(state.project)) state.project = { name: 'Project', files: {}, blobFiles: {} };
+  if (!state.project.files || typeof state.project.files !== 'object' || Array.isArray(state.project.files)) state.project.files = {};
+  if (!state.project.blobFiles || typeof state.project.blobFiles !== 'object' || Array.isArray(state.project.blobFiles)) state.project.blobFiles = {};
   // Gateway isolation/migration: legacy snapshots have one TeamoRouter apiKey + model cache.
   const validGatewayIds = new Set(['teamorouter', 'anthropic', 'openai', 'gemini', 'deepseek', 'glm', 'grok', 'kimi', 'doubao', 'qwen', 'custom']);
   if (!validGatewayIds.has(String(state.gatewayId || ''))) state.gatewayId = 'teamorouter';

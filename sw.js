@@ -124,7 +124,7 @@ async function matches(response, entry, path = '') {
       const { done, value } = await reader.read();
       if (done) break;
       loaded += value.byteLength;
-      if (loaded > entry.size) { await reader.cancel(); return false; }
+      if (loaded > entry.size) { reader.cancel().catch(() => {}); return false; }
       chunks.push(value);
       if (Date.now() - last >= 120) { last = Date.now(); reportCppAsset(path, loaded, entry.size); }
     }
@@ -137,7 +137,44 @@ async function matches(response, entry, path = '') {
   const hash = [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map(b => b.toString(16).padStart(2, '0')).join('');
   return hash === entry.sha256;
 }
+// Pinned public mirror races the origin only for the three immutable compiler
+// archives. No source, stdin or project data is sent; bytes are SHA-256 checked
+// against the deployment manifest before either response can be served.
+const CPP_MIRROR = 'https://cdn.jsdelivr.net/gh/imfufuu/dubhe-agent@9a9a31d1fca80dea04ef10ca80b7b94a605bfe42/';
+async function verifiedCpp(path, entry) {
+  const candidates = [new URL(path, CPP_MIRROR).href, new URL(path, SCOPE).href];
+  const controllers = candidates.map(() => new AbortController());
+  const timers = [];
+  let winner = -1;
+  const trySource = async (url, index) => {
+    assertOnline();
+    const controller = controllers[index];
+    activeNetworkControllers.add(controller);
+    const timeout = setTimeout(() => controller.abort(), 120000); timers.push(timeout);
+    try {
+      const res = await fetch(url, { credentials: 'omit', cache: 'force-cache', redirect: 'error', signal: controller.signal });
+      if (!await matches(res, entry, path)) throw Error('Compiler asset integrity mismatch');
+      if (isNetworkOffline()) throw Error('Offline mode blocks network access.');
+      if (winner !== -1) throw Error('Another verified compiler source already won');
+      winner = index;
+      return res;
+    } catch (error) {
+      controller.abort(); throw error;
+    } finally {
+      clearTimeout(timeout); activeNetworkControllers.delete(controller);
+    }
+  };
+  try {
+    // Launch both together: the first fully verified response wins, not just
+    // the first headers. A bad/blocked CDN falls back to the same-origin file.
+    return await Promise.any(candidates.map(trySource));
+  } finally {
+    controllers.forEach((controller, index) => { if (index !== winner) controller.abort(); });
+    timers.forEach(clearTimeout);
+  }
+}
 async function verified(path, entry) {
+  if (CPP_PROGRESS_PATH.test(path)) return verifiedCpp(path, entry);
   const url = new URL(path, SCOPE);
   for (let attempt = 0; attempt < 2; attempt++) {
     if (attempt) url.searchParams.set('__asset_hash', entry.sha256);
@@ -146,6 +183,7 @@ async function verified(path, entry) {
   }
   throw Error('Static asset integrity mismatch: ' + path);
 }
+
 async function metadata(cache) {
   try { return await (await cache.match(META))?.json(); } catch { return null; }
 }

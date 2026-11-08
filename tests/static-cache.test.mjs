@@ -17,7 +17,7 @@ const defaults = () => ({ 'index.html': '<h1>Home</h1>', 'app.html': '<h1>App</h
 function world() {
   const stores = new Map(), requests = [], handlers = new Map(), progressMessages = [];
   const client = { url: scope + 'app.html', postMessage: message => progressMessages.push(message) };
-  let files = defaults(), revision = 1, offline = false, override = {}, quota = false, badManifest;
+  let files = defaults(), revision = 1, offline = false, override = {}, quota = false, badManifest, mirrorContent;
   const key = r => typeof r === 'string' ? r : r.url;
   const caches = {
     async keys() { return [...stores.keys()]; },
@@ -33,6 +33,7 @@ function world() {
     const url = key(input); requests.push(url);
     if (offline) throw Error('Offline');
     if (url === scope + 'build.json') return Response.json(manifest());
+    if (url.startsWith('https://cdn.jsdelivr.net/gh/imfufuu/dubhe-agent@') && mirrorContent !== undefined) return new Response(mirrorContent);
     const p = new URL(url).origin === new URL(scope).origin ? new URL(url).pathname.slice('/dubhe-agent/'.length) : url;
     return p in files ? new Response(override[p] ?? files[p]) : new Response('not found', { status: 404 });
   };
@@ -49,7 +50,7 @@ function world() {
     };
   }
   return { caches, requests, worker, stores, reset() { requests.length = 0; }, set(n, f = files) { revision = n; files = f; }, files: () => files,
-    offline(v = true) { offline = v; }, corrupt(p, v) { override[p] = v; }, quota(v = true) { quota = v; }, manifest(v) { badManifest = v; } };
+    mirror(value) { mirrorContent = value; }, offline(v = true) { offline = v; }, corrupt(p, v) { override[p] = v; }, quota(v = true) { quota = v; }, manifest(v) { badManifest = v; } };
 }
 test('cold install pre-caches site code, offline runtime/skills/knowledge and Office parsers, not large unrelated dependencies', async () => {
   const w = world(), sw = w.worker(1); await sw.install(); await sw.activate();
@@ -331,4 +332,20 @@ test('C++ verification streams progress while retaining integrity and offline ca
   const broken = world(); broken.set(1, { ...broken.files(), [p]: 'correct' });
   const other = broken.worker(1); await other.install(); broken.corrupt(p, 'damaged');
   assert.equal((await other.fetch(p)).status, 503, 'unverified compiler bytes are never served');
+});
+
+
+test('C++ pinned CDN and origin race serves only a verified winner', async () => {
+  const p = 'assets/vendor/cpp/browsercc/runtime/clang.wasm.gz';
+  const fromCdn = world(); fromCdn.set(1, { ...fromCdn.files(), [p]: 'valid' }); fromCdn.mirror('valid'); fromCdn.corrupt(p, 'wrong');
+  const a = fromCdn.worker(1); await a.install(); fromCdn.reset();
+  assert.equal(await (await a.fetch(p)).text(), 'valid');
+  assert.ok(fromCdn.requests.some(url => url.startsWith('https://cdn.jsdelivr.net/gh/imfufuu/dubhe-agent@9a9a31d1')));
+  const both = world(); both.set(1, { ...both.files(), [p]: 'valid' }); both.mirror('valid');
+  const d = both.worker(1); await d.install(); assert.equal(await (await d.fetch(p)).text(), 'valid');
+  const fallback = world(); fallback.set(1, { ...fallback.files(), [p]: 'valid' }); fallback.mirror('wrong');
+  const b = fallback.worker(1); await b.install();
+  assert.equal(await (await b.fetch(p)).text(), 'valid');
+  const broken = world(); broken.set(1, { ...broken.files(), [p]: 'valid' }); broken.mirror('wrong'); broken.corrupt(p, 'wrong');
+  const c = broken.worker(1); await c.install(); assert.equal((await c.fetch(p)).status, 503);
 });

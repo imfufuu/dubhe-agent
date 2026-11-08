@@ -1,4 +1,4 @@
-// ─── Dubhe Helix 3.0「DC · Dubhe Cambrian（天枢·寒武）」自研 Agent 执行框架（前身 Helix 2.5 / 天枢2.5）───────
+// ─── Dubhe Helix 3.5「DC · Dubhe Cambrian（天枢·寒武）」自研 Agent 执行框架（前身 Helix 2.5 / 天枢2.5）───────
 // 融合 Nous Research Hermes Agent 的架构思路与 Dubhe Agent 的端云协同双系统：
 //   1. System-1 / System-2 双系统认知路由（Jev 预判向量 × 自适应温度 × 零额外轮次技能直注）
 //   2. 四层缓存不变量提示词编译器（stable → context → volatile 锁死前缀缓存 + ephemeral 动态注入）
@@ -67,13 +67,13 @@ export const NEXUS_CONVERGENCE_SPEC = Object.freeze({
 });
 
 export const NEXUS_ARCHITECTURE_SPEC = Object.freeze({
-  id: 'dubhe-helix-3.0',
-  code: 'DH30',
+  id: 'dubhe-helix-3.5',
+  code: 'DH35',
   codename: Object.freeze({ short: 'DC', name: 'Dubhe Cambrian', zh: '天枢·寒武', meaning: '能力大爆发：登记一处、处处生效，能力可以大量、低风险地长出来' }),
   shortName: '天枢·寒武',
-  name: 'Dubhe Helix 3.0（DC · Dubhe Cambrian · 天枢·寒武） · 三核正交架构 + 执行内核 + 能力登记处 + 可验证供应链',
-  version: '3.0.0',
-  lineage: Object.freeze(['dubhe-helix-2.5（天枢2.5，2026-09-30 → 2026-10-07，P0–P8 九项架构评审全部落地）']),
+  name: 'Dubhe Helix 3.5（DC · Dubhe Cambrian · 天枢·寒武） · 三核正交架构 + 执行内核 + 能力登记处 + 可验证供应链',
+  version: '3.5.0',
+  lineage: Object.freeze(['dubhe-helix-3.0（DC）', 'dubhe-helix-2.5（天枢2.5，2026-09-30 → 2026-10-07，P0–P8 九项架构评审全部落地）']),
   convergedStages: NEXUS_CONVERGENCE_SPEC.stages,
   canonicalStates: NEXUS_CONVERGENCE_SPEC.canonicalStates,
   layers: [
@@ -89,13 +89,14 @@ export const NEXUS_ARCHITECTURE_SPEC = Object.freeze({
     { id: 'L9-resilience', mergedInto: 'S1-route-probe', name: '外部依赖韧性（中继失败 TTL 自动重探 / 网页工具网络错误当场重探 / 搜索五级回退 / 网关双节点 + 失败处切换入口 / 预算七路 / 幂等账本核验副作用）', modules: ['net.js#relayAvailable', 'net.js#noteRelayNetworkError', 'relay/worker.js#searchWeb', 'endpoint.js', 'idempotency.js#planReplay'] },
   ],
   enhancements: [
+    'Helix 3.5：外部副作用本地预写记录、未知结果核验和逐次确认；路径规范化与保守并发调度。记录受同源本地存储及多标签页竞争限制，不提供 exactly-once 保证',
     '三核流水线与 4 位正交能力掩码（S1-S3 & Orthogonal Capability Vector）：每个能力开关（Relay/Web/Sandbox/Dispatch）仅控制互不相交的工具子集，线性正交无交叉项副作用',
     '软归档可恢复（forget/restore）与物理彻底清除（purge）显式分流：常规超期/删除进 0-Token 冷备库可恢复，用户隐私删除走 purge 同时物理抹除活跃库与冷备库',
     '离线标注评测集与代价加权混淆矩阵（Offline Benchmark & Confusion Matrix）：完整披露路由升档与记忆过滤的 TP/FP/TN/FN、Precision、Recall、加权误差成本及真实失败样本',
     '前提实时重探针与诚实深度披露（Premise Re-Probe & Depth Gap Disclosure）：回合入口实时重验中继状态；明确披露单模型自检与 18 路子智能体的推理深度差距',
     'SHA-256 跨轮次追加哈希链与独立 Store 审计（SHA-256 Hash Chain & Cross-Store Audit）：每条足迹携带前序摘要 prevTurnDigest，并与消息 Store 中的实际 toolCalls 独立交叉核对',
     'P0 执行内核（Execution Kernel，js/execution.js）：统一显式执行状态机（14 态 / 38 条合法边，转移必带理由与 policyVersion 且可重放）、六路资源预算（工具调用 / 重试 / 墙钟 / 并发 / 记忆写 / 外部副作用）、工具契约层（副作用 / 幂等性 / 重试策略 / 超时 / 回滚 / 风险等级）与调用前后校验、失败六分类与幂等键防盲目重试、L0–L3 风险分级与最小信息确认请求、静默失败检测与强制披露',
-    'P1 可恢复执行（js/recovery.js + js/idempotency.js）：执行级检查点（checkpointId / completedSteps / pendingStep / artifacts / stateDigest）在每波工具调用后落盘，刷新或中断后按「哪些步骤可复用、哪些产物已被外部改动、未完成步骤是否仍有效、是否需要用户重新确认」生成续跑计划并注入下一轮上下文；幂等账本以预写日志语义登记每次调用的 in-flight / succeeded / failed / blocked / uncertain，同键调用按 reuse（目标状态已满足）/ verify-first（副作用不确定）/ block（重复外部副作用）/ allow 四种裁决处理，杜绝重复写入、重复提交与重复扣费',
+    'P1 可恢复执行（js/recovery.js + js/idempotency.js）：执行级检查点（checkpointId / completedSteps / pendingStep / artifacts / stateDigest）在每波工具调用后落盘，刷新或中断后按「哪些步骤可复用、哪些产物已被外部改动、未完成步骤是否仍有效、是否需要用户重新确认」生成续跑计划并注入下一轮上下文；幂等账本以预写日志语义登记每次调用的 in-flight / succeeded / failed / blocked / uncertain，同键调用按 reuse（目标状态已满足）/ verify-first（副作用不确定）/ block（重复外部副作用）/ allow 四种裁决处理，降低重复写入、重复提交与重复扣费的风险',
     'P1 交互确认（js/execution.js 确认闸门 + UI 确认卡）：L2/L3 风险按档位策略（observe / strict / strict-l2）生成「操作 / 原因 / 影响 / 可逆性 / 参数摘要」确认请求，用户可「允许本次 / 本会话允许该工具 / 拒绝」，超时或未应答一律按拒绝（fail-closed），决定与等待时长写入审计',
     'P1 记忆生命周期（js/memorylife.js）：写入门槛四问（未来多会话仍有用 / 用户明确表达 / 是否含敏感信息 / 是否造成错误偏置），来源分级（用户显式 > 长期稳定行为 > 单轮推断 > 模型推测），模型推断与敏感内容只进短期候选区；召回状态机 RECALLED / VALIDATED / APPLIED / REJECTED_FOR_TURN——用户本轮明确指令与记忆冲突时记忆不注入；同作用域冲突保留较新者并标记取代关系',
     'P1 轨迹级评测（js/trajectory.js）：三个负向指标（Over-routing 不该调用却调用 / Under-routing 需要工具却没调用 / Silent-failure 失败未披露）+ 恢复成功率 / 审计完整度 / 多余调用率 / 副作用安全，按任务类型切分并在验收报告第四节披露，不只看单一总分',

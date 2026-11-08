@@ -574,8 +574,8 @@ export function createAgent(store, hooks = {}) {
 
   function fsNote() {
     const list = fs.list();
-    if (!list.length) return '';
-    return `\n\n## 当前沙箱文件\n${list.slice(0, 40).map((f) => `- ${f.path} (${f.size}B)`).join('\n')}${list.length > 40 ? `\n…等共 ${list.length} 个` : ''}`;
+    const sandbox = list.length ? `\n\n## 当前沙箱文件\n${list.slice(0, 40).map((f) => `- ${f.path} (${f.size}B)`).join('\n')}${list.length > 40 ? `\n…等共 ${list.length} 个` : ''}` : '';
+    return sandbox + '\n\n项目文件与会话沙箱独立且跨会话保存。只有用户要求使用项目时，才以 scope=project 调用 list_files/read_file/write_file/delete_file/copy_file；将沙箱文件纳入项目须显式调用 write_file(scope=project, source_path=沙箱路径, path=项目路径)。run_git(scope=project) 操作项目的本地模拟 Git，不支持远端。不要自动复制沙箱或把两者混为一谈。';
   }
 
   // 单个工具的执行上下文（含子智能体委派闭包）。本轮的 apiKey/model/thinking 等一律
@@ -1808,6 +1808,7 @@ export function createAgent(store, hooks = {}) {
     abort: () => {
       const ctrl = abortController;
       if (ctrl) { markJevOutcome(store, currentTurnUserId, { stopped: true }); ctrl.abort(); }
+      if (activeGate) activeGate.cancelAll('用户已停止，未决确认作废');
       if (status === 'moderating') setStatus('cancelled');
     },
 

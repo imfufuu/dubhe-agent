@@ -1,3 +1,5 @@
+import { createProjectFS } from './project-store.js';
+import { createEffectJournal, requiresEffectJournal } from './effect-journal.js';
 import { prepareCommandArgs } from './commandsource.js?v=2026.10.25.1';
 import { appendToolStream } from './toolflow.js?v=2026.10.25.1';
 import { captureEditPreviewBase, captureEditPreviewSnapshot } from './editpreview.js?v=2026.10.25.1';
@@ -11,6 +13,7 @@ import { captureEditPreviewBase, captureEditPreviewSnapshot } from './editprevie
 // runSubagent（住在 agent.js，避免循环依赖）。P1（预算）/ P2（持久）类修正都会碰这段代码——先抽出来再改。
 import { PARALLEL_TOOL_NAMES, NETWORK_TOOL_NAMES, TOOL_MOUNT_GROUPS, TOOL_MOUNT_GROUP_BY_TOOL } from './capabilities.js';
 import { executeTool } from './tools.js';
+import { normalizeFsPath } from './fs-path.js';
 import { findSubagent } from './subagents.js';
 import { localMachineMustConfirm,
   EXECUTION_STATES, CONFIRMATION_DECISIONS,
@@ -66,8 +69,7 @@ export function batchToolCalls(calls) {
 // 含目录前缀覆盖）时才排到后一波；无依赖的写入（不同路径）也可以同波并行。
 // 看不清读写集的工具（沙箱执行 / 生图 / zip / git / 记忆 / 参数坏掉的调用）视为全局屏障。
 const ACCESS_ANY = '*';
-const strList = (v) => (typeof v === 'string' && v.trim() ? [v.trim().replace(/^\.\//, '')] : []);
-const pathList = (v) => (Array.isArray(v) ? v.flatMap(strList) : strList(v));
+const strList = (v) => { if (typeof v !== 'string' || !v.trim()) return []; return [normalizeFsPath(v) || ACCESS_ANY]; };
 export function toolAccessSet(call) {
   const name = call && call.name;
   const a = call && call.args && typeof call.args === 'object' ? call.args : {};
@@ -77,7 +79,8 @@ export function toolAccessSet(call) {
     case 'dispatch_subagent': return { reads: [ACCESS_ANY], writes: [ACCESS_ANY], dispatch: true };
     case 'read_file': return { reads: strList(a.path).length ? strList(a.path) : [ACCESS_ANY], writes: [] };
     case 'list_files': case 'search_files': return { reads: [ACCESS_ANY], writes: [] };
-    case 'write_file': case 'delete_file': return { reads: [], writes: strList(a.path).length ? strList(a.path) : [ACCESS_ANY] };
+    case 'write_file': return { reads: strList(a.source_path), writes: strList(a.path).length ? strList(a.path) : [ACCESS_ANY] };
+    case 'delete_file': return { reads: [], writes: strList(a.path).length ? strList(a.path) : [ACCESS_ANY] };
     case 'copy_file': {
       const from = strList(a.from); const to = strList(a.to);
       if (!from.length || !to.length) return { reads: [ACCESS_ANY], writes: [ACCESS_ANY] };
@@ -95,17 +98,19 @@ export function toolAccessSet(call) {
     case 'render_mermaid': case 'render_dot':
       return { reads: strList(a.path), writes: outOrAny([ACCESS_ANY]) };
     case 'diff_text': return { reads: [...strList(a.left_path), ...strList(a.right_path)], writes: [] };
-    case 'analyze_image': return { reads: [...strList(a.path), ...pathList(a.paths)], writes: [] };
-    case 'analyze_pdf': return { reads: a.path ? strList(a.path) : [ACCESS_ANY], writes: [] };
+    // Analysis can materialize URL inputs and write OCR / rendered page files.
+    case 'analyze_image': case 'analyze_pdf': return { reads: [ACCESS_ANY], writes: [ACCESS_ANY] };
     case 'analyze_svg': {
       const reads = a.path ? strList(a.path) : [ACCESS_ANY];
+      if (a.path && /^https?:/i.test(a.path)) return { reads: [ACCESS_ANY], writes: [ACCESS_ANY] };
       if (String(a.mode || 'image') === 'code') return { reads, writes: [] };
       if (!a.path) return { reads, writes: [ACCESS_ANY] };
-      const source = String(a.path).trim().replace(/^\.\//, '');
+      const source = strList(a.path)[0];
+      if (source === ACCESS_ANY) return { reads: [ACCESS_ANY], writes: [ACCESS_ANY] };
       const base = source.replace(/\.[^.]+$/, '').replace(/^internal\//, '').replace(/^uploads\//, '').replace(/^outputs\//, '');
       return { reads, writes: [`internal/ocr/${base}.ocr.md`] };
     }
-    case 'analyze_audio': case 'analyze_video': return { reads: a.path ? strList(a.path) : [ACCESS_ANY], writes: [] };
+    case 'analyze_audio': case 'analyze_video': return { reads: [ACCESS_ANY], writes: [ACCESS_ANY] };
     // HTTP calls can mutate remote state even for GET. Preserve model order among
     // them rather than concurrently issuing potentially dependent external requests.
     case 'curl': return { reads: [], writes: ['@external-http'] };
@@ -160,11 +165,13 @@ export async function runWithCategoryLimits(items, run, limits = PARALLEL_LIMITS
     while (q.length && q[0]()) q.shift();
   };
   const results = new Array(items.length);
-  await Promise.all(items.map(async (it, i) => {
+  const outcomes = await Promise.allSettled(items.map(async (it, i) => {
     const cat = toolCategoryOf(it.name);
     await acquire(cat);
     try { results[i] = await run(it.index); } finally { release(cat); }
   }));
+  const rejected = outcomes.find(outcome => outcome.status === 'rejected');
+  if (rejected) throw rejected.reason; // Never finalize while another effect is still running.
   return results;
 }
 
@@ -200,9 +207,9 @@ export function createToolRunner({ store, emit, getFs, runSubagent } = {}) {
   function toolCtxFor(call, turn, exec = null) {
     const fs = getFs();
     if (exec && !(exec.toolLibrarySearchResults instanceof Set)) exec.toolLibrarySearchResults = new Set();
-    captureEditPreviewBase(call, fs, { refresh: true });
+    captureEditPreviewBase(call, call.args?.scope === 'project' ? createProjectFS(store) : fs, { refresh: true });
     return {
-      fs, callId: call.id,
+      fs, projectFs: createProjectFS(store), callId: call.id,
       availableToolDefinitions: exec?.toolWhitelist?.allowed || [],
       toolSearchResults: exec?.toolLibrarySearchResults || new Set(),
       memory: store.state.memory,
@@ -235,7 +242,7 @@ export function createToolRunner({ store, emit, getFs, runSubagent } = {}) {
         if (patch && Object.hasOwn(patch, 'sandboxBootstrapFailed')) call.sandboxBootstrapFailed = !!patch.sandboxBootstrapFailed;
         if (patch && patch.billing) call.billing = patch.billing;
         if (patch?.status === 'ok' && patch.editedPath)
-          captureEditPreviewSnapshot(call, fs, { path: patch.editedPath, refresh: true });
+          captureEditPreviewSnapshot(call, call.args?.scope === 'project' ? createProjectFS(store) : fs, { path: patch.editedPath, refresh: true });
         emit('onToolEvent', call, patch);
       },
       dispatch: async (agentId, subTask, onNote, opts = {}) => {
@@ -302,6 +309,7 @@ export function createToolRunner({ store, emit, getFs, runSubagent } = {}) {
     exec.toolLibraryReads ||= new Set();
     exec.toolLibrarySearchResults ||= new Set();
     exec.pureResults ||= new Map();
+    exec.effectJournal ||= createEffectJournal();
     const mountDeferredNames = (names) => {
       const expanded = new Set();
       for (const raw of Array.isArray(names) ? names : []) {
@@ -370,8 +378,17 @@ export function createToolRunner({ store, emit, getFs, runSubagent } = {}) {
     };
 
     const runCall = async (call) => {
+      const fs = call.args?.scope === 'project' ? createProjectFS(store) : getFs();
       if (turn.signal.aborted) throw new DOMException('Aborted', 'AbortError');
       emit('onToolStart', call);
+      if (call.args?.scope === 'project') {
+        try { fs.export(); }
+        catch (error) {
+          const message = `项目存储暂不可用：${error.message || error}`;
+          emit('onToolEvent', call, { status: 'error', note: message });
+          return JSON.stringify({ code: 'PROJECT_STORAGE_UNAVAILABLE', retryable: true, message });
+        }
+      }
       let toolDef = toolDefByName.get(call.name) || null;
 
       // ①a Machine-readable lazy-mount fallback. Normal routing happens before the first model request;
@@ -480,8 +497,23 @@ export function createToolRunner({ store, emit, getFs, runSubagent } = {}) {
       }
 
       // ②b 幂等回放裁决（P1）：同一个逻辑操作不重复执行——满足则复用，不确定则先核验，外部副作用重复则拦截
-      const opKey = operationKey({ toolName: call.name, args: checkedArgs });
-      const ledgerEntry = exec.ledger.lookup(opKey);
+      const opKey = operationKey({ toolName: call.name, args: checkedArgs, sessionId: exec.execCtx.sessionId });
+      const journaled = requiresEffectJournal(call.name, checkedArgs, pre.contract);
+      const effectFingerprint = journaled ? operationKey({ toolName: call.name, args: checkedArgs }) : '';
+      let journalEntry = null;
+      if (journaled) {
+        try { journalEntry = exec.effectJournal.lookup(opKey, { fingerprint: effectFingerprint, knownSessions: (store.state.sessions || []).map(session => session.id) }); }
+        catch (error) {
+          const message = `外部操作未执行：${error.message || error}`;
+          recordBlocked(call, { reason: message, failure: { kind: 'ENVIRONMENT', label: '日志不可用', retryable: false }, risk, idempotencyKey: pre.idempotencyKey });
+          return `⛔ ${message}`;
+        }
+      }
+      // An unresolved durable record takes precedence over an optimistic in-memory result.
+      let requiresRetryConfirmation = false;
+      const memoryEntry = exec.ledger.lookup(opKey);
+      const ledgerEntry = memoryEntry?.status === 'in-flight' && exec.inflight.has(opKey) ? memoryEntry
+        : journalEntry?.status === 'uncertain' ? journalEntry : (memoryEntry || journalEntry);
       if (ledgerEntry) {
         const targetPath = (pre.contract && pre.contract.sideEffect === 'filesystem') ? (extractFilePath(call.args) || '') : '';
         const filesNow = fs.export();
@@ -492,11 +524,15 @@ export function createToolRunner({ store, emit, getFs, runSubagent } = {}) {
           userText: exec.execCtx.userIntent, currentArtifactDigest,
           currentTurnId: exec.execCtx.turnId,
         });
+        requiresRetryConfirmation = replay.requireReconfirmation === true;
         exec.machine.audit.record('idempotency-replay', {
           name: call.name, key: pre.idempotencyKey, entryStatus: ledgerEntry.status, decision: replay.decision, reason: replay.reason,
         });
         // 只读调用的同轮复用以「文件系统没变」为前提：中途有写入（如先 read 再改再 read）→ 当作新调用重跑，不回放旧内容
         const pureHit = replay.decision === 'reuse' && ledgerEntry.status !== 'in-flight' && exec.pureResults.get(opKey);
+        if (replay.decision === 'reuse' && ledgerEntry.status !== 'in-flight' && pre.contract?.sideEffect === 'none' && (!pureHit || call.name === 'get_current_time')) {
+          replay.decision = 'allow'; replay.reason = '只读结果不可用或必须实时读取，重新执行';
+        }
         if (pureHit && pureHit.fs !== fsDigest(fs.export()).digest) {
           exec.pureResults.delete(opKey);
           replay.decision = 'allow';
@@ -506,9 +542,17 @@ export function createToolRunner({ store, emit, getFs, runSubagent } = {}) {
           const shared = await exec.inflight.get(opKey);
           const run0 = exec.machine.beginToolRun({ callId: call.id, name: call.name, args: call.args, reason: `并发同键调用：复用同一次执行（${replay.reason}）`, risk, idempotencyKey: pre.idempotencyKey });
           run0.opKey = opKey;
-          const closed0 = exec.machine.endToolRun(run0, { status: 'succeeded', notes: ['duplicate-in-flight'] });
+          const prior = exec.ledger.lookup(opKey);
+          const failed = !prior || prior.status !== 'succeeded';
+          const failure = failed ? { kind: 'SIDE_EFFECT_UNCERTAIN', label: '原调用未确认成功', verifyFirst: true, retryable: false } : null;
+          if (failed) { call.status = 'error'; call.errorNote = '原调用未确认成功，请先核验'; }
+          const closed0 = exec.machine.endToolRun(run0, { status: failed ? 'failed' : 'succeeded', failure, notes: ['duplicate-in-flight'] });
           waveRuns.push(closed0);
           return `${shared}\n\n[执行内核] 本次调用与同轮的另一处调用幂等键相同（${pre.idempotencyKey}），已复用同一次执行结果，未重复落副作用。`;
+        }
+        if (replay.decision === 'reuse' && ledgerEntry.status === 'in-flight') {
+          recordBlocked(call, { reason: '同键调用尚未确认完成，不能假称成功', failure: { kind: 'SIDE_EFFECT_UNCERTAIN', label: '操作状态不确定', verifyFirst: true, retryable: false }, risk, idempotencyKey: pre.idempotencyKey });
+          return '⛔ 同键调用仍在执行或结果尚未落定，请等待并核验，不要重复提交。';
         }
         if (replay.decision === 'reuse') {
           const run1 = exec.machine.beginToolRun({ callId: call.id, name: call.name, args: call.args, reason: `幂等复用：${replay.reason}`, risk, idempotencyKey: pre.idempotencyKey });
@@ -557,10 +601,22 @@ export function createToolRunner({ store, emit, getFs, runSubagent } = {}) {
       //   deny  → 直接拦截（可在设置中关闭该层）；
       //   allow → 放行并跳过人工确认弹窗；
       //   ask / 审核不可用 → 强制落回下面的人工确认（fail-closed，即使生效档位为 observe）。
+      // Bind a pending decision to the files the user was asked to approve.
+      // External filesystem changes cannot be atomically locked by the browser.
+      const guardedPaths = pre.contract?.sideEffect === 'filesystem' && !['local_files', 'run_git'].includes(call.name)
+        ? ['path', 'out', 'db', 'from', 'to', 'source_path'].filter(k => typeof checkedArgs[k] === 'string' && normalizeFsPath(checkedArgs[k])) : [];
+      const fileFingerprint = () => guardedPaths.map(k => {
+        const path = normalizeFsPath(checkedArgs[k]);
+        const files = (k === 'source_path' && checkedArgs.scope === 'project' ? getFs() : fs).export();
+        return [k, path, Object.prototype.hasOwnProperty.call(files, path) ? digestArtifact(files[path]).digest : null];
+      });
+      const approvedFiles = JSON.stringify(fileFingerprint());
+      const remoteGit = call.name === 'run_git' && checkedArgs.scope !== 'project' && /\b(?:push|pull|fetch|clone|remote|submodule|ls-remote)\b/i.test(String(checkedArgs.command || ''));
+      const onceOnly = localMachineMustConfirm(call.name, checkedArgs) || call.name === 'curl' || risk.irreversible || remoteGit || requiresRetryConfirmation;
       let autoReviewAllowed = false;
       let autoReviewForcesConfirm = false;
       const sessionAllowedNow = approval === 'allow-session' || exec.confirmGate.isSessionAllowed(call.name);
-      if (call.name !== 'curl' && call.name !== 'local_files' && shouldAutoReview({ enabled: store.state.settings.autoReview !== false, gatewayId: turn.gatewayId, risk, sessionAllowed: sessionAllowedNow })) {
+      if (!onceOnly && shouldAutoReview({ enabled: store.state.settings.autoReview !== false, gatewayId: turn.gatewayId, risk, sessionAllowed: sessionAllowedNow })) {
         const lastUser = [...store.state.messages].reverse().find((m) => m.role === 'user');
         const review = await reviewToolCall({ apiKey: turn.apiKey, call, risk, userRequest: lastUser ? lastUser.text : '', signal: turn.signal });
         exec.machine.audit.record('auto-review', {
@@ -591,17 +647,18 @@ export function createToolRunner({ store, emit, getFs, runSubagent } = {}) {
       const needHumanConfirm = !autoReviewAllowed
         && (autoReviewForcesConfirm || guardRequiresConfirmation({ guard: guardMode, risk }))
         // 本机 shell / 本机文件操作：无论档位与自动审批都必须人工确认（fail-closed；&& 优先于 ||，既有语义不变）
-        || localMachineMustConfirm(call.name, call.args) || call.name === 'curl';
-      if (needHumanConfirm && (call.name === 'curl' || call.name === 'local_files' || (!sessionAllowedBySettings && !exec.confirmGate.isSessionAllowed(call.name)))) {
+        || onceOnly;
+      if (needHumanConfirm && (onceOnly || (!sessionAllowedBySettings && !exec.confirmGate.isSessionAllowed(call.name)))) {
+        call._confirmOnceOnly = onceOnly;
         const request = formatConfirmationRequest({
           name: call.name, args: call.args,
           reason: risk.reasons[0] || '', impact: undefined,
-          reversibility: call.name === 'curl' || risk.irreversible ? '可能产生不可自动撤销的远端操作' : undefined,
-        }) + (call.name === 'curl' ? `\n完整请求参数（会发送至中继与目标）：\n${JSON.stringify(call.args, null, 2)}` : '')
+          reversibility: call.name === 'curl' || risk.irreversible || remoteGit ? '可能产生不可自动恢复或撤销的操作' : undefined,
+        }) + (call.name === 'run_git' ? `\n本次 Git 命令（仅本次授权）：\n${String(call.args?.command || '')}` : '') + (call.name === 'local_desktop' ? `\n本次桌面操作（仅本次授权）：\n${JSON.stringify(call.args, null, 2).slice(0, 4000)}` : '') + (call.name === 'execute_sql' ? `\n本次 SQL（仅本次授权）：\n${String(call.args?.sql || '').slice(0, 4000)}` : '') + (requiresRetryConfirmation && call.name === 'generate_image' ? `\n本次生图提示词（最多展示前 2000 字）：\n${String(call.args?.prompt || '').slice(0, 2000)}` : '') + (requiresRetryConfirmation ? '\n用户声明已核验上次操作未生效；再次提交仍可能产生重复费用或副作用，请逐次确认。' : '') + (call.name === 'run_shell' ? `\n本次命令（仅本次授权）：\n${String(call.args?.command || '')}` : '') + (call.name === 'curl' ? `\n完整请求参数（会发送至中继与目标）：\n${JSON.stringify(call.args, null, 2)}` : '')
           + (call.name === 'local_files' ? `\n本次本机操作（仅本次授权）：\n${JSON.stringify({ action: call.args?.action, path: call.args?.path || '.', dest: call.args?.dest, encoding: call.args?.encoding, overwrite: call.args?.overwrite, recursive: call.args?.recursive, sandbox_path: call.args?.sandbox_path, content_preview: typeof call.args?.content === 'string' ? call.args.content.slice(0, 2000) : undefined, content_truncated: typeof call.args?.content === 'string' && call.args.content.length > 2000 }, null, 2)}` : '');
         const confirmKey = `cf-${exec.execCtx.turnId}-${call.id || call.name}`;
         exec.machine.audit.record('confirmation-requested', { name: call.name, key: confirmKey, riskLevel: risk.level, guardMode, reasons: risk.reasons });
-        const decisionPending = exec.confirmGate.wait({ key: confirmKey, tool: call.name, requestText: request });
+        const decisionPending = exec.confirmGate.wait({ key: confirmKey, tool: call.name, requestText: request, onceOnly });
         emit('onConfirmationRequest', call, request, confirmKey);
         const decisionRec = await decisionPending;
         exec.machine.audit.record('confirmation-decision', {
@@ -609,7 +666,7 @@ export function createToolRunner({ store, emit, getFs, runSubagent } = {}) {
           reason: decisionRec.reason || '', waitedMs: decisionRec.waitedMs,
         });
         emit('onConfirmationResolved', call, decisionRec);
-        if (decisionRec.decision !== CONFIRMATION_DECISIONS.ALLOW_ONCE && (decisionRec.decision !== CONFIRMATION_DECISIONS.ALLOW_SESSION || call.name === 'local_files')) {
+        if (decisionRec.decision !== CONFIRMATION_DECISIONS.ALLOW_ONCE && (decisionRec.decision !== CONFIRMATION_DECISIONS.ALLOW_SESSION || onceOnly)) {
           recordBlocked(call, {
             reason: `用户未放行（${decisionRec.decision}）`,
             failure: { kind: 'PERMISSION', label: '未获确认', handling: '不执行：用户未允许该高风险操作', retryable: false, maxRetries: 0, verifyFirst: false, guidance: '不要重试该调用；如确实需要，请说明影响并请用户明确同意。' },
@@ -658,6 +715,26 @@ export function createToolRunner({ store, emit, getFs, runSubagent } = {}) {
         });
       }
 
+      if (turn.signal.aborted) throw new DOMException('Aborted', 'AbortError');
+      const freshRisk = classifyToolRisk({ name: call.name, args: checkedArgs, contract: pre.contract, fs, userText: exec.execCtx.userIntent });
+      const revoked = store.state.settings.toolApprovals?.[call.name] === 'deny';
+      const raised = JSON.stringify(fileFingerprint()) !== approvedFiles || ['L0', 'L1', 'L2', 'L3'].indexOf(freshRisk.level) > ['L0', 'L1', 'L2', 'L3'].indexOf(risk.level) || (freshRisk.irreversible && !risk.irreversible);
+      if (revoked || raised) {
+        const message = revoked ? '等待期间工具授权已撤销' : '等待期间目标状态变化，风险已升高；请重新评估并确认';
+        recordBlocked(call, { reason: message, failure: { kind: 'PERMISSION', label: '执行前状态变化', retryable: false }, risk: freshRisk, idempotencyKey: pre.idempotencyKey });
+        return `⛔ ${message}，本次未执行。`;
+      }
+      if (journaled) {
+        try {
+          if (requiresRetryConfirmation && journalEntry?.key && journalEntry.key !== opKey) exec.effectJournal.settle(journalEntry.key, 'failed');
+          exec.effectJournal.begin({ key: opKey, tool: call.name, turnId: exec.execCtx.turnId, sessionId: exec.execCtx.sessionId, fingerprint: effectFingerprint });
+        }
+        catch (error) {
+          const message = `外部操作未执行：无法写入防重复日志（${error.message || error}）`;
+          recordBlocked(call, { reason: message, failure: { kind: 'ENVIRONMENT', label: '日志不可用', retryable: false }, risk, idempotencyKey: pre.idempotencyKey });
+          return `⛔ ${message}`;
+        }
+      }
       // ⑤ 执行 + 调用后核验（含契约允许的退避重试，绝不盲目重试）
       const run = exec.machine.beginToolRun({
         callId: call.id, name: call.name, args: call.args,
@@ -668,7 +745,8 @@ export function createToolRunner({ store, emit, getFs, runSubagent } = {}) {
       // 幂等账本：执行前登记（in-flight），并发同键调用会命中上面的复用分支
       exec.ledger.claim(opKey, { tool: call.name, turnId: exec.execCtx.turnId, argsSummary: summarizeArgs(call.name, call.args) });
       // 快照必须在启动执行之前取（否则 await 之前的同步写入会让前后快照一致，diff 为空）
-      let filesBefore = fs.export();
+      const auditFs = call.args?.scope === 'project' ? toolCtx.projectFs : fs;
+      let filesBefore = auditFs.export();
       let fsBefore = fsDigest(filesBefore);
       // P2 故障注入（默认不装配）：只在显式开启时给这一次调用挂上故障
       const injectedFault = exec.faultInjector ? exec.faultInjector.beforeToolCall({ name: call.name, args: call.args }) : null;
@@ -699,11 +777,11 @@ export function createToolRunner({ store, emit, getFs, runSubagent } = {}) {
       } finally {
         exec.inflight.delete(opKey);
       }
-      let filesAfter = fs.export();
+      let filesAfter = auditFs.export();
       let fsAfter = fsDigest(filesAfter);
       let delta = diffFileState(filesBefore, filesAfter);
       let post = validateToolResultPost({
-        name: call.name, args: call.args, contract: pre.contract, result, ok: !execError && call.sandboxOk !== false,
+        name: call.name, args: call.args, contract: pre.contract, result, ok: !execError && call.sandboxOk !== false && call.status !== 'error',
         durationMs: Date.now() - t0, fsBefore, fsAfter, error: execError,
         timedOut: !call.sandboxBootstrapFailed && /超时|timed out|timeout/i.test(String(result)),
       });
@@ -725,7 +803,7 @@ export function createToolRunner({ store, emit, getFs, runSubagent } = {}) {
         await sleep(600);
         exec.machine.transition(EXECUTION_STATES.TOOL_RUNNING, `${call.name} 重试第 1 次`);
         const tR = Date.now();
-        filesBefore = fs.export();
+        filesBefore = auditFs.export();
         fsBefore = fsDigest(filesBefore);
         try {
           result = await executeTool(call.name, checkedArgs, toolCtx);
@@ -734,11 +812,11 @@ export function createToolRunner({ store, emit, getFs, runSubagent } = {}) {
           execError = err;
           result = `工具执行失败: ${err && err.message ? err.message : String(err)}`;
         }
-        filesAfter = fs.export();
+        filesAfter = auditFs.export();
         fsAfter = fsDigest(filesAfter);
         delta = diffFileState(filesBefore, filesAfter);
         post = validateToolResultPost({
-          name: call.name, args: call.args, contract: pre.contract, result, ok: !execError && call.sandboxOk !== false,
+          name: call.name, args: call.args, contract: pre.contract, result, ok: !execError && call.sandboxOk !== false && call.status !== 'error',
           durationMs: Date.now() - tR, fsBefore, fsAfter, error: execError,
           timedOut: !call.sandboxBootstrapFailed && /超时|timed out|timeout/i.test(String(result)),
         });
@@ -786,6 +864,10 @@ export function createToolRunner({ store, emit, getFs, runSubagent } = {}) {
           ? digestArtifact(filesAfter[primaryPath]).digest : '',
         reason: failure ? `${failure.label}${failure.verifyFirst ? '（副作用不确定）' : ''}` : '',
       });
+      if (journaled) {
+        try { exec.effectJournal.settle(opKey, failure?.verifyFirst ? 'uncertain' : status); }
+        catch (error) { exec.machine.audit.record('effect-journal-settle-error', { name: call.name, reason: String(error.message || error).slice(0, 160) }); }
+      }
       exec.completedSteps.push({
         name: call.name,
         status,
@@ -837,7 +919,7 @@ export function createToolRunner({ store, emit, getFs, runSubagent } = {}) {
       call.settled = true;
       if (!['ok', 'error'].includes(call.status)) call.status = 'ok';
       call.durationMs ??= Math.max(1, Date.now() - started);
-      if (call.status === 'ok') captureEditPreviewSnapshot(call, getFs());
+      if (call.status === 'ok') captureEditPreviewSnapshot(call, call.args?.scope === 'project' ? createProjectFS(store) : getFs());
       emit('onToolEvent', call, { status: call.status, settled: true, durationMs: call.durationMs,
         note: call.errorNote || '', finalOutput: String(result) });
       return result;
@@ -853,8 +935,10 @@ export function createToolRunner({ store, emit, getFs, runSubagent } = {}) {
         for (let k = 0; k < b.indices.length; k += limit) {
           const group = b.indices.slice(k, k + limit);
           exec.budgetGov.spend('parallelTasks', group.length, { batch: b.kind });
-          const rs = await Promise.all(group.map((n) => runOne(calls[n])));
-          group.forEach((n, m) => { out[n] = rs[m]; });
+          const rs = await Promise.allSettled(group.map((n) => runOne(calls[n])));
+          const rejected = rs.find(item => item.status === 'rejected');
+          if (rejected) throw rejected.reason;
+          group.forEach((n, m) => { out[n] = rs[m].value; });
         }
         continue;
       }

@@ -1,4 +1,7 @@
+import { normalizeFsPath } from './fs-path.js';
+export { normalizeFsPath } from './fs-path.js';
 import { retrieveSkill } from './skill-library.js';
+import { isProjectUserPath } from './project-store.js';
 import { normalizeChecklist, checklistSummary } from './checklist.js';
 import { searchToolDirectory, formatToolDefinitionRead } from './tool-catalog.js';
 import { AUDIO_EXT_RE, normalizeAudioData } from './audio-format.js';
@@ -9,7 +12,7 @@ import { sandboxProject, sandboxBrowserRequest } from './localbrowser.js?v=2026.
 import { localShell, localScreenshot, localFsRequest, localDesktopRequest, clipLocalOutput, LOCAL_DESKTOP_MUTATING } from './localmachine.js';
 // ─── Agent 工具集：定义 + 执行调度 ─────────────────────────────────────
 import { CODE_TOOL_NAMES as REG_CODE_TOOL_NAMES, LEGACY_TOOL_ALIASES as REG_LEGACY_TOOL_ALIASES } from './capabilities.js';
-import { runJavaScript, runPython, runCpp, runCppRemote, pythonAvailable, persistenceNote, isSafeFsPath, contentByteSize } from './sandbox.js';
+import { runJavaScript, runPython, runCpp, runCppRemote, pythonAvailable, persistenceNote, isSafeFsPath, contentByteSize, createFS } from './sandbox.js';
 import { SANDBOX_STORAGE_CAP } from './storagefmt.js';
 import { generateImage, editImage, bytesToDataUrl, dataUrlToBytes, sniffImage, createVideoJob, quoteVideoJob, getVideoJob, fetchVideoContent } from './api.js?v=2026.10.25.1';
 import { VIDEO_GEN_ASPECT_RATIOS, pickVideoExtras, planVideoRequest, buildVideoBody, buildVideoQuoteBody, videoJobState, videoJobError, resolveVideoGenModel, videoGenModelSpec, VIDEO_POLL_INTERVAL_MS, VIDEO_MAX_WAIT_MS, VIDEO_SANDBOX_MAX_BYTES } from './video-gen.js';
@@ -18,7 +21,7 @@ import { sanitizeSvgMarkup, svgSourceFromValue, svgDataUrl, extractSvgText } fro
 import { pdfToImages, pdfExtractText } from './pdfpages.js';
 import { SUBAGENTS } from './subagents.js';
 import { DEFAULT_IMAGE_MODEL, IMAGE_MODELS, imageFamilyOf, IMAGE_STYLES, IMAGE_RESOLUTIONS, resolveImageVariant, IMAGE_SIZES, IMAGE_QUALITIES, IMAGE_FORMATS, IMAGE_BACKGROUNDS, IMAGE_MODERATIONS, NANO_THINKING_LEVELS, resolveImageModel, resolveVisionModel, resolveVideoModel, resolveAudioModel } from './config.js?v=2026.10.25.1';
-import { fetchPage, gitRun, relaySearch, relayCrawl, relayDownload, relayCurl, fileNameFromUrl, RELAY_FILE_MAX_BYTES } from './net.js';
+import { fetchPage, gitRun, relaySearch, relayCrawl, relayDownload, relayCurl, fileNameFromUrl, RELAY_FILE_MAX_BYTES, localGitRun } from './net.js';
 import { createZip, fileBytesFromValue } from './zip.js';
 import { planConversion, runConversion, convertProgressNote, MAX_CONVERT_INPUT } from './convert.js';
 import { readableFileText } from './file-text.js';
@@ -130,11 +133,13 @@ export const TOOL_DEFS = [
   },
   {
     name: 'write_file',
-    description: '向会话虚拟文件系统写入文本。mode=overwrite（默认整文件覆盖）、append（末尾追加）、replace（把 old_text 换成 new_text，局部修改）。文件对沙箱代码可见。',
+    description: '显式写入会话沙箱（默认）或跨会话项目（scope=project）。source_path 可将一个沙箱文件明确复制到项目；不会自动同步。mode=overwrite（默认整文件覆盖）、append（末尾追加）、replace（把 old_text 换成 new_text，局部修改）。文件对沙箱代码可见。',
     parameters: {
       type: 'object',
       properties: {
         path: { type: 'string', description: '文件路径，如 data/notes.md' },
+        scope: { type: 'string', enum: ['sandbox', 'project'], description: '默认 sandbox；project 为跨会话的独立项目' },
+        source_path: { type: 'string', description: '仅 scope=project：明确将此会话沙箱路径的内容复制到项目 path（覆盖模式）' },
         content: { type: 'string', description: 'overwrite/append 时的内容；replace 时可用 new_text 代替' },
         mode: { type: 'string', enum: ['overwrite', 'append', 'replace'], description: 'overwrite 覆盖整文件（默认）；append 追加；replace 局部替换' },
         old_text: { type: 'string', description: 'replace 模式：要被替换的原文片段' },
@@ -145,17 +150,17 @@ export const TOOL_DEFS = [
   },
   {
     name: 'read_file',
-    description: '读取会话虚拟文件系统中的文本文件内容（上传的 SVG / 代码 / CSV 等即使以 data URL 存放也会解码成原文；图片、音视频、PDF 等二进制只返回类型与大小说明）。',
+    description: '读取会话沙箱或 scope=project 的独立项目文本文件内容（上传的 SVG / 代码 / CSV 等即使以 data URL 存放也会解码成原文；图片、音视频、PDF 等二进制只返回类型与大小说明）。',
     parameters: {
       type: 'object',
-      properties: { path: { type: 'string', description: '文件路径' } },
+      properties: { path: { type: 'string', description: '文件路径' }, scope: { type: 'string', enum: ['sandbox', 'project'], description: '默认 sandbox；project 为独立跨会话项目' } },
       required: ['path'],
     },
   },
   {
     name: 'list_files',
-    description: '列出会话虚拟文件系统中的所有文件及其大小。',
-    parameters: { type: 'object', properties: {} },
+    description: '列出会话沙箱或 scope=project 的独立项目文件及大小。',
+    parameters: { type: 'object', properties: { scope: { type: 'string', enum: ['sandbox', 'project'] } } },
   },
   {
     name: 'get_current_time',
@@ -546,12 +551,13 @@ export const TOOL_DEFS = [
   {
     name: 'run_git',
     description:
-      '执行 git 命令。下载后的静态页面也内置轻量 Git，可在沙箱文件系统里 init/status/diff/add/commit/log/branch/checkout/reset；' +
+      '执行 git 命令。scope=project 操作独立跨会话项目的内置 Git（浏览器本地模拟，不是系统 Git；不支持远端）。下载后的静态页面也内置轻量 Git，可在沙箱文件系统里 init/status/diff/add/commit/log/branch/checkout/reset；' +
       '如本地中继 server.py 在跑，则优先使用本机工作区 ./workspace/ 的真实 git，可 clone/pull/push（凭据由本机 git 配置提供，网站不接触）。' +
       '不经过 shell，因此不能拼接管道或重定向；无中继时远端网络操作会明确报错。',
     parameters: {
       type: 'object',
       properties: {
+        scope: { type: 'string', enum: ['sandbox', 'project'], description: 'project 只操作跨会话项目；默认 sandbox/本机原有行为' },
         command: { type: 'string', description: '完整 git 命令，如 "git clone https://github.com/x/y.git" 或 "git log --oneline -5"' },
         repo: { type: 'string', description: '可选：workspace 下的子目录名（仓库目录），默认在 workspace 根执行' },
         timeout_sec: { type: 'integer', description: '超时秒数，默认 25，最大 120' },
@@ -603,7 +609,7 @@ export const TOOL_DEFS = [
     description: '从会话虚拟文件系统删除一个文件。不可恢复，删除前确认路径。',
     parameters: {
       type: 'object',
-      properties: { path: { type: 'string', description: '要删除的沙箱路径' } },
+      properties: { path: { type: 'string', description: '要删除的路径' }, scope: { type: 'string', enum: ['sandbox', 'project'] } },
       required: ['path'],
     },
   },
@@ -613,6 +619,7 @@ export const TOOL_DEFS = [
     parameters: {
       type: 'object',
       properties: {
+        scope: { type: 'string', enum: ['sandbox', 'project'] },
         from: { type: 'string', description: '源路径' },
         to: { type: 'string', description: '目标路径' },
         move: { type: 'boolean', description: 'true=移动（复制后删源），默认 false' },
@@ -837,11 +844,6 @@ export function buildSubagentAttachments(fs, raw) {
   return { block: `\n\n---\n以下是委派方提供的附件（沙箱路径）：\n\n${parts.join('\n\n')}` };
 }
 
-export function normalizeFsPath(p) {
-  const parts = String(p == null ? '' : p).trim().split('/').map((s) => s.trim()).filter((s) => s && s !== '.');
-  if (!parts.length || parts.includes('..') || /[\u0000-\u001f]/.test(parts.join('/'))) return '';
-  return parts.join('/');
-}
 
 const GITHUB_PROJECT_UNPACKED_LIMIT = 24 * 1024 * 1024;
 const GITHUB_PROJECT_MAX_FILES = 2048;
@@ -1144,7 +1146,13 @@ export function resolveUmbrellaTool(name, args) {
 }
 
 async function executeToolBody(outerName, outerArgs, ctx) {
-  const { fs, onUi } = ctx;
+  const onUi = ctx.onUi;
+  const projectScope = outerArgs?.scope === 'project';
+  if (['write_file', 'read_file', 'list_files', 'delete_file', 'copy_file', 'run_git'].includes(outerName) && outerArgs?.scope != null && !['project', 'sandbox'].includes(outerArgs.scope)) throw new Error('未知文件作用域');
+  if (projectScope && !['write_file', 'read_file', 'list_files', 'delete_file', 'copy_file', 'run_git'].includes(outerName)) throw new Error('该工具不支持项目作用域');
+  const fs = projectScope ? ctx.projectFs : ctx.fs;
+  if (projectScope && !fs) throw new Error('项目存储不可用');
+  if (projectScope && outerName !== 'run_git') for (const path of [outerArgs?.path, outerArgs?.from, outerArgs?.to].filter(Boolean)) if (!isProjectUserPath(path)) throw new Error('项目路径非法或属于受保护的 Git 元数据');
   // 芯片/审计一律用模型实际调用的名字；执行分支按子工具名走
   const emit = (patch) => onUi && onUi({ name: outerName, args: outerArgs, ...patch });
   let name = outerName;
@@ -1288,8 +1296,9 @@ async function executeToolBody(outerName, outerArgs, ctx) {
         // 而且模型收到「已写入 undefined」还以为成功了（附件同名冲突逻辑也依赖真实路径）
         const path = normalizeFsPath(args.path);
         if (!path) return 'write_file 缺少合法的 path 参数（需要形如 data/notes.md 的相对路径，不能是空值或 "/"）。';
-        const content = String(args.content ?? '');
         const mode = String(args.mode || 'overwrite').toLowerCase();
+        if (args.source_path && (!projectScope || mode !== 'overwrite' || !isProjectUserPath(args.source_path))) return 'source_path 只允许在项目覆盖模式中显式复制合法沙箱文件。';
+        const content = args.source_path ? ctx.fs.read(args.source_path) : String(args.content ?? '');
         let msg;
         if (mode === 'append') {
           let prev = '';
@@ -1312,7 +1321,7 @@ async function executeToolBody(outerName, outerArgs, ctx) {
         }
         emit({ status: 'ok', fsChange: true, editedPath: path, note: msg });
         // P2 修正：把持久性契约写进结果——临时沙箱里 outputs/ 等自由路径要在最终回答里提到才会保留
-        return `${msg}${persistenceNote(fs, path)}`;
+        return `${msg}${projectScope ? '（已写入独立项目，本地持久化中；请注意存储错误提示）' : persistenceNote(fs, path)}`;
       }
       case 'read_file': {
         const path = normalizeFsPath(args.path);
@@ -1353,7 +1362,7 @@ async function executeToolBody(outerName, outerArgs, ctx) {
       case 'knowledge_search': return retrieveKnowledge(args, { signal: ctx.signal });
       case 'checklist': return checklistSummary(normalizeChecklist(args && args.items));
       case 'list_files': {
-        const list = fs.list();
+        const list = fs.list().filter(f => !projectScope || isProjectUserPath(f.path));
         // size 已是真实字节数（data URL 按 base64 反推、文本按 UTF-8），不是字符串长度
         const msg = list.length ? list.map((f) => `${f.path} (${f.size} B)`).join('\n') : '（文件系统为空）';
         emit({ status: 'ok', fsChange: false, note: '列出文件' });
@@ -1460,8 +1469,13 @@ async function executeToolBody(outerName, outerArgs, ctx) {
         emit({ status: 'running', note: `HTTP ${String(args.method || 'GET').toUpperCase()}` });
         const result = await relayCurl({ url: args.url, method: args.method, headers: args.headers, body: args.body, signal: ctx.signal });
         if (!result.ok) { emit({ status: 'error', error: { message: result.error } }); return `curl 失败：${result.error}`; }
+        const output = JSON.stringify({ status: result.status, headers: result.headers, body: result.body, truncated: result.truncated, binary: result.binary, redirect_followed: false });
+        if (Number(result.status) >= 400) {
+          emit({ status: 'error', error: { message: `目标 HTTP ${result.status}` } });
+          return `curl 失败：目标 HTTP ${result.status}，请求可能已生效，请先核验。\n${output}`;
+        }
         emit({ status: 'ok', note: `HTTP ${result.status}` });
-        return JSON.stringify({ status: result.status, headers: result.headers, body: result.body, truncated: result.truncated, binary: result.binary, redirect_followed: false });
+        return output;
       }
       case 'fetch_url': {
         emit({ status: 'running', note: `抓取 ${String(args.url || '').slice(0, 50)}` });
@@ -1490,7 +1504,7 @@ async function executeToolBody(outerName, outerArgs, ctx) {
           return `run_shell 失败：${err.message}`;
         }
         const status = r.timedOut ? '超时（已结束进程树）' : `退出码 ${r.exitCode}`;
-        emit({ status: r.timedOut ? 'error' : 'ok', note: `${status} · ${r.durationMs} ms` });
+        emit({ status: r.timedOut || r.exitCode !== 0 ? 'error' : 'ok', note: `${status} · ${r.durationMs} ms` });
         const out = clipLocalOutput(r.stdout);
         const errOut = clipLocalOutput(r.stderr, 16 * 1024);
         const parts = [`[本机 shell · ${r.shell} · cwd ${r.cwd}] ${status} · ${r.durationMs} ms`];
@@ -1637,7 +1651,17 @@ async function executeToolBody(outerName, outerArgs, ctx) {
       }
       case 'run_git': {
         emit({ status: 'running', note: String(args.command || 'git').slice(0, 46) });
-        const r = await gitRun({ command: args.command, repo: args.repo, timeoutSec: args.timeout_sec, signal: ctx.signal, fs });
+        if (projectScope && args.repo && !isProjectUserPath(args.repo)) return '项目 Git 路径非法';
+        let r;
+        if (projectScope) {
+          // Apply Git's staged metadata/worktree mutations atomically, never via local relay.
+          const before = fs.export(), temporary = createFS(before);
+          r = localGitRun({ command: args.command, repo: args.repo, fs: temporary });
+          const after = temporary.export();
+          if (r.ok && JSON.stringify(before) !== JSON.stringify(after)) fs.replaceAll(after);
+          r.cwd = String(r.cwd || 'sandbox://').replace(/^sandbox:\/\//, 'project://');
+          r.note = '独立项目内置 Git（本地模拟，非系统 Git；不支持远端）';
+        } else r = await gitRun({ command: args.command, repo: args.repo, timeoutSec: args.timeout_sec, signal: ctx.signal, fs });
         if (!r.ok) {
           const msg = r.error || `git 退出码 ${r.code}\n${r.text}`;
           emit({ status: 'error', error: { message: String(msg).slice(0, 300) } });
@@ -1873,7 +1897,7 @@ async function executeToolBody(outerName, outerArgs, ctx) {
         const IMAGE_RATIO_PIXELS = { '1:1': '1024x1024', '16:9': '1536x864', '9:16': '864x1536', '4:3': '1024x768', '3:4': '768x1024', '3:2': '1536x1024', '2:3': '1024x1536' };
         const ratioArg = String(args.aspect_ratio || (String(args.size || '').includes(':') ? args.size : '') || '').trim();
         let size = IMAGE_SIZES.includes(args.size) ? args.size : (validCustomImageSize(args.size, model) ? String(args.size).trim() : 'auto');
-        if (ratioArg && IMAGE_RATIO_PIXELS[ratioArg]) size = nano ? ratioArg : IMAGE_RATIO_PIXELS[ratioArg];
+        if (ratioArg && IMAGE_RATIO_PIXELS[ratioArg]) size = (nano || model === 'midjourney') ? ratioArg : IMAGE_RATIO_PIXELS[ratioArg];
         // xhigh / max 只属于 gpt-image-2.5 系列；其它模型降为 auto，避免网关 400
         const quality = IMAGE_QUALITIES.includes(args.quality) && (!['xhigh', 'max'].includes(args.quality) || /gpt-image-2\.5/.test(model)) ? args.quality : 'auto';
         const background = IMAGE_BACKGROUNDS.includes(args.background) ? args.background : 'auto';
@@ -1919,15 +1943,38 @@ async function executeToolBody(outerName, outerArgs, ctx) {
             let mime = img.mime;
             let ext = img.ext;
             let { width, height } = img;
+            // Download URL results as bounded, verified image bytes. Never save the URL as a file.
             if (!/^data:/.test(dataUrl)) {
+              const originalUrl = String(dataUrl || '');
               try {
-                const blob = await (await fetch(dataUrl)).blob();
-                const bytes = new Uint8Array(await blob.arrayBuffer());
-                dataUrl = bytesToDataUrl(bytes, mime);
-                const sniff = sniffImage(bytes);
-                if (sniff.mime) { mime = sniff.mime; ext = sniff.ext; }
-                if (sniff.width) { width = sniff.width; height = sniff.height; }
-              } catch { /* 取不到字节就保留远程 URL（仅用于展示） */ }
+                const url = new URL(originalUrl);
+                const host = url.hostname.toLowerCase();
+                if (!/^https?:$/.test(url.protocol) || url.username || url.password || host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local') || host.includes(':') || /^\d+\.\d+\.\d+\.\d+$/.test(host)) throw new Error('图片地址不允许凭证或本地/IP 主机');
+                let downloaded;
+                try {
+                  const res = await fetch(url.href, { signal: ctx.signal, credentials: 'omit', redirect: 'error' });
+                  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                  if (Number(res.headers.get('content-length') || 0) > RELAY_FILE_MAX_BYTES) throw new Error('图片超过大小上限');
+                  const reader = res.body?.getReader(); let bytes;
+                  if (reader) {
+                    const parts = []; let total = 0;
+                    for (;;) { const { done, value } = await reader.read(); if (done) break; total += value.length; if (total > RELAY_FILE_MAX_BYTES) { await reader.cancel(); throw new Error('图片超过大小上限'); } parts.push(value); }
+                    bytes = new Uint8Array(total); let pos = 0; for (const part of parts) { bytes.set(part, pos); pos += part.length; }
+                  } else { bytes = new Uint8Array(await res.arrayBuffer()); if (bytes.length > RELAY_FILE_MAX_BYTES) throw new Error('图片超过大小上限'); }
+                  downloaded = { ok: true, bytes };
+                } catch (directError) {
+                  if (ctx.signal?.aborted || directError.name === 'AbortError') throw directError;
+                  downloaded = await relayDownload({ url: url.href, signal: ctx.signal, maxBytes: RELAY_FILE_MAX_BYTES });
+                }
+                if (!downloaded.ok) throw new Error(downloaded.error || '下载失败');
+                const image = sniffImage(downloaded.bytes);
+                if (!image.mime || !image.ext) throw new Error('响应不是受支持的图片');
+                dataUrl = bytesToDataUrl(downloaded.bytes, image.mime);
+                mime = image.mime; ext = image.ext; width = image.width || 0; height = image.height || 0;
+              } catch (error) {
+                if (ctx.signal?.aborted || error.name === 'AbortError') throw error;
+                throw new Error(`图片已生成但下载失败：${error.message}；${out.taskId ? `task_id=${out.taskId}；` : ''}原始地址：${originalUrl}。${written.length ? `已保存：${written.map(item => item.path).join('、')}。` : ''}请勿重新提交付费任务，可用该地址或任务 ID 找回。`);
+              }
             }
             // 序号取「现有最大值 +1」而不是「文件个数 +1」：用户在面板里删过一个文件后，
             // 按个数计数会算出已占用的序号，把上一张图覆盖掉

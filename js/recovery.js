@@ -14,7 +14,6 @@ export const RECOVERY_POLICY_VERSION = 'recovery-policy-2.5.0';
 export const CHECKPOINT_SCHEMA_VERSION = 'exec-checkpoint-schema-1';
 export const CHECKPOINT_MAX = 12;
 
-const MAX_ARTIFACT_PREVIEW = 96;
 
 // ── 状态与产物摘要 ─────────────────────────────────────────────────────
 export function digestArtifact(value) {
@@ -79,7 +78,6 @@ export function buildCheckpoint({
       exists,
       size: d.size,
       digest: d.digest,
-      preview: exists ? String(files[path]).slice(0, MAX_ARTIFACT_PREVIEW) : '',
       step: (typeof a === 'object' && a.step) || '',
     };
   });
@@ -105,7 +103,7 @@ export function buildCheckpoint({
 }
 
 export function createCheckpointStore({ max = CHECKPOINT_MAX, entries = [], now = () => Date.now() } = {}) {
-  const list = Array.isArray(entries) ? entries.filter((c) => c && c.checkpointId).slice(-max) : [];
+  const list = Array.isArray(entries) ? entries.filter((c) => c && c.checkpointId).slice(-max).map(c => ({ ...c, artifacts: (Array.isArray(c.artifacts) ? c.artifacts : []).filter(a => a && typeof a === 'object').map(({ preview, ...safe }) => safe) })) : [];
   const api = {
     max,
     now,

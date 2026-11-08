@@ -112,3 +112,51 @@ test('设置页与界面文案覆盖新币种', () => {
   const html = readFileSync(new URL('../app.html', import.meta.url), 'utf8');
   for (const c of ['EUR', 'JPY', 'GBP', 'HKD', 'KRW']) assert.match(html, new RegExp(`<option value="${c}">`));
 });
+
+test('Midjourney direct image URL is downloaded and verified before saving', async () => {
+  const { executeTool } = await import('../js/tools.js');
+  const { createFS } = await import('../js/sandbox.js');
+  const realFetch = globalThis.fetch, calls = [];
+  const png = Uint8Array.from([0x89,0x50,0x4e,0x47,13,10,26,10,0,0,0,13,73,72,68,82,0,0,0,1,0,0,0,1]);
+  globalThis.fetch = async (url, init = {}) => {
+    calls.push([String(url), init]);
+    if (String(url).endsWith('/mj/submit/imagine')) return Response.json({ code: 1, result: 'https://images.example/mj/image/123' });
+    if (String(url) === 'https://images.example/mj/image/123') return new Response(png, { headers: { 'content-type': 'application/octet-stream' } });
+    throw new Error('unexpected request');
+  };
+  try {
+    const fs = createFS({});
+    const result = await executeTool('generate_image', { prompt: 'a cat', aspect_ratio: '16:9' }, { fs, apiKey: 'key', imageModel: 'midjourney', onUi() {} });
+    assert.match(result, /图像生成完成/); assert.match(fs.read('outputs/image-001.png'), /^data:image\/png;base64,/);
+    assert.match(calls[0][1].body, /--ar 16:9/);
+    assert.equal(calls.filter(([, init]) => init.method === 'POST').length, 1);
+    assert.equal(calls[1][1].credentials, 'omit');
+  } finally { globalThis.fetch = realFetch; }
+});
+
+test('failed image downloads never save a fake image or repeat a paid request', async () => {
+  const { executeTool } = await import('../js/tools.js');
+  const { createFS } = await import('../js/sandbox.js');
+  const realFetch = globalThis.fetch; let posts = 0;
+  globalThis.fetch = async (url, init = {}) => {
+    if (String(url).endsWith('/mj/submit/imagine')) { posts++; return Response.json({ code: 1, result: 'https://images.example/mj/image/123' }); }
+    if (String(url) === 'https://images.example/mj/image/123') return new Response('not an image');
+    throw new Error('unexpected request');
+  };
+  try {
+    const fs = createFS({});
+    const result = await executeTool('generate_image', { prompt: 'a cat' }, { fs, apiKey: 'key', imageModel: 'midjourney', onUi() {} });
+    assert.match(result, /下载失败/); assert.match(result, /请勿重新提交/); assert.match(result, /https:\/\/images.example/);
+    assert.equal(fs.list().length, 0); assert.equal(posts, 1);
+  } finally { globalThis.fetch = realFetch; }
+});
+
+test('Midjourney accepts a direct plain-text image link without polling or resubmission', async () => {
+  const realFetch = globalThis.fetch; let calls = 0;
+  globalThis.fetch = async () => { calls++; return new Response('https://newapi.floatai.cn/mj/image/123'); };
+  try {
+    const out = await generateImage({ model: 'midjourney', apiKey: 'k', prompt: 'cat' });
+    assert.equal(out.images[0].dataUrl, 'https://newapi.floatai.cn/mj/image/123');
+    assert.equal(calls, 1);
+  } finally { globalThis.fetch = realFetch; }
+});

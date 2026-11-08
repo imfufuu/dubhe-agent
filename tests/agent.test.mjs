@@ -6463,13 +6463,13 @@ test('Explored Files 合并后空壳助手节点自动折叠，不再累加多�
 test('Dubhe Helix 2.5（天枢2.5） 自研融合架构：六层架构规范、工作区上下文自发现、跨会话 BM25 召回、压缩前记忆刷盘、技能遥测与执行自省护栏', async () => {
   const nexus = await import('../js/nexus.js');
   assert.equal(nexus.NEXUS_ARCHITECTURE_SPEC.layers.length, 9, 'Helix 3.0：2.5 的六层 + L7 能力登记处 / L8 可验证供应链 / L9 外部依赖韧性');
-  assert.equal(nexus.NEXUS_ARCHITECTURE_SPEC.id, 'dubhe-helix-3.0');
-  assert.equal(nexus.NEXUS_ARCHITECTURE_SPEC.code, 'DH30');
+  assert.equal(nexus.NEXUS_ARCHITECTURE_SPEC.id, 'dubhe-helix-3.5');
+  assert.equal(nexus.NEXUS_ARCHITECTURE_SPEC.code, 'DH35');
   assert.deepEqual([nexus.NEXUS_ARCHITECTURE_SPEC.codename.short, nexus.NEXUS_ARCHITECTURE_SPEC.codename.name, nexus.NEXUS_ARCHITECTURE_SPEC.codename.zh], ['DC', 'Dubhe Cambrian', '天枢·寒武']);
   assert.equal(nexus.NEXUS_ARCHITECTURE_SPEC.shortName, '天枢·寒武');
-  assert.match(nexus.NEXUS_ARCHITECTURE_SPEC.name, /^Dubhe Helix 3\.0（DC · Dubhe Cambrian · 天枢·寒武）/);
-  assert.equal(nexus.NEXUS_ARCHITECTURE_SPEC.version, '3.0.0');
-  assert.ok(nexus.NEXUS_ARCHITECTURE_SPEC.lineage[0].startsWith('dubhe-helix-2.5'), '保留 2.5 血统记录');
+  assert.match(nexus.NEXUS_ARCHITECTURE_SPEC.name, /^Dubhe Helix 3\.5（DC · Dubhe Cambrian · 天枢·寒武）/);
+  assert.equal(nexus.NEXUS_ARCHITECTURE_SPEC.version, '3.5.0');
+  assert.ok(nexus.NEXUS_ARCHITECTURE_SPEC.lineage.some(v => v.startsWith('dubhe-helix-2.5')), '保留 2.5 血统记录');
   assert.deepEqual(nexus.NEXUS_ARCHITECTURE_SPEC.layers.slice(6).map((l) => l.id), ['L7-capability-registry', 'L8-supply-chain', 'L9-resilience']);
 
   // 1. 工作区规范文件自发现
@@ -6585,10 +6585,10 @@ test('2026.9.30.6 八项体验与渲染升级（空状态隐藏最新输出、re
   const { systemPrompt } = await import('../js/config.js');
   const { formatRuntime } = await import('../js/prompt.js');
   const sysText = cfg.referenceSystemPrompt(new Date());
-  assert.match(sysText, /Dubhe Helix 3\.0/, 'systemPrompt 应声明底层架构号 Helix 3.0');
+  assert.match(sysText, /Dubhe Helix 3\.5/, 'systemPrompt 应声明底层架构号 Helix 3.0');
   assert.match(sysText, /代号「DC」（Dubhe Cambrian，中文名「天枢·寒武」/, '产品代号 DC / 天枢·寒武 只是代号，架构号另有');
   assert.match(sysText, /前身为 Dubhe Helix 2\.5 \/ 天枢2\.5/);
-  assert.match(formatRuntime({}), /Dubhe Helix 3\.0 · DC（Dubhe Cambrian，天枢·寒武/, 'runtime 提示应包含底层架构与代号');
+  assert.match(formatRuntime({}), /Dubhe Helix 3\.5 · DC（Dubhe Cambrian，天枢·寒武/, 'runtime 提示应包含底层架构与代号');
 
   // 4. 导航页外观左边改为「文档」
   assert.match(indexHtml, /href="\.\/docs\.html">文档<\/a>/);
@@ -7581,7 +7581,7 @@ test('2026.10.1.12：P0-5 预算与风险治理——六路资源预算实时扣
   assert.equal(overwriteUpload.irreversible, true, '覆盖用户上传原件不可自动恢复');
   assert.equal(overwriteUpload.requiresConfirmation, true);
   const authorized = ex.classifyToolRisk({ name: 'write_file', args: { path: 'uploads/note.md', content: 'x' }, fs, userText: '请覆盖 uploads/note.md' });
-  assert.equal(authorized.requiresConfirmation, false, '用户本轮明确要求 → 按授权放行但仍记录');
+  assert.equal(authorized.requiresConfirmation, true, '关键词不能替代针对具体操作的授权');
   assert.equal(ex.classifyToolRisk({ name: 'delete_file', args: { path: 'files/keep.txt' } }).level, 'L3');
   assert.equal(ex.classifyToolRisk({ name: 'remember', args: { action: 'purge', fact: 'mem-1' } }).level, 'L3');
   assert.equal(ex.classifyToolRisk({ name: 'remember', args: { action: 'add', fact: '用户喜欢简洁' } }).level, 'L2');
@@ -8194,11 +8194,11 @@ test('2026.10.1.13：P1-7 端到端——严格档位下高风险操作等待确
     assert.equal(store.state.trajectoryTotals.turns >= 1, true);
   } finally { globalThis.fetch = realFetch; }
 
-  // 观察模式（默认）：不打断，但风险等级与理由照记
+  // 观察模式也必须逐次确认不可逆操作
   const calls3 = [];
   mockFetch([
     openaiToolTurn('d3', 'delete_file', JSON.stringify({ path: 'files/keep.txt' })),
-    openaiTextTurn('已删除（观察模式下直接执行）。'),
+    openaiTextTurn('已按确认处理。'),
   ], calls3);
   try {
     const store = storeNoWeb(createStore());
@@ -8206,10 +8206,10 @@ test('2026.10.1.13：P1-7 端到端——严格档位下高风险操作等待确
     store.state.model = 'gpt-5.6-sol';
     store.state.files = { 'files/keep.txt': 'x' };
     let asked = 0;
-    const agent = createAgent(store, { onConfirmationRequest: () => { asked++; } });
+    const agent = createAgent(store, { onConfirmationRequest: (_call, _request, key) => { asked++; setTimeout(() => agent.resolveConfirmation(key, 'allow-once'), 0); } });
     agent.loadFiles(store.state.files);
     await agent.send('删掉 files/keep.txt');
-    assert.equal(asked, 0, '默认观察模式不打断用户');
+    assert.equal(asked, 1, '默认观察模式也要确认不可逆操作');
     assert.equal('files/keep.txt' in store.state.files, false);
     assert.equal(store.state.lastExecutionRecord.toolRuns[0].riskLevel, 'L3');
   } finally { globalThis.fetch = realFetch; }
@@ -8750,7 +8750,7 @@ test('Agent 主循环已改用 planToolWaves（按原始下标回填结果）', 
   const src = fsp.readFileSync(new URL('../js/toolrunner.js', import.meta.url), 'utf8');
   assert.match(src, /for \(const b of planToolWaves\(calls\)\)/);
   assert.doesNotMatch(src, /for \(const b of batchToolCalls\(calls\)\)/);
-  assert.match(src, /group\.forEach\(\(n, m\) => \{ out\[n\] = rs\[m\]; \}\)/);
+  assert.match(src, /group\.forEach\(\(n, m\) => \{ out\[n\] = rs\[m\].value; \}\)/);
 });
 
 group('Local C++ WASM / 增量 FILES / token 缓存 / Pyodide 误判');
@@ -9233,7 +9233,7 @@ test('analyze_video 工具：定义 / 契约 / 并行与访问表 / 执行路径
   assert.match(await executeTool('analyze_video', { path: 'uploads/none.mp4' }, { fs, onUi: () => {}, apiKey: 'sk-teamo-x' }), /找不到 uploads\/none\.mp4/);
   // 其余触点
   const agent = fsp.readFileSync(new URL('../js/toolrunner.js', import.meta.url), 'utf8'); // P4：toolAccessSet 住在 toolrunner.js
-  assert.match(agent, /case 'analyze_video': return \{ reads: a\.path \? strList\(a\.path\) : \[ACCESS_ANY\], writes: \[\] \};/);
+  assert.deepEqual((await import('../js/toolrunner.js')).toolAccessSet({name: 'analyze_video', args: {path: 'x.mp4'}}).writes, ['*']);
   for (const [file, re] of [
     ['../js/context.js', /m\.name === 'analyze_video'/],
     ['../js/capabilities.js', /analyze_video: R\('invariantCore', 'remote', \{ tags: \['image'\] \}\)/], // Helix 3.0：trajectory / nexus 的分组由登记处派生
@@ -9469,7 +9469,7 @@ test('fs.list() / list_files 返回真实字节数：data URL 按 base64 反推�
   // list_files 工具输出的就是 fs.list().size
   const fsp = await import('node:fs');
   const tools = fsp.readFileSync(new URL('../js/tools.js', import.meta.url), 'utf8');
-  assert.match(tools, /case 'list_files': \{\n\s+const list = fs\.list\(\);\n[\s\S]{0,200}list\.map\(\(f\) => `\$\{f\.path\} \(\$\{f\.size\} B\)`\)/);
+  assert.match(tools, /case 'list_files': \{\n\s+const list = fs\.list\(\)\.filter\(f => !projectScope \|\| isProjectUserPath\(f\.path\)\);\n[\s\S]{0,200}list\.map\(\(f\) => `\$\{f\.path\} \(\$\{f\.size\} B\)`\)/);
   const panel = fsp.readFileSync(new URL('../js/ui-files-panel.js', import.meta.url), 'utf8');
   assert.match(panel, /import \{ contentByteSize \} from '\.\/sandbox\.js';/, '文件面板与工具同一口径');
   assert.match(panel, /const approxBytes = \(raw\) => contentByteSize\(raw\);/);
@@ -9742,7 +9742,7 @@ test('工具结果契约：默认告知 outputs/ 会保留，只有自动清理�
   assert.equal(strip(r3), '已写入 outputs/c.md（3 字符）', '基座 FS（子代理 / 直接调用）不加说明');
   const fsp = await import('node:fs');
   const tools = fsp.readFileSync(new URL('../js/tools.js', import.meta.url), 'utf8');
-  assert.match(tools, /import \{ runJavaScript, runPython, runCpp, runCppRemote, pythonAvailable, persistenceNote, isSafeFsPath, contentByteSize \} from '\.\/sandbox\.js';/);
+  assert.match(tools, /import \{ runJavaScript, runPython, runCpp, runCppRemote, pythonAvailable, persistenceNote, isSafeFsPath, contentByteSize, createFS \} from '\.\/sandbox\.js';/);
   assert.match(tools, /全文已存 \$\{r\.savedTo\}\$\{persistenceNote\(fs, r\.savedTo\)\}/, 'fetch_url 的落盘说明带持久契约');
   assert.match(tools, /保存：\$\{path\}\$\{persistenceNote\(fs, path\)\}/, 'download_file 的落盘说明带持久契约');
   const cfg = fsp.readFileSync(new URL('../js/config.js', import.meta.url), 'utf8');
@@ -10949,7 +10949,7 @@ test('能力登记处：TOOL_DEFS ↔ 登记表 ↔ execution.js 契约三方一
 test('Helix 3.0 架构规范：九层（2.5 六层 + L7 登记处 / L8 供应链 / L9 韧性）、代号 DC、血统记录；提示词标签统一为「天枢·寒武」', async () => {
   const nexus = await import('../js/nexus.js');
   const spec = nexus.NEXUS_ARCHITECTURE_SPEC;
-  assert.equal(spec.version, '3.0.0');
+  assert.equal(spec.version, '3.5.0');
   assert.equal(spec.codename.meaning.includes('登记一处、处处生效'), true);
   const l7 = spec.layers.find((l) => l.id === 'L7-capability-registry');
   assert.ok(l7.modules.includes('capabilities.js') && l7.modules.includes('capabilities-mount.js'));
@@ -11468,6 +11468,8 @@ test('图片灰区复核沿用当前网关、Key、基础 URL 与视觉模型', 
 
 for (const item of queue) {
   if (item.group) { console.log(item.group); continue; }
+  const testStorage = new Map();
+  globalThis.localStorage = { getItem: (k) => String(k).endsWith('-effects-v1') ? testStorage.get(k) ?? null : null, setItem: (k, v) => { if (String(k).endsWith('-effects-v1')) testStorage.set(String(k), String(v)); }, removeItem: (k) => testStorage.delete(k), clear: () => testStorage.clear() };
   await item.fn();
   passed++;
   console.log(`  ✓ ${item.name}`);

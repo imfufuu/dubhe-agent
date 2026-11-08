@@ -1,6 +1,6 @@
 # ◐ Dubhe Agent — 基于 TeamoRouter 的网页端智能体
 
-> **Dubhe Agent V1.9 Stable** · 架构 **Dubhe Helix 3.0 · DC（Dubhe Cambrian，天枢·寒武）** · 构建以 [部署清单](https://imfufuu.github.io/dubhe-agent/build.json) 为准 · [线上介绍](https://imfufuu.github.io/dubhe-agent/) · 对话 [app.html](./app.html) · [CHANGELOG](./CHANGELOG.md)
+> **Dubhe Agent V1.9 Stable** · 架构 **Dubhe Helix 3.5 · DC（Dubhe Cambrian，天枢·寒武）** · 构建以 [部署清单](https://imfufuu.github.io/dubhe-agent/build.json) 为准 · [线上介绍](https://imfufuu.github.io/dubhe-agent/) · 对话 [app.html](./app.html) · [CHANGELOG](./CHANGELOG.md)
 
 [![CI](https://github.com/imfufuu/dubhe-agent/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/imfufuu/dubhe-agent/actions/workflows/ci.yml)
 [![Pages](https://github.com/imfufuu/dubhe-agent/actions/workflows/pages.yml/badge.svg?branch=main)](https://github.com/imfufuu/dubhe-agent/actions/workflows/pages.yml)
@@ -206,6 +206,15 @@ ui.js     渲染 / 动画 / 回滚交互 / 沙箱面板
 
 V1.8.1 起工具表 38 个：新增 `convert_file`（媒体格式互转——图片 png/jpg/webp 含 SVG 光栅化走浏览器 canvas、音频转 WAV 走 WebAudio、其余音视频/容器/GIF/剪辑/抽帧走按需加载的固定版本 ffmpeg.wasm，全程本地）；附件菜单新增「扫描文档」入口（仅在有摄像头且 Permissions-Policy 允许的设备出现）：自动四角检测、拖拽微调、透视矫正与黑白增强，多页合成一个本地生成的 PDF，取景画面绝不上传。
 没有 `web_search` 工具，也不再注入模型原生网页搜索字段。
+
+## Dubhe Helix 3.5 · DC（Dubhe Cambrian，天枢·寒武）
+
+3.5 保持产品代号 DC，在 3.0 基础上优先加固执行可靠性，而不增加架构层：
+
+- 计费或不可逆外部操作在发出前写入同源本地日志，刷新后的未决记录视为不确定；未决操作按参数摘要保守跨会话匹配，已完成操作在原会话丢失时也会匹配，以覆盖新会话尚未保存即崩溃的情况；存储不可用时拒绝执行，核验后明确请求重试仍需逐次确认。成功/失败落定失败时保留未决记录。
+- 非幂等外部失败不自动重发；生图 POST 默认不重试，避免响应丢失时重复计费。沙箱路径统一规范化，依赖调度覆盖复制源与媒体物化；并发批次异常也等待其他已启动任务落定。
+- 删除、远端 Git、curl、本机 shell/文件/桌面变更逐次确认；等待确认后重新检查撤销授权与风险升级。审计参数摘要隐藏内容和凭据字段，检查点不再保存文件预览。
+- 此日志只在当前浏览器同源本地存储有效；不同浏览器/设备无法共享，跨标签页没有原子锁；清除站点数据也会清除日志；最多保留 96 条未决记录，满额时会阻止新外部操作。它降低风险但不保证 exactly-once，旧版本未落盘的在途操作无法事后恢复。
 
 ## Dubhe Helix 3.0 · DC（Dubhe Cambrian，天枢·寒武）
 

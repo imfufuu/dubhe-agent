@@ -19,7 +19,8 @@ export const LEDGER_MAX = 48;
 
 export const LEDGER_STATES = Object.freeze(['in-flight', 'succeeded', 'failed', 'blocked', 'uncertain']);
 
-const AUTHORIZE_RE = /(?:再写|重写|覆盖|重新生成|再来一?次|再跑|重跑|重新执行|强制|无条件|覆盖掉|push|发布|重发|再发|again|re-?run|re-?write|overwrite|force)/i;
+const REDO_RE = /(?:再次提交|重新提交|重新生成|重新执行|重新发送|重新调用|重新尝试|重试|再来一?(?:次|张|段)|再跑|重跑|重发|再发|再生成|re-?run|retry|regenerate)/i;
+const FILE_REDO_RE = /(?:再写|重写|覆盖|覆盖掉|re-?write|overwrite)/i;
 
 function normalizeEntry(raw, now) {
   if (!raw || !raw.key) return null;
@@ -38,12 +39,12 @@ function normalizeEntry(raw, now) {
   };
 }
 
-// 操作键（跨轮稳定）：hash(工具名 + 规范化参数)，与轮次无关。
+// 操作键（同会话跨轮稳定）：hash(sessionId + 工具名 + 规范化参数)，与轮次无关。
 // 与 P0 的 idempotencyKey = hash(turnId + 工具名 + 参数) 分工不同：
 //   · idempotencyKey 是「这一次调用」的身份（审计与同轮不确定态拦截用）；
 //   · operationKey 是「同一个逻辑操作」的身份（跨轮判定重复副作用、复用已完成结果用）。
-export function operationKey({ toolName = '', args = null } = {}) {
-  return `op-${sha256Hex(`${toolName}|${canonicalJSON(args || {})}`).slice(0, 16)}`;
+export function operationKey({ toolName = '', args = null, sessionId = '' } = {}) {
+  return `op-${sha256Hex(`${sessionId ? `${sessionId}|` : ''}${toolName}|${canonicalJSON(args || {})}`).slice(0, 16)}`;
 }
 
 export function createIdempotencyLedger({ entries = [], max = LEDGER_MAX, now = () => Date.now() } = {}) {
@@ -107,7 +108,7 @@ export function createIdempotencyLedger({ entries = [], max = LEDGER_MAX, now = 
 export function planReplay({ entry = null, contract = null, userText = '', currentArtifactDigest = null, currentTurnId = '' } = {}) {
   if (!entry) return { decision: 'allow', reason: '账本无同键记录，按新调用执行' };
   const c = contract || {};
-  const authorized = AUTHORIZE_RE.test(String(userText || ''));
+  const authorized = REDO_RE.test(String(userText || '')) || (c.sideEffect === 'filesystem' && FILE_REDO_RE.test(String(userText || '')));
   // 同一轮内的重复调用（模型一次发了两个完全相同的调用）：复用，不重复执行——
   // 但文件系统写操作要先核对副作用是否仍然成立（Stage 3 的承诺是「核验副作用」，不是「核验参数」）：
   // 目标文件已不在 / 内容已变（被后续工具删改、被沙箱回写覆盖）→ 按新调用重新执行，而不是拿着旧结果骗模型。
@@ -135,10 +136,17 @@ export function planReplay({ entry = null, contract = null, userText = '', curre
     };
   }
   if (entry.status === 'uncertain') {
+    // A user can explicitly assert they checked the external target and it was
+    // not applied, then ask to retry. The runner must still ask once more.
+    const verifiedNotApplied = /(?:已核验|已经核验|已确认|已经确认|verified|checked)/i.test(String(userText || ''))
+      && /(?:未执行|未提交|未生效|未产生|没执行|没有提交|not (?:executed|submitted|applied))/i.test(String(userText || ''));
+    if (verifiedNotApplied && REDO_RE.test(String(userText || '')) && entry.turnId !== String(currentTurnId || '')) {
+      return { decision: 'allow', reason: '用户声明已核验目标未生效并要求重试，仍须逐次确认', requireReconfirmation: true };
+    }
     return {
       decision: 'verify-first',
       reason: `上一次同键调用（${entry.tool}）副作用状态不确定`,
-      guidance: '禁止盲目重发：先用 read_file / list_files 核验目标状态，确认未生效后再决定重试。',
+      guidance: '禁止盲目重发：先核验外部目标、任务或账单（文件操作可检查目标文件）；确认未生效后再决定重试。',
     };
   }
   if (entry.status === 'failed' || entry.status === 'blocked') {

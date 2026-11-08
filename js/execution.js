@@ -1,3 +1,4 @@
+import { normalizeFsPath } from './fs-path.js';
 // ─── Dubhe Helix 2.5（天枢2.5） · P0 执行内核（Execution Kernel）──────────────────────
 // 目标（对应 P0 三件事）：把 Dubhe Helix 2.5 从「能选择工具的 Agent」提升为「能安全管理执行过程的 Agent」。
 //
@@ -662,15 +663,15 @@ function hostAllowed(host, allowedHosts = []) {
 
 function pathAllowed(path, allowedPaths = []) {
   if (!Array.isArray(allowedPaths) || !allowedPaths.length) return true;
-  const p = String(path || '').replace(/^\.?\//, '');
-  return allowedPaths.some((prefix) => p === String(prefix).replace(/\/$/, '') || p.startsWith(String(prefix)));
+  const p = normalizeFsPath(path);
+  return !!p && allowedPaths.some((prefix) => { const base = normalizeFsPath(prefix); return base && (p === base || p.startsWith(base + '/')); });
 }
 
 const FS_PATH_ARGS = ['path', 'out', 'db', 'stdin_path', 'dir'];
 
 // 沙箱路径是否存在：兼容 createFS 实例（list）、导出对象（hasOwnProperty）与自定义 has()
 export function fsHasPath(fsOrFiles, path) {
-  const p = String(path || '').replace(/^\.?\//, '');
+  const p = normalizeFsPath(path);
   if (!p) return false;
   try {
     if (fsOrFiles && typeof fsOrFiles.has === 'function') return !!fsOrFiles.has(p);
@@ -814,16 +815,21 @@ export function checkCapabilityConstraints({ name = '', args = {}, capabilities 
         recovery: '把产物写到允许的目录（如 outputs/），或请用户放宽路径约束',
       };
     }
-    if (['document_tool', 'xlsx_tool'].includes(name) && ['inspect', 'form_fields'].includes(a.action || 'inspect')) level = 'L1';
-  if (name === 'write_file') {
+    if (name === 'write_file') {
       const mode = String(a.mode || 'overwrite').toLowerCase();
-      const protectedHit = (caps.filesystem.protectedPaths || []).some((p) => String(target || '').startsWith(p));
+      const targetPath = normalizeFsPath(target);
+      const protectedHit = (caps.filesystem.protectedPaths || []).some((prefix) => { const base = normalizeFsPath(prefix); return base && (targetPath === base || targetPath.startsWith(base + '/')); });
       if (mode !== 'append' && protectedHit && caps.filesystem.writeOverwrite === 'deny') {
         return {
           allowed: false, decision: 'deny', constraintId: 'protected-path-overwrite',
           reason: `目标 ${target} 属于受保护路径（${caps.filesystem.protectedPaths.join('、')}），本轮覆盖策略为 deny`,
           recovery: '改为 append 或另存新路径；如确需覆盖用户原件，请用户显式确认',
         };
+      }
+    }
+    for (const key of ['from', 'to', 'source_path']) {
+      if (typeof a[key] === 'string' && a[key] && !pathAllowed(a[key], caps.sandbox.allowedPaths)) {
+        return { allowed: false, decision: 'deny', constraintId: 'path-outside-scope', reason: `路径 ${a[key]} 超出本轮允许范围`, recovery: '只使用允许目录内的路径' };
       }
     }
     if (a.files !== undefined && Array.isArray(a.files)) {
@@ -976,7 +982,10 @@ export function summarizeArgs(name, args, maxLen = 160) {
   for (const [k, v] of Object.entries(args)) {
     if (k === '__raw') continue;
     let s;
-    if (typeof v === 'string') s = v.length > 40 ? `${v.slice(0, 40)}…(${v.length}字)` : v;
+    if (/(?:^|_)(?:content|code|prompt|text|body|headers|command|stdin|query|api_?key|token|authorization|password|secret|credential|task|sql|value|replacement|left|right)(?:$|_)/i.test(k)) s = `[已隐藏${typeof v === 'string' ? ` · ${v.length} 字符` : ''}]`;
+    else if (typeof v === 'string' && /url/i.test(k)) {
+      try { const u = new URL(v); s = `${u.origin}/…`;  } catch { s = '[已隐藏 URL]'; }
+    } else if (typeof v === 'string') s = v.length > 40 ? `${v.slice(0, 40)}…(${v.length}字)` : v;
     else if (Array.isArray(v)) s = `[${v.length}项]`;
     else if (v && typeof v === 'object') s = '{…}';
     else s = String(v);
@@ -1105,7 +1114,7 @@ export function validateToolCallPre({
     errors.push({
       id: 'idempotency-uncertain',
       detail: `该调用与第 ${priors.index} 次调用幂等键相同（${idemKey}），上一次副作用状态不确定`,
-      recovery: '禁止盲目重试。请先用 read_file / list_files 核验目标状态，确认未生效后再重新发起。',
+      recovery: '禁止盲目重试。请先核验外部目标、任务或账单；文件可用 read_file / list_files 核验，确认未生效后再重新发起。',
     });
   }
 
@@ -1151,7 +1160,7 @@ export function fsDigest(fsOrFiles) {
 
 const EXTERNAL_CONTENT_TOOLS = new Set(['search_web', 'fetch_url', 'crawl_site', 'download_file', 'curl']);
 const EXTERNAL_FAILURE_PREFIX_RE = /^(?:search_web|fetch_url|crawl_site|download_file|curl) 失败[：:]/;
-const TOOL_FAILURE_TEXT_RE = /(?:失败|报错|错误|异常|超时|未执行|拒绝执行|不可用|未找到|找不到|cannot|failed|error|timeout|not\s+allowed|denied)/i;
+const TOOL_FAILURE_TEXT_RE = /(?:失败|报错|错误|异常|超时|未执行|未写入|拒绝执行|不可用|未找到|找不到|cannot|failed|error|timeout|not\s+allowed|denied)/i;
 
 export function validateToolResultPost({
   name = '', args = null, contract: contractDef = null, result = '', ok = true, durationMs = 0,
@@ -1226,6 +1235,10 @@ export function classifyToolFailure({ name = '', args = null, result = '', error
   let kind = null;
 
   if (stateChanged && c.sideEffect && c.sideEffect !== 'none') kind = 'SIDE_EFFECT_UNCERTAIN';
+  else if (((c.external && c.idempotent === false) || name === 'run_shell'
+    || (name === 'local_files' && ['write', 'mkdir', 'move', 'delete'].includes(String(args?.action || '').toLowerCase()))
+    || (name === 'local_desktop' && LOCAL_DESKTOP_MUTATING.includes(String(args?.action || '').toLowerCase())))
+    && !/(?:发起前失败|目标请求未发出)/.test(text)) kind = 'SIDE_EFFECT_UNCERTAIN';
   else if (timedOut && c.sideEffect && c.sideEffect !== 'none' && c.idempotent === false) kind = 'SIDE_EFFECT_UNCERTAIN';
   else {
     for (const p of FAILURE_PATTERNS) {
@@ -1247,7 +1260,7 @@ export function classifyToolFailure({ name = '', args = null, result = '', error
     guidance: kind === 'FILE_NOT_FOUND'
       ? '文件找不到是存储视图 / 路径 / 时序问题，不是数据源问题：先用 list_files 看当前到底有哪些文件（注意完整相对路径与大小写），确认后再重写或改路径；不要换数据源。'
       : (meta.verifyFirst
-        ? '该调用可能已经产生了副作用（写入/提交/扣费），结果丢失。禁止盲目重试：先用 read_file / list_files 核验目标状态。'
+        ? '该调用可能已经产生了副作用（写入/提交/扣费），结果丢失。禁止盲目重试：先核验外部目标、任务或账单；文件可用 read_file / list_files 核验。'
         : (retryable ? '可按有限退避重试一次，若仍失败则转入带限制作答并如实披露。' : '')),
   };
 }
@@ -1432,7 +1445,6 @@ export const RISK_LEVEL_META = Object.freeze({
 const REMOTE_GIT_RE = /\b(?:clone|push|pull|fetch|remote|submodule|ls-remote)\b/i;
 const SQL_DESTRUCTIVE_RE = /\b(?:drop|truncate|alter)\b/i;
 const SQL_WRITE_RE = /\b(?:delete|update|insert)\b/i;
-const EXPLICIT_AUTHORIZATION_RE = /(?:删除|清空|抹除|彻底删除|覆盖|重写|替换|提交|推送|发布|上传|执行|运行|跑一下|purge|delete|remove|overwrite|push|commit|deploy)/i;
 
 export function classifyToolRisk({ name = '', args = null, contract: contractDef = null, fs = null, userText = '' } = {}) {
   const c = contractDef || getToolContract(name) || {};
@@ -1449,7 +1461,7 @@ export function classifyToolRisk({ name = '', args = null, contract: contractDef
     if (exists && mode !== 'append') {
       level = maxRisk(level, 'L2');
       reasons.push(`覆盖已有文件 ${target}`);
-      if (String(target).startsWith('uploads/')) {
+      if (normalizeFsPath(target).startsWith('uploads/')) {
         level = 'L3';
         irreversible = true;
         requiresConfirmation = true;
@@ -1547,11 +1559,10 @@ export function classifyToolRisk({ name = '', args = null, contract: contractDef
   // 结果是「显示最高风险、默认档位下却没人被要求确认」——声明与行为不一致比漏标更危险。
   if (level === 'L3') requiresConfirmation = true;
 
-  const authorizedByIntent = EXPLICIT_AUTHORIZATION_RE.test(String(userText || ''));
-  if (requiresConfirmation && authorizedByIntent && name !== 'local_files') {
-    requiresConfirmation = false;
-    reasons.push('用户本轮已明确要求该类操作，按授权放行（仍全程记录）');
-  }
+  // A keyword anywhere in the request is not authorization for this target.
+  // Explicit per-operation confirmation or the configured reviewer decides.
+  const authorizedByIntent = false;
+  void userText;
   return {
     policyVersion: RISK_POLICY_VERSION,
     level,
@@ -1628,7 +1639,7 @@ export function createConfirmationGate({ timeoutMs = 180000, now = () => Date.no
     isSessionAllowed(tool) { return sessionAllow.has(String(tool)); },
     allowForSession(tool) { sessionAllow.add(String(tool)); return [...sessionAllow]; },
     // 等待用户决定：resolveConfirmation(key, decision) 或超时（默认拒绝）
-    wait({ key, tool = '', requestText = '' } = {}) {
+    wait({ key, tool = '', requestText = '', onceOnly = false } = {}) {
       const k = String(key);
       return new Promise((resolve) => {
         const timer = setTimeout(() => {
@@ -1639,11 +1650,12 @@ export function createConfirmationGate({ timeoutMs = 180000, now = () => Date.no
           resolve(rec);
         }, timeoutMs);
         pending.set(k, {
-          tool, requestText, createdAt: now(),
+          tool, requestText, onceOnly, createdAt: now(),
           resolve: (decision, reason = '') => {
             clearTimeout(timer);
+            const createdAt = pending.get(k)?.createdAt ?? now();
             pending.delete(k);
-            const rec = { key: k, tool, decision, reason, waitedMs: Math.max(0, now() - (pending.get(k) ? pending.get(k).createdAt : now())), at: now() };
+            const rec = { key: k, tool, decision, reason, waitedMs: Math.max(0, now() - createdAt), at: now() };
             history.push(rec);
             resolve(rec);
           },
@@ -1654,14 +1666,13 @@ export function createConfirmationGate({ timeoutMs = 180000, now = () => Date.no
       const k = String(key);
       const entry = pending.get(k);
       if (!entry) return { ok: false, reason: '该确认请求不存在或已过期' };
-      const normalized = Object.values(CONFIRMATION_DECISIONS).includes(decision) ? decision : CONFIRMATION_DECISIONS.DENY;
+      const normalized = entry.onceOnly && decision === CONFIRMATION_DECISIONS.ALLOW_SESSION ? CONFIRMATION_DECISIONS.DENY : (Object.values(CONFIRMATION_DECISIONS).includes(decision) ? decision : CONFIRMATION_DECISIONS.DENY);
       if (normalized === CONFIRMATION_DECISIONS.ALLOW_SESSION) sessionAllow.add(entry.tool);
       entry.resolve(normalized, reason);
       return { ok: true, decision: normalized, tool: entry.tool };
     },
     cancelAll(reason = '回合结束，未决确认一律作废') {
-      for (const [k, entry] of [...pending.entries()]) {
-        pending.delete(k);
+      for (const [, entry] of [...pending.entries()]) {
         entry.resolve(CONFIRMATION_DECISIONS.DENY, reason);
       }
     },
