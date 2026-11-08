@@ -1,5 +1,16 @@
 // Dedicated, keyless Workers AI gateway. Never forward to AI Gateway providers.
-import { CF_CHAT_MODELS, CF_AGENT_CHAT_IDS, CF_DISABLED_PAID, CF_IMAGE_MODEL, CF_VISION_MODEL, CF_DECISION_MODELS, cfChatAvailable } from '../js/cloudflare-ai-catalog.js';
+//
+// 2026-11-08 hardening / repair:
+//  · GET /v1/models now lists EVERY enabled chat model (agent_tools marks the tool-capable subset),
+//    fixing the "model list incomplete" report. ?agent_tools=1 keeps the old behaviour for old clients.
+//  · Function-calling requests no longer fail with HTTP 502: tool schemas are normalised from both
+//    OpenAI-style and flat Workers AI styles, and a rejected schema is retried exactly once in the
+//    other shape (parameter rejection only, never an ambiguous inference failure).
+//  · HTTP 400 sources removed: case-insensitive model IDs, clamp (not reject) max_tokens/temperature,
+//    text-part arrays accepted in messages, chat-only models degrade to a tool-free answer instead
+//    of refusing the request when an Agent client sends tools.
+//  · Upstream errors are surfaced in a short, redacted form so 502s are diagnosable.
+import { CF_CHAT_MODELS, CF_AGENT_CHAT_IDS, CF_DISABLED_PAID, CF_IMAGE_MODEL, CF_VISION_MODEL, CF_DECISION_MODELS, cfChatAvailable, cfCanonicalModelId, cfModelCard } from '../js/cloudflare-ai-catalog.js';
 export const MODELS = CF_CHAT_MODELS;
 // Legacy class retained solely for existing deployment migration history.
 // No inference path uses it; existing stored data is not deleted.
@@ -7,25 +18,60 @@ export class Quota {
   async fetch() { return new Response('Quota retired', { status: 410 }); }
   async alarm() { /* retire any previously scheduled cleanup */ }
 }
-const MAX_BODY = 180000, MAX_OUTPUT = 2048;
+const MAX_BODY = 180000, MAX_OUTPUT = 8192, DEFAULT_OUTPUT = 2048;
 const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type', 'Cache-Control': 'no-store' };
 const json = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: { ...cors, 'Content-Type': 'application/json; charset=utf-8' } });
 const fail = (message, status = 400) => json({ error: { message } }, status);
-function sse(result, model) {
-  const message = result.choices?.[0]?.message || result;
-  const calls = Array.isArray(message.tool_calls) ? message.tool_calls.map((c, index) => ({
-    index, id: c.id || `call_${index}`, type: 'function', function: {
-      name: c.function?.name || c.name || '',
-      arguments: typeof (c.function?.arguments ?? c.arguments) === 'string' ? (c.function?.arguments ?? c.arguments) : JSON.stringify(c.function?.arguments ?? c.arguments ?? {}),
-    },
-  })) : [];
-  const delta = { role: 'assistant', content: typeof message.content === 'string' ? message.content : (typeof result.response === 'string' ? result.response : ''), ...(calls.length ? { tool_calls: calls } : {}) };
-  const event = { id: crypto.randomUUID(), object: 'chat.completion.chunk', model, choices: [{ index: 0, delta, finish_reason: calls.length ? 'tool_calls' : 'stop' }], usage: result.usage };
-  return new Response(`data: ${JSON.stringify(event)}\n\ndata: [DONE]\n\n`, { headers: { ...cors, 'Content-Type': 'text/event-stream; charset=utf-8' } });
+const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
+
+function upstreamDetail(error) {
+  const raw = String(error?.message ?? error ?? '').replace(/\s+/gu, ' ').trim().slice(0, 220);
+  // Never echo a credential-looking string from an upstream error into a public response.
+  return raw.replace(/[A-Za-z0-9_-]{32,}/gu, '<redacted>');
 }
 function inferenceFailure(error) {
   if (Number(error?.status ?? error?.statusCode) === 429) return fail('Cloudflare Workers AI 限流或账号额度不足；请查看 Cloudflare 控制台。', 429);
-  return fail('Workers AI 推理失败；可能已产生费用，请查看 Cloudflare 日志，勿盲目重试。', 502);
+  const detail = upstreamDetail(error);
+  return fail(`Workers AI 推理失败${detail ? `（上游：${detail}）` : ''}；可能已产生费用，请查看 Cloudflare 日志，勿盲目重试。`, 502);
+}
+
+// ── OpenAI-compatible SSE wrapper around a single non-streaming inference ──
+function normaliseCalls(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((c, index) => {
+    const fn = c?.function || c || {};
+    const args = fn.arguments ?? c?.arguments ?? {};
+    return {
+      index,
+      id: String(c?.id || `call_${index}`),
+      type: 'function',
+      function: {
+        name: String(fn.name || c?.name || '').slice(0, 128),
+        arguments: typeof args === 'string' ? args : JSON.stringify(args ?? {}),
+      },
+    };
+  }).filter(c => c.function.name);
+}
+function sse(result, model) {
+  const choice = Array.isArray(result?.choices) ? result.choices[0] : null;
+  const message = choice?.message || result || {};
+  const calls = normaliseCalls(message.tool_calls || result?.tool_calls);
+  let content = typeof message.content === 'string' ? message.content
+    : (typeof result?.response === 'string' ? result.response
+      : (typeof result?.output_text === 'string' ? result.output_text : ''));
+  // Reasoning-only models can spend the whole budget on hidden reasoning and return "".
+  // Surface the reasoning text instead of an empty answer (the client also has an empty-body retry).
+  if (!content && !calls.length) {
+    const reasoning = message.reasoning_content || result?.reasoning_content || result?.reasoning;
+    if (typeof reasoning === 'string' && reasoning.trim()) content = reasoning.trim();
+  }
+  const delta = { role: 'assistant', content, ...(calls.length ? { tool_calls: calls } : {}) };
+  const event = {
+    id: crypto.randomUUID(), object: 'chat.completion.chunk', model,
+    choices: [{ index: 0, delta, finish_reason: calls.length ? 'tool_calls' : (choice?.finish_reason || 'stop') }],
+    usage: result?.usage || null,
+  };
+  return new Response(`data: ${JSON.stringify(event)}\n\ndata: [DONE]\n\n`, { headers: { ...cors, 'Content-Type': 'text/event-stream; charset=utf-8' } });
 }
 // The Worker owner controls access and billing; application-side daily quotas are disabled.
 async function specialized(work) {
@@ -55,45 +101,149 @@ function imageInfo(encoded) {
   return { raw, width, height };
 }
 async function handleImage(body, env) {
-  if (!body || body.model !== CF_IMAGE_MODEL || typeof body.prompt !== 'string' || !body.prompt.trim() || body.prompt.length > 2048) return fail('仅支持 FLUX.1 Schnell，prompt 最长 2048 字符。');
+  const id = cfCanonicalModelId(body?.model, [CF_IMAGE_MODEL]);
+  const prompt = typeof body?.prompt === 'string' ? body.prompt.trim() : '';
+  if (!id || !prompt || prompt.length > 2048) return fail('仅支持 FLUX.1 Schnell，prompt 最长 2048 字符。');
   if ((body.n != null && body.n !== 1) || body.size || body.stream || body.quality || body.background || body.reference_paths) return fail('目前仅支持单张文生图与模型默认尺寸，不支持参考图或尺寸/质量参数。');
-  const run = await specialized(() => env.AI.run(CF_IMAGE_MODEL, { prompt: body.prompt.trim(), steps: 4 }));
+  const run = await specialized(() => env.AI.run(id, { prompt, steps: 4 }));
   if (run.error) return run.error;
   const info = imageInfo(run.result?.image);
   if (!info) return fail('图像生成结果无效；可能已产生费用，请勿自动重试。', 502);
   return json({ created: Math.floor(Date.now() / 1000), data: [{ b64_json: info.raw, width: info.width, height: info.height }] });
 }
 async function handleVision(body, env) {
-  if (!body || body.model !== CF_VISION_MODEL || typeof body.prompt !== 'string' || body.prompt.length > 5000) return fail('识图参数不合法。');
+  const id = cfCanonicalModelId(body?.model, [CF_VISION_MODEL]);
+  if (!id || typeof body?.prompt !== 'string' || body.prompt.length > 5000) return fail('识图参数不合法。');
   const image = String(body.image || '');
   const match = /^data:image\/(?:png|jpeg|webp);base64,([A-Za-z0-9+/]+={0,2})$/i.exec(image);
   if (!match || match[1].length > Math.ceil(2 * 1024 * 1024 * 4 / 3) + 4) return fail('仅接受 2 MiB 内的 PNG/JPEG/WebP data URL，不接受远程地址。');
-  const run = await specialized(() => env.AI.run(CF_VISION_MODEL, { task: 'query', question: body.prompt || 'Describe this image.', image, max_tokens: 1024, reasoning: false }));
+  const run = await specialized(() => env.AI.run(id, { task: 'query', question: body.prompt || 'Describe this image.', image, max_tokens: 1024, reasoning: false }));
   if (run.error) return run.error;
   if (typeof run.result?.answer !== 'string' || !run.result.answer.trim()) return fail('识图结果无效；请勿自动重试。', 502);
   return json({ text: run.result.answer, usage: run.result.metrics || null });
 }
 async function handleDecision(body, env) {
-  const spec = body && Object.hasOwn(CF_DECISION_MODELS, body.model) ? CF_DECISION_MODELS[body.model] : null;
-  if (!spec || typeof body.state !== 'string' || !body.state.trim() || body.state.length > 16000) return fail('决策模型或 state 无效。');
+  const canonical = cfCanonicalModelId(body?.model, Object.keys(CF_DECISION_MODELS));
+  const spec = canonical ? CF_DECISION_MODELS[canonical] : null;
+  if (!spec || typeof body?.state !== 'string' || !body.state.trim() || body.state.length > 16000) return fail('决策模型或 state 无效。');
   const key = spec.extraction ? 'fields' : 'questions';
   const entries = body[key];
   if (!entries || typeof entries !== 'object' || Array.isArray(entries) || !Object.keys(entries).length || Object.keys(entries).length > 16) return fail(`${key} 必须是包含 1 至 16 项的对象。`);
   const inputs = { model: spec.selector, state: body.state, [key]: entries };
-  const run = await specialized(() => env.AI.run(body.model, inputs));
+  const run = await specialized(() => env.AI.run(canonical, inputs));
   if (run.error) return run.error;
   if (!run.result?.answers || typeof run.result.answers !== 'object') return fail('决策结果无效；请勿自动重试。', 502);
   return json(run.result);
 }
+
+// ── Request normalisation: accept what real OpenAI-compatible clients send ──
+function textContent(content) {
+  if (content == null) return '';
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) return content.map(part => {
+    if (typeof part === 'string') return part;
+    if (part && typeof part === 'object' && typeof part.text === 'string') return part.text;
+    return '';
+  }).filter(Boolean).join('\n');
+  return '';
+}
+function normaliseMessages(raw) {
+  if (!Array.isArray(raw) || !raw.length || raw.length > 1000) return null;
+  const out = [];
+  for (const m of raw) {
+    if (!m || typeof m !== 'object') return null;
+    const role = m.role === 'developer' ? 'system' : String(m.role || '');
+    if (!['system', 'user', 'assistant', 'tool'].includes(role)) return null;
+    const message = { role, content: textContent(m.content) };
+    for (const key of ['name', 'tool_call_id', 'tool_calls', 'tool_call']) if (m[key] != null) message[key] = m[key];
+    out.push(message);
+  }
+  return out;
+}
+function normaliseTools(raw) {
+  if (raw == null) return [];
+  if (!Array.isArray(raw) || raw.length > 64) return null;
+  const out = [];
+  for (const t of raw) {
+    if (!t || typeof t !== 'object') return null;
+    const fn = (t.type === 'function' && t.function) ? t.function : t;
+    const name = String(fn.name || '').trim().slice(0, 128);
+    if (!/^[A-Za-z0-9_.-]{1,128}$/.test(name)) return null;
+    const parameters = (fn.parameters && typeof fn.parameters === 'object') ? fn.parameters : { type: 'object', properties: {} };
+    out.push({ name, description: String(fn.description || '').slice(0, 2000), parameters });
+  }
+  return out;
+}
+function toolShapes(defs) {
+  return {
+    openai: defs.map(d => ({ type: 'function', function: { name: d.name, description: d.description, parameters: d.parameters } })),
+    flat: defs.map(d => ({ name: d.name, description: d.description, parameters: d.parameters })),
+  };
+}
+// Cloudflare's newer OpenAI-compatible models expect {type:'function',function:{…}} while the
+// original function-calling models expect a flat {name,description,parameters}. A 4xx schema
+// rejection is deterministic (no tokens generated) so a single retry in the other shape is safe.
+async function runWithTools(env, id, inputs, defs) {
+  if (!defs.length) return env.AI.run(id, inputs);
+  const shapes = toolShapes(defs);
+  const preferOpenai = /gpt-oss|glm-|qwen|llama-3\.3|mistral/i.test(id);
+  const order = preferOpenai ? ['openai', 'flat'] : ['flat', 'openai'];
+  let last;
+  for (const shape of order) {
+    try { return await env.AI.run(id, { ...inputs, tools: shapes[shape] }); }
+    catch (error) {
+      last = error;
+      const status = Number(error?.status ?? error?.statusCode ?? 0);
+      const message = String(error?.message ?? error ?? '');
+      const schemaRejection = (status >= 400 && status < 500)
+        || /tool|schema|invalid|unsupported|parameter|unexpected|bad request/i.test(message);
+      if (!schemaRejection) throw error; // ambiguous failure: never replay
+    }
+  }
+  throw last;
+}
+const TOOLS_DISABLED_NOTE = '当前模型不支持原生工具调用；本轮已切换为纯文本回答，请勿输出工具调用语法。';
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
-    if (request.method === 'GET' && url.pathname === '/v1/models') return json({ object: 'list', data: Object.keys(MODELS).filter(id => cfChatAvailable(id) && CF_AGENT_CHAT_IDS.includes(id)).map(id => ({ id, object: 'model', owned_by: 'cloudflare', planned_deprecation: MODELS[id].plannedDeprecation || null })) });
-    if (request.method === 'GET' && url.pathname === '/v1/catalog') return json({ chat: Object.keys(MODELS).map(id => ({ id, available: cfChatAvailable(id), agent_tools: CF_AGENT_CHAT_IDS.includes(id), planned_deprecation: MODELS[id].plannedDeprecation || null })), image: [CF_IMAGE_MODEL], vision: [CF_VISION_MODEL], decision: Object.keys(CF_DECISION_MODELS), paid_only_disabled: CF_DISABLED_PAID });
-    if (request.method !== 'POST' || !['/v1/chat/completions', '/v1/images/generations', '/v1/vision', '/v1/decisions'].includes(url.pathname)) return fail('Not found', 404);
+    const path = url.pathname.replace(/\/+$/, '') || '/';
+    if (request.method === 'GET' && (path === '/health' || path === '/v1/health')) {
+      const ids = Object.keys(MODELS).filter(id => cfChatAvailable(id));
+      return json({ ok: true, ai: !!env.AI, models: ids.length, agent_models: CF_AGENT_CHAT_IDS.filter(id => cfChatAvailable(id)).length, now: new Date().toISOString() });
+    }
+    if (request.method === 'GET' && path === '/v1/models') {
+      const agentOnly = url.searchParams.get('agent_tools') === '1';
+      const ids = Object.keys(MODELS).filter(id => cfChatAvailable(id) && (!agentOnly || CF_AGENT_CHAT_IDS.includes(id)));
+      return json({
+        object: 'list',
+        data: ids.map(id => {
+          const card = cfModelCard(id) || {};
+          return {
+            id, object: 'model', owned_by: 'cloudflare',
+            provider: card.provider || 'Cloudflare', vendor: card.vendor || '',
+            display_name: card.displayName || id,
+            agent_tools: CF_AGENT_CHAT_IDS.includes(id),
+            planned_deprecation: MODELS[id].plannedDeprecation || null,
+          };
+        }),
+      });
+    }
+    if (request.method === 'GET' && path === '/v1/catalog') return json({
+      chat: Object.keys(MODELS).map(id => ({
+        id, available: cfChatAvailable(id), agent_tools: CF_AGENT_CHAT_IDS.includes(id),
+        provider: MODELS[id].provider || 'Cloudflare', vendor: MODELS[id].vendor || '',
+        display_name: MODELS[id].label || id,
+        pricing: { unit: 'neurons', input: MODELS[id].input, output: MODELS[id].output },
+        planned_deprecation: MODELS[id].plannedDeprecation || null,
+      })),
+      image: [CF_IMAGE_MODEL], vision: [CF_VISION_MODEL], decision: Object.keys(CF_DECISION_MODELS),
+      paid_only_disabled: CF_DISABLED_PAID,
+    });
+    if (request.method !== 'POST' || !['/v1/chat/completions', '/v1/images/generations', '/v1/vision', '/v1/decisions'].includes(path)) return fail('Not found', 404);
     if (!env.AI) return fail('Workers AI 未配置。', 503);
-    const maxBody = url.pathname === '/v1/vision' ? 3 * 1024 * 1024 : MAX_BODY;
+    const maxBody = path === '/v1/vision' ? 3 * 1024 * 1024 : MAX_BODY;
     const length = Number(request.headers.get('content-length') || 0);
     if (length > maxBody) return fail('输入过长。', 413);
     if (!/^application\/json(?:\s*;|$)/i.test(request.headers.get('content-type') || '')) return fail('只接受 application/json。', 415);
@@ -112,31 +262,36 @@ export default {
     } catch { return fail('读取请求失败'); }
     let body;
     try { body = JSON.parse(raw); } catch { return fail('请求不是有效 JSON'); }
-    if (url.pathname === '/v1/images/generations') return handleImage(body, env);
-    if (url.pathname === '/v1/vision') return handleVision(body, env);
-    if (url.pathname === '/v1/decisions') return handleDecision(body, env);
-    if (!body || typeof body !== 'object' || !cfChatAvailable(body.model)) return fail('只允许此 Worker 明确列出的 Cloudflare Hosted Models。');
-    if (!Array.isArray(body.messages) || !body.messages.length || body.messages.length > 1000) return fail('messages 必须是非空数组。');
-    if (body.messages.some(m => !m || !['system', 'user', 'assistant', 'tool'].includes(m.role) || (m.content != null && typeof m.content !== 'string'))) return fail('目前仅支持文本消息，不支持图像、音频或文件。');
-    const messages = body.messages.map(m => {
-      const out = { role: m.role, content: m.content ?? null };
-      for (const key of ['name', 'tool_call_id', 'tool_calls']) if (m[key] != null) out[key] = m[key];
-      return out;
-    });
-    if (body.tools != null && (!Array.isArray(body.tools) || body.tools.some(t => t?.type !== 'function' || !t.function?.name))) return fail('只支持 function tools。');
-    if (body.tools?.length && !CF_AGENT_CHAT_IDS.includes(body.model)) return fail('此模型只开放纯文本聊天，尚未适配 Agent function calling；请选择 GPT-OSS 或 Llama 3.3。');
-    const requested = body.max_tokens == null ? MAX_OUTPUT : Number(body.max_tokens);
-    if (!Number.isInteger(requested) || requested < 1 || requested > MAX_OUTPUT) return fail(`max_tokens 必须在 1–${MAX_OUTPUT} 之间。`);
-    let result;
-    try {
-      const inputs = { messages, max_tokens: requested, stream: false };
-      if (body.tools?.length) inputs.tools = body.tools.map(t => t.function);
-      if (typeof body.temperature === 'number' && body.temperature >= 0 && body.temperature <= 2) inputs.temperature = body.temperature;
-      result = await env.AI.run(body.model, inputs);
-    } catch (e) {
-      return inferenceFailure(e);
+    if (path === '/v1/images/generations') return handleImage(body, env);
+    if (path === '/v1/vision') return handleVision(body, env);
+    if (path === '/v1/decisions') return handleDecision(body, env);
+
+    const id = cfCanonicalModelId(body?.model, Object.keys(MODELS));
+    if (!id || !cfChatAvailable(id)) return fail('只允许此 Worker 明确列出的 Cloudflare Hosted Models。');
+    const messages = normaliseMessages(body.messages);
+    if (!messages) return fail('messages 必须是包含合法 role 的非空数组（最多 1000 条）。');
+    const tools = normaliseTools(body.tools);
+    if (tools === null) return fail('只支持 function tools，名称须为字母/数字/下划线，最多 64 个。');
+    const toolCapable = CF_AGENT_CHAT_IDS.includes(id);
+    const useTools = toolCapable && tools.length > 0;
+    if (tools.length && !toolCapable) {
+      // Old behaviour returned HTTP 400 here and broke Agent-mode clients on chat-only models.
+      // Degrade gracefully: keep the turn usable, with an explicit instruction to the model.
+      messages.unshift({ role: 'system', content: TOOLS_DISABLED_NOTE });
     }
-    if (!result || typeof result !== 'object' || result.error || (!result.response && !result.tool_calls && !result.choices)) return fail('Workers AI 返回了无效响应。', 502);
-    return sse(result, body.model);
+    const requested = Number.isFinite(Number(body.max_tokens)) ? Math.trunc(Number(body.max_tokens)) : DEFAULT_OUTPUT;
+    const inputs = { messages, max_tokens: clamp(requested || DEFAULT_OUTPUT, 1, MAX_OUTPUT), stream: false };
+    if (typeof body.temperature === 'number' && Number.isFinite(body.temperature)) inputs.temperature = clamp(body.temperature, 0, 2);
+    if (typeof body.top_p === 'number' && Number.isFinite(body.top_p)) inputs.top_p = clamp(body.top_p, 0, 1);
+    if (body.tool_choice && typeof body.tool_choice === 'string') inputs.tool_choice = body.tool_choice.slice(0, 64);
+    let result;
+    try { result = await runWithTools(env, id, inputs, useTools ? tools : []); }
+    catch (e) { return inferenceFailure(e); }
+    const hasChoices = Array.isArray(result?.choices) && result.choices.length > 0;
+    if (!result || typeof result !== 'object' || result.error
+      || (!hasChoices && typeof result.response !== 'string' && !Array.isArray(result.tool_calls))) {
+      return fail('Workers AI 返回了无效响应；可能已产生费用，请勿自动重试。', 502);
+    }
+    return sse(result, id);
   },
 };

@@ -3,7 +3,7 @@
 // response is authoritative. Provider keys are never retried against another gateway.
 import { MODEL_CATALOG, isRetiredModel } from './model-catalog.js?v=2026.10.25.1';
 import { text as localeText } from './locale.js';
-import { CF_CHAT_MODELS, CF_AGENT_CHAT_IDS, cfChatAvailable } from './cloudflare-ai-catalog.js';
+import { CF_CHAT_MODELS, CF_AGENT_CHAT_IDS, cfChatAvailable, cfCanonicalModelId, cfModelCard } from './cloudflare-ai-catalog.js';
 
 export const DEFAULT_GATEWAY_ID = 'teamorouter';
 
@@ -51,7 +51,15 @@ const FIRST_PARTY_MODELS = {
     'qwen3.8-2.4t-a95b', 'qwen3.8-27b',
     'qwen3.7-plus', 'qwen3.7-flash', 'qwen3.6-plus', 'qwen3.6-flash', 'qwen3.5-plus', 'qwen3.5-flash',
   ]),
-  cloudflare: Object.entries(CF_CHAT_MODELS).filter(([id]) => cfChatAvailable(id) && CF_AGENT_CHAT_IDS.includes(id)).map(([id, spec]) => ({ id, provider: spec.provider, displayName: id, plannedDeprecation: spec.plannedDeprecation || '' })),
+  // Every enabled hosted model is offered for tool-free chat; `agentTools` marks the ones that
+  // may receive function tools. Previously only three IDs were listed here, which made both the
+  // live /v1/models response and the client picker look incomplete.
+  cloudflare: Object.entries(CF_CHAT_MODELS).filter(([id]) => cfChatAvailable(id)).map(([id, spec]) => ({
+    id, provider: spec.provider || 'Cloudflare', vendor: spec.vendor || '',
+    displayName: spec.label || id, agentTools: spec.agentTools === true,
+    plannedDeprecation: spec.plannedDeprecation || '',
+    pricingUnit: 'neurons', input: spec.input, output: spec.output,
+  })),
   custom: [],
 };
 
@@ -213,7 +221,11 @@ export function isModelForGateway(gatewayId, modelId, availableIds = null) {
   const spec = getGateway(gatewayId);
   const id = String(modelId || '').trim();
   if (!id || id === '__system__') return false;
-  if (spec.id === 'cloudflare') return id.startsWith('@cf/') && (Array.isArray(availableIds) ? availableIds.includes(id) : FIRST_PARTY_MODELS.cloudflare.some((m) => m.id === id));
+  if (spec.id === 'cloudflare') {
+    const canonical = id.startsWith('@cf/') ? cfCanonicalModelId(id, Object.keys(CF_CHAT_MODELS)) : '';
+    if (Array.isArray(availableIds)) return availableIds.includes(id) || availableIds.includes(canonical);
+    return !!canonical && cfChatAvailable(canonical);
+  }
   if (spec.id === DEFAULT_GATEWAY_ID || spec.id === 'custom') return id !== '__smart_router__' || spec.id === DEFAULT_GATEWAY_ID;
   if (id === '__smart_router__' || providerFromModelId(id) !== spec.provider) return false;
   // A successful provider listing is authoritative, even for a same-provider ID left by an old manual entry.
@@ -297,6 +309,17 @@ export function filterGatewayChatModels(gatewayId, ids) {
     if (spec.id === 'grok' && id === 'latest') return true;
     return providerFromModelId(id) === spec.provider;
   }))];
+}
+
+/** IDs that accept function tools on this gateway; null means "no gateway-level restriction". */
+export function gatewayAgentToolModelIds(gatewayId = DEFAULT_GATEWAY_ID) {
+  if (getGateway(gatewayId).id !== 'cloudflare') return null;
+  return CF_AGENT_CHAT_IDS.filter(id => cfChatAvailable(id));
+}
+/** Presentation metadata for a model card; keeps provider/vendor/Neurons rates in one place. */
+export function gatewayModelCard(gatewayId, modelId) {
+  if (getGateway(gatewayId).id !== 'cloudflare') return null;
+  return cfModelCard(cfCanonicalModelId(modelId) || modelId);
 }
 
 export function gatewayModelListLabel(gatewayId) {

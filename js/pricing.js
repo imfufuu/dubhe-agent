@@ -283,7 +283,14 @@ export function getModelPricing(modelId, { gatewayId = '' } = {}) {
 function officialModelPricing(modelId) {
   const { base, isFast } = normalizeModelKey(modelId);
   if (!base) return null;
-  if (base === '@cf/black-forest-labs/flux-1-schnell') return { id: base, kind: 'image', mode: 'neurons', priceSource: 'cloudflare' };
+  // Cloudflare Workers AI hosted models are billed in Neurons, not USD. Registering a
+  // finite-but-unpriced rate prevents `formatRate(undefined)` / zero-dollar chart series and
+  // keeps the price badge honest for every @cf/ model (not just the image one).
+  if (base.startsWith('@cf/')) {
+    if (base === '@cf/black-forest-labs/flux-1-schnell') return { id: base, kind: 'image', mode: 'neurons', priceSource: 'cloudflare', unpriced: true };
+    if (base.startsWith('@cf/moondream/')) return { id: base, kind: 'vision', mode: 'neurons', input: 0, output: 0, priceSource: 'cloudflare', unpriced: true };
+    return { id: base, kind: 'chat', mode: 'neurons', input: 0, output: 0, cachedInput: 0, priceSource: 'cloudflare', unpriced: true };
+  }
   if (VISION_MODEL_PRICING[base]) return { ...VISION_MODEL_PRICING[base], kind: 'vision' };
   if (IMAGE_MODEL_PRICING[base]) return { ...IMAGE_MODEL_PRICING[base], kind: 'image' };
   if (MODEL_PRICING[base]) return { ...MODEL_PRICING[base], id: base, kind: 'chat', isFast };
@@ -326,6 +333,19 @@ export function estimateChatCost(modelId, usage, opts = {}) {
   const gatewayId = opts.gatewayId || '';
   const p = getModelPricing(modelId, { gatewayId });
   if (!p || !usage) return null;
+  if (p.mode === 'neurons') {
+    const inputTok = Math.max(0, Number(usage.input ?? usage.prompt_tokens ?? usage.input_tokens ?? 0) || 0);
+    const outputTok = Math.max(0, Number(usage.output ?? usage.completion_tokens ?? usage.output_tokens ?? 0) || 0);
+    return {
+      kind: 'chat', model: p.id || String(modelId || ''),
+      inputTokens: inputTok, outputTokens: outputTok, cachedTokens: 0,
+      cacheCreationTokens: 0, cacheCreation5mTokens: 0, cacheCreation1hTokens: 0,
+      inRate: 0, outRate: 0, cachedRate: 0, cacheCreationRate: 0,
+      cacheCreation5mRate: 0, cacheCreation1hRate: 0,
+      fast: false, freeTier: false, priceSource: 'cloudflare', unpriced: true,
+      costUsd: 0, rateLabel: 'Workers AI Neurons；美元费用以 Cloudflare 账单为准',
+    };
+  }
   if (p.kind === 'vision') {
     return estimateVisionCost({
       model: modelId,
@@ -571,6 +591,7 @@ function rateEstimateLabel(kind, input, output, extras = '', language = getLangu
 export function priceBadgeFor(modelId, { fastMode = false, language = getLanguage(), gatewayId = '' } = {}) {
   const p = getModelPricing(modelId, { gatewayId });
   if (!p) return '';
+  if (p.mode === 'neurons') return language === 'en' ? 'Neurons · Cloudflare billing' : 'Neurons · Cloudflare 计费';
   if (p.kind === 'vision') return `${language === 'en' ? 'Vision' : '识图'} ${formatRate(p.input, language)}/${formatRate(p.output, language)} /M`;
   if (p.kind === 'image') {
     if (p.mode === 'tier' && p.tiers) return `${language === 'en' ? 'Image' : '生图'} ${formatCcy(p.tiers['1k'] || 0.06, language)}~${formatCcy(p.tiers['4k'] || 0.25, language)}/${language === 'en' ? 'image' : '张'}`;

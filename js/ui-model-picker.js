@@ -21,7 +21,7 @@ import { USD_TO_CNY_RATE, USD_TO_CNY_RATE_DATE } from './currency.js';
 import { isNetworkOffline } from './offline-network.js';
 import { OFFLINE_MODEL_DISPLAY_NAME, OFFLINE_MODEL_ID, OFFLINE_MODEL_PROVIDER_EN, OFFLINE_MODEL_PROVIDER_ZH, isOfflineModelId } from './offline-model-config.js';
 import { formatParameterCount } from './gguf.js';
-import { DEFAULT_GATEWAY_ID, getGateway, gatewayFallbackModels, defaultModelForGateway, gatewayModelListLabel, isModelForGateway } from './gateway-registry.js?v=2026.10.25.1';
+import { DEFAULT_GATEWAY_ID, getGateway, gatewayFallbackModels, defaultModelForGateway, gatewayModelListLabel, isModelForGateway, gatewayModelCard } from './gateway-registry.js?v=2026.10.25.1';
 
 export function installModelPicker({ store, agent, toast, getBusy, openKeyModal, rebuildMessages, renderSessions, renderFiles, updateStats, syncCapLine, syncWeb }) {
   // ── 模型下拉 ──
@@ -61,6 +61,20 @@ export function installModelPicker({ store, agent, toast, getBusy, openKeyModal,
     };
   }
   function modelPriceTitle(hit) {
+    // Workers AI is billed in Neurons, not USD. A hosted model has no USD list price, so the
+    // generic branch below would render "$0.00/M" (and a zero-valued price chart). Always use
+    // the Neurons rate card and the real serving provider instead.
+    if (hit?.pricingUnit === 'neurons' || (hit?.id || '').startsWith('@cf/')) {
+      const card = gatewayModelCard(store.state.gatewayId, hit.id) || hit;
+      const rates = Number.isFinite(Number(card.pricing?.input)) && Number.isFinite(Number(card.pricing?.output))
+        ? localeText(
+          `输入 ${Number(card.pricing.input).toLocaleString('zh-CN')} / 输出 ${Number(card.pricing.output).toLocaleString('zh-CN')} Neurons（每百万 token）`,
+          `${Number(card.pricing.input).toLocaleString('en-US')} input / ${Number(card.pricing.output).toLocaleString('en-US')} output Neurons per million tokens`)
+        : '';
+      return localeText(
+        `Cloudflare Workers AI 托管${card.vendor ? ` · 原厂 ${card.vendor}` : ''}；按 Neurons 计费，非美元价目表。${rates} 实际账单与免费额度以 Cloudflare 控制台为准。`,
+        `Hosted by Cloudflare Workers AI${card.vendor ? ` · model author ${card.vendor}` : ''}; billed in Neurons, not USD. ${rates} Billing and free allowance are set by your Cloudflare account.`);
+    }
     const p = hit?.listPrice;
     if (!p) return hit?.id || '';
     const official = hit.priceSource === 'official';
@@ -105,6 +119,25 @@ export function installModelPicker({ store, agent, toast, getBusy, openKeyModal,
       .map(m => {
         const customProvider = gatewayId === 'custom' && extraIds.includes(m.id);
         const meta = customProvider ? (manualMeta[m.id] || {}) : {};
+        const cfCard = gatewayId === 'cloudflare' ? gatewayModelCard(gatewayId, m.id) : null;
+        if (cfCard) {
+          // Hosted models: serving provider is Cloudflare; the model author is a separate badge.
+          // Drop any inherited USD listPrice so no dollar chart is drawn with Neurons data.
+          return {
+            ...m,
+            provider: 'Cloudflare',
+            vendor: cfCard.vendor || m.vendor || '',
+            displayName: cfCard.displayName || m.displayName || m.id,
+            agentTools: cfCard.agentTools === true,
+            pricingUnit: 'neurons',
+            pricing: cfCard.pricing,
+            listPrice: null,
+            cheap: false,
+            hot: false,
+            customProvider: false,
+            providerIconDataUrl: '',
+          };
+        }
         return {
           ...m,
           provider: customProvider
@@ -169,9 +202,10 @@ export function installModelPicker({ store, agent, toast, getBusy, openKeyModal,
       const groupIcon = customProviderModel
         ? providerIcon(p, { custom: true, iconDataUrl: customProviderModel.providerIconDataUrl })
         : (isLocalGroup ? LOCAL_PROVIDER_ICON : providerIcon(p));
+      const isCloudflareGroup = p === 'Cloudflare' && (store.state.gatewayId || DEFAULT_GATEWAY_ID) === 'cloudflare';
       const groupLabel = isRouterGroup
         ? SMART_ROUTER_PROVIDER_LABEL
-        : (isLocalGroup ? 'LOCAL' : p);
+        : (isLocalGroup ? 'LOCAL' : (isCloudflareGroup ? 'CLOUDFLARE WORKERS AI' : p));
       g.appendChild(el('div', 'dd-group-title', `${isRouterGroup ? `<span class="router-group-ico">${ROUTER_ICON_SVG}</span>` : groupIcon}<span>${esc(groupLabel)}</span>`));
       for (const m of sortModelsInFamily(groups.get(p))) {
         const item = el('button', 'dd-item' + (m.id === store.state.model ? ' active' : ''));
@@ -206,13 +240,23 @@ export function installModelPicker({ store, agent, toast, getBusy, openKeyModal,
               <span class="dd-item-badges">
                 <span class="badge local-model-badge">${localeText('本地', 'Local')}</span>
               </span>`
-            : `<span class="dd-item-id mono">${esc(m.id)}</span>
+            : (hit.pricingUnit === 'neurons'
+              // Workers AI card: friendly name, Cloudflare as serving provider in the group
+              // header, model author as a badge, and an explicit tools capability badge.
+              ? `<span class="dd-item-id mono">${esc(hit.displayName || m.id)}</span>
+                <span class="dd-item-badges">
+                  ${hit.vendor ? `<span class="badge model-tag" title="${localeText('模型原厂（由 Cloudflare 托管推理）', 'Model author (inference hosted by Cloudflare)')}">${esc(hit.vendor)}</span>` : ''}
+                  ${hit.agentTools
+                    ? `<span class="badge cf-agent" title="${localeText('支持 Agent function calling 与全部工具', 'Supports Agent function calling and all tools')}">AGENT</span>`
+                    : `<span class="badge ghost" title="${localeText('仅纯文本对话，不接收工具', 'Text chat only; no tools')}">CHAT</span>`}
+                </span>`
+              : `<span class="dd-item-id mono">${esc(m.id)}</span>
               <span class="dd-item-badges">
                 ${hot ? `<span class="badge hot" title="${localeText('应用预设热门精选，非实时使用热度或质量实测排行', 'App-curated popular pick, not live usage popularity or benchmark rank')}">${localeText('热门', 'Popular')}</span>` : ''}
                 ${(Array.isArray(hit.tags) ? hit.tags : []).map((t) => `<span class="badge model-tag">${esc(t)}</span>`).join('')}
                 ${free ? '<span class="badge">FREE</span>' : (cheap ? `<span class="badge cheap" title="${esc(cheapBadgeTitle)}">${localeText('低价', 'Cheap')}</span>` : '')}
                 ${supportsVision(m.id) ? '<span class="badge vision" title="支持图片输入（多模态）"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg></span>' : ''}
-              </span>`);
+              </span>`));
         item.addEventListener('click', () => selectModel(m.id));
         g.appendChild(item);
       }
@@ -335,7 +379,8 @@ export function installModelPicker({ store, agent, toast, getBusy, openKeyModal,
       prov = selected.provider;
     } else {
       icon = providerIcon(selected?.provider || providerOf(displayedId));
-      name = displayedId;
+      // Hosted Workers AI models show their friendly name and the real serving provider.
+      name = selected?.pricingUnit === 'neurons' ? (selected.displayName || displayedId) : displayedId;
       prov = selected?.provider || providerOf(displayedId);
     }
     $('#model-btn-icon').innerHTML = icon;

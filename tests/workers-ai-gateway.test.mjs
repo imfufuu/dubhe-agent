@@ -70,13 +70,18 @@ import { generateImage } from '../js/api.js';
 import { resolveImageVariant, imageModelRuntimeDescription } from '../js/config.js';
 const post = (path, payload, ip = '192.0.2.4') => new Request(`https://x.workers.dev${path}`, { method: 'POST', headers: { 'content-type': 'application/json', 'CF-Connecting-IP': ip }, body: JSON.stringify(payload) });
 
-test('catalog keeps paid models disabled, deprecations enforced, non-agent models refuse tools', async () => {
-  const { env } = setup(async () => ({ response: 'ok', usage }));
+test('catalog keeps paid models disabled, deprecations enforced, non-agent models degrade to text', async () => {
+  let seen;
+  const { env } = setup(async (id, input) => { seen = { id, input }; return { response: 'ok', usage }; });
   for (const id of CF_DISABLED_PAID) assert.equal((await worker.fetch(request({ ...body, model: id }), env)).status, 400);
   assert.equal(cfChatAvailable('constructor'), false);
   assert.equal(cfChatAvailable('@cf/qwen/qwen3-30b-a3b-fp8', new Date('2026-11-20T00:00:00Z')), false);
   assert.ok(Object.keys(CF_CHAT_MODELS).length > 2);
-  assert.equal((await worker.fetch(request({ ...body, model: '@cf/qwen/qwq-32b', tools: [{ type: 'function', function: { name: 'x' } }] }), env)).status, 400);
+  // Chat-only models no longer fail the whole turn with HTTP 400 when an Agent client sends tools.
+  const degraded = await worker.fetch(request({ ...body, model: '@cf/qwen/qwq-32b', tools: [{ type: 'function', function: { name: 'x' } }] }), env);
+  assert.equal(degraded.status, 200);
+  assert.equal(seen.input.tools, undefined);
+  assert.match(seen.input.messages[0].content, /纯文本/);
   const catalog = await (await worker.fetch(new Request('https://x.workers.dev/v1/catalog'), env)).json();
   assert.ok(catalog.paid_only_disabled.includes(CF_DISABLED_PAID[0]));
 });

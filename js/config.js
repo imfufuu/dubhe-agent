@@ -308,6 +308,9 @@ export const IMAGE_MODEL_IDS = IMAGE_MODELS.map((m) => m.id);
 // 根据模型 ID 推断供应商
 export function providerOf(modelId) {
   const m = (modelId || '').toLowerCase();
+  // Workers AI hosted IDs are served by Cloudflare, not by the model author (OpenAI/Meta/...).
+  // Without this rule the picker grouped them under "其他" with a wrong letter icon.
+  if (m.startsWith('@cf/')) return 'Cloudflare';
   if (m === 'moderator' || m === 'content-moderation') return 'Moderator';
   if (m === SMART_ROUTER_ID) return SMART_ROUTER_PROVIDER;
   if (m.startsWith('claude')) return 'Anthropic';
