@@ -74,7 +74,16 @@ try {
   assert.deepEqual(phases, ['loading-assets', 'compiling', 'program-start']);
   assert.deepEqual([...fetchedAssets].sort(), ['clang.wasm', 'lld.wasm', 'sysroot.tar']);
   assert.doesNotMatch(JSON.stringify(result), /godbolt\.org|Compiler Explorer/i);
-  console.log('local C++ regression: isolation checks + multi-file/stdin/argv/exit-code smoke passed');
+  // Representative real-world boundary: vector::at may pull in exception
+  // symbols even though simpler iostream/string programs can work.
+  const vector = await compileAndRunCpp({ mainPath: 'src/vector.cpp', code: '#include <vector>\nint main(){ std::vector<int> x; x.push_back(3); return x.at(0); }' });
+  assert.equal(vector.ok, false);
+  const diagnostics = vector.logs.map(x => x.text).join('\n');
+  assert.match(diagnostics, /__cxa_throw/);
+  assert.match(diagnostics, /src\/vector\.cpp/);
+  assert.match(diagnostics, /修改后可以重新编译/);
+  process.exitCode = 0; // the embedded clang/LLD process may set Node's exitCode on expected link failure
+  console.log('local C++ regression: isolation checks + multi-file/stdin/argv/exit-code and exception-link smoke passed');
 } finally {
   globalThis.fetch = realFetch;
 }

@@ -54,6 +54,9 @@ jobs:
       - name: tests/agent.test.mjs · 主单测
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/agent.test.mjs
+      - name: tests/workers-ai-gateway.test.mjs · Workers AI 网关与配额
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/workers-ai-gateway.test.mjs
       - name: tests/local-cpp-policy.test.mjs · 本地 C++ 策略、工具门控与无网络集成
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/local-cpp-policy.test.mjs

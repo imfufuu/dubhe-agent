@@ -477,7 +477,10 @@ export function mountUI(store, agent) {
     if (modalReturnFocus && modalReturnFocus.focus) modalReturnFocus.focus();
     modalReturnFocus = null;
   }
-  $('#key-btn').addEventListener('click', openKeyModal);
+  $('#key-btn').addEventListener('click', () => {
+    if (getGateway(store.state.gatewayId).noKey) $('#settings-btn')?.click();
+    else openKeyModal();
+  });
   $('#key-close').addEventListener('click', closeKeyModal);
   // 点击遮罩区域关闭
   keyModal.addEventListener('click', (e) => { if (e.target === keyModal) closeKeyModal(); });
@@ -544,11 +547,11 @@ const fmtAdminExp = (ms) => {
     if (!b) return;
     const gateway = getGateway(store.state.gatewayId || DEFAULT_GATEWAY_ID);
     const admin = isAdminAlias(store.state.apiKey) && gateway.id === DEFAULT_GATEWAY_ID;
-    const configured = !!store.state.apiKey && !admin;
-    b.textContent = admin ? localeText('管理员', 'Admin') : configured ? localeText('已配置', 'Configured') : 'API Key';
+    const configured = (gateway.noKey ? !!(store.state.gatewayBaseUrls || {})[gateway.id] : !!store.state.apiKey) && !admin;
+    b.textContent = gateway.noKey ? 'Worker URL' : admin ? localeText('管理员', 'Admin') : configured ? localeText('已配置', 'Configured') : 'API Key';
     b.classList.toggle('admin-mode', admin);
     b.classList.toggle('configured-mode', configured);
-    b.title = admin
+    b.title = gateway.noKey ? localeText('打开设置配置 Workers AI 地址', 'Open settings to configure the Workers AI URL') : admin
       ? (adminUnlocked() ? localeText(`管理员密钥已启用（有效期至 ${fmtAdminExp(adminExpiresAt())}，明文不落盘）`, `Admin key active (valid until ${fmtAdminExp(adminExpiresAt())}; never stored in plain text)`) : localeText('管理员密钥未解封或已过期：点开重新输入口令和暗号', 'Admin key locked or expired: open to re-enter the key and phrase'))
       : configured
         ? localeText(`${gateway.name} API Key 已配置并保存在本机，点击可管理`, `${gateway.name} API key is stored locally; click to manage`)
@@ -2379,7 +2382,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       welcomeMotion.sync();
       return;
     }
-    if (!store.state.apiKey && !isOfflineModelId(store.state.model)) { composerDraftAwaitingKey = text; openKeyModal(); toast('请先配置 TeamoRouter API Key（输入内容已保留，保存后自动放回）', 'warn'); return; }
+    if (!store.state.apiKey && !getGateway(store.state.gatewayId).noKey && !isOfflineModelId(store.state.model)) { composerDraftAwaitingKey = text; openKeyModal(); toast('请先配置 TeamoRouter API Key（输入内容已保留，保存后自动放回）', 'warn'); return; }
     if (getBusy()) return;
     pendingSendOrigin = composer.getBoundingClientRect();
     composer.value = ''; saveComposerDraft(); autoGrow();
@@ -2694,7 +2697,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     if (drifted) setTimeout(() => toast(`资源缓存不一致（入口 ${entryVer}，模块 ${APP_VERSION}）：请硬刷新或用无痕窗口打开`, 'warn', 9000), 700);
   }
 
-  if (!store.state.apiKey && !isOfflineModelId(store.state.model)) setTimeout(openKeyModal, 600);
+  if (!store.state.apiKey && !getGateway(store.state.gatewayId).noKey && !isOfflineModelId(store.state.model)) setTimeout(openKeyModal, 600);
 
   // ── 暴露给 agent hooks ───────────────────────────────────────────────
   // 设置页改了开关后把会话区所有「镜像」同步一遍：四颗 pill、能力行、主题按钮（settings.js 不 import ui.js，经 main.js 回调进来）

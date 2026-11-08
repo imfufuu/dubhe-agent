@@ -637,7 +637,14 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             # 我们自己塞两个 git 参数（都在校验之后，用户无法借此夹带）：
             #   --no-pager 不挂在分页器上；-c init.defaultBranch=main 去掉 git init 的
             #   「Using 'master'…」长篇提示（否则每次 init 都白吃 ~400 字符上下文）
-            proc = subprocess.run(["git", "--no-pager", "-c", "init.defaultBranch=main", *argv[1:]],
+            # Ordinary reads must not execute repository-configured fsmonitor,
+            # external diff or textconv helpers, nor refresh the index as a side
+            # effect. Explicit advanced flags can still override diff options;
+            # the frontend does not classify those calls as pure reads.
+            read_flags = ["--no-ext-diff", "--no-textconv"] if argv[1] in {"diff", "show", "log"} else []
+            readonly_sub = argv[1] in {"status", "log", "diff", "show", "rev-parse"}
+            read_globals = ["--no-optional-locks", "-c", "core.fsmonitor=false"] if readonly_sub else []
+            proc = subprocess.run(["git", "--no-pager", "-c", "init.defaultBranch=main", *read_globals, argv[1], *read_flags, *argv[2:]],
                                   cwd=cwd, env=env, timeout=timeout,
                                   capture_output=True, text=True, stdin=subprocess.DEVNULL)
         except FileNotFoundError:

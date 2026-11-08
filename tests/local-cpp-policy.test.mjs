@@ -3,6 +3,8 @@ import { createStore } from '../js/state.js';
 import { STORAGE_KEY } from '../js/config.js';
 import { TOOL_DEFS, executeTool, toolsFor } from '../js/tools.js';
 import { createFS } from '../js/sandbox.js';
+import { createProjectFS } from '../js/project-store.js';
+import { formatCppRuntime } from '../js/prompt.js';
 import { subagentTools } from '../js/agent.js';
 import { CAPABILITY_REGISTRY } from '../js/capabilities.js';
 import * as execution from '../js/execution.js';
@@ -122,11 +124,42 @@ try {
   assert.deepEqual(workers[0].payload.args, ['--quiet']);
   assert.equal(workers[0].terminated, true);
 
+  const project = createProjectFS({ state: {}, notify() {} });
+  project.write('src/main.cpp', '#include "util.h"\nint main(){ return 0; }');
+  project.write('src/util.h', 'int project_marker = 42;');
+  project.write('src/other.cpp', 'int project_other = 1;');
+  project.write('src/in.txt', 'project-input');
+  project.write('.git/secret.h', 'private-git');
+  project.write('internal/secret.h', 'private-internal');
+  const beforeSandbox = fs.export();
+  const projectResult = await executeTool('execute_cpp', {
+    scope: 'project', path: 'src/main.cpp', files: ['src/other.cpp'], dir: 'src', stdin_path: 'src/in.txt',
+  }, { fs, projectFs: project, sandboxEnabled: true, localCpp: true, cppMode: 'local', onUi: () => {} });
+  assert.match(projectResult, /local-worker-ok/);
+  const job = workers.at(-1).payload;
+  assert.match(job.files.find(f => f.filename === 'src/util.h').contents, /project_marker/);
+  assert.match(job.files.find(f => f.filename === 'src/other.cpp').contents, /project_other/);
+  assert.equal(job.stdin, 'project-input');
+  assert.ok(!job.files.some(f => f.filename.startsWith('.git/') || f.filename.startsWith('internal/')));
+  assert.deepEqual(fs.export(), beforeSandbox, 'project compile must not duplicate source in the sandbox');
+  for (const bad of [{ path: '../src/main.cpp' }, { files: ['.git/secret.h'] }, { dir: 'internal' }, { stdin_path: '../x' }]) {
+    const count = workers.length;
+    const error = await executeTool('execute_cpp', { scope: 'project', code: 'int main(){}', ...bad }, { fs, projectFs: project, sandboxEnabled: true, localCpp: true, cppMode: 'local' });
+    assert.match(error, /非法|受保护/);
+    assert.equal(workers.length, count);
+  }
+  project.write('src/hidden.cpp', '#include "../.git/secret.h"\nint main(){}');
+  await executeTool('execute_cpp', { scope: 'project', path: 'src/hidden.cpp' }, { fs, projectFs: project, sandboxEnabled: true, localCpp: true, cppMode: 'local' });
+  assert.ok(!workers.at(-1).payload.files.some(f => /private-git/.test(f.contents)), 'protected files must not be discovered through includes');
+  const count = workers.length;
+  const missingStdin = await executeTool('execute_cpp', { scope: 'project', path: 'src/main.cpp', stdin_path: 'src/missing' }, { fs, projectFs: project, sandboxEnabled: true, localCpp: true, cppMode: 'local' });
+  assert.match(missingStdin, /找不到 stdin/); assert.equal(workers.length, count);
+
   const refused = await executeTool('execute_cpp', { code: 'int main(){}' }, {
     fs, sandboxEnabled: true, localCpp: false, onUi: () => {},
   });
   assert.match(refused, /本地 C\+\+/);
-  assert.equal(workers.length, 1, 'disabled C++ must be rejected before starting a worker');
+  assert.equal(workers.length, count, 'disabled C++ must be rejected before starting a worker');
 } finally {
   globalThis.fetch = originalFetch;
   if (previousWorker === undefined) delete globalThis.Worker;
@@ -138,3 +171,10 @@ assert.match(workerSource, /url\.origin !== self\.location\.origin/);
 assert.match(workerSource, /ASSET_TYPES\[name\]/);
 assert.doesNotMatch(workerSource, /godbolt\.org|Compiler Explorer|https?:\/\//i);
 console.log('local C++ policy/integration: settings migration, offline gate, capability filtering, worker payload and no-fetch checks passed');
+
+for (const language of ['zh', 'en']) {
+  assert.match(formatCppRuntime({ sandboxEnabled: false, localCpp: true, cppMode: 'local', language }), /disabled|关闭/);
+  assert.match(formatCppRuntime({ sandboxEnabled: true, localCpp: false, cppMode: 'remote', language }), /disabled|关闭/);
+  assert.match(formatCppRuntime({ sandboxEnabled: true, localCpp: true, cppMode: 'remote', language }), /remote-godbolt[\s\S]*godbolt\.org/);
+  assert.match(formatCppRuntime({ sandboxEnabled: true, localCpp: true, cppMode: 'local', language }), /local-wasi[\s\S]*__cxa_throw/);
+}

@@ -940,10 +940,38 @@ export const TOOL_CONTRACTS = Object.freeze({
   dispatch_subagent: contract({ sideEffect: 'cost', idempotent: false, timeoutMs: 600000, riskLevel: 'L2', external: true, note: '独立上下文子智能体，产生额外推理成本' }),
 });
 
+// Intentionally conservative: only a small, shell-free subset can bypass the
+// write-ahead journal. Unknown flags, quoting and global git options retain the
+// normal external-write protections. The relay disables optional locks,
+// fsmonitor, external diff and textconv for these ordinary reads.
+export function isReadOnlyGitCommand(command) {
+  const raw = String(command || '').trim();
+  if (!raw || /[^a-zA-Z0-9_./:=+@~^,\-\s]/.test(raw)) return false;
+  const parts = raw.split(/\s+/);
+  if (parts.shift() !== 'git') return false;
+  const sub = parts.shift();
+  if (!['status', 'log', 'diff', 'show', 'rev-parse'].includes(sub)) return false;
+  const flags = {
+    status: /^(?:--short|-s|--branch|-b|--porcelain(?:=v[12])?|--untracked-files(?:=(?:no|normal|all))?|--no-optional-locks)$/,
+    log: /^(?:--oneline|--stat|--no-patch|-p|--name-only|--name-status|--decorate(?:=(?:short|full|no))?|-\d+|--max-count=\d+)$/,
+    diff: /^(?:--stat|--shortstat|--name-only|--name-status|--cached|--staged|--no-ext-diff|--no-textconv|--quiet|--exit-code)$/,
+    show: /^(?:--stat|--oneline|--no-patch|--name-only|--name-status|--no-ext-diff|--no-textconv)$/,
+    'rev-parse': /^(?:--show-toplevel|--is-inside-work-tree|--is-bare-repository|--short|--verify)$/,
+  };
+  let paths = false;
+  for (const part of parts) {
+    if (part === '--') { paths = true; continue; }
+    if (part.startsWith('-')) { if (paths || !flags[sub].test(part)) return false; }
+    else if (!/^[a-zA-Z0-9_./:@~^+,-]+$/.test(part)) return false;
+  }
+  return true;
+}
+
 export function getToolContract(name, args = null) {
   const key = String(name);
   const base = TOOL_CONTRACTS[key] || null;
   if (!base || !args || typeof args !== 'object') return base;
+  if (key === 'run_git' && isReadOnlyGitCommand(args.command)) return { ...base, sideEffect: 'none', external: false, idempotent: true, retryPolicy: 'never', riskLevel: 'L1', verifyAfterRun: false, note: '保守识别的只读 Git 查询；每次读取最新状态' };
   const mode = String(args.mode || 'image').toLowerCase();
   const pdfTextOnly = key === 'analyze_pdf' && (mode === 'ocr' || Number(args.pages) === 0);
   const svgLocal = key === 'analyze_svg' && (mode === 'ocr' || mode === 'code');
@@ -1110,7 +1138,7 @@ export function validateToolCallPre({
   }
 
   const priors = seenIdempotency && typeof seenIdempotency.get === 'function' ? seenIdempotency.get(idemKey) : null;
-  if (priors && priors.status === 'uncertain') {
+  if (priors && priors.status === 'uncertain' && !(name === 'run_git' && contractDef?.sideEffect === 'none')) {
     errors.push({
       id: 'idempotency-uncertain',
       detail: `该调用与第 ${priors.index} 次调用幂等键相同（${idemKey}），上一次副作用状态不确定`,
@@ -1174,9 +1202,15 @@ export function validateToolResultPost({
   // 「不可用」「error」等字样。失败只认工具自己的失败前缀（如「search_web 失败：」），不再扫描正文。
   // 结构化错误码（如 tool_library 返回的 TOOL_SEARCH_REQUIRED）也是失败：不能记为成功，否则会被幂等账本当作已完成而复用
   const structuredFailure = /^\s*\{/.test(text) && /"code"\s*:\s*"TOOL_[A-Z_]+"/.test(text.slice(0, 300));
-  const failureSignalled = !ok || structuredFailure || (EXTERNAL_CONTENT_TOOLS.has(name)
+  // write_file emits this prefix only after fs.write returns successfully.
+  // Filenames and persistence notes are arbitrary text, not failure signals.
+  const confirmedWrite = name === 'write_file' && ok && !error && /^(?:已写入|已追加|已局部修改) /.test(text);
+  // A zero-exit Git result likewise has a trusted wrapper; repository output
+  // can contain arbitrary words such as error in filenames or commit messages.
+  const confirmedGit = name === 'run_git' && ok && !error && text.startsWith('[git] ');
+  const failureSignalled = !ok || structuredFailure || (!confirmedWrite && !confirmedGit && (EXTERNAL_CONTENT_TOOLS.has(name)
     ? EXTERNAL_FAILURE_PREFIX_RE.test(text)
-    : TOOL_FAILURE_TEXT_RE.test(text.slice(0, 160)));
+    : TOOL_FAILURE_TEXT_RE.test(text.slice(0, 160))));
 
   if (c && c.timeoutMs && durationMs > c.timeoutMs) {
     issues.push({ id: 'timeout-exceeded', severity: 'warn', detail: `耗时 ${Math.round(durationMs)}ms 超过契约超时 ${c.timeoutMs}ms` });
@@ -1208,7 +1242,7 @@ export function validateToolResultPost({
 export const FAILURE_KIND_META = Object.freeze({
   INVALID_ARGS: { label: '参数错误', handling: '修正参数后最多重试一次', retryable: true, maxRetries: 1, verifyFirst: false },
   ENVIRONMENT: { label: '环境错误', handling: '不重试：解释原因并给出恢复路径', retryable: false, maxRetries: 0, verifyFirst: false },
-  CODE_ERROR: { label: '代码错误', handling: '定位具体错误并最小补丁，不重发长命令', retryable: false, maxRetries: 0, verifyFirst: false },
+  CODE_ERROR: { label: '代码或工具链兼容错误', handling: '根据诊断修改代码或工具链后可重新运行；不要原样自动重试', retryable: false, maxRetries: 0, verifyFirst: false },
   TRANSIENT: { label: '暂时性错误', handling: '有限指数退避重试', retryable: true, maxRetries: 2, verifyFirst: false },
   PERMISSION: { label: '权限错误', handling: '不重试：路径/权限不允许', retryable: false, maxRetries: 0, verifyFirst: false },
   DATA: { label: '数据错误', handling: '标记工具异常，改用其它路径取数', retryable: false, maxRetries: 0, verifyFirst: false },
@@ -1239,6 +1273,7 @@ export function classifyToolFailure({ name = '', args = null, result = '', error
     || (name === 'local_files' && ['write', 'mkdir', 'move', 'delete'].includes(String(args?.action || '').toLowerCase()))
     || (name === 'local_desktop' && LOCAL_DESKTOP_MUTATING.includes(String(args?.action || '').toLowerCase())))
     && !/(?:发起前失败|目标请求未发出)/.test(text)) kind = 'SIDE_EFFECT_UNCERTAIN';
+  else if (name === 'execute_cpp' && /C\+\+ (?:编译|链接)失败|undefined symbol: __cxa_(?:throw|allocate_exception)/i.test(text)) kind = 'CODE_ERROR';
   else if (timedOut && c.sideEffect && c.sideEffect !== 'none' && c.idempotent === false) kind = 'SIDE_EFFECT_UNCERTAIN';
   else {
     for (const p of FAILURE_PATTERNS) {

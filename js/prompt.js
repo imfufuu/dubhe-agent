@@ -26,17 +26,29 @@ export function assembleSystemLayers({
   return { messages, stable, context, volatile, cached, ephemeral: eph };
 }
 
-export function formatRuntime({ now, model, imageModel, filesNote, webNote, relayNote, toolTableNote, language = getLanguage() } = {}) {
+export function formatCppRuntime({ sandboxEnabled, localCpp, cppMode, language = getLanguage() } = {}) {
+  const en = language === 'en';
+  if (sandboxEnabled === undefined && localCpp === undefined && cppMode === undefined) return '';
+  if (sandboxEnabled === false || localCpp === false) return en ? 'C++ runner: disabled for this turn.' : 'C++ 运行方式：本回合已关闭。';
+  if (cppMode !== 'local') return en
+    ? 'C++ runner: remote-godbolt. Source, attached files and stdin are sent to godbolt.org; network required. Project scope does not change that.'
+    : 'C++ 运行方式：remote-godbolt（远程）。源码、附带文件和 stdin 将发送至 godbolt.org，需联网；项目作用域也不例外。';
+  return en
+    ? 'C++ runner: local-wasi in a browser Worker. Programs have no network, preopened filesystem, C++ exceptions or threads. Some standard-library operations can require exception symbols such as __cxa_throw; simple string/iostream code may still work. For an unfamiliar toolchain, run a minimal representative probe first. On such linker errors, check the triggering code/library path; consider C runtime APIs or raw buffers, then recompile after changes.'
+    : 'C++ 运行方式：local-wasi（浏览器 Worker）。程序无网络、预打开文件系统、C++ 异常或线程；部分标准库操作可能引入 __cxa_throw 等异常符号，简单 string/iostream 仍可能正常。遇到不熟悉的工具链先用最小代表性探针验证；若发生此类链接错误，检查触发路径，可改用 C 运行库或原始缓冲区，修改后再编译。';
+}
+
+export function formatRuntime({ now, model, imageModel, filesNote, webNote, relayNote, toolTableNote, sandboxEnabled, localCpp, cppMode, language = getLanguage() } = {}) {
   if (language === 'en') {
     const lines = ['# Dubhe Agent runtime', 'Framework: Dubhe Helix 3.5 · DC (Dubhe Cambrian)', now ? `Current time: ${now instanceof Date ? now.toISOString() : String(now)}` : '', model ? `Session model: ${model}` : '', imageModel ? `Configured image family: ${imageModel}; generate_image chooses within this family, never pass a model argument.` : '', 'Use the built-in rendering quick guide proactively when helpful; use knowledge_search for advanced grammar and exact data formats.'];
-    return join([...lines, filesNote, webNote, relayNote, toolTableNote]);
+    return join([...lines, formatCppRuntime({ sandboxEnabled, localCpp, cppMode, language }), filesNote, webNote, relayNote, toolTableNote]);
   }
   const lines = ['# Dubhe Agent runtime', '底层框架：Dubhe Helix 3.5 · DC（Dubhe Cambrian，天枢·寒武；前身 Helix 2.5 / 天枢2.5）'];
   if (now) lines.push(`当前时间：${now instanceof Date ? now.toISOString() : String(now)}`);
   if (model) lines.push(`Session model: ${model}`);
   if (imageModel) lines.push(`生图模型：${imageModel}。generate_image 不要传 model 参数；仅用于照片/插画/海报等栅格画面，统计图/流程图/思维导图/架构图禁止用生图。`);
   lines.push('合适时主动使用系统提示中的客户端围栏快捷语法；复杂数据格式或不确定之处按需调用 knowledge_search，不要臆造语法。');
-  const extra = join([filesNote, webNote, relayNote, toolTableNote]);
+  const extra = join([formatCppRuntime({ sandboxEnabled, localCpp, cppMode, language }), filesNote, webNote, relayNote, toolTableNote]);
   return extra ? `${lines.join('\n')}\n\n${extra}` : lines.join('\n');
 }
 

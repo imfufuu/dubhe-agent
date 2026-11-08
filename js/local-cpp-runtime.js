@@ -226,7 +226,11 @@ export async function compileAndRunCpp(job = {}, { onPhase = null } = {}) {
     const linkExit = lld.callMain(linkerArgs);
     if (linkExit !== 0) {
       const detail = trimDiagnostics(lldMessages) || 'wasm-ld failed.';
-      return { ok: false, logs: [{ level: 'error', text: detail }], error: { message: 'C++ 链接失败（详见本地诊断）。' } };
+      const units = `参与链接的源文件：${inputPaths.join('、')}`;
+      const exceptionHint = /undefined symbol: __cxa_(?:throw|allocate_exception)/.test(detail)
+        ? '\n本地 WASI 工具链缺少 C++ 异常支持；某些标准库操作会引入异常路径。请检查触发该路径的代码，可改用 C 运行库或原始缓冲区；修改后可以重新编译，不要原样自动重试。'
+        : '';
+      return { ok: false, logs: [{ level: 'error', text: `${detail}\n${units}${exceptionHint}` }], error: { message: 'C++ 链接失败（详见本地诊断）。' } };
     }
 
     const artifact = linkerArgs[linkerArgs.indexOf('-o') + 1] || 'a.out';

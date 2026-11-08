@@ -21,7 +21,7 @@ import { USD_TO_CNY_RATE, USD_TO_CNY_RATE_DATE } from './currency.js';
 import { isNetworkOffline } from './offline-network.js';
 import { OFFLINE_MODEL_DISPLAY_NAME, OFFLINE_MODEL_ID, OFFLINE_MODEL_PROVIDER_EN, OFFLINE_MODEL_PROVIDER_ZH, isOfflineModelId } from './offline-model-config.js';
 import { formatParameterCount } from './gguf.js';
-import { DEFAULT_GATEWAY_ID, gatewayFallbackModels, defaultModelForGateway, gatewayModelListLabel, isModelForGateway } from './gateway-registry.js?v=2026.10.25.1';
+import { DEFAULT_GATEWAY_ID, getGateway, gatewayFallbackModels, defaultModelForGateway, gatewayModelListLabel, isModelForGateway } from './gateway-registry.js?v=2026.10.25.1';
 
 export function installModelPicker({ store, agent, toast, getBusy, openKeyModal, rebuildMessages, renderSessions, renderFiles, updateStats, syncCapLine, syncWeb }) {
   // ── 模型下拉 ──
@@ -370,11 +370,11 @@ export function installModelPicker({ store, agent, toast, getBusy, openKeyModal,
     }
     const gatewayId = store.state.gatewayId || DEFAULT_GATEWAY_ID;
     const apiKey = effectiveApiKey(store.state.apiKey);
-    if (requireKey && !apiKey) { if (!silent) openKeyModal(); return false; }
+    if (requireKey && !apiKey && !getGateway(gatewayId).noKey) { if (!silent) openKeyModal(); return false; }
     const button = $('#refresh-models');
     if (button) button.classList.add('spin');
     try {
-      const list = apiKey ? await fetchModels(apiKey, undefined, {
+      const list = (apiKey || getGateway(gatewayId).noKey) ? await fetchModels(apiKey, undefined, {
         gatewayId, gatewayBaseUrl: (store.state.gatewayBaseUrls || {})[gatewayId] || '',
       }) : null;
       store.state.modelsByGateway = store.state.modelsByGateway || {};

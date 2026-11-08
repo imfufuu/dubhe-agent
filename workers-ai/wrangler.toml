@@ -1,0 +1,14 @@
+name = "dubhe-workers-ai"
+main = "worker.js"
+compatibility_date = "2025-04-01"
+
+[ai]
+binding = "AI"
+
+[[durable_objects.bindings]]
+name = "QUOTA"
+class_name = "Quota"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Quota"]

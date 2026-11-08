@@ -469,6 +469,11 @@ export function createToolRunner({ store, emit, getFs, runSubagent } = {}) {
         turnBudget: { turnId: exec.execCtx.turnId },
       });
 
+      // Cloudflare vision POSTs consume Neurons: never automatically replay an
+      // ambiguous outcome, including after refresh. Pure local OCR stays pure.
+      if (turn.gatewayId === 'cloudflare' && ['analyze_image', 'analyze_svg', 'analyze_pdf'].includes(call.name) && pre.contract?.external) {
+        pre.contract = { ...pre.contract, idempotent: false, retryPolicy: 'never' };
+      }
       const risk = classifyToolRisk({ name: call.name, args: checkedArgs, contract: pre.contract, fs, userText: exec.execCtx.userIntent });
       exec.machine.audit.record('tool-preflight', {
         name: call.name, decision: pre.decision, errors: pre.errors.map((e) => e.id),
@@ -514,7 +519,9 @@ export function createToolRunner({ store, emit, getFs, runSubagent } = {}) {
       const memoryEntry = exec.ledger.lookup(opKey);
       const ledgerEntry = memoryEntry?.status === 'in-flight' && exec.inflight.has(opKey) ? memoryEntry
         : journalEntry?.status === 'uncertain' ? journalEntry : (memoryEntry || journalEntry);
-      if (ledgerEntry) {
+      // Git status/log/etc are fresh observations, never cached or blocked by
+      // stale uncertain ledger entries created by older versions.
+      if (ledgerEntry && !(call.name === 'run_git' && pre.contract?.sideEffect === 'none')) {
         const targetPath = (pre.contract && pre.contract.sideEffect === 'filesystem') ? (extractFilePath(call.args) || '') : '';
         const filesNow = fs.export();
         const currentArtifactDigest = targetPath && Object.prototype.hasOwnProperty.call(filesNow, targetPath)
