@@ -414,6 +414,8 @@ test('actual Wllama chooses bundled wasm32 compatibility resources without Memor
     const engine = await getOfflineModelEngine();
     const resources = engine.getWorkerResources();
     assert.equal(resources.compat, true);
+    WebAssembly.Memory = function(spec) { return new originalMemory({ initial: Number(spec.initial), maximum: Number(spec.maximum) }); };
+    assert.equal(engine.getWorkerResources().compat, true, 'still uses wasm32 when browser ignores unsupported address option');
     assert.match(resources.wasmPath, /assets\/vendor\/wllama\/wllama-compat-3\.8\.1\.wasm$/);
     assert.match(resources.jsPath, /assets\/vendor\/wllama\/wllama-compat-3\.8\.1\.js$/);
     const binary = fs.readFileSync(new URL('../assets/vendor/wllama/wllama-compat-3.8.1.wasm', import.meta.url));
@@ -423,4 +425,20 @@ test('actual Wllama chooses bundled wasm32 compatibility resources without Memor
     if (originalSuspending) Object.defineProperty(WebAssembly, 'Suspending', originalSuspending); else delete WebAssembly.Suspending;
     restoreSecure(); restoreSelf(); restoreNav();
   }
+});
+
+test('offline send without an imported GGUF leaves the selected chat model intact and makes no network calls', async () => {
+  const restore = offlineGate(true);
+  const previousFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => { calls++; throw new Error('unexpected network'); };
+  try {
+    const store = createStore();
+    store.state.model = '__smart_router__';
+    store.state.offlineModelAvailable = false;
+    const agent = createAgent(store, {});
+    await agent.send('hello');
+    assert.equal(store.state.model, '__smart_router__');
+    assert.equal(calls, 0);
+  } finally { globalThis.fetch = previousFetch; restore(); }
 });

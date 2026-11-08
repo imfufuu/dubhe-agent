@@ -79,6 +79,7 @@ export function setGatewayBase(host, reason = 'manual') {
     ? host
     : GATEWAY_HOSTS[(GATEWAY_HOSTS.indexOf(gatewayBase()) + 1) % GATEWAY_HOSTS.length];
   active = next; chosenBy = reason;
+  try { if (typeof window !== 'undefined') window.dispatchEvent(new window.Event('dubhe:gateway-endpoint')); } catch { /* non-browser */ }
   if (hasLS()) { try { localStorage.setItem(LS_KEY, next); } catch { /* 隐私模式忽略 */ } }
   return next;
 }

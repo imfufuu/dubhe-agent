@@ -1,3 +1,6 @@
+import { effectiveModeration } from './ui-moderation-setting.js';
+import { GROK_SENSITIVE_VISION_MODEL } from './config.js?v=2026.10.25.1';
+import { DEFAULT_GATEWAY_ID } from './gateway-registry.js?v=2026.10.25.1';
 import { createProjectFS } from './project-store.js';
 import { createEffectJournal, requiresEffectJournal } from './effect-journal.js';
 import { prepareCommandArgs } from './commandsource.js?v=2026.10.25.1';
@@ -206,6 +209,9 @@ export function planToolWaves(calls) {
 export function createToolRunner({ store, emit, getFs, runSubagent } = {}) {
   function toolCtxFor(call, turn, exec = null) {
     const fs = getFs();
+    const canUseSensitiveVision = () => !effectiveModeration(store.state.settings)
+      && store.state.settings.visionModel === GROK_SENSITIVE_VISION_MODEL
+      && (store.state.gatewayId || DEFAULT_GATEWAY_ID) === (turn.gatewayId || DEFAULT_GATEWAY_ID);
     if (exec && !(exec.toolLibrarySearchResults instanceof Set)) exec.toolLibrarySearchResults = new Set();
     captureEditPreviewBase(call, call.args?.scope === 'project' ? createProjectFS(store) : fs, { refresh: true });
     return {
@@ -229,6 +235,7 @@ export function createToolRunner({ store, emit, getFs, runSubagent } = {}) {
       videoModel: turn.videoModel,
       audioModel: turn.audioModel,
       sandboxEnabled: turn.sandboxEnabled,
+      canUseSensitiveVision,
       localCpp: turn.localCpp !== false,
       cppMode: turn.cppMode,
       allowDispatch: !!turn.canDispatch,
@@ -263,6 +270,7 @@ export function createToolRunner({ store, emit, getFs, runSubagent } = {}) {
           imageModel: turn.imageModel,
           videoGenModel: turn.videoGenModel,
           visionModel: turn.visionModel,
+          canUseSensitiveVision,
           videoModel: turn.videoModel,
       audioModel: turn.audioModel,
           memory: store.state.memory,
@@ -471,7 +479,7 @@ export function createToolRunner({ store, emit, getFs, runSubagent } = {}) {
 
       // Cloudflare vision POSTs consume Neurons: never automatically replay an
       // ambiguous outcome, including after refresh. Pure local OCR stays pure.
-      if (turn.gatewayId === 'cloudflare' && ['analyze_image', 'analyze_svg', 'analyze_pdf'].includes(call.name) && pre.contract?.external) {
+      if ((turn.gatewayId === 'cloudflare' || turn.visionModel === GROK_SENSITIVE_VISION_MODEL) && ['analyze_image', 'analyze_svg', 'analyze_pdf'].includes(call.name) && pre.contract?.external) {
         pre.contract = { ...pre.contract, idempotent: false, retryPolicy: 'never' };
       }
       const risk = classifyToolRisk({ name: call.name, args: checkedArgs, contract: pre.contract, fs, userText: exec.execCtx.userIntent });

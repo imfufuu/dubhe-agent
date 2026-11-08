@@ -9221,7 +9221,7 @@ test('analyze_video 工具：定义 / 契约 / 并行与访问表 / 执行路径
   assert.match(vision, /export async function analyzeVideo\(\{ apiKey, prompt, dataUrl, filename, model, signal, onUsage, durationSec = 0, gatewayId = DEFAULT_GATEWAY_ID, gatewayBaseUrl = '' \}\)/);
   assert.match(vision, /\{ type: 'file', file: \{ filename: String\(filename \|\| 'video\.mp4'\), file_data: fileData \} \}/, '网关唯一真正把视频喂给 Gemini 的写法是 file 部件');
   assert.ok(!/type: 'video_url'/.test(vision), 'video_url 部件会被网关静默丢弃，不得使用');
-  assert.match(vision, /export async function analyzeImage\(\{ apiKey, prompt, dataUrl, dataUrls, model, signal, onUsage, gatewayId = DEFAULT_GATEWAY_ID, gatewayBaseUrl = '' \}\)/);
+  assert.match(vision, /export async function analyzeImage\(\{ apiKey, prompt, dataUrl, dataUrls, model, signal, onUsage, beforeRequest, gatewayId = DEFAULT_GATEWAY_ID, gatewayBaseUrl = '' \}\)/);
   // 执行路径：无 key / 无视频 / 非视频 data URL / 超限
   const fs = createFS();
   assert.match(await executeTool('analyze_video', {}, { fs, onUi: () => {} }), /未配置 TeamoRouter API Key/);

@@ -189,7 +189,9 @@ export function resolveImageVariant(familyOrModel, { style = 'auto', resolution 
 // 设置页只给几个「有特点」的选项——便宜 / 均衡 / 效果好——避免 40 多个模型全摆上去让人选不动。
 // 视频档位只收录 2026-10-06 用 11.5s 测试视频在网关实测能真正收到视频（usage 含 VIDEO modality）的模型；
 // Claude / GPT / DeepSeek / GLM / Kimi / Grok 经网关要么剥掉视频部件、要么上游 400，不列入。
+export const GROK_SENSITIVE_VISION_MODEL = 'grok-4.7';
 export const VISION_MODELS = [
+  { id: GROK_SENSITIVE_VISION_MODEL, label: 'Grok 4.7', tag: '敏感/成人图像 · 审核关闭时', tagEn: 'Sensitive images · moderation off', note: '通过当前支持的网关上传图片并按量计费；服务商政策仍适用，不保证处理所有内容', noteEn: 'Images are sent to the selected supported gateway and billed; provider policies still apply, and acceptance is not guaranteed' },
   {"id": "deepseek-v4-flash-vision-exp", "label": "DeepSeek V4 Vision", "tag": "默认 · 实验", "tagEn": "Default · Experimental", "note": "旧别名按 DeepSeek V4.1 Flash 非高峰官方价计费，约 ¥1.01/M 输入（高峰时段更高）", "noteEn": "Legacy alias billed at DeepSeek V4.1 Flash's official off-peak rate: $0.15/M input; peak rates are higher"},
   {"id": "gemini-3.5-flash-lite", "label": "Gemini 3.5 Flash Lite", "tag": "低价", "tagEn": "Cheap", "note": "网关标价约 ¥2.02/M 输入（按 2026-10-23 中间价折算）；实际账单以网关为准", "noteEn": "Gateway list price $0.3/M input; actual billing may vary"},
   {"id": "gemini-3.8-flash", "label": "Gemini 3.8 Flash", "tag": "通用", "tagEn": "General", "note": "网关标价约 ¥5.04/M 输入（按 2026-10-23 中间价折算）；实际账单以网关为准", "noteEn": "Gateway list price $0.75/M input; actual billing may vary"},

@@ -14,6 +14,8 @@ import { probeGatewayHosts } from './endpoint.js';
 import { mountDebugWindow, toggleDebug, debugActive, setDebug } from './debugwindow.js?v=2026.10.25.1';
 import { mountSettings, applyFontSize, applyMotion, browserFeatureReport } from './settings.js?v=2026.10.25.1';
 import { APP_RELEASE } from './config.js?v=2026.10.25.1';
+import { DEFAULT_CHAT_MODEL } from './config.js?v=2026.10.25.1';
+import { defaultModelForGateway } from './gateway-registry.js?v=2026.10.25.1';
 import { installOfflineNetworkFence, isNetworkOffline, announceNetworkState } from './offline-network.js';
 import { OFFLINE_MODEL_ID, isOfflineModelId } from './offline-model-config.js';
 import { syncOfflineModelAvailability } from './offline-model.js';
@@ -33,11 +35,6 @@ for (const session of store.state.sessions || []) {
   if (isOfflineModelId(session.model)) session.model = OFFLINE_MODEL_ID;
 }
 const offlineAtBoot = isNetworkOffline();
-if (offlineAtBoot) {
-  store.state.model = OFFLINE_MODEL_ID;
-  const activeSession = (store.state.sessions || []).find((session) => session.id === store.state.activeSessionId);
-  if (activeSession) activeSession.model = OFFLINE_MODEL_ID;
-}
 // relayOk 是运行时探测结果，不复用上次持久化值；离线时明确关闭中继。
 store.state.relayOk = offlineAtBoot ? false : null;
 // An explicit, versioned acknowledgement is required; legacy false does not silently disable checks.
@@ -149,9 +146,11 @@ mountSettings(store, {
 window.addEventListener('dubhe:network-state', (event) => {
   if (!isNetworkOffline() && !event.detail?.offline) return;
   try { agent.abort(); } catch { /* no active turn */ }
-  store.state.model = OFFLINE_MODEL_ID;
-  const activeSession = (store.state.sessions || []).find((session) => session.id === store.state.activeSessionId);
-  if (activeSession) activeSession.model = OFFLINE_MODEL_ID;
+  if (store.state.offlineModelAvailable) {
+    store.state.model = OFFLINE_MODEL_ID;
+    const activeSession = (store.state.sessions || []).find((session) => session.id === store.state.activeSessionId);
+    if (activeSession) activeSession.model = OFFLINE_MODEL_ID;
+  }
   store.state.relayOk = false;
   store.notify();
   ui && ui.syncGateway && ui.syncGateway();
@@ -161,6 +160,10 @@ if (offlineAtBoot) announceNetworkState();
 window.addEventListener('dubhe:offline-model-status', () => ui && ui.syncGateway && ui.syncGateway());
 syncOfflineModelAvailability(store).then((status) => {
   if (status.error) store.state.offlineModelStatusError = String(status.error.message || status.error).slice(0, 180);
+  if (!status.available && !status.error && !isNetworkOffline() && isOfflineModelId(store.state.model)) {
+    store.state.model = defaultModelForGateway(store.state.gatewayId, '', store.state.modelsFetchedAt ? store.state.models : null) || DEFAULT_CHAT_MODEL;
+    store.notify();
+  }
   ui && ui.syncGateway && ui.syncGateway();
 }).catch((error) => {
   store.state.offlineModelChecked = true;

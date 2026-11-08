@@ -1,4 +1,4 @@
-import { installModerationSetting } from './ui-moderation-setting.js';
+import { installModerationSetting, effectiveModeration } from './ui-moderation-setting.js';
 import { updateScriptCache } from './cache-update.js';
 import { syncOfflineModelAvailability, importOfflineModel, getOfflineModelStatus, removeOfflineModel, renameOfflineModel } from './offline-model.js';
 import { defaultLocalModelName, validateLocalModelName } from './local-model-name.js';
@@ -13,8 +13,9 @@ import { getLanguage, onLanguageChange } from './locale.js';
 import { VIDEO_GEN_MENU, resolveVideoGenModel, videoMenuIdOf } from './video-gen.js';
 import { JEV_MODEL, JEV_VERSIONS, setActiveJevModel } from './jev.js';
 // 设置弹窗：API Key / 中继地址 / 主题 / 字号 / 沙箱 / 联网 / 快速 / 思考 / 识图·音视频解析模型 / 清空数据 / 关于
-import { APP_RELEASE, APP_VERSION, STORAGE_KEY, VISION_MODELS, VIDEO_MODELS, IMAGE_MODELS, IMAGE_FAMILIES, imageFamilyOf, DEFAULT_IMAGE_MODEL, isImageGenModel, isImageGenSelection, imageModelLabel, resolveVisionModel, resolveVideoModel } from './config.js?v=2026.10.25.1';
+import { APP_RELEASE, APP_VERSION, STORAGE_KEY, VISION_MODELS, GROK_SENSITIVE_VISION_MODEL, VIDEO_MODELS, IMAGE_MODELS, IMAGE_FAMILIES, imageFamilyOf, DEFAULT_IMAGE_MODEL, isImageGenModel, isImageGenSelection, imageModelLabel, resolveVisionModel, resolveVideoModel } from './config.js?v=2026.10.25.1';
 import { DEFAULT_GATEWAY_ID, getGateway, validateGatewayApiKey, validateGatewayBaseUrl, gatewayModelListLabel, defaultModelForGateway } from './gateway-registry.js?v=2026.10.25.1';
+import { gatewayBase, GATEWAY_CN } from './endpoint.js';
 import { currentRelay, relayState, resetRelayProbe, RELAY_OVERRIDE_KEY } from './net.js';
 import { DEFAULT_TURN_BUDGET } from './execution.js?v=2026.10.25.1';
 import { NEXUS_ARCHITECTURE_SPEC } from './nexus.js';
@@ -218,8 +219,9 @@ function fillModelSelect(el, list, current) {
   if (!el) return;
   const language = getLanguage();
   el.dataset.lang = language;
-  if (el.options.length !== list.length || el._lang !== language) {
-    el._lang = language;
+  const key = list.map(m => m.id).join('\0');
+  if (el.options.length !== list.length || el._lang !== language || el._modelKey !== key) {
+    el._lang = language; el._modelKey = key;
     el.innerHTML = '';
     for (const m of list) {
       const { tag, note } = modelMeta(m, language);
@@ -236,6 +238,10 @@ function fillModelSelect(el, list, current) {
 function syncMultimodalSelects(store) {
   const settings = (store && store.state && store.state.settings) || {};
   const vision = resolveVisionModel(settings.visionModel);
+  const gatewayId = store?.state?.gatewayId || DEFAULT_GATEWAY_ID;
+  const grokAllowed = !effectiveModeration(settings) && (gatewayId === 'grok' || (gatewayId === DEFAULT_GATEWAY_ID && gatewayBase() !== GATEWAY_CN));
+  const visionOptions = VISION_MODELS.filter(m => m.id !== GROK_SENSITIVE_VISION_MODEL || grokAllowed);
+  if (!visionOptions.some(m => m.id === vision)) visionOptions.unshift({ id: '', label: localeText('当前识图选项不可用，请重新选择', 'Selected vision model unavailable'), tag: '未发送', note: '请在当前网关选择可用模型', tagEn: 'Not sent', noteEn: 'Choose a compatible vision model' });
   // 音视频解析模型已合并为一个设置：videoModel 为存档主键，audioModel 与其保持同值（兼容旧快照与工具 ctx）
   const av = resolveVideoModel(settings.videoModel || settings.audioModel);
   // 生图模型随会话保存（store.state.imageModel），不在 settings 里；不在目录内的值退回默认
@@ -245,14 +251,14 @@ function syncMultimodalSelects(store) {
   fillModelSelect($('#set-vgen-model'), VIDEO_GEN_MENU, videoMenuIdOf(vgen));
   // 生图菜单按模型家族展示；具体变体（写实/插画/4K 升采样…）由 Agent 的 generate_image 自动选择
   fillModelSelect($('#set-image-model'), IMAGE_FAMILIES.map((f) => ({ id: f.id, label: f.label, tag: f.tag, note: f.note, tagEn: f.tagEn, noteEn: f.noteEn })), imageFamilyOf(image) || 'gpt-image-2');
-  fillModelSelect($('#set-vision-model'), VISION_MODELS, vision);
+  fillModelSelect($('#set-vision-model'), visionOptions, visionOptions.some(m => m.id === vision) ? vision : '');
   fillModelSelect($('#set-av-model'), VIDEO_MODELS, av);
   // 决策层：Jev 版本（每轮路由判断 + 内容审核的 Jev 调用共用）
   const decision = setActiveJevModel(settings.decisionModel || JEV_MODEL);
   fillModelSelect($('#set-decision-model'), JEV_VERSIONS.map((v) => ({ id: v.id, label: v.label, tag: '决策', note: v.note, tagEn: 'Decision', noteEn: v.note })), decision);
   const note = $('#set-mm-note');
   if (note) {
-    const vi = VISION_MODELS.find((m) => m.id === vision) || {};
+    const vi = visionOptions.find((m) => m.id === vision) || { label: localeText('识图选项不可用，请重新选择', 'Vision selection unavailable; choose another') };
     const vd = VIDEO_MODELS.find((m) => m.id === av) || {};
     const im = IMAGE_MODELS.find((m) => m.id === image) || {};
     note.textContent = `${im.label || image} · ${vi.label || vision} · ${vd.label || av}`;
@@ -403,7 +409,7 @@ function syncGatewayFields(store) {
     base.placeholder = spec.id === 'cloudflare' ? 'https://your-worker.workers.dev' : (spec.baseUrl || 'https://api.example.com/v1');
   }
   const connectionNote = $('#set-gateway-connection-note');
-  if (connectionNote) connectionNote.textContent = id === 'cloudflare' ? gatewayModelListLabel(id) : localeText('留空使用官方默认；自定义网关必填 HTTPS URL', 'Leave blank for the official default; custom gateways require an HTTPS URL.');
+  if (connectionNote) connectionNote.textContent = id === 'cloudflare' ? localeText('填写自己的 Worker HTTPS 地址', 'Enter your Worker HTTPS URL') : localeText('留空使用官方默认；自定义网关必填 HTTPS URL', 'Leave blank for the official default; custom gateways require an HTTPS URL.');
   const note = $('#set-gateway-note');
   if (note) note.textContent = gatewayModelListLabel(id);
   const manualRow = $('#set-manual-model-row');
@@ -597,6 +603,7 @@ export function mountSettings(store, { onRelayChanged, onKeySaved, onSettingChan
   };
   syncNetworkControls();
   window.addEventListener('dubhe:relay-status', syncAboutRelay);
+  window.addEventListener('dubhe:gateway-endpoint', () => syncMultimodalSelects(store));
   window.addEventListener('dubhe:network-state', () => {
     renderOfflineModelUI();
     syncNetworkControls();
@@ -605,7 +612,10 @@ export function mountSettings(store, { onRelayChanged, onKeySaved, onSettingChan
   window.addEventListener('dubhe:offline-model-status', (event) => renderOfflineModelUI(event.detail));
   // 设置页改了开关 / 档位 / 主题后通知外部（main.js → ui.syncToolbar）：顶栏 pill、能力行、主题按钮要跟着变，
   // 不然「设置里开了快速模式，会话区那颗 ⚡ 还是灰的」（.27 修）
-  const changed = (key, value) => { try { onSettingChanged && onSettingChanged(key, value); } catch { /* 不影响设置本身 */ } };
+  const changed = (key, value) => {
+    if (key === 'contentModeration' || key === 'gatewayId') syncMultimodalSelects(store);
+    try { onSettingChanged && onSettingChanged(key, value); } catch { /* 不影响设置本身 */ }
+  };
   const moderationSetting = installModerationSetting({ store, changed });
   const btn = $('#settings-btn');
   if (btn) btn.addEventListener('click', () => openSettingsModal({ store }));
@@ -1015,6 +1025,11 @@ export function mountSettings(store, { onRelayChanged, onKeySaved, onSettingChan
   const bindModelSelect = (id, key, resolve) => {
     const el = $(id); if (!el) return;
     el.addEventListener('change', () => {
+      if (key === 'visionModel' && !el.value) return;
+      if (key === 'visionModel' && el.value === GROK_SENSITIVE_VISION_MODEL) {
+        const id = store.state.gatewayId || DEFAULT_GATEWAY_ID;
+        if (effectiveModeration(store.state.settings) || !(id === 'grok' || (id === DEFAULT_GATEWAY_ID && gatewayBase() !== GATEWAY_CN))) { syncMultimodalSelects(store); return; }
+      }
       store.state.settings[key] = resolve(el.value);
       store.notify();
       syncMultimodalSelects(store);

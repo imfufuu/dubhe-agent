@@ -54,6 +54,12 @@ jobs:
       - name: tests/agent.test.mjs · 主单测
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/agent.test.mjs
+      - name: tests/cn-routing.test.mjs · 国内节点路由
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/cn-routing.test.mjs
+      - name: tests/grok-vision.test.mjs · Grok 识图授权与协议
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/grok-vision.test.mjs
       - name: tests/workers-ai-gateway.test.mjs · Workers AI 网关与配额
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/workers-ai-gateway.test.mjs
