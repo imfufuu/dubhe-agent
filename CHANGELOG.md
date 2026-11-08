@@ -8,7 +8,7 @@
 - **工具自注册**：Agent 可用 `tool_registry` 注册、读取、更新、启停、删除与调用自己的工具；名称强制 `custom_` 前缀，handler 为声明式白名单（不执行模型代码），所有变更需一次性用户确认票据，UI 在「调节器」里提供待确认与管理面板。详见 `SELF_REGISTERED_TOOLS.md`。
 - **输入框调节器**：新增滑块图标，温度默认智能自调节并提供精确 / 严谨 / 均衡 / 创意 / 自定义档位；环境可在 Agent 模式（思考等级 + 全部工具）与对话模式（思考开关 + 零工具，且策略门丢弃幻觉 tool_calls）间切换。默认「跟随设置」，不改变既有行为。
 - **文本审核加固**：新增 `js/moderation-hardening.js` 多语言第二层，覆盖色情、犯罪、自残、排泄物相关、民族歧视、不安全化学、人身攻击、商业诋毁/机密窥探、越狱提示词、反社会言论；抗全角/leet/插空格/零宽/简繁/base64 规避。`tools/audit-moderation.mjs` 3 轮 × 1710 次端到端验证：0 漏拦、0 误伤，报告见 `MODERATION_AUDIT.md`。
-- **西夏文字体**：改用用户提供的 `https://litter.catbox.moe/t8rntt.ttf`（Tangut Yinchuan / 唐兀银川，覆盖 6913 个西夏文码位）为首选，保留本地 Wenhai 分片回退；离线分享仍内嵌本地字体，不依赖第三方主机。
+- **西夏文字体**：改用用户提供的 `https://litter.catbox.moe/t8rntt.ttf`（Tangut Yinchuan / 唐兀银川，覆盖 6913 个西夏文码位）为首选；额外随仓库分发同一份完整 TTF 副本作为第二回退、旧 Wenhai 分片兜底（临时托管再次过期也不会缺字）；离线分享仍内嵌轻量本地分片，不依赖第三方主机。
 - **C++ 工具链检查**：新增 `tools/check-cpp-toolchain.mjs` 与 `CPP_TOOLCHAIN_REPORT.md`；本机 g++ 14.2 可编译运行 C++17，缺 cmake/ninja/gdb，但浏览器内 Clang/LLD WASM 运行时与许可证齐备，应用内 C++ 可用。
 - 全量回归：1614 项 / 81 个文件通过（含 7 个新增测试文件与 CI steps）。
 

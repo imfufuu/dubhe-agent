@@ -18,9 +18,12 @@ export function parseFontFaces(css) {
     const block = m[0];
     const range = /unicode-range:\s*([^;]+);/.exec(block)?.[1] || '';
     const urls = [...block.matchAll(/url\(\s*["']?([^"')]+)["']?\s*\)/g)].map((u) => u[1]);
-    // A face may list a remote primary source plus a bundled fallback. For offline share export
-    // always embed the same-origin file — a third-party font host can expire or block CORS.
-    const url = urls.find((u) => !/^(?:https?:)?\/\//i.test(u) && !/^data:/i.test(u)) || urls[0] || '';
+    // A face may list a remote primary, a bundled full-size fallback and a small subset.
+    // Share export must stay self-contained and lightweight: prefer the bundled .woff2 subset,
+    // never embed a third-party URL and never inline the 9 MB full TTF.
+    const local = urls.filter((u) => !/^(?:https?:)?\/\//i.test(u) && !/^data:/i.test(u));
+    const url = local.find((u) => /\.woff2(?:$|[?#])/i.test(u))
+      || local.find((u) => /\.ttf(?:$|[?#])/i.test(u)) || local[0] || urls[0] || '';
     return { block, url, urls, ranges: parseRanges(range) };
   }).filter((f) => f.url);
 }

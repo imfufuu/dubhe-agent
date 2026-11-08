@@ -17,11 +17,20 @@ test('西夏文 @font-face 使用指定远程字体，并保留本地回退', ()
     assert.ok(face, `${rel} 缺少西夏文 face`);
     assert.ok(face.includes(TANGUT_URL), `${rel} 未引用指定 TTF`);
     assert.ok(face.includes('./babelstone/wenhai.woff2'), `${rel} 缺少本地回退`);
-    assert.ok(face.indexOf(TANGUT_URL) < face.indexOf('./babelstone/wenhai.woff2'), '远程字体必须是首选');
+    assert.ok(face.includes('./babelstone/tangut-yinchuan.ttf'), `${rel} 缺少完整字体本地副本`);
+    assert.ok(face.indexOf(TANGUT_URL) < face.indexOf('./babelstone/tangut-yinchuan.ttf'), '远程字体必须是首选');
+    assert.ok(face.indexOf('./babelstone/tangut-yinchuan.ttf') < face.indexOf('./babelstone/wenhai.woff2'), '完整副本优先于旧分片');
     assert.match(face, /U\+17000-18AFF/, '西夏文 unicode-range 不能丢失');
   }
   const styles = fs.readFileSync(path.join(root, 'css/styles.css'), 'utf8');
   assert.match(styles, /\.md-font-tangut \{ font-family: "BabelStone Tangut Wenhai"/);
+});
+
+test('随仓库分发的完整字体副本有效，临时托管过期也不会退化', () => {
+  const f = path.join(root, 'assets/fonts-lazy/babelstone/tangut-yinchuan.ttf');
+  const buf = fs.readFileSync(f);
+  assert.ok(buf.length > 5 * 1024 * 1024, '完整 TTF 副本不应被截断');
+  assert.deepEqual([...buf.subarray(0, 4)], [0x00, 0x01, 0x00, 0x00], '必须是 TrueType sfnt');
 });
 
 test('懒加载解析器选择可内嵌的本地字体，分享导出不依赖第三方主机', () => {

@@ -832,4 +832,4 @@ JS/Python 支持 `path` 读取已存在源码代替重复 `code`；长内联 JS/
 - 架构：回合环境内核 + 运行时工具注册表，见 [`AGENT_ARCHITECTURE.md`](./AGENT_ARCHITECTURE.md)；Agent 可自注册工具（需用户确认），见 [`SELF_REGISTERED_TOOLS.md`](./SELF_REGISTERED_TOOLS.md)。
 - 输入框新增「调节器」：温度默认智能自调节、可手选档位；Agent 模式可设思考等级并使用全部工具，对话模式可设思考开关且完全不调用工具。
 - 审核：多语言加固与 3 轮重复验证报告 [`MODERATION_AUDIT.md`](./MODERATION_AUDIT.md)；C++ 工具链检查 [`CPP_TOOLCHAIN_REPORT.md`](./CPP_TOOLCHAIN_REPORT.md)。
-- 西夏文字体首选用户提供的 Tangut Yinchuan TTF，本地 Wenhai 分片作为失效回退；离线分享仍内嵌本地字体。
+- 西夏文字体首选用户提供的 Tangut Yinchuan TTF，并随仓库分发同一份完整 TTF 作为第二回退、旧 Wenhai 分片兜底；临时托管过期也不会退化成缺字，离线分享仍内嵌轻量分片。
