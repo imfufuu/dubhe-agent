@@ -31,3 +31,33 @@ export function unansweredUserTurn(messages) {
     && (String(m.text || '').trim() || String(m.reasoning || '').trim() || (m.toolCalls && m.toolCalls.length)));
   return replied || typeof list[at].id === 'undefined' ? null : { id: list[at].id, text: String(list[at].text || '') };
 }
+
+// 「本轮回复」纯文本：上一条用户消息之后的全部非临时助手消息，按时间顺序拼接。
+// 每段取已渲染 DOM 的 innerText，表格/代码/列表保留排版；DOM 缺失时回退到原始文本。
+export function turnPlainText(store, m, wrap) {
+  if (m.role === 'user') return String(wrap?.querySelector('.bubble')?.innerText || m.text || '');
+  const all = store.state.messages;
+  const at = all.findIndex((x) => x.id === m.id);
+  const userAt = all.slice(0, Math.max(at, 0)).findLastIndex((x) => x.role === 'user');
+  const turn = at < 0 ? [m] : all.slice(userAt + 1, at + 1).filter((x) => x.role === 'assistant' && !x.transientModeration);
+  const container = wrap?.parentElement;
+  const parts = turn.map((x) => {
+    const message = [...(container?.querySelectorAll('.msg[data-id]') || [])].find(n => n.dataset.id === String(x.id));
+    const bodies = message?.querySelectorAll(':scope > .md-body, :scope > .assistant-flow > .assistant-fragment > .md-body');
+    const visible = [...(bodies || [])].map(node => node.innerText || '').filter(Boolean).join('\n\n');
+    return String(visible || x.text || '').replace(/\n{3,}/g, '\n\n').trim();
+  }).filter(Boolean);
+  if (parts.length) return parts.join('\n\n');
+  return String(wrap?.querySelector(':scope > .md-body')?.innerText || m.text || '');
+}
+
+export function installComposerDraft(store, composer, onLoad = () => {}) {
+  const session = () => (store.state.sessions || []).find(s => s.id === store.state.activeSessionId);
+  const save = (immediate = false) => { const current = session(); if (current) current.composerDraft = composer.value; store.save?.(immediate); };
+  const load = () => { composer.value = String(session()?.composerDraft || ''); onLoad(); };
+  composer.value = String(session()?.composerDraft || '');
+  composer.addEventListener('input', () => save());
+  window.addEventListener('beforeunload', () => save(true));
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') save(true); });
+  return { save, load };
+}

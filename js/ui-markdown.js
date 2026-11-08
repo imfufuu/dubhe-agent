@@ -89,7 +89,7 @@ const choiceHtml = (blocks) => {
       const src = image && safeImgSrc(image[2]);
       const sb = image && sandboxPath(image[2]);
       const label = image ? (image[3] || image[1] || image[2]) : o;
-      return `<button type="button" class="choice-opt${src || sb ? ' choice-image' : ''}" data-choice-send="${esc(label)}">${src ? `<img src="${esc(src)}" alt="" loading="lazy">` : (sb ? `<img data-sandbox="${esc(sb)}" alt="" loading="lazy">` : '')}<span>${esc(label)}</span></button>`;
+      return `<button type="button" class="choice-opt${src || sb ? ' choice-image' : ''}" data-choice-send="${esc(label)}" aria-pressed="false">${src ? `<img src="${esc(src)}" alt="" loading="lazy">` : (sb ? `<img data-sandbox="${esc(sb)}" alt="" loading="lazy">` : '')}<span class="choice-radio" aria-hidden="true"></span><span>${esc(label)}</span></button>`;
     }).join('');
     return `<div class="choice-qblock${i === 0 ? ' active' : ''}" data-choice-idx="${i}"><div class="choice-qrow"><span class="choice-step">${i + 1}/${count}</span><div class="choice-q">${q}</div></div><div class="choice-opts">${buttons}</div><label class="choice-other-label">${messageLocaleText('其他输入（可选）', 'Other input (optional)')}<input class="choice-other" type="text" maxlength="2000"></label></div>`;
   }).join('');

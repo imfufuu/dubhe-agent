@@ -12,7 +12,7 @@ import { createToolPresentation, presentationCallSettled, turnToolResults } from
 import { paintEditFoldContent, syncEditingFold, toggleEditingFold } from './ui-editpreview.js?v=2026.10.25.1';
 import { updateChipProgress, exploringInFlight, paintOrderedAssistant, renderToolChipDetail, paintCommandRows, paintKnowledgeFold, webGroupLabel, hasMediaTaskRunning, syncToolMenuCursor, ownerOfTool, paintVisibleTurn, activeToolOwner, persistTurnTiming, paintWebActivity, syncChecklistBlock, placeChecklistCompletion, installChecklistPanel } from './ui-toolflow.js?v=2026.10.25.1';
 import { classifyToolResult, toolResultFailed } from './toolwindows.js?v=2026.10.25.1';
-import { adjacentToolMessages, appendToolStream, toolFamily, commandRunFor } from './toolflow.js?v=2026.10.25.1';
+import { adjacentToolMessages, appendToolStream, toolFamily, commandRunFor, displayParts } from './toolflow.js?v=2026.10.25.1';
 import { createRollbackFx } from './ui-rollback-fx.js?v=2026.10.25.1';
 import { motionAllowed } from './page-fx.js?v=2026.10.25.1';
 // ─── UI 层：渲染 / 交互 / 动画 ─────────────────────────────────────────
@@ -28,7 +28,7 @@ import { isOfflineModelId, OFFLINE_MODEL_DISPLAY_NAME } from './offline-model-co
 import { gatewayBase, gatewayChosenBy, setGatewayBase, otherGatewayBase } from './endpoint.js';
 import { estimateTokens } from './context.js';
 import { providerIcon, APP_LOGO, ICON, LOCAL_PROVIDER_ICON_SVG } from './icons.js';
-import { reasoningMarkdownSource, localModelLabel, keyDraftFrom, restorableComposerText, unansweredUserTurn } from './ui-draft.js';
+import { reasoningMarkdownSource, localModelLabel, keyDraftFrom, restorableComposerText, unansweredUserTurn, turnPlainText, installComposerDraft } from './ui-draft.js';
 import { readThemePreference, writeThemePreference, THEME_STORAGE_KEY } from './theme.js';
 import { autoTitle } from './titler.js';
 import { pickSuggestionCards } from './suggestions.js';
@@ -81,21 +81,6 @@ const SESSION_TURN_FORMS = {
   ru: { one: '{count} раунд', few: '{count} раунда', many: '{count} раундов', other: '{count} раунда' },
   ar: { zero: '{count} جولة', one: '{count} جولة', two: '{count} جولتان', few: '{count} جولات', many: '{count} جولة', other: '{count} جولة' },
 };
-// 「本轮回复」纯文本：上一条用户消息之后的全部非临时助手消息，按时间顺序拼接。
-// 每段取已渲染 DOM 的 innerText，表格/代码/列表保留排版；DOM 缺失时回退到原始文本。
-function turnPlainText(m, wrap) {
-  const all = store.state.messages;
-  const at = all.findIndex((x) => x.id === m.id);
-  const userAt = all.slice(0, Math.max(at, 0)).findLastIndex((x) => x.role === 'user');
-  const turn = at < 0 ? [m] : all.slice(userAt + 1, at + 1).filter((x) => x.role === 'assistant' && !x.transientModeration);
-  const container = wrap?.parentElement;
-  const parts = turn.map((x) => {
-    const node = container?.querySelector(`[data-id="${CSS.escape(String(x.id))}"] .md-body`);
-    return String((node ? node.innerText : x.text) || '').replace(/\n{3,}/g, '\n\n').trim();
-  }).filter(Boolean);
-  if (parts.length) return parts.join('\n\n');
-  return String(wrap?.querySelector(':scope > .md-body')?.innerText || m.text || '');
-}
 export function mountUI(store, agent) {
   let feedbackUI, sharingUI;
   const msgList = $('#messages');
@@ -727,7 +712,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
         if (wasActive) {
           // 删除当前会话后，若自动落到另一个有内容的会话，则切回空白草稿；非当前会话绝不打断正在运行的任务。
           if ((store.state.messages || []).length && typeof store.ensureDraft === 'function') store.ensureDraft();
-          agent.loadFiles(store.state.files);
+          loadComposerDraft(); agent.loadFiles(store.state.files);
           wrapLazyInit = false; lazyLoadedFrom = 0;
           rebuildMessages({ scroll: 'bottom' }); renderFiles(); renderTimeStats(); updateModelBtn();
           syncThinking(); syncCapLine();
@@ -783,7 +768,9 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     if (id === store.state.activeSessionId) return;
     if (getBusy()) return toast('请等待当前回合结束再切换会话', 'warn');
     if (inSystem()) leaveSystemChannel(); // 退出 /system 通道，切到该会话最后使用的模型
+    saveComposerDraft();
     store.switchSession(id);
+    loadComposerDraft();
     agent.loadFiles(store.state.files);
     // 切换会话时重置懒加载窗口
     wrapLazyInit = false; lazyLoadedFrom = 0;
@@ -797,7 +784,9 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     // 当前已是空会话（没有消息、没有沙箱文件）：不重建视图，只提示——避免整页重绘闪一下
     const emptyNow = !(store.state.messages || []).length && !Object.keys(store.state.files || {}).length;
     if (emptyNow) { composer.focus(); return toast('已在新对话中', 'ok', 1800); }
+    saveComposerDraft();
     (store.ensureDraft ? store.ensureDraft() : store.createSession());
+    loadComposerDraft();
     agent.loadFiles({});
     rebuildMessages({ scroll: 'bottom' }); renderSessions(); renderFiles(); updateStats(); renderTimeStats(); updateModelBtn();
     syncThinking(); syncCapLine();
@@ -814,7 +803,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       return toast('浏览器缓存了旧版本代码，请硬刷新（Ctrl/Cmd + Shift + R）后再用「清空」', 'warn', 5000);
     }
     const removed = store.clearAllSessions();
-    agent.loadFiles({});
+    loadComposerDraft(); agent.loadFiles({});
     rebuildMessages({ scroll: 'bottom' }); renderSessions(); renderFiles(); updateStats(); renderTimeStats(); updateModelBtn();
     toast(`已清除 ${removed || n} 条会话记录`, 'ok');
     composer.focus();
@@ -1054,7 +1043,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
         if (b.dataset.act === 'copy') {
           // 优先从已渲染的 DOM 取纯文本（浏览器自动解码 HTML 实体 / URI 编码，避免 %20/&amp; 等直接进入剪贴板）；
           // 如果 body 尚未渲染再回落到原始 m.text。
-          const plain = turnPlainText(m, wrap);
+          const plain = turnPlainText(store, m, wrap);
           copyText(plain).then((ok) => (ok ? toast('已复制', 'ok', 1200) : toast('复制失败：浏览器拒绝了剪贴板权限', 'err')));
         }
       }));
@@ -1102,7 +1091,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
         const act = b.dataset.act;
         if (act === 'copy') {
           // 取渲染后纯文本，自动解码 HTML 实体/URI 编码，避免 %20/&amp; 等进入剪贴板
-          const plain = turnPlainText(m, wrap);
+          const plain = turnPlainText(store, m, wrap);
           copyText(plain).then((ok) => (ok ? toast('已复制', 'ok', 1200) : toast('复制失败：浏览器拒绝了剪贴板权限', 'err')));
         }
         if (act === 'rollback') doRollback(m);
@@ -1316,9 +1305,14 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     const msgs = store.state.messages;
     const idx = msgs.findIndex((x) => x.id === m.id);
     const followedByUser = idx >= 0 && msgs.slice(idx + 1).some((x) => x.role === 'user' && !x.silent);
+    const choiceOffset = m._displayFragment ? displayParts(msgs[idx] || m).slice(0, m._partIndex || 0).reduce((total, part) => {
+      if (part.kind !== 'text') return total;
+      const temp = document.createElement('div'); temp.innerHTML = renderMarkdown(part.text || '');
+      return total + temp.querySelectorAll('.choice-box').length;
+    }, 0) : 0;
     $$('.choice-box', body).forEach((box, i) => {
       if (followedByUser && m.done && !m.cancelled && !m.error && !(m.toolCalls && m.toolCalls.length)) {
-        const items = m.choiceResults?.[i];
+        const items = (msgs[idx]?.choiceResults || m.choiceResults)?.[choiceOffset + i];
         box.classList.add('choice-result');
         const questions = $$('.choice-q', box).map(q => ({ question: q.textContent.trim() }));
         box.innerHTML = choiceSummaryHtml(items || questions, !items);
@@ -1664,7 +1658,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
         const status = c.status === 'error' || (tm && toolResultFailed(body)) ? 'error'
           : (c.status === 'ok' || tm) ? 'ok' : 'running';
         const a = c.args && typeof c.args === 'object' ? c.args : {};
-        const fullArg = String(a.query || a.url || a.prompt || '').trim(), cut = /^generate_(image|video)$/.test(c.name) ? Infinity : 140, summary = [...fullArg].length > cut ? [...fullArg].slice(0, cut).join('') + '…' : fullArg;
+        const fullArg = String(a.query || a.url || a.prompt || '').trim(), cut = /^(search_web|generate_(image|video))$/.test(c.name) ? Infinity : 140, summary = [...fullArg].length > cut ? [...fullArg].slice(0, cut).join('') + '…' : fullArg;
         const videoPath = c.name === 'generate_video' ? (/\[视频已生成\] (outputs\/[^\s]+\.mp4)/.exec(body) || [])[1] || '' : '';
         return { id: String(c.id), name: c.name, summary, status, body, videoPath };
       });
@@ -2275,9 +2269,10 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       // 回合进行中导入会把正在跑的对话数组换掉（半轮丢失 + 状态栏错乱）
       if (getBusy()) return toast('请等待当前回合结束再导入', 'warn');
       const data = JSON.parse(await file.text());
+      saveComposerDraft();
       const s = store.importSession(data);
       if (!s) return toast('导入失败：文件里没有有效的 messages 数组', 'err');
-      agent.loadFiles(store.state.files);
+      loadComposerDraft(); agent.loadFiles(store.state.files);
       rebuildMessages({ scroll: 'bottom' }); renderSessions(); renderFiles(); updateStats(); renderTimeStats();
       toast(`已导入会话「${s.title}」（${s.messages.length} 条消息）`, 'ok');
     } catch (err) {
@@ -2329,6 +2324,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     } else if (!clipped) composer.scrollTop = 0;
     else composer.scrollTop = Math.min(previousScroll, composer.scrollHeight);
   }
+  const { save: saveComposerDraft, load: loadComposerDraft } = installComposerDraft(store, composer, () => { autoGrow(); syncSendButton(); });
   const shiftEnterGuard = installShiftEnterGuard(composer, () => { autoGrow({ follow: composer.selectionEnd >= composer.value.length }); welcomeMotion.sync(); }); // 光标在文末才跟随
   autoGrow();
   const composerShell = composer.closest('.composer');
@@ -2378,7 +2374,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     if (!text && !attachments.hasPending()) return;
     if (store.state.model === '__system__') {
       if (getBusy()) return;
-      composer.value = ''; autoGrow(); sysComplete.close();
+      composer.value = ''; autoGrow(); sysComplete.close(); saveComposerDraft();
       handleSystemCommand(text);
       welcomeMotion.sync();
       return;
@@ -2386,7 +2382,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     if (!store.state.apiKey && !isOfflineModelId(store.state.model)) { composerDraftAwaitingKey = text; openKeyModal(); toast('请先配置 TeamoRouter API Key（输入内容已保留，保存后自动放回）', 'warn'); return; }
     if (getBusy()) return;
     pendingSendOrigin = composer.getBoundingClientRect();
-    composer.value = ''; autoGrow();
+    composer.value = ''; saveComposerDraft(); autoGrow();
     const atts = attachments.takePending();
     agent.send(text, atts);
   }
@@ -2737,6 +2733,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     updateStats,
     renderSessions,
     renderFiles,
+    switchSession: switchToSession,
     rebuildMessages, // 外部触发整段对话重绘（会话切换、示例卡刷新等）
     settleTurn,      // 回合结束：释放工具呈现队列并补齐本回合的最终正文
     // 用户消息入列后立刻上屏：否则要等本轮输出完（甚至切出再切回会话）才看得到自己说了什么
@@ -2828,7 +2825,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
         `<div class="confirm-note">${esc(localeText('未选择或超时将自动拒绝。', 'No action is taken if you do not respond.'))}</div>`,
         '<div class="confirm-actions">',
         `<button type="button" class="confirm-btn deny" data-decision="deny">${esc(deny)}</button>`,
-        call?.name === 'curl' || call?.name === 'local_files' ? '' : `<button type="button" class="confirm-btn allow-session" data-decision="allow-session">${esc(session)}</button>`,
+        call?._confirmOnceOnly || call?.name === 'curl' || call?.name === 'local_files' ? '' : `<button type="button" class="confirm-btn allow-session" data-decision="allow-session">${esc(session)}</button>`,
         `<button type="button" class="confirm-btn allow" data-decision="allow-once">${esc(once)}</button>`,
         '</div>',
       ].join('');

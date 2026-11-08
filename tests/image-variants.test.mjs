@@ -90,12 +90,15 @@ test('all image families resolve directly and their prompt includes only their o
       if (model.family !== family.id) assert.ok(!desc.includes(`${model.id} (`), `${family.id} must not include ${model.id}`);
     }
   }
-  assert.match(imageModelRuntimeDescription('midjourney'), /网关尚未接通/);
+  assert.match(imageModelRuntimeDescription('midjourney'), /midjourney/);
+  assert.match(imageModelRuntimeDescription('midjourney', { gatewayId: 'openai' }), /仅支持 TeamoRouter/);
 });
 
 test('agent request carries the selected family variants, and the tool sends the selected 4K variant', async () => {
   const { createStore } = await import('../js/state.js');
   const { createAgent } = await import('../js/agent.js');
+  const previousStorage = globalThis.localStorage; const effectData = new Map();
+  globalThis.localStorage = { getItem: k => effectData.get(k) ?? null, setItem: (k,v) => effectData.set(k,String(v)), removeItem: k => effectData.delete(k) };
   const store = createStore();
   store.state.apiKey = 'test-key';
   store.state.model = 'gpt-5.6-sol';
@@ -128,7 +131,7 @@ test('agent request carries the selected family variants, and the tool sends the
     const image = calls.find(c => c.url.includes('/images/generations'));
     assert.ok(image, JSON.stringify(calls));
     assert.equal(image.body.model, 'gpt-image-2.5-flare-4k-upscale');
-  } finally { globalThis.fetch = originalFetch; }
+  } finally { globalThis.fetch = originalFetch; globalThis.localStorage = previousStorage; }
 });
 
 test('session restore retains family selection and migrates the incorrect Kimi ID', async () => {

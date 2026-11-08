@@ -1,8 +1,12 @@
 import { focusForegroundWorkspace } from './modal-selection.js';
+import { projectIconType, projectIconSvg } from './project-icons.js';
+import { createProjectFS, isProjectUserPath } from './project-store.js';
+import { reviewProjectImport } from './project-import-review.js';
+import { createFS } from './sandbox.js';
 // Dubhe Agent · 项目模式（第 17 条，参照 VS Code）：代码为主、AI 为辅。
-// 全屏工作区：左侧资源管理器（沙箱工作区文件树）、中间多标签代码编辑器、底部状态栏。
-// 文件直接读写永久沙箱（agent.sandboxWrite / sandboxRemove），侧栏与 Agent 看到的是同一份文件。
-// 轮询 store.state.files 同步外部改动（Agent 写入）：未保存的标签不会被覆盖。
+// 全屏工作区：左侧资源管理器（独立项目文件树）、中间多标签代码编辑器、底部状态栏。
+// 文件存于独立、跨会话项目；沙箱与项目之间只允许显式复制。
+// 轮询项目状态同步外部改动（Agent 写入）：未保存的标签不会被覆盖。
 import { uiText as T } from './locale.js';
 import { highlightCode } from './ui-markdown.js?v=2026.10.25.1';
 const escHtml = (v) => String(v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -20,22 +24,8 @@ import {
 
 const POLL_MS = 900;
 const PM_IMPORT_MAX_BYTES = 20 * 1024 * 1024; // 单个导入文件上限（超出则跳过并计数）
-const EXT_MIME = {
-  png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp', svg: 'image/svg+xml',
-  mp3: 'audio/mpeg', wav: 'audio/wav', ogg: 'audio/ogg', m4a: 'audio/mp4', flac: 'audio/flac',
-  mp4: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime', pdf: 'application/pdf', zip: 'application/zip',
-};
 // 空文件夹用占位文件 .keep 表示：树里保留文件夹，但不把占位文件列出来
 const isPlaceholder = (p) => /(^|\/)\.keep$/.test(String(p));
-const mimeOf = (file) => file.type || EXT_MIME[String(file.name || '').split('.').pop().toLowerCase()] || 'application/octet-stream';
-function readDataUrl(file) {
-  return new Promise((resolve, reject) => {
-    const fr = new FileReader();
-    fr.onload = () => resolve(String(fr.result).replace(/^data:[^;,]*/, 'data:' + mimeOf(file)));
-    fr.onerror = () => reject(fr.error || new Error('read failed'));
-    fr.readAsDataURL(file);
-  });
-}
 function fmtBytes(n) {
   return n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : n >= 1024 ? Math.round(n / 1024) + ' KB' : n + ' B';
 }
@@ -82,7 +72,7 @@ function h(tag, attrs = {}, children = []) {
 /**
  * 打开项目窗口。deps: { store, agent }。返回 { close } ；已打开时直接聚焦原窗口。
  */
-export function openProjectMode({ store, agent }) {
+export function openProjectMode({ store, agent, projectFileSystem = null }) {
   if (active) { active.focus(); return active; }
   const state = {
     tabs: [],          // { path, value, saved, dirty }
@@ -121,7 +111,6 @@ export function openProjectMode({ store, agent }) {
   const projCount = h('span', { class: 'pm-proj-count' });
   const btnSave = h('button', { class: 'pm-btn primary', type: 'button', title: T('保存（Ctrl+S）', 'Save (Ctrl+S)'), onclick: () => saveActive() }, [svgIcon(ICON.save), T('保存', 'Save')]);
   const btnSide = h('button', { class: 'pm-icon pm-side-toggle', type: 'button', title: T('折叠 / 展开侧栏（Ctrl+B）', 'Toggle sidebar (Ctrl+B)'), 'aria-label': T('折叠 / 展开侧栏', 'Toggle sidebar'), 'aria-expanded': 'true', onclick: () => toggleSide() }, [svgIcon(ICON.side)]);
-  const btnRefresh = h('button', { class: 'pm-icon', type: 'button', title: T('刷新', 'Refresh'), 'aria-label': T('刷新', 'Refresh'), onclick: () => { state.lastSnap = null; sync(); } }, '↻');
   const importFileInput = h('input', { type: 'file', multiple: true, hidden: true, onchange: (e) => importFiles(e.target) });
   const importDirInput = h('input', { type: 'file', multiple: true, hidden: true, webkitdirectory: true, onchange: (e) => importFiles(e.target, { folder: true }) });
   const btnClose = h('button', { class: 'pm-btn', type: 'button', title: T('关闭（Esc）', 'Close (Esc)'), onclick: () => close() }, [svgIcon(ICON.close), T('关闭', 'Close')]);
@@ -154,7 +143,6 @@ export function openProjectMode({ store, agent }) {
 
   root.append(
     h('header', { class: 'pm-top' }, [
-      btnSide,
       h('span', { class: 'pm-brand' }, 'DUBHE'),
       projName,
       projCount,
@@ -165,12 +153,12 @@ export function openProjectMode({ store, agent }) {
     ]),
     h('div', { class: 'pm-body' }, [
       h('aside', { class: 'pm-explorer', 'aria-label': T('资源管理器', 'Explorer') }, [
-        h('div', { class: 'pm-ex-head' }, [h('span', {}, T('资源管理器', 'EXPLORER')), btnRefresh]),
+        h('div', { class: 'pm-ex-head' }, [h('span', {}, T('资源管理器', 'EXPLORER')), btnSide]),
         explorerBody,
         importFileInput,
         importDirInput,
       ]),
-      h('section', { class: 'pm-main' }, [tabsBar, editorWrap, mediaView, emptyNote]),
+      h('section', { class: 'pm-main' }, [h('button', { class: 'pm-side-reopen pm-icon', type: 'button', title: T('展开资源管理器', 'Open explorer'), 'aria-label': T('展开资源管理器', 'Open explorer'), onclick: () => toggleSide() }, [svgIcon(ICON.side)]), tabsBar, editorWrap, mediaView, emptyNote]),
     ]),
     h('footer', { class: 'pm-status' }, [statusLang, statusPos, statusDirty, h('span', { class: 'pm-spacer' }), statusMsg]),
   );
@@ -179,7 +167,8 @@ export function openProjectMode({ store, agent }) {
   focusForegroundWorkspace(root, document);
 
   // ── 数据 ──
-  const files = () => (store.state && store.state.files) || {};
+  const projectFS = projectFileSystem || createProjectFS(store);
+  const files = () => store.state.project.files;
   const tabOf = (path) => state.tabs.find((t) => t.path === path) || null;
   const current = () => tabOf(state.active);
 
@@ -263,21 +252,21 @@ export function openProjectMode({ store, agent }) {
   function applyWrites(entries, removeSources = false, sourceRoot = '') {
     const written = [], removed = [];
     try {
-      for (const entry of entries) { agent.sandboxWrite(entry.to, entry.value); written.push(entry.to); }
+      for (const entry of entries) { projectFS.write(entry.to, entry.value); written.push(entry.to); }
       if (removeSources) {
-        for (const entry of entries) { agent.sandboxRemove(entry.from); removed.push(entry); }
+        for (const entry of entries) { projectFS.remove(entry.from); removed.push(entry); }
         const root = sourceRoot || entries[0]?.from;
         // Keep the source directory visible when moving its last file or folder.
         const parent = root ? parentDir(root) : '';
         if (parent && !Object.keys(files()).some(p => p.startsWith(parent + '/'))) {
-          const keep = parent + '/.keep'; agent.sandboxWrite(keep, ''); written.push(keep);
+          const keep = parent + '/.keep'; projectFS.write(keep, ''); written.push(keep);
         }
       }
     } catch (err) {
       let restoreFailed = false;
-      for (const entry of removed) try { agent.sandboxWrite(entry.from, entry.value); } catch { restoreFailed = true; }
+      for (const entry of removed) try { projectFS.write(entry.from, entry.value); } catch { restoreFailed = true; }
       // If restoration fails, retain destination copies rather than destroying the only remaining data.
-      if (!restoreFailed) for (const path of written) try { agent.sandboxRemove(path); } catch { restoreFailed = true; }
+      if (!restoreFailed) for (const path of written) try { projectFS.remove(path); } catch { restoreFailed = true; }
       state.lastSnap = null; sync();
       if (restoreFailed) throw new Error(T('操作失败且回滚不完整，请检查源和目标文件：', 'Operation failed and rollback was incomplete; check source and destination: ') + err.message);
       throw err;
@@ -316,7 +305,7 @@ export function openProjectMode({ store, agent }) {
     let target = path + '.zip', n = 2;
     while (!destinationFree(target) && n < 10000) target = path + ' ' + n++ + '.zip';
     if (!destinationFree(target)) return flash(T('目标已存在', 'Destination exists'));
-    try { agent.sandboxWrite(target, zipDataUrl(bytes)); } catch (err) { return flash(err.message); }
+    try { projectFS.write(target, zipDataUrl(bytes)); } catch (err) { return flash(err.message); }
     state.lastSnap = null; sync(); flash(T('已创建 ', 'Created ') + target);
   }
   async function extractPath(path) {
@@ -337,6 +326,7 @@ export function openProjectMode({ store, agent }) {
   }
 
   function sync() {
+    if (store.state._projectPersistenceError) flash(store.state._projectPersistenceError, true);
     const snap = files();
     if (snap !== state.lastSnap) {
       state.lastSnap = snap;
@@ -370,6 +360,11 @@ export function openProjectMode({ store, agent }) {
 
   // ── 资源管理器 ──
   let treeKey = '';
+  function treeIcon(path, isDir, expanded) {
+    const icon = h('span', { class: 'pm-tree-icon', 'aria-hidden': 'true' });
+    icon.innerHTML = projectIconSvg(projectIconType(path, isDir, expanded));
+    return icon;
+  }
   function renderTree({ force = false } = {}) {
     const entries = workspaceEntries(files());
     const rows = explorerRows(entries, state.collapsed).filter((r) => !isPlaceholder(r.path));
@@ -384,7 +379,7 @@ export function openProjectMode({ store, agent }) {
     explorerBody.replaceChildren();
     if (state.creating) explorerBody.append(createRow());
     if (!rows.length && !state.creating) {
-      explorerBody.append(h('div', { class: 'pm-tree-empty' }, T('工作区还没有文件。在此处右键或长按以新建或导入。', 'No files yet. Right-click or long-press here to create or import.')));
+      explorerBody.append(h('div', { class: 'pm-tree-empty' }, T('项目还没有文件。在此处右键或长按以新建或导入。', 'No files yet. Right-click or long-press here to create or import.')));
       return;
     }
     for (const row of rows) {
@@ -412,7 +407,7 @@ export function openProjectMode({ store, agent }) {
           } else openFile(row.path);
         },
       }, [
-        h('span', { class: 'pm-tree-glyph', 'aria-hidden': 'true' }, isDir ? (state.collapsed.has(row.path) ? '▸' : '▾') : ''),
+        treeIcon(row.path, isDir, !state.collapsed.has(row.path)),
         labelNode,
         !isRenaming && !isDir && tab && tab.dirty ? h('span', { class: 'pm-dot', title: T('未保存', 'Unsaved') }, '●') : null,
       ]);
@@ -462,31 +457,28 @@ export function openProjectMode({ store, agent }) {
   // 导入：把本机文件（或整个文件夹，保留相对结构）写入沙箱。导入到当前选中目录下；
   // 二进制、重名、不合法路径一律跳过并计数，绝不覆盖已有文件。
   async function importFiles(input, { folder = false } = {}) {
-    const list = [...(input.files || [])];
-    input.value = '';
+    const list = [...(input.files || [])]; input.value = '';
     if (!list.length) return;
+    const names = list.slice(0, 30).map(f => folder && f.webkitRelativePath ? f.webkitRelativePath : f.name).join('\n');
+    if (!window.confirm(T(`即将导入 ${list.length} 个文件到独立项目（不会导入会话沙箱）。\n\n${names}${list.length > 30 ? '\n…' : ''}\n\n导入前将在本机用规则审核文本、用本地图像模型审核图片。无法审核的二进制、压缩包或超限文件将跳过；文件内容不会发送到网关。继续？`, `Import ${list.length} file(s) into the independent project?\n\n${names}${list.length > 30 ? '\n…' : ''}\n\nText is checked by local rules and images by a local model. Unsupported binary files and archives are skipped; file contents are not sent to the gateway. Continue?`))) return;
     const dir = state.selected && !Object.prototype.hasOwnProperty.call(files(), state.selected) ? state.selected : parentDir(state.selected);
-    const taken = new Set(Object.keys(files()));
-    let done = 0;
-    let skipped = 0;
+    const taken = new Set(Object.keys(files())); let done = 0, skipped = 0, blocked = 0; const reasons = [];
     for (const file of list) {
       const rel = folder && file.webkitRelativePath ? file.webkitRelativePath : file.name;
       const path = joinPath(dir, rel);
-      const segOk = rel.split('/').filter(Boolean).every((seg) => validateName(seg).ok);
-      if (!segOk || !isWorkspacePath(path) || taken.has(path)) { skipped++; continue; }
-      if (file.size > PM_IMPORT_MAX_BYTES) { skipped++; continue; }
+      const segOk = rel.split('/').filter(Boolean).every(seg => validateName(seg).ok);
+      if (!segOk || !isProjectUserPath(path) || taken.has(path) || !destinationFree(path) || file.size > PM_IMPORT_MAX_BYTES) { skipped++; continue; }
+      flash(T(`正在审核 ${rel}…`, `Reviewing ${rel}…`), true);
       try {
-        // NUL 字节即视为二进制：存为 data URL（图片 / 音视频 / PDF 可预览，其余仅保存）
-        const head = new Uint8Array(await file.slice(0, 4096).arrayBuffer());
-        const content = head.includes(0) ? await readDataUrl(file) : await file.text();
-        agent.sandboxWrite(path, content); taken.add(path); done++;
-      } catch { skipped++; }
+        const result = await reviewProjectImport(file);
+        if (!result.ok) { blocked++; reasons.push(`${rel}: ${result.reason || 'review'}`); continue; }
+        if (taken.has(path) || !destinationFree(path)) { skipped++; continue; }
+        projectFS.write(path, result.content); taken.add(path); done++;
+      } catch (error) { blocked++; reasons.push(`${rel}: ${String(error?.message || error).slice(0, 120)}`); }
     }
-    state.lastSnap = null;
-    sync();
-    flash(skipped
-      ? T(`已导入 ${done} 个文件，跳过 ${skipped} 个（重名、名称不合法或超过 20 MB）`, `Imported ${done} file(s), skipped ${skipped} (duplicate, invalid name or over 20 MB)`)
-      : T(`已导入 ${done} 个文件`, `Imported ${done} file(s)`));
+    state.lastSnap = null; sync();
+    const detail = reasons.length ? ' · ' + reasons.slice(0, 3).join('；') + (reasons.length > 3 ? '…' : '') : '';
+    flash(T(`已导入 ${done} 个；跳过 ${skipped} 个；审核未通过或无法审核 ${blocked} 个`, `Imported ${done}; skipped ${skipped}; blocked or unreviewable ${blocked}`) + detail, true);
   }
 
   function commitCreateFolder(raw) {
@@ -500,7 +492,7 @@ export function openProjectMode({ store, agent }) {
     if (!isWorkspacePath(path)) return flash(T('路径不合法', 'Invalid path'));
     const snap = files();
     if (Object.keys(snap).some((p) => p === path || p.startsWith(path + '/') || path.startsWith(p + '/'))) return flash(T('同名文件或文件夹已存在', 'A file or folder with that name exists'));
-    try { agent.sandboxWrite(path + '/.keep', ''); } catch (err) { return flash(err.message); }
+    try { projectFS.write(path + '/.keep', ''); } catch (err) { return flash(err.message); }
     state.creating = null;
     state.collapsed.delete(path);
     state.lastSnap = null;
@@ -517,7 +509,7 @@ export function openProjectMode({ store, agent }) {
     const path = joinPath(dir, parts.slice(0, -1).concat(check.name).join('/'));
     if (!isWorkspacePath(path) || isPlaceholder(path)) return flash(T('路径不合法', 'Invalid path'));
     if (Object.keys(files()).some(p => p === path || p.startsWith(path + '/') || path.startsWith(p + '/'))) return flash(T('同名文件或文件夹已存在', 'A file or folder with that name exists'));
-    try { agent.sandboxWrite(path, ''); } catch (err) { return flash(err.message); }
+    try { projectFS.write(path, ''); } catch (err) { return flash(err.message); }
     state.creating = null;
     state.lastSnap = null;
     openFile(path);
@@ -554,12 +546,12 @@ export function openProjectMode({ store, agent }) {
     const backup = targets.map(p => ({ path: p, value: files()[p] }));
     const removed = [];
     try {
-      for (const item of backup) { agent.sandboxRemove(item.path); removed.push(item); }
+      for (const item of backup) { projectFS.remove(item.path); removed.push(item); }
       const parent = parentDir(path);
-      if (parent && !Object.keys(files()).some(p => p.startsWith(parent + '/'))) agent.sandboxWrite(parent + '/.keep', '');
+      if (parent && !Object.keys(files()).some(p => p.startsWith(parent + '/'))) projectFS.write(parent + '/.keep', '');
     } catch (err) {
       let restoreFailed = false;
-      for (const item of removed) try { agent.sandboxWrite(item.path, item.value); } catch { restoreFailed = true; }
+      for (const item of removed) try { projectFS.write(item.path, item.value); } catch { restoreFailed = true; }
       state.lastSnap = null; sync();
       return flash((restoreFailed ? T('删除失败且回滚不完整，请检查文件：', 'Delete failed and rollback was incomplete; check files: ') : T('删除失败：', 'Delete failed: ')) + err.message, true);
     }
@@ -626,7 +618,7 @@ export function openProjectMode({ store, agent }) {
       try { choice = await askUnsaved([path]); } finally { askingClose = false; }
       if (choice === 'cancel') return;
       if (choice === 'save') {
-        try { agent.sandboxWrite(tab.path, tab.value); } catch (err) { return flash(T('保存失败：' + err.message, 'Save failed: ' + err.message)); }
+        try { projectFS.write(tab.path, tab.value); } catch (err) { return flash(T('保存失败：' + err.message, 'Save failed: ' + err.message)); }
         tab.saved = tab.value; tab.dirty = false; tab.gone = false;
       }
     }
@@ -681,7 +673,7 @@ export function openProjectMode({ store, agent }) {
         class: `pm-tab${tab.path === state.active ? ' active' : ''}${tab.dirty ? ' dirty' : ''}${tab.gone ? ' gone' : ''}`,
         role: 'tab',
         'aria-selected': String(tab.path === state.active),
-        title: tab.gone ? T(`${tab.path}（已在沙箱中删除）`, `${tab.path} (deleted in sandbox)`) : tab.path,
+        title: tab.gone ? T(`${tab.path}（已在项目中删除）`, `${tab.path} (deleted in project)`) : tab.path,
         onclick: () => { state.active = tab.path; showTab(tab); renderTabs(); renderTree(); textarea.focus(); },
       }, [
         h('span', { class: 'pm-tab-name', text: name }),
@@ -769,7 +761,7 @@ export function openProjectMode({ store, agent }) {
     const tab = current();
     if (!tab || tab.kind === 'media') return;
     try {
-      agent.sandboxWrite(tab.path, tab.value);
+      projectFS.write(tab.path, tab.value);
     } catch (err) {
       return flash(T(`保存失败：${err.message}`, `Save failed: ${err.message}`));
     }
@@ -904,7 +896,9 @@ export function openProjectMode({ store, agent }) {
     outSum.textContent = T(`${RUNNER_LABEL[lang]} · 运行中…`, `${RUNNER_LABEL[lang]} · running…`);
     outLines.replaceChildren();
     const onLog = (log) => appendOutLine(log);
-    const fsObj = agent.sandboxFS();
+    // Execute against a disposable snapshot: code cannot silently change the project.
+    let fsObj;
+    try { fsObj = createFS(projectFS.export()); } catch (error) { setRunning(false); return flash(error.message); }
     let out;
     try {
       if (lang === 'javascript') {
@@ -934,7 +928,7 @@ export function openProjectMode({ store, agent }) {
     setRunning(false);
     hideProgress();
     // 运行器可能写出了文件（回写到 fsObj）：同步到 store，侧栏与 Agent 随之可见
-    try { agent.sandboxCommit(); } catch { /* 同步失败不影响输出 */ }
+    // Runtime writes remain in the disposable execution sandbox.
     state.lastSnap = null;
     sync();
     // 结果：用运行器返回的完整日志替换流式输出，并补上未出现在日志里的错误信息
@@ -1015,7 +1009,7 @@ export function openProjectMode({ store, agent }) {
       if (choice === 'cancel') return;
       if (choice === 'save') {
         for (const t of dirty) {
-          try { agent.sandboxWrite(t.path, t.value); } catch (err) { return flash(T('保存失败：' + err.message, 'Save failed: ' + err.message)); }
+          try { projectFS.write(t.path, t.value); } catch (err) { return flash(T('保存失败：' + err.message, 'Save failed: ' + err.message)); }
           t.saved = t.value; t.dirty = false; t.gone = false;
         }
         state.lastSnap = null;

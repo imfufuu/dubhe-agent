@@ -6,9 +6,9 @@ import { uiText as t } from './locale.js';
 export function choiceSummaryHtml(items, ignored = false) {
   if (ignored) items = items.map(item => ({ ...item, answer: t('未回答', 'Not answered') }));
   return `<div class="choice-result-title">${esc(ignored ? t('未回答选择框', 'Choices not answered') : t('选择摘要', 'Choice summary'))}</div>` + items.map(item =>
-    `<div class="choice-result-row"><div class="choice-result-question">${esc(item.question)}</div><div>${esc(item.answer || t('未选择', 'Not selected'))}</div>${item.other ? `<div class="choice-result-other">${esc(t('其他', 'Other'))}: ${esc(item.other)}</div>` : ''}</div>`).join('');
+    `<div class="choice-result-row"><div class="choice-result-question">${esc(item.question)}</div><div>${esc(item.other || item.answer || t('未选择', 'Not selected'))}</div></div>`).join('');
 }
-const choiceReplyText = items => items.map(x => `${x.question}\n${x.answer || t('其他', 'Other')}${x.other ? `\n${t('其他', 'Other')}: ${x.other}` : ''}`).join('\n\n');
+const choiceReplyText = items => items.map(x => `${x.question}\n${x.other || x.answer || t('未选择', 'Not selected')}`).join('\n\n');
 export function installChoiceHandler({ root, store, agent, getBusy, openKeyModal, toast }) {
   const read = box => { try { return JSON.parse(box.dataset.choiceAnswers || '[]'); } catch { return []; } };
   function setStep(box, step) {
@@ -17,13 +17,22 @@ export function installChoiceHandler({ root, store, agent, getBusy, openKeyModal
     box.dataset.choiceStep = String(idx);
     blocks.forEach((b, i) => {
       b.classList.toggle('active', i === idx);
-      for (const opt of $$('.choice-opt', b)) opt.classList.toggle('selected', opt.dataset.choiceSend === answers[i]);
+      for (const opt of $$('.choice-opt', b)) { const selected = opt.dataset.choiceSend === answers[i]; opt.classList.toggle('selected', selected); opt.setAttribute('aria-pressed', String(selected)); }
     });
     $('[data-choice-back]', box).disabled = idx === 0;
     $('[data-choice-progress]', box).textContent = `${idx + 1} / ${blocks.length}`;
     $('[data-choice-next]', box).hidden = idx === blocks.length - 1;
     $('[data-choice-summary]', box).innerHTML = blocks.map((b, i) => answers[i] ? `<button type="button" class="choice-pill" data-choice-jump="${i}"><b>${i + 1}</b>${esc(answers[i])}</button>` : '').join('');
   }
+  root.addEventListener('input', e => {
+    const input = e.target.closest?.('.choice-other');
+    if (!input || !root.contains(input) || !input.value.trim()) return;
+    const block = input.closest('.choice-qblock'), box = block?.closest('.choice-box');
+    if (!box) return;
+    const answers = read(box); answers[Number(block.dataset.choiceIdx)] = '';
+    box.dataset.choiceAnswers = JSON.stringify(answers);
+    setStep(box, Number(box.dataset.choiceStep));
+  });
   return e => {
     const box = e.target.closest('.choice-box');
     if (!box || !root.contains(box)) return false;
@@ -33,9 +42,10 @@ export function installChoiceHandler({ root, store, agent, getBusy, openKeyModal
     const opt = e.target.closest('[data-choice-send]');
     if (opt) {
       const idx = Number(opt.closest('.choice-qblock').dataset.choiceIdx), answers = read(box);
-      answers[idx] = opt.dataset.choiceSend;
+      answers[idx] = answers[idx] === opt.dataset.choiceSend ? '' : opt.dataset.choiceSend;
+      if (answers[idx]) $('.choice-other', opt.closest('.choice-qblock')).value = '';
       box.dataset.choiceAnswers = JSON.stringify(answers);
-      setStep(box, Math.min(idx + 1, Number(box.dataset.choiceCount) - 1));
+      setStep(box, idx);
       return true;
     }
     if (e.target.closest('[data-choice-back]')) { setStep(box, Number(box.dataset.choiceStep) - 1); return true; }

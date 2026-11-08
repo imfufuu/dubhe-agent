@@ -58,7 +58,7 @@ export function tookEndpointSwitch() { const v = endpointSwitched; endpointSwitc
 //      —— 中国大陆网络下 api.teamorouter.com 常常打不开，而 api.teamorouter.cn 正常，
 //         这一步让用户不用手动改配置
 //   ③ 仍失败 → 本地服务端代理 /api/proxy（本地跑 server.py 时可用，能绕开浏览器网络限制）
-async function request(path, { method = 'POST', headers = {}, body, signal, gatewayId = DEFAULT_GATEWAY_ID, gatewayBaseUrl = '' } = {}) {
+async function request(path, { method = 'POST', headers = {}, body, signal, gatewayId = DEFAULT_GATEWAY_ID, gatewayBaseUrl = '', noReplay = false } = {}) {
   if (isNetworkOffline()) throw new Error(localeText('离线模式已阻止网关请求。', 'Offline mode blocked the gateway request.'));
   // First-party and user-defined gateways are isolated: one direct HTTPS destination only,
   // with no TeamoRouter failover or same-origin proxy fallback.
@@ -68,7 +68,7 @@ async function request(path, { method = 'POST', headers = {}, body, signal, gate
     if (!base) throw new Error(`请先在设置中填写「${spec.name}」网关基础 URL`);
     const url = /^https:\/\//i.test(String(path)) ? String(path) : joinGatewayUrl(base, path);
     transport = 'direct';
-    try { return await fetch(url, { method, headers, body, signal }); }
+    try { return await fetch(url, { method, headers, body, signal, ...(noReplay ? { redirect: 'error' } : {}) }); }
     catch (err) {
       if (signal?.aborted) throw err;
       if (isNetworkError(err)) {
@@ -86,14 +86,14 @@ async function request(path, { method = 'POST', headers = {}, body, signal, gate
   try { requestedModel = typeof body === 'string' ? JSON.parse(body)?.model : body?.get?.('model'); } catch { /* non-model request */ }
   const tryFetch = (url) => {
     if (isCnUnavailableModel(url, requestedModel)) { const err = new Error(localeText('该模型在当前地区不可用', 'This model is not available in the current region')); err.code = 'REGION_UNAVAILABLE'; throw err; }
-    return fetch(url, { method, headers, body, signal });
+    return fetch(url, { method, headers, body, signal, ...(noReplay ? { redirect: 'error' } : {}) });
   };
   const base = gatewayBase();
   try {
     transport = 'direct';
     return await tryFetch(base + path);
   } catch (err) {
-    if (signal?.aborted || err?.code === 'REGION_UNAVAILABLE') throw err;
+    if (noReplay || signal?.aborted || err?.code === 'REGION_UNAVAILABLE') throw err;
     if (isNetworkError(err)) {
       const alt = otherGatewayBase();
       try {
@@ -717,7 +717,7 @@ export async function streamChat({ model, apiKey, messages, tools, fastMode = fa
   // 发起请求（429/5xx 自动退避重试一次）
   const res = await withRetry(async () => {
     const path = gatewayPath(gateway.id, endpoint === 'messages' ? 'messages' : (endpoint === 'responses' ? 'responses' : 'chat'));
-    const r = await request(path, { method: 'POST', headers, body: JSON.stringify(body), signal, gatewayId: gateway.id, gatewayBaseUrl });
+    const r = await request(path, { method: 'POST', headers, body: JSON.stringify(body), signal, gatewayId: gateway.id, gatewayBaseUrl, noReplay: !!subagentId });
     if ((r.status === 429 || r.status >= 500) && r.status !== 501) {
       const text = await r.text().catch(() => '');
       const err = new Error(httpErrorMessage(r.status, text, gateway.id));
@@ -786,7 +786,7 @@ export async function streamChat({ model, apiKey, messages, tools, fastMode = fa
       throw err;
     }
     return r;
-  }, 2);
+  }, subagentId ? 0 : 2);
 
   let sawTerminalEvent = false;
   let sawDone = false;
@@ -1215,7 +1215,7 @@ async function postImage(path, { apiKey, body, isForm, signal, timeoutMs, gatewa
   try {
     const protocol = protocolOverride || (getGateway(gatewayId).protocol === 'anthropic' ? 'anthropic' : 'openai');
     const headers = isForm ? authHeaders(protocol, apiKey, gatewayId) : { 'Content-Type': 'application/json', ...authHeaders(protocol, apiKey, gatewayId) };
-    const r = await request(path, { method: 'POST', headers, body, signal: t.signal, gatewayId, gatewayBaseUrl });
+    const r = await request(path, { method: 'POST', headers, body, signal: t.signal, gatewayId, gatewayBaseUrl, noReplay: true });
     const text = await r.text().catch(() => '');
     if (!r.ok) {
       const err = new Error(httpErrorMessage(r.status, text, gatewayId));
@@ -1227,7 +1227,7 @@ async function postImage(path, { apiKey, body, isForm, signal, timeoutMs, gatewa
     try { json = JSON.parse(text); } catch { /* 下面按非 JSON 处理 */ }
     if (!json) {
       const err = new Error(`图像接口返回了非 JSON 响应（HTTP ${r.status}，${r.headers.get('content-type') || '未知类型'}，${text.length} 字节）：${text.slice(0, 160).replace(/\s+/g, ' ').trim() || '空响应体'}`);
-      err.retryable = true; // 典型为网关/代理抖动，重放一次通常即可
+      err.retryable = true; // 可供调用方诊断；生图默认不会自动重发
       throw err;
     }
     return json;
@@ -1243,7 +1243,7 @@ async function postImageStream(path, { apiKey, body, signal, timeoutMs, format =
   try {
     const protocol = getGateway(gatewayId).protocol === 'anthropic' ? 'anthropic' : 'openai';
     const headers = { 'Content-Type': 'application/json', Accept: 'text/event-stream', ...authHeaders(protocol, apiKey, gatewayId) };
-    const r = await request(path, { method: 'POST', headers, body, signal: t.signal, gatewayId, gatewayBaseUrl });
+    const r = await request(path, { method: 'POST', headers, body, signal: t.signal, gatewayId, gatewayBaseUrl, noReplay: true });
     if (!r.ok) {
       const text = await r.text().catch(() => '');
       const err = new Error(httpErrorMessage(r.status, text, gatewayId));
@@ -1291,9 +1291,9 @@ async function postImageStream(path, { apiKey, body, signal, timeoutMs, format =
   }
 }
 
-// 生图单次 30–65s，抖动重放代价高但远小于整轮失败，故只补一次、间隔 3s
+// Billable image POSTs are not replayed by default: a lost response may still be charged.
 export const IMAGE_RETRY_DELAY_MS = 3000;
-export async function postImageWithRetry(path, opts, { parse, retries = 1, retryDelayMs = IMAGE_RETRY_DELAY_MS, onRetry, signal } = {}) {
+export async function postImageWithRetry(path, opts, { parse, retries = 0, retryDelayMs = IMAGE_RETRY_DELAY_MS, onRetry, signal } = {}) {
   let lastErr;
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
@@ -1518,6 +1518,14 @@ export function mjTaskState(task) {
   if (s === 'FAILURE' || s === 'CANCEL') return 'failed';
   return 'pending';
 }
+function mjImageUrl(value) {
+  const candidates = [value?.imageUrl, value?.image_url, value?.url, value?.data?.imageUrl, value?.data?.image_url, value?.data?.url, value?.result];
+  return candidates.find(v => typeof v === 'string' && /^https?:\/\//i.test(v)) || '';
+}
+function mjImageResult(url, taskId = '') {
+  const image = { dataUrl: url, mime: 'image/png', ext: 'png', width: 0, height: 0, revisedPrompt: '' };
+  return { images: [image], ...image, taskId, usage: null };
+}
 async function generateMidjourney({ prompt, size, apiKey, signal }) {
   let text = String(prompt || '').trim();
   if (!text) throw new Error(localeText('Midjourney 需要 prompt。', 'Midjourney needs a prompt.'));
@@ -1537,8 +1545,10 @@ async function generateMidjourney({ prompt, size, apiKey, signal }) {
       err.status = r.status;
       throw err;
     }
-    try { submitted = JSON.parse(raw); } catch { throw new Error(`Midjourney 提交返回非 JSON（HTTP ${r.status}）。`); }
+    try { submitted = JSON.parse(raw); } catch { if (/^https?:\/\/\S+$/i.test(raw.trim())) submitted = { url: raw.trim() }; else throw new Error(`Midjourney 提交返回非 JSON（HTTP ${r.status}），请核验任务状态后再试，避免重复计费。`); }
   } finally { t.release(); }
+  const directUrl = mjImageUrl(submitted);
+  if (directUrl && (submitted.code == null || [1, 22].includes(submitted.code))) return mjImageResult(directUrl);
   const accepted = parseMjSubmit(submitted);
   if (!accepted.ok) throw new Error(`Midjourney 未受理：${JSON.stringify(submitted).slice(0, 300)}`);
   const taskId = accepted.taskId;
@@ -1549,12 +1559,16 @@ async function generateMidjourney({ prompt, size, apiKey, signal }) {
       const gr = await request(`/mj/task/${encodeURIComponent(taskId)}/fetch`, { method: 'GET', headers: authHeaders('openai', apiKey, DEFAULT_GATEWAY_ID), signal: tt.signal });
       const gtext = await gr.text().catch(() => '');
       if (!gr.ok) throw new Error(httpErrorMessage(gr.status, gtext, DEFAULT_GATEWAY_ID));
-      task = JSON.parse(gtext);
+      try { task = JSON.parse(gtext); } catch { if (/^https?:\/\/\S+$/i.test(gtext.trim())) task = { status: 'SUCCESS', imageUrl: gtext.trim() }; else throw new Error('返回非 JSON'); }
+    } catch (error) {
+      if (signal?.aborted || error?.name === 'AbortError') throw error;
+      throw new Error(`Midjourney 查询失败：${error.message}；task_id=${taskId}，请勿重新提交，可凭 ID 查询。`);
     } finally { tt.release(); }
     const state = mjTaskState(task);
     if (state === 'done') {
-      if (!task.imageUrl) throw new Error(`Midjourney 缺少 imageUrl；task_id=${taskId}`);
-      return { images: [{ dataUrl: task.imageUrl, mime: 'image/png', ext: 'png', width: 0, height: 0, revisedPrompt: '' }], dataUrl: task.imageUrl, mime: 'image/png', ext: 'png', width: 0, height: 0, taskId, usage: null };
+      const imageUrl = mjImageUrl(task);
+      if (!imageUrl) throw new Error(`Midjourney 缺少 imageUrl；task_id=${taskId}，请勿重新提交，可凭 ID 查询。`);
+      return mjImageResult(imageUrl, taskId);
     }
     if (state === 'failed') throw new Error(`Midjourney 任务失败：${task.failReason || task.status}（task_id=${taskId}）`);
     await sleepRetry(MJ_POLL_INTERVAL_MS, signal);
@@ -1603,7 +1617,7 @@ async function videoRequest(method, path, { apiKey, body, signal, timeoutMs = RE
   const t = withTimeout(signal, timeoutMs);
   try {
     const headers = { ...authHeaders('openai', apiKey, gatewayId), ...(body ? { 'Content-Type': 'application/json' } : {}), ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}) };
-    const r = await request(path, { method, headers, body: body ? JSON.stringify(body) : undefined, signal: t.signal, gatewayId, gatewayBaseUrl });
+    const r = await request(path, { method, headers, body: body ? JSON.stringify(body) : undefined, signal: t.signal, gatewayId, gatewayBaseUrl, noReplay: method === 'POST' && path === '/v1/videos' });
     if (!r.ok) {
       const text = await r.text().catch(() => '');
       const err = new Error(httpErrorMessage(r.status, text, gatewayId));

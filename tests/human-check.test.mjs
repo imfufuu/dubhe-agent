@@ -196,6 +196,8 @@ test('curl agent flow requires a fresh human decision for each request even with
   const { resetRelayProbe } = await import('../js/net.js');
   const { createStore } = await import('../js/state.js');
   const { createAgent } = await import('../js/agent.js');
+  const previousStorage = globalThis.localStorage; const effectData = new Map();
+  globalThis.localStorage = { getItem: k => effectData.get(k) ?? null, setItem: (k,v) => effectData.set(k,String(v)), removeItem: k => effectData.delete(k) };
   const responses = [];
   const ev = data => 'data: ' + JSON.stringify(data) + '\n\n';
   const turn = (id, method) => new Response(ev({ choices: [{ delta: { tool_calls: [{ index: 0, id, function: { name: 'curl', arguments: JSON.stringify({ url: `https://example.com/${id}`, method }) } }] } }] }) + ev({ choices: [{ delta: {}, finish_reason: 'tool_calls' }] }) + 'data: [DONE]\n\n', { headers: { 'content-type': 'text/event-stream' } });
@@ -216,7 +218,7 @@ test('curl agent flow requires a fresh human decision for each request even with
     const store = createStore();
     store.state.apiKey = 'test'; store.state.model = 'gpt-5.6-sol'; store.state.relayOk = null;
     Object.assign(store.state.settings, { webEnabled: true, jevEnabled: false, autoReview: false, executionGuard: 'observe', toolApprovals: { curl: 'allow-session' } });
-    let confirmations = 0; let decision = 'allow-session';
+    let confirmations = 0; let decision = 'allow-once';
     const agent = createAgent(store, { onConfirmationRequest: (call, text, key) => {
       assert.equal(call.name, 'curl'); assert.match(text, /完整请求参数/); assert.match(text, /example\.com/);
       confirmations++; setTimeout(() => agent.resolveConfirmation(key, decision), 0);
@@ -230,7 +232,7 @@ test('curl agent flow requires a fresh human decision for each request even with
     await agent.send('用 curl 发 DELETE 请求');
     assert.equal(confirmations, 3);
     assert.equal(outgoing.length, 2, 'a denied call never reaches the Worker');
-  } finally { globalThis.fetch = realFetch; resetRelayProbe(); }
+  } finally { globalThis.fetch = realFetch; globalThis.localStorage = previousStorage; resetRelayProbe(); }
 });
 
 test('a reset invalidates older in-flight relay probes and prevents stale state from winning', async () => {

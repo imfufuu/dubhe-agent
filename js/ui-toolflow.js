@@ -280,7 +280,6 @@ const HIDE_ROW_NAME = new Set(['generate_image', 'generate_video']);
 // 结果区是可平滑展开收起的折叠块（grid-rows 过渡，与 chip-detail 一致），展开状态按行保留。
 export function paintWebActivity(node, { rows, label, icon, labels, stateText, readFile }) {
   const shape = JSON.stringify([label, rows.map((r) => [r.id, r.name, r.summary, r.videoPath ? 1 : 0, r.status === 'running' ? 1 : 0])]);
-  node._openResults ||= new Set();
   if (node._webShape !== shape) {
     node._webShape = shape;
     node.innerHTML = `<span class="chip-ico think-ico">${icon}</span><span class="mono chip-name">${esc(label)}</span>`
@@ -299,29 +298,7 @@ export function paintWebActivity(node, { rows, label, icon, labels, stateText, r
     const st = li.querySelector('.web-state');
     const text = stateText(r.status);
     if (st && st.textContent !== text) st.textContent = text;
-    let det = li.querySelector(':scope > .web-result');
-    // 生成类工具（生图 / 生视频）不再提供「结果」菜单：提示词与视频预览已足够，结果文本不展示
-    if (r.body && !HIDE_ROW_NAME.has(r.name)) {
-      if (!det) {
-        det = el('div', 'web-result');
-        det.dataset.call = r.id;
-        det.innerHTML = `<button type="button" class="web-result-toggle" aria-expanded="false"><span>${localeText('结果', 'Result')}</span></button>`
-          + `<div class="web-result-body"><div><pre></pre></div></div>`;
-        const anchor = li.querySelector(':scope > .web-video');
-        if (anchor) li.insertBefore(det, anchor); else li.append(det);
-        det.querySelector('.web-result-toggle').addEventListener('click', (e) => {
-          e.stopPropagation();
-          const open = !det.classList.contains('open');
-          det.classList.toggle('open', open);
-          det.querySelector('.web-result-toggle').setAttribute('aria-expanded', String(open));
-          if (open) node._openResults.add(r.id); else node._openResults.delete(r.id);
-        });
-        if (node._openResults.has(r.id)) { det.classList.add('open'); det.querySelector('.web-result-toggle').setAttribute('aria-expanded', 'true'); }
-      }
-      const pre = det.querySelector('pre');
-      const txt = r.body.slice(0, 6000);
-      if (pre && pre.textContent !== txt) pre.textContent = txt;
-    }
+
   }
 }
 

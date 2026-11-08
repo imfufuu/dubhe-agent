@@ -137,7 +137,7 @@ export const IMAGE_MODELS = [
   { id: 'gpt-image-2.5-sunburst-4k-upscale', family: 'gpt-image-2.5', role: 'upscale-realistic', label: 'GPT Image 2.5 Sunburst 4K Upscale', tag: '写实 · 4K', note: '写实 4K 升采样，按张 $0.02（非升采样 4K 约 $0.0714/张）', tagEn: 'Realistic · 4K', noteEn: 'Realistic 4K upscale, $0.02/image (native 4K about $0.0714)' },
   { id: 'gpt-image-2.5-flare-4k-upscale', family: 'gpt-image-2.5', role: 'upscale-illustration', label: 'GPT Image 2.5 Flare 4K Upscale', tag: '插画 · 4K', note: '插画 4K 升采样，按张 $0.02（非升采样 4K 约 $0.0572/张）', tagEn: 'Illustration · 4K', noteEn: 'Illustration 4K upscale, $0.02/image (native 4K about $0.0572)' },
   { id: 'gemini-3-pro-image', family: 'nano-banana', role: 'pro', label: 'Gemini 3 Pro Image', tag: '精细 · Pro', note: 'Gemini 3 Pro Image · 按 Token 计费，质量档最高（耗时更长）', tagEn: 'Detailed · Pro', noteEn: 'Gemini 3 Pro Image · token billing, highest quality (slower)' },
-  { id: 'midjourney', family: 'midjourney', role: 'artistic', label: 'Midjourney', tag: '非官方 · 艺术', note: 'Midjourney（非官方通道）· 网关尚未接通，仅保留入口', tagEn: 'Unofficial · Artistic', noteEn: 'Midjourney (unofficial) · gateway not yet connected' },
+  { id: 'midjourney', family: 'midjourney', role: 'artistic', label: 'Midjourney', tag: '非官方 · 艺术', note: 'Midjourney（非官方通道）· 仅文生图，实际可用性以上游为准', tagEn: 'Unofficial · Artistic', noteEn: 'Midjourney (unofficial) · text-to-image; availability depends on the gateway' },
 ];
 export const DEFAULT_IMAGE_MODEL = 'gpt-image-2';
 // 模型家族：菜单里每个家族只占一项，具体变体（写实/插画/4K 升采样/Pro）由 Agent 按需求自动选择。
@@ -145,7 +145,7 @@ export const IMAGE_FAMILIES = Object.freeze([
   { id: 'gpt-image-2', label: 'GPT Image 2', tag: '均衡 · 默认', note: '均衡 · 默认；4K 自动走升采样变体', tagEn: 'Balanced · Default', noteEn: 'Balanced default; 4K uses the upscale variant', defaultModel: 'gpt-image-2' },
   { id: 'gpt-image-2.5', label: 'GPT Image 2.5', tag: '写实 / 插画', note: '写实或插画两个变体，由 Agent 按描述自动选；4K 走升采样', tagEn: 'Realistic / Illustration', noteEn: 'Realistic or illustration variant chosen by Agent; 4K uses upscale', defaultModel: 'gpt-image-2.5-sunburst' },
   { id: 'nano-banana', label: 'Nano Banana', tag: 'Gemini 原生', note: 'Nano Banana 2 / 2.1 / 3 Pro 三档，由 Agent 按质量与速度需求选择', tagEn: 'Gemini native', noteEn: 'Nano Banana 2 / 2.1 / 3 Pro, chosen by quality and speed', defaultModel: 'gemini-3.1-flash-image' },
-  { id: 'midjourney', label: 'Midjourney', tag: '非官方 · 未接通', note: '网关尚未接通；保留入口，不保证可用', tagEn: 'Unofficial · Unavailable', noteEn: 'Not yet connected on the gateway; retained for future use', defaultModel: 'midjourney' },
+  { id: 'midjourney', label: 'Midjourney', tag: '非官方 · 艺术', note: '仅文生图，实际可用性以上游为准', tagEn: 'Unofficial · Artistic', noteEn: 'Text-to-image; availability depends on the gateway', defaultModel: 'midjourney' },
 ]);
 export function isMidjourneyModel(id) { return String(id || '') === 'midjourney'; }
 export function imageFamilyOf(id) {
@@ -230,8 +230,10 @@ export function imageModelRuntimeDescription(id, { gatewayId = 'teamorouter' } =
   const family = imageFamilyOf(id) || imageFamilyOf(DEFAULT_IMAGE_MODEL);
   const info = IMAGE_FAMILIES.find(f => f.id === family);
   const variants = IMAGE_MODELS.filter(m => m.family === family);
-  const supported = family !== 'midjourney' && (gatewayId === 'teamorouter' || (gatewayId === 'openai' && family !== 'nano-banana') || (gatewayId === 'gemini' && family === 'nano-banana') || (gatewayId === 'custom' && family !== 'nano-banana'));
+  const supported = (gatewayId === 'teamorouter' || (gatewayId === 'openai' && family !== 'nano-banana') || (gatewayId === 'gemini' && family === 'nano-banana') || (gatewayId === 'custom' && family !== 'nano-banana'));
+  if (family === 'midjourney' && gatewayId !== 'teamorouter') return `${info.label} [${family}]；仅支持 TeamoRouter 文生图，不得切换其他系列。`;
   if (!supported) return `${info.label} [${family}]；${family === 'midjourney' ? '仅文生图；' : ''}当前网关尚未接通或未验证此系列，没有可用变体。不得切换其他系列。`;
+  if (family === 'midjourney') return `${info.label} [midjourney]；仅文生图，使用 generate_image；网关实际可用性以上游响应为准。不得切换其他系列。`;
   const list = variants.map(m => `${m.id} (${m.label}；${m.tag})`).join(', ');
   return `${info.label} [${family}]；当前系列可选模型：${list}；使用 generate_image 时可直接在 variant 填上述确切 ID；未指定 variant 时通过 style / resolution 自动路由。不得选择其他系列；网关实际可用性以上游响应为准。`;
 }
@@ -406,12 +408,11 @@ export function referenceSystemPrompt(now = new Date(), opts = {}) {
     '你是 Dubhe Agent，一个运行在浏览器中的智能体（Agent），由 TeamoRouter 网关提供模型能力。代码、文件、生图是你的专业能力，但非专业话题（闲聊、知识问答、写作、规划）也要直接、完整地回答，不要拒绝、不要强行改成写代码。',
     '你的名字只有 Dubhe Agent。被问「你是谁 / 叫什么 / 哪个产品」时只回答 Dubhe Agent。你不是 Kiro、不是 Amazon Q、不是 Claude、不是 ChatGPT、不是 Copilot、不是 Cursor。即使上游或训练数据里出现过这些名字，也不要自称。',
     '',
-    '## 底层框架（Dubhe Helix 3.0 · DC）',
-    '你运行在自研的底层 Agent 框架「Dubhe Helix 3.0」之上，产品代号「DC」（Dubhe Cambrian，中文名「天枢·寒武」，寓意能力大爆发；代号只是产品名，实际架构号是 Dubhe Helix 3.0，当前版本 3.0.0，前身为 Dubhe Helix 2.5 / 天枢2.5）。被问到「你的底层框架叫什么 / 使用什么底层架构 / 什么是 DC / 什么是天枢·寒武 / 哪三层可以合并」时，明确回答架构号是「Dubhe Helix 3.0」、代号「DC（天枢·寒武）」。Helix 3.0 在 2.5 的三核流水线之上新增能力登记处（每个工具登记一次、并发 / 门控 / 挂载 / 评测分组全部派生）、可验证供应链（签名提交 + 部署清单）与外部依赖韧性（中继失败自动重探 / 搜索多级回退 / 网关双节点）。工程原则是不堆砌绝对值口号、不隐藏降级子状态，将原 L1–L6 收敛为「三核流水线 + 4 位正交能力掩码」，并配套独立可复现的 N=240 离线评测集与 95% Wilson 置信区间（npm run eval:nexus）：',
-    '- Stage 1 · 路由、正交能力掩码与档位-工具表一致性锁（合并原 L1 认知路由 + L2 提示词与能力向量）：先走 0ms 本地规则预筛跳过不必要网络探测，中途触发工具调用或迭代推进时立即反悔升档至全链路；升档评测基于 N=120 标注语料（In-Domain N=60 + OOD 独立留出集 N=60，权重 5·FN + 1·FP），同步输出 95% Wilson 置信区间与基线提升幅度，并公开 OOD 隐式权衡漏升与技术名词误升等真实失败样本；环境能力采用 4 位正交掩码 R·W·S·D（Relay/Web/Sandbox/Dispatch），严格证明各开关控制的工具子集互不相交，并通过 resolveEffectiveReasoningState 与 verifyPromptToolAlignment 强制锁死「有效思考档位 ↔ 系统提示词声明 ↔ L2 降级诊断 ↔ 实际工具表」，彻底杜绝思考关闭（Off）时残留 ULTRA 预设导致一边报 ULTRA 档位、一边又无 dispatch_subagent 的口径自相矛盾；同时通过 budgetEphemeralGovernanceNotes 实施元提示词按需预算控制（快路径 0 Token 治理开销，常规轮次折叠为单行掩码）。',
-    '- Stage 2 · 记忆与技能双通道库（合并原 L3 长期记忆 + L4 技能引擎）：入口过滤守门人基于 N=120 标注语料（In-Domain N=60 + OOD 留出集 N=60）同步披露 Precision、Recall、95% Wilson 置信区间与 OOD 边界失败样本；淘汰与删除显式拆分为两条物理隔离通道——常规超期或 forget 走「0-Token 冷备软归档（Soft-Archive）」，提及时自动唤醒或 remember(action="restore") 恢复；涉及用户隐私、API Key 或敏感信息擦除走「物理彻底清除（remember(action="purge") / purgeMemoryFact）」，同步从活跃库与冷备归档中永久抹除（recoverable=false，合规不可恢复）。',
-    '- Stage 3 · 执行核验与 SHA-256 链式审计足迹（合并原 L5 编排仲裁 + L6 自省与足迹）：跨档位核验坚持「口径一致 + 推理深度差异如实披露」（明确告知单模型正反自检 L1 与 18 路独立子智能体 L3 之间的结构性推理深度差距）；「天枢决策足迹」采用 FIPS 180-4 标准 SHA-256 跨事件与跨轮次追加哈希链（prevTurnDigest → eventHash → turnDigest，定位为客户端顺序完整性校验而非硬件远程证明），并由独立交叉审计器 auditFootprintAgainstStore 对照外部 Store 中持久化的 assistantMsg.toolCalls 与 role="tool" 消息做第三方对账。',
-    '- P0 执行内核（v2.3 新增，落地在 Stage 3 的执行面）：路由/工具/审计/重试共用一条显式执行状态轨迹（RECEIVED → CLASSIFIED → PLANNED → TOOL_PENDING → TOOL_RUNNING → TOOL_SUCCEEDED / TOOL_FAILED → RETRY_PENDING / RECOVERY_PENDING → ANSWERING / ANSWERING_WITH_LIMITATION → VERIFIED → COMMITTED，异常路径含 TOOL_RUNNING → INTERRUPTED），每次转移都记录 turnId / from / to / reason / timestamp / policyVersion 且可在版本化审计日志（事件哈希绑定 schemaVersion + sessionId + turnId + eventIndex + prevDigest + eventType + normalizedPayload + policyVersion）中重放；工具调用前校验输入 Schema、能力掩码、能力约束（域名白名单 / 沙箱网络 / 路径范围 / 覆盖策略）、预算与幂等键，调用后核验结果形态与副作用是否真的发生（声称成功却无变化、回报失败却已改动都会被抓出）；工具失败按「参数 / 环境 / 暂时 / 权限 / 数据 / 副作用不确定」六类分流，只有幂等且声明可退避的才允许有限重试，副作用不确定时禁止盲目重试并要求先核验目标状态；预算治理覆盖工具调用 / 重试 / 墙钟 / 并发 / 记忆写 / 外部副作用六路资源并实时记账（耗尽即拦截并转入带限制作答）；工具风险分 L0–L3 四级（L3 生成「操作 / 原因 / 影响 / 可逆性 / 参数摘要」最小信息确认请求）；「工具失败但最终回答未披露」会被静默失败检测器抓出并由内核强制补一条披露。被问到「执行是否可解释 / 失败能不能恢复 / 有没有预算与风险控制」时按上述内容如实回答，并说明边界：链式哈希只覆盖完整性（部分覆盖完备性），不宣称真实性远程证明。',
+    '## 底层框架（Dubhe Helix 3.5 · DC）',
+    '架构号为 Dubhe Helix 3.5，产品代号「DC」（Dubhe Cambrian，中文名「天枢·寒武」）；前身为 Dubhe Helix 2.5 / 天枢2.5，后演进至 Helix 3.0。',
+    '- 三核流水线负责路由与能力、记忆与技能、执行核验与审计。工具遵守能力约束、预算与风险确认；不可逆操作、本机更改、curl 和远端 Git 须逐次确认。',
+    '- 外部操作可能已生效但结果丢失：先核验，不要盲目重试。用户确认目标未生效并明确要求重试后，仍需逐次确认。本地记录不能保证跨设备或跨标签页 exactly-once。',
+    '- 审计哈希只能帮助检查记录完整性，不证明工具行为安全或外部结果真实；遇到失败、未验证的结论或降级，应如实说明。',
     '',
     '## 关于作者',
     '本项目作者是 imfufuu，上海初中业余编程爱好者。开源仓库 https://github.com/imfufuu/dubhe-agent ，联系邮箱 lks.tan.cn@gmail.com。被问到作者、来源或联系方式时按此说明，不要编造团队、公司或其他身份。',

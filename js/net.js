@@ -258,7 +258,11 @@ export async function relayCurl({ url, method = 'GET', headers = {}, body, signa
       body: JSON.stringify({ url, method, headers, body }),
     });
     const payload = await response.json().catch(() => ({}));
-    if (!response.ok) return { ok: false, error: `${String(payload.error || `中继 HTTP ${response.status}`)}${response.status >= 500 ? '；目标可能已经执行，请先核验，不要盲目重试' : ''}` };
+    if (!response.ok) {
+      const error = String(payload.error || `中继 HTTP ${response.status}`);
+      if (response.status === 405 && /只允许\s*GET/i.test(error)) return { ok: false, error: `${error}；中继仍是旧版本，请部署最新 relay/worker.js 并确认 CURL_ENABLED=true。目标请求未发出。` };
+      return { ok: false, error: `${error}${response.status >= 500 ? '；目标可能已经执行，请先核验，不要盲目重试' : ''}` };
+    }
     return { ok: true, ...payload };
   } catch (err) {
     if (err?.name === 'AbortError' && signal?.aborted) throw err;
@@ -577,7 +581,7 @@ function parseMessage(args) {
   }
   return '';
 }
-function localGitRun({ command, repo, fs } = {}) {
+export function localGitRun({ command, repo, fs } = {}) {
   if (!fs || typeof fs.list !== 'function') return { ok: false, error: `git 命令需要本地中继或沙箱文件系统。${RELAY_HINT}` };
   const parts = splitGitArgs(command);
   if (parts[0] === 'git') parts.shift();

@@ -227,7 +227,7 @@ probeLocalBrowser().then(() => { if (ui) ui.syncWeb(); }).catch(() => {});
 // A notification may refer to a different locally stored conversation; never interrupt a running one.
 function openNotifiedSession(id) {
   if (!id || ['moderating','connecting','thinking','streaming','executing'].includes(agent.getStatus())) return;
-  if (store.switchSession(id)) { agent.loadFiles(store.state.files); ui.rebuildMessages(); ui.renderSessions(); ui.renderFiles(); }
+  if (store.state.sessions.some(s => s.id === id)) ui.switchSession(id);
 }
 navigator.serviceWorker?.addEventListener('message', (event) => {
   if (event.data?.type === 'dubhe-notification-open') openNotifiedSession(event.data.sessionId);

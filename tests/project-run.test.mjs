@@ -91,7 +91,7 @@ test('runSummary reports success, failure, timeout and stop', () => {
   assert.match(runSummary({ ok: false, aborted: true }, 'javascript'), /已停止/);
 });
 
-test('project mode wiring: run uses the existing sandbox runners and commits program output back', async () => {
+test('project mode wiring: run uses an isolated copy without writing outputs into the project', async () => {
   const { readFileSync } = await import('node:fs');
   const { createAgent } = await import('../js/agent.js');
   const src = readFileSync(new URL('../js/project-mode.js', import.meta.url), 'utf8');
@@ -100,7 +100,8 @@ test('project mode wiring: run uses the existing sandbox runners and commits pro
   // 运行 C++ 时同时接入阶段 / 下载进度回调（进度条），主文件路径仍由 mainPath 传入
   assert.match(src, /runCpp\(code, \{\s*mainPath: path/);
   assert.match(src, /onProgress: \(p\) =>/);
-  assert.match(src, /agent\.sandboxCommit\(\)/);
+  assert.match(src, /createFS\(projectFS\.export\(\)\)/);
+  assert.doesNotMatch(src, /agent\.sandboxCommit\(\)/);
   const store = { state: { files: {} }, notify() {}, save() {} };
   const agent = createAgent(store, {});
   const fs = agent.sandboxFS();
