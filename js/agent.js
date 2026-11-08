@@ -35,7 +35,7 @@ import { TOOL_LOOP_MAX, SUBAGENT_LOOP_MAX, systemPrompt, OUTPUT_SPEC, outputSpec
 import { routeModel, isSmartRouter } from './smartrouter.js?v=2026.10.25.1';
 import { planTurn, planSignals, JEV_PLAN_TIMEOUT_MS } from './jev.js';
 import { markJevOutcome, markLastUserOutcome, turnContext } from './jev-feedback.js';
-import { assembleSystemLayers, formatRuntime, formatBudgetNote } from './prompt.js';
+import { assembleSystemLayers, formatRuntime, formatCppRuntime, formatBudgetNote } from './prompt.js';
 import { formatSkillsIndex, selectSkillBodies, distillSkill, rememberSkill, pruneLearnedSkillsWithReport } from './skills.js';
 import { formatMemory, formatActiveMemoryReminder, extractAutoMemoryFacts, upsertFacts, pruneMemoryFacts, recallArchivedMemories } from './memory.js';
 import {
@@ -70,7 +70,7 @@ import {
   verifyRuntimePremises,
 } from './nexus.js';
 import { moderateUserTurn } from './moderation.js?v=2026.10.25.1';
-import { DEFAULT_GATEWAY_ID } from './gateway-registry.js?v=2026.10.25.1';
+import { DEFAULT_GATEWAY_ID, getGateway } from './gateway-registry.js?v=2026.10.25.1';
 import { isNetworkOffline } from './offline-network.js';
 import { OFFLINE_MODEL_ID, isOfflineModelId } from './offline-model-config.js';
 import { isOfflineToolAllowed } from './offline-policy.js';
@@ -227,7 +227,7 @@ export async function runSubagent(def, task, { apiKey, gatewayId = 'teamorouter'
   const allowedSubTools = new Set((subTools || []).map(tool => tool.name));
   const memBlock = formatMemory(memory);
   const messages = [
-    { role: 'system', text: `${specialistPrompt(def)}\n\n${getLanguage() === 'en' ? `You are ${def.tag}, a Dubhe Agent specialist. Give a final report without small talk. Current time: ${new Date().toISOString()}` : `你是 Dubhe Agent 体系中的「${def.name}」子智能体。直接产出最终报告，不要寒暄。当前时间：${new Date().toISOString()}`}${memBlock ? `\n\n${memBlock}` : ''}\n\n${compactOutputSpec()}` },
+    { role: 'system', text: `${specialistPrompt(def)}\n\n${getLanguage() === 'en' ? `You are ${def.tag}, a Dubhe Agent specialist. Give a final report without small talk. Current time: ${new Date().toISOString()}` : `你是 Dubhe Agent 体系中的「${def.name}」子智能体。直接产出最终报告，不要寒暄。当前时间：${new Date().toISOString()}`}${memBlock ? `\n\n${memBlock}` : ''}\n\n${formatCppRuntime({ sandboxEnabled, localCpp, cppMode, language: getLanguage() })}\n\n${compactOutputSpec()}` },
     { role: 'user', text: task },
   ];
   let finalText = '';
@@ -348,6 +348,7 @@ export function createAgent(store, hooks = {}) {
   let turnImageSelection = DEFAULT_IMAGE_MODEL;
   let turnGateway = DEFAULT_GATEWAY_ID;
   let turnVideoSelection = null;
+  let turnCppRuntime = {};
   // P1：本轮的记忆注入计划（哪些进提示词、哪些因冲突/被取代不采用）。
   // 与 cachedPrefix 同生命周期——即使走快速通道没有 nexusState，也不让被拒记忆漏进提示词。
   let turnMemoryPlan = null;
@@ -542,6 +543,7 @@ export function createAgent(store, hooks = {}) {
       runtime: formatRuntime({
         now: new Date(),
         model,
+        ...turnCppRuntime,
         imageModel: imageModelRuntimeDescription(turnImageSelection, { gatewayId: turnGateway }),
         // 视频生成模型：设置页「多模态模型」里选定（全局，不随会话）
         videoGenModel: (store.state.settings && store.state.settings.videoGenModel) || null,
@@ -618,7 +620,7 @@ export function createAgent(store, hooks = {}) {
         settings.reasoningLevel = 'low';
       }
       apiKey = offlineOnly ? '' : effectiveApiKey(store.state.apiKey);
-      if (!apiKey && !offlineOnly) { emit('onNeedKey'); return false; }
+      if (!apiKey && !offlineOnly && !getGateway(store.state.gatewayId).noKey) { emit('onNeedKey'); return false; }
       if (status === 'connecting' || status === 'streaming' || status === 'thinking' || status === 'executing') return false;
 
       // ── 智能路由器：根据用户最近一条消息判断任务类型/难度，选实际模型 ──
@@ -746,6 +748,7 @@ export function createAgent(store, hooks = {}) {
       turnImageSelection = turn.imageModel;
       turnGateway = offlineOnly ? 'offline' : turn.gatewayId;
       turnVideoSelection = turn.videoGenModel;
+      turnCppRuntime = { sandboxEnabled: turn.sandboxEnabled, localCpp: turn.localCpp, cppMode: turn.cppMode };
       turnMemoryPlan = null;
       // Jev 只在本轮开头跑一次（工具循环里不再打），失败则 jevNote 为空、对话照常。
       jevNote = '';

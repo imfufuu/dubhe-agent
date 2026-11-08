@@ -121,11 +121,12 @@ export const TOOL_DEFS = [
       type: 'object',
       properties: {
         code: { type: 'string', description: '完整的 C++ 程序（含 #include 与 main）；若给了 path 则可省略' },
-        path: { type: 'string', description: '可选：沙箱内主文件路径，如 src/main.cpp' },
-        files: { type: 'array', items: { type: 'string' }, description: '可选：一并提交的沙箱路径（头文件/其它 .cpp）' },
+        scope: { type: 'string', enum: ['sandbox', 'project'], description: '默认 sandbox；project 从独立项目读取 path/files/dir/stdin_path，不与沙箱混用。远程模式仍会发送给 godbolt.org' },
+        path: { type: 'string', description: '可选：所选作用域中的主文件路径，如 src/main.cpp' },
+        files: { type: 'array', items: { type: 'string' }, description: '可选：所选作用域中的路径（头文件/其它 .cpp）' },
         dir: { type: 'string', description: '可选：把该目录下的 C/C++ 源与头文件全部提交' },
         stdin: { type: 'string', description: '可选：程序标准输入' },
-        stdin_path: { type: 'string', description: '可选：从沙箱文件读 stdin' },
+        stdin_path: { type: 'string', description: '可选：从所选作用域的文件读取 stdin' },
         args: { type: 'array', items: { type: 'string' }, description: '可选：传给 main 的命令行参数' },
         timeout_sec: { type: 'integer', minimum: 1, maximum: 600, description: '可选：程序运行超时秒数，默认 30，最大 600；首次工具链加载/本地编译另有 120 秒准备窗口' },
       },
@@ -133,7 +134,7 @@ export const TOOL_DEFS = [
   },
   {
     name: 'write_file',
-    description: '显式写入会话沙箱（默认）或跨会话项目（scope=project）。source_path 可将一个沙箱文件明确复制到项目；不会自动同步。mode=overwrite（默认整文件覆盖）、append（末尾追加）、replace（把 old_text 换成 new_text，局部修改）。文件对沙箱代码可见。',
+    description: '显式写入会话沙箱（默认）或跨会话项目（scope=project）。source_path 可将一个沙箱文件明确复制到项目，即使 source_path 与项目 path 同名也允许（它们属于不同作用域）；不会自动同步。mode=overwrite（默认整文件覆盖）、append（末尾追加）、replace（把 old_text 换成 new_text，局部修改）。文件对沙箱代码可见。',
     parameters: {
       type: 'object',
       properties: {
@@ -1148,10 +1149,17 @@ export function resolveUmbrellaTool(name, args) {
 async function executeToolBody(outerName, outerArgs, ctx) {
   const onUi = ctx.onUi;
   const projectScope = outerArgs?.scope === 'project';
-  if (['write_file', 'read_file', 'list_files', 'delete_file', 'copy_file', 'run_git'].includes(outerName) && outerArgs?.scope != null && !['project', 'sandbox'].includes(outerArgs.scope)) throw new Error('未知文件作用域');
-  if (projectScope && !['write_file', 'read_file', 'list_files', 'delete_file', 'copy_file', 'run_git'].includes(outerName)) throw new Error('该工具不支持项目作用域');
+  if (['write_file', 'read_file', 'list_files', 'delete_file', 'copy_file', 'run_git', 'execute_cpp'].includes(outerName) && outerArgs?.scope != null && !['project', 'sandbox'].includes(outerArgs.scope)) throw new Error('未知文件作用域');
+  if (projectScope && !['write_file', 'read_file', 'list_files', 'delete_file', 'copy_file', 'run_git', 'execute_cpp'].includes(outerName)) throw new Error('该工具不支持项目作用域');
   const fs = projectScope ? ctx.projectFs : ctx.fs;
   if (projectScope && !fs) throw new Error('项目存储不可用');
+  if (projectScope && outerName === 'execute_cpp') {
+    // Refuse incomplete hydration and every explicit protected/escaping path.
+    fs.export();
+    for (const path of [outerArgs.path, outerArgs.stdin_path, outerArgs.dir, ...(Array.isArray(outerArgs.files) ? outerArgs.files : [])].filter(Boolean)) {
+      if (!isProjectUserPath(path)) throw new Error('项目 C++ 路径非法或属于受保护的 Git 元数据');
+    }
+  }
   if (projectScope && outerName !== 'run_git') for (const path of [outerArgs?.path, outerArgs?.from, outerArgs?.to].filter(Boolean)) if (!isProjectUserPath(path)) throw new Error('项目路径非法或属于受保护的 Git 元数据');
   // 芯片/审计一律用模型实际调用的名字；执行分支按子工具名走
   const emit = (patch) => onUi && onUi({ name: outerName, args: outerArgs, ...patch });
@@ -1250,11 +1258,11 @@ async function executeToolBody(outerName, outerArgs, ctx) {
           catch { return `execute_cpp 失败：找不到 ${mainPath}`; }
         }
         if (!code.trim()) return 'execute_cpp 缺少 code 或 path。';
-        const extraFiles = collectCppFiles(fs, args, code, mainPath);
+        const extraFiles = collectCppFiles(fs, args, code, mainPath, { projectScope });
         let stdin = args.stdin != null ? String(args.stdin) : '';
         if (!stdin && args.stdin_path) {
           const sp = normalizeFsPath(args.stdin_path);
-          try { stdin = String(fs.read(sp)); } catch { /* 保持空 stdin */ }
+          try { stdin = String(fs.read(sp)); } catch { return `execute_cpp 失败：找不到 stdin 文件 ${sp}`; }
         }
         const argv = Array.isArray(args.args) ? args.args.map((a) => String(a)) : [];
         const notes = {
@@ -1289,7 +1297,9 @@ async function executeToolBody(outerName, outerArgs, ctx) {
           },
         });
         emit({ status: out.ok ? 'ok' : 'error', sandboxOk: !!out.ok, lang: 'cpp', logs: out.logs, error: out.error, durationMs: out.durationMs, timedOut: out.timedOut });
-        return formatExecResult('C++', out) + commandRepairNote(retainCommandSource(name, { ...args, code }, ctx, out));
+        return formatExecResult('C++', out) + (projectScope
+          ? (args.path ? `\n[project_source: ${args.path}] 修改后使用 scope=project 重新编译；无需复制到沙箱。` : '')
+          : commandRepairNote(retainCommandSource(name, { ...args, code }, ctx, out)));
       }
       case 'write_file': {
         // 路径缺失/非法要在本地挡掉：否则沙箱里会凭空多出「undefined」这种文件，
@@ -1864,7 +1874,7 @@ async function executeToolBody(outerName, outerArgs, ctx) {
         }
         const gatewayId = ctx.gatewayId || DEFAULT_GATEWAY_ID;
         const gateway = getGateway(gatewayId);
-        if (!ctx.apiKey) {
+        if (!ctx.apiKey && !gateway.noKey) {
           const message = `未配置 ${gateway.name} API Key，无法调用图像模型。`;
           emit({ status: 'error', error: { message } });
           return message;
@@ -1883,10 +1893,13 @@ async function executeToolBody(outerName, outerArgs, ctx) {
         const legacyVariant = IMAGE_MODELS.find(m => m.id === args.model && m.family === imageFamilyOf(session.id));
         const model = requestedVariant || legacyVariant?.id || resolveImageVariant(session.id, { style: args.style, resolution: args.resolution, size: args.size, prompt });
         const nano = /^gemini-|nano[-_ ]?banana/i.test(model);
-        const imageRouteSupported = gatewayId === DEFAULT_GATEWAY_ID
+        const imageRouteSupported = model === '@cf/black-forest-labs/flux-1-schnell'
+          ? gatewayId === 'cloudflare'
+          : gatewayId === DEFAULT_GATEWAY_ID
           || (gatewayId === 'openai' && !nano)
           || (gatewayId === 'gemini' && nano)
-          || (gatewayId === 'custom' && !nano);
+          || (gatewayId === 'custom' && !nano)
+          || (gatewayId === 'cloudflare' && model === '@cf/black-forest-labs/flux-1-schnell');
         if (!imageRouteSupported) {
           const message = `${gateway.name} 网关未提供与当前生图模型「${model}」匹配的已验证生图接口。请选择 TeamoRouter、OpenAI（GPT Image）或 Gemini（Nano Banana），再重试。`;
           emit({ status: 'error', error: { message } });
@@ -1901,6 +1914,7 @@ async function executeToolBody(outerName, outerArgs, ctx) {
         // xhigh / max 只属于 gpt-image-2.5 系列；其它模型降为 auto，避免网关 400
         const quality = IMAGE_QUALITIES.includes(args.quality) && (!['xhigh', 'max'].includes(args.quality) || /gpt-image-2\.5/.test(model)) ? args.quality : 'auto';
         const background = IMAGE_BACKGROUNDS.includes(args.background) ? args.background : 'auto';
+        if (gatewayId === 'cloudflare' && ((args.size && args.size !== 'auto') || (args.aspect_ratio && args.aspect_ratio !== 'auto') || (args.resolution && args.resolution !== 'auto') || args.stream || (Array.isArray(args.reference_paths) && args.reference_paths.length))) return '图像调用在发起前失败：Cloudflare FLUX.1 当前仅支持单张默认尺寸文生图，不支持比例、分辨率、流式或参考图。';
         const count = Number.isInteger(Number(args.n)) && Number(args.n) >= 1 && Number(args.n) <= 10 ? Number(args.n) : 1;
         const moderation = IMAGE_MODERATIONS.includes(args.moderation) && !nano ? args.moderation : 'auto';
         const outputCompression = Number.isInteger(args.output_compression) && args.output_compression >= 0 && args.output_compression <= 100 ? args.output_compression : undefined;
@@ -1909,6 +1923,7 @@ async function executeToolBody(outerName, outerArgs, ctx) {
         const stream = !nano && args.stream === true;
         const partialImages = Number.isInteger(args.partial_images) && args.partial_images >= 0 && args.partial_images <= 3 ? args.partial_images : 2;
         const googleSearch = nano && args.google_search === true;
+        if (gatewayId === 'cloudflare' && count !== 1) return '图像调用在发起前失败：Cloudflare FLUX.1 每次只支持一张。';
         const refs = (Array.isArray(args.reference_paths) ? args.reference_paths : [])
           .map((p) => String(p || '').trim()).filter(Boolean);
         // 缺失的原图先在本地拦下来：否则网关 400 之后用户只看到一句「调用失败」
@@ -2027,7 +2042,7 @@ async function executeToolBody(outerName, outerArgs, ctx) {
         }
       }
       case 'analyze_image': {
-        if (!ctx.apiKey) {
+        if (!ctx.apiKey && !getGateway(ctx.gatewayId || DEFAULT_GATEWAY_ID).noKey) {
           const message = `未配置 ${getGateway(ctx.gatewayId || DEFAULT_GATEWAY_ID).name} API Key，无法调用识图模型。`;
           emit({ status: 'error', error: { message } });
           return message;
@@ -2124,7 +2139,7 @@ async function executeToolBody(outerName, outerArgs, ctx) {
           emit({ status: 'ok', note: `已提取 ${path} 的原生 SVG 文本`, fsChange: saved });
           return `[SVG 文本提取完成] 文件 ${path} · ${text.length} 字${saved ? ` · 已写入 ${outPath}` : ''}\n\n${text}`;
         }
-        if (!ctx.apiKey) {
+        if (!ctx.apiKey && !getGateway(ctx.gatewayId || DEFAULT_GATEWAY_ID).noKey) {
           const message = `未配置 ${getGateway(ctx.gatewayId || DEFAULT_GATEWAY_ID).name} API Key，无法调用 SVG 识图模型。可选 mode=ocr/code 在本地处理。`;
           emit({ status: 'error', error: { message } });
           return message;
@@ -2341,14 +2356,15 @@ async function executeToolBody(outerName, outerArgs, ctx) {
           let renderNote = mode === 'ocr'
             ? 'mode=ocr：只提取 PDF 内嵌文本层，未上传页面图片。'
             : (requestedPages === 0 ? 'pages=0：视觉识别已跳过。' : '');
-          if (wantPages > 0 && ctx.apiKey) {
+          if (wantPages > 0 && (ctx.apiKey || getGateway(ctx.gatewayId || DEFAULT_GATEWAY_ID).noKey)) {
             emit({ status: 'running', note: `渲染 PDF 页面（第 ${firstPage} 页起，最多 ${wantPages} 页）…` });
             const got = await pdfToImages(bytes, { name: path.split('/').pop(), maxPages: wantPages, firstPage, baseScale: 1.6, maxEdge: 2048, quality: 0.85 });
             if (!got.ok || !got.images.length) {
               renderNote = `页面渲染失败：${got.error || '未知原因'}`;
             } else {
               const batches = [];
-              for (let i = 0; i < got.images.length; i += 8) batches.push(got.images.slice(i, i + 8));
+              const batchSize = (ctx.gatewayId === 'cloudflare') ? 1 : 8;
+              for (let i = 0; i < got.images.length; i += batchSize) batches.push(got.images.slice(i, i + batchSize));
               const parts = [];
               for (let b = 0; b < batches.length; b++) {
                 const batch = batches[b];
@@ -2381,7 +2397,7 @@ async function executeToolBody(outerName, outerArgs, ctx) {
               visionText = parts.join('\n\n');
               if (got.truncated && firstPage + shot - 1 < got.pages) renderNote = `识图只覆盖了第 ${firstPage}–${firstPage + shot - 1} 页（共 ${got.pages} 页）；需要后续页请再调 analyze_pdf 并传 first_page=${firstPage + shot}。`;
             }
-          } else if (wantPages > 0 && !ctx.apiKey) {
+          } else if (wantPages > 0 && !ctx.apiKey && !getGateway(ctx.gatewayId || DEFAULT_GATEWAY_ID).noKey) {
             renderNote = '未配置 API Key，跳过识图，只返回文本层。';
           }
           if (!layerChars && !visionText) {
@@ -2801,13 +2817,15 @@ function u8ToB64(u8) {
   return btoa(s);
 }
 
-function collectCppFiles(fs, args, code, mainPath) {
+function collectCppFiles(fs, args, code, mainPath, { projectScope = false } = {}) {
   const map = new Map();
-  const paths = new Set((fs.list() || []).map((file) => normalizeFsPath(file.path)).filter(Boolean));
+  // Includes and directory discovery must not expose protected project data.
+  const permitted = (path) => !projectScope || isProjectUserPath(path);
+  const paths = new Set((fs.list() || []).map((file) => file.path).filter(permitted).map(normalizeFsPath).filter(Boolean));
   const sourceExt = /\.(?:c|cc|cpp|cxx|c\+\+)$/i;
   const put = (filename, contents, compile = false) => {
     const name = normalizeFsPath(filename);
-    if (!name || !isSafeFsPath(name) || name === mainPath) return;
+    if (!name || !isSafeFsPath(name) || !permitted(name) || name === mainPath) return;
     const existing = map.get(name);
     if (!existing || compile && !existing.compile) map.set(name, { filename: name, contents: String(contents ?? ''), compile: !!compile });
   };

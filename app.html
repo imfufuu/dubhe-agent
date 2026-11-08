@@ -525,6 +525,7 @@
             <option value="kimi">Kimi / Moonshot AI（官方）</option>
             <option value="doubao">Doubao / 火山方舟（官方）</option>
             <option value="qwen">Qwen / 阿里云百炼（官方）</option>
+            <option value="cloudflare">Cloudflare Workers AI</option>
             <option value="custom">自定义 OpenAI 兼容网关</option>
           </select></div>
         </div>
@@ -533,7 +534,7 @@
           <div class="set-ctl"><input id="set-key" class="set-input mono" type="password" placeholder="API Key" spellcheck="false" autocomplete="off"/></div>
         </div>
         <div id="set-gateway-base-row" class="set-row">
-          <div class="set-lbl"><div class="set-title">网关基础 URL（可选）</div><div class="set-sub">留空使用官方默认；自定义网关必填 HTTPS URL</div></div>
+          <div class="set-lbl"><div class="set-title">网关基础 URL（可选）</div><div class="set-sub" id="set-gateway-connection-note">留空使用官方默认；自定义网关必填 HTTPS URL</div></div>
           <div class="set-ctl"><input id="set-gateway-base" class="set-input mono" type="url" placeholder="https://api.example.com/v1" spellcheck="false" autocomplete="off"/></div>
         </div>
         <div class="set-row" id="set-manual-model-row" hidden>

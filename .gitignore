@@ -8,3 +8,6 @@ workspace/
 .test-results/
 # Pages 部署时由 tools/build-manifest.mjs 生成，不入库（入库会让清单自引用）
 build.json
+
+# Wrangler local state and temporary bundles
+.wrangler/

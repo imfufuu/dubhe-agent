@@ -55,6 +55,9 @@ test('scoped tools copy only explicitly named files and prevent Git metadata acc
   const ctx = { fs, projectFs: p, sandboxEnabled: true };
   assert.match(await executeTool('write_file', { scope: 'project', path: 'src/a.txt', source_path: 'uploads/a.txt' }, ctx), /已写入/);
   assert.equal(p.read('src/a.txt'), 'copied'); assert.equal(p.has('uploads/b.txt'), false);
+  fs.write('same.txt', 'sandbox version'); p.write('same.txt', 'project version');
+  assert.match(await executeTool('write_file', { scope: 'project', path: 'same.txt', source_path: 'same.txt' }, ctx), /已写入/);
+  assert.equal(p.read('same.txt'), 'sandbox version');
   assert.match(await executeTool('write_file', { path: 'local.txt', content: 'local' }, ctx), /已写入/);
   assert.equal(p.has('local.txt'), false); assert.equal(fs.read('local.txt'), 'local');
   assert.match(await executeTool('write_file', { scope: 'project', path: '.git/dubhe.json', content: '{}' }, ctx), /受保护/);

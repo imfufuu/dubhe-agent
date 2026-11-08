@@ -10064,8 +10064,8 @@ test('UI 接线：状态栏仅显示状态，工具能力表与直达修复操�
   assert.match(agentSrc, /turn\.dropped = whitelist\.dropped;/);
   assert.match(agentSrc, /toolTableNote: formatToolTableNote\(nexusState && nexusState\.turnDropped, nexusState && nexusState\.turnDeferred\),/);
   assert.match(agentSrc, /tools: turnTools, dropped: nexusState && nexusState\.turnDropped, deferred: nexusState && nexusState\.turnDeferred \}\)/);
-  assert.match(prompt, /export function formatRuntime\(\{ now, model, imageModel, filesNote, webNote, relayNote, toolTableNote, language = getLanguage\(\) \} = \{\}\)/);
-  assert.match(prompt, /const extra = join\(\[filesNote, webNote, relayNote, toolTableNote\]\);/);
+  assert.match(prompt, /export function formatRuntime\(\{ now, model, imageModel, filesNote, webNote, relayNote, toolTableNote, sandboxEnabled, localCpp, cppMode, language = getLanguage\(\) \} = \{\}\)/);
+  assert.match(prompt, /const extra = join\(\[formatCppRuntime\(\{ sandboxEnabled, localCpp, cppMode, language \}\), filesNote, webNote, relayNote, toolTableNote\]\);/);
   assert.match(css, /\.cap-line \.cap-pill \{[^}]*cursor: default/);
   assert.doesNotMatch(css, /\.cap-line \.cap-pill[^}]*cursor: pointer/);
   assert.match(css, /\.capability-table \.cap-drop \{ display: grid;/);
@@ -11023,7 +11023,7 @@ test('Nano Banana 2.1（gemini-nano-banana-2.1，.34 实测 ID）是生图模型
   const pricing = await import('../js/pricing.js');
   assert.ok(c.IMAGE_MODELS.some((m) => m.id === 'gemini-nano-banana-2.1'));
   assert.ok(!c.IMAGE_MODELS.some((m) => m.id === 'nano-banana-2-1'), '.33 猜的 ID 不对，.34 用网关价目表 / 实测的 gemini-nano-banana-2.1');
-  assert.equal(c.IMAGE_MODELS.length, 10); // + Midjourney（非官方，按任务 $0.079）
+  assert.equal(c.IMAGE_MODELS.length, 11); // Cloudflare FLUX 与原有系列分开
   assert.ok(c.IMAGE_MODELS.every((m) => m.tag && m.label && m.note), '设置页下拉需要 label · tag');
   assert.equal(c.DEFAULT_IMAGE_MODEL, 'gpt-image-2');
   for (const id of ['gemini-nano-banana-2.1', 'nano-banana-2-1', 'nano-banana-2', 'gpt-image-3', 'dall-e-4', 'flux-2-pro', 'imagen-4']) assert.equal(c.isImageModel(id), true, id);
@@ -11077,7 +11077,7 @@ test('runLoop = premise → plan → select → loop → finalize：五个具名
     "if (!(await stagePremise())) return;", "stagePlan();", "stageSelect();", "await stageLoop();", "stageFinalize();"];
   let last = -1;
   for (const tok of order) { const i = src.indexOf(tok); assert.ok(i > last, `阶段定义 / 调用顺序错误：${tok}`); last = i; }
-  assert.match(src, /if \(!apiKey && !offlineOnly\) \{ emit\('onNeedKey'\); return false; \}/, 'premise 返回 false 表示本轮不开始；离线本地模型不要求远程 Key');
+  assert.match(src, /if \(!apiKey && !offlineOnly && !getGateway\(store.state.gatewayId\).noKey\) \{ emit\('onNeedKey'\); return false; \}/, 'premise 返回 false 表示本轮不开始；离线本地模型不要求远程 Key');
   assert.match(src, /exec\.machine\.audit\.record\('turn-pipeline', \{ order: pipeline\.order, timings: \{ \.\.\.pipeline\.timings \} \}\)/);
   assert.match(src, /try \{ stageFinalize\(\); \} finally \{ stageDone\('finalize'\); \}/, 'finalize 自身也计时，且异常不吞');
   const tf = fsp.readFileSync(new URL('../js/turnfinalizer.js', import.meta.url), 'utf8');

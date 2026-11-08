@@ -126,6 +126,7 @@ export function gatewayRequest(path, options = {}) { return request(path, option
 
 // ── 认证头（调研结论：Anthropic 用 x-api-key；OpenAI/Gemini 用 Bearer）──
 export function authHeaders(protocol, apiKey, gatewayId = DEFAULT_GATEWAY_ID) {
+  if (getGateway(gatewayId).noKey) return {};
   if (protocol === 'anthropic') {
     return {
       'x-api-key': apiKey,
@@ -717,7 +718,7 @@ export async function streamChat({ model, apiKey, messages, tools, fastMode = fa
   // 发起请求（429/5xx 自动退避重试一次）
   const res = await withRetry(async () => {
     const path = gatewayPath(gateway.id, endpoint === 'messages' ? 'messages' : (endpoint === 'responses' ? 'responses' : 'chat'));
-    const r = await request(path, { method: 'POST', headers, body: JSON.stringify(body), signal, gatewayId: gateway.id, gatewayBaseUrl, noReplay: !!subagentId });
+    const r = await request(path, { method: 'POST', headers, body: JSON.stringify(body), signal, gatewayId: gateway.id, gatewayBaseUrl, noReplay: !!subagentId || gateway.id === 'cloudflare' });
     if ((r.status === 429 || r.status >= 500) && r.status !== 501) {
       const text = await r.text().catch(() => '');
       const err = new Error(httpErrorMessage(r.status, text, gateway.id));
@@ -786,7 +787,7 @@ export async function streamChat({ model, apiKey, messages, tools, fastMode = fa
       throw err;
     }
     return r;
-  }, subagentId ? 0 : 2);
+  }, subagentId || gateway.id === 'cloudflare' ? 0 : 2);
 
   let sawTerminalEvent = false;
   let sawDone = false;

@@ -4,7 +4,7 @@ import { JSDOM } from 'jsdom';
 import { createEffectJournal, requiresEffectJournal, EFFECT_JOURNAL_KEY } from '../js/effect-journal.js';
 import { operationKey, planReplay } from '../js/idempotency.js';
 import { buildCheckpoint, createCheckpointStore } from '../js/recovery.js';
-import { classifyToolRisk, classifyToolFailure, getToolContract, buildCapabilityConstraints, checkCapabilityConstraints, summarizeArgs, createConfirmationGate } from '../js/execution.js';
+import { classifyToolRisk, classifyToolFailure, getToolContract, buildCapabilityConstraints, checkCapabilityConstraints, summarizeArgs, createConfirmationGate, isReadOnlyGitCommand, validateToolResultPost, fsDigest } from '../js/execution.js';
 import { toolAccessSet, planToolWaves, runWithCategoryLimits } from '../js/toolrunner.js';
 import { generateImage, createVideoJob, streamChat } from '../js/api.js';
 import { createAgent } from '../js/agent.js';
@@ -226,5 +226,64 @@ test('an unresolved effect blocks another session if the original session was lo
     const records = JSON.parse(globalThis.localStorage.getItem(EFFECT_JOURNAL_KEY));
     assert.equal(records.filter(r => r.status === 'uncertain').length, 1);
     assert.equal(records.filter(r => r.status === 'failed').length, 1);
+  } finally { cleanup(); }
+});
+
+
+test('read-only Git and successful writes do not become uncertain; unsafe variants retain protection', () => {
+  for (const cmd of ['git status', 'git status --short', 'git log --oneline -5', 'git diff --stat', 'git show HEAD', 'git rev-parse --show-toplevel']) {
+    assert.equal(isReadOnlyGitCommand(cmd), true, cmd);
+    const contract = getToolContract('run_git', { command: cmd });
+    assert.equal(contract.sideEffect, 'none');
+    assert.equal(requiresEffectJournal('run_git', { command: cmd }, contract), false);
+    assert.notEqual(classifyToolFailure({ name: 'run_git', result: 'fatal: not a git repository', contract }).kind, 'SIDE_EFFECT_UNCERTAIN');
+  }
+  for (const cmd of ['git push', 'git diff --output=evil', 'git diff --ext-diff', 'git show --textconv HEAD', 'git -c alias.x=foo status', 'git status; rm x', 'git log --format=%x00', 'git status "--short"']) {
+    assert.equal(isReadOnlyGitCommand(cmd), false, cmd);
+    assert.equal(getToolContract('run_git', { command: cmd }).external, true);
+  }
+  const before = fsDigest({}), after = fsDigest({ '错误.txt': 'done' });
+  const success = validateToolResultPost({ name: 'write_file', result: '已写入 错误.txt（4 字符）（已写入独立项目，本地持久化中；请注意存储错误提示）', fsBefore: before, fsAfter: after });
+  assert.equal(success.failureSignalled, false); assert.equal(success.failureKind, null);
+  const gitSuccess = validateToolResultPost({ name: 'run_git', result: '[git] git status\n目录：workspace · 退出码 0\n?? error.txt', contract: getToolContract('run_git', { command: 'git status' }) });
+  assert.equal(gitSuccess.failureSignalled, false);
+  const failed = validateToolResultPost({ name: 'write_file', result: 'write_file 失败：无法写入', ok: false, fsBefore: before, fsAfter: after });
+  assert.equal(failed.failureKind.kind, 'SIDE_EFFECT_UNCERTAIN');
+  const cpp = classifyToolFailure({ name: 'execute_cpp', result: 'C++ 链接失败 undefined symbol: __cxa_throw' });
+  assert.equal(cpp.kind, 'CODE_ERROR'); assert.equal(cpp.retryable, false); assert.match(cpp.handling, /修改/);
+});
+
+test('real agent may repeat failed read-only project status and successful write is not uncertain', async () => {
+  const { store, cleanup } = setup(); let i = 0;
+  globalThis.fetch = async () => {
+    i++;
+    if (i <= 3) return tool('run_git', { scope: 'project', command: 'git status --short' });
+    if (i <= 5) return tool('write_file', { scope: 'project', path: '错误.txt', content: 'hello' });
+    return final();
+  };
+  try {
+    await createAgent(store, {}).send('检查项目状态并写入文件');
+    const runs = store.state.lastExecutionRecord.toolRuns;
+    const git = runs.filter(r => r.name === 'run_git' && r.status !== 'blocked');
+    assert.equal(git.length, 2);
+    assert.ok(git.every(r => r.status === 'failed' && r.failureKind !== 'SIDE_EFFECT_UNCERTAIN'), JSON.stringify(git));
+    assert.equal(store.state.project.files['错误.txt'], 'hello');
+    const write = runs.find(r => r.name === 'write_file' && r.status !== 'blocked'); assert.equal(write.status, 'succeeded');
+    assert.doesNotMatch(store.state.messages.filter(m => m.role === 'tool').at(-1).content, /结果丢失|副作用不确定/);
+  } finally { cleanup(); }
+});
+
+test('real Agent accepts a keyless Workers AI gateway without leaking another key', async () => {
+  const { store, cleanup } = setup(); let seen = 0;
+  Object.assign(store.state, { gatewayId: 'cloudflare', apiKey: '', model: '@cf/openai/gpt-oss-20b', gatewayBaseUrls: { cloudflare: 'https://my-worker.workers.dev' } });
+  globalThis.fetch = async (url, options) => {
+    assert.equal(String(url), 'https://my-worker.workers.dev/v1/chat/completions');
+    assert.equal(new Headers(options.headers).has('Authorization'), false); seen++;
+    return final();
+  };
+  try {
+    await createAgent(store, {}).send('你好');
+    assert.equal(seen, 1);
+    assert.ok(store.state.messages.some(m => m.role === 'assistant' && m.text?.includes('已处理')));
   } finally { cleanup(); }
 });

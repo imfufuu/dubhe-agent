@@ -5,7 +5,7 @@ import { IMAGE_MODELS, IMAGE_FAMILIES, imageFamilyOf, resolveImageVariant, DEFAU
 import { JEV_MODEL, JEV_VERSIONS, setActiveJevModel, getActiveJevModel, buildSystemOneBody, choice } from '../js/jev.js';
 
 test('生图菜单按家族归并：GPT Image 2 / GPT Image 2.5 / Nano Banana 三项', () => {
-  assert.deepEqual(IMAGE_FAMILIES.map((f) => f.id), ['gpt-image-2', 'gpt-image-2.5', 'nano-banana', 'midjourney']);
+  assert.deepEqual(IMAGE_FAMILIES.map((f) => f.id), ['cloudflare-flux', 'gpt-image-2', 'gpt-image-2.5', 'nano-banana', 'midjourney']);
   for (const f of IMAGE_FAMILIES) {
     assert.ok(IMAGE_MODELS.some((m) => m.id === f.defaultModel), `${f.id} 默认变体必须在目录中`);
     assert.equal(imageFamilyOf(f.defaultModel), f.id, `${f.defaultModel} 归属 ${f.id}`);
@@ -84,7 +84,7 @@ test('生图系列：会话保存系列 ID，Agent 按描述自动选写实 / �
 test('all image families resolve directly and their prompt includes only their own variants', () => {
   for (const family of IMAGE_FAMILIES) {
     assert.equal(resolveImageModel(family.id).id, family.id);
-    const desc = imageModelRuntimeDescription(family.id);
+    const desc = imageModelRuntimeDescription(family.id, { gatewayId: family.id === 'cloudflare-flux' ? 'cloudflare' : 'teamorouter' });
     for (const model of IMAGE_MODELS) {
       if (model.family === family.id && family.id !== 'midjourney') assert.ok(desc.includes(model.id), `${family.id}: ${model.id}`);
       if (model.family !== family.id) assert.ok(!desc.includes(`${model.id} (`), `${family.id} must not include ${model.id}`);

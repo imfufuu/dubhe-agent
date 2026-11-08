@@ -125,6 +125,7 @@ export function sortModelsInFamily(models) {
 // 不可作为对话模型直接选择：统一由主智能体通过 generate_image 工具调用，
 // 保留 Agent 的工具循环特性（生成→写沙箱→可继续编辑/下载）。
 export const IMAGE_MODELS = [
+  { id: '@cf/black-forest-labs/flux-1-schnell', family: 'cloudflare-flux', role: 'default', label: 'FLUX.1 Schnell', tag: 'Cloudflare · 文生图', note: 'Workers AI Hosted · 单张默认尺寸', tagEn: 'Cloudflare · Text to image', noteEn: 'Workers AI Hosted; one image at default dimensions' },
   { id: 'gpt-image-2', family: 'gpt-image-2', role: 'default',            label: 'GPT Image 2',            tag: '均衡 · 默认',  note: '均衡·默认', tagEn: 'Balanced · Default', noteEn: 'Balanced · default choice' },
   { id: 'gpt-image-2.5-sunburst', family: 'gpt-image-2.5', role: 'realistic', label: 'GPT Image 2.5 Sunburst', tag: '写实',        note: '高质感写实', tagEn: 'Realistic', noteEn: 'High-fidelity realism' },
   { id: 'gpt-image-2.5-flare', family: 'gpt-image-2.5', role: 'illustration',    label: 'GPT Image 2.5 Flare',    tag: '插画',        note: '风格化/插画', tagEn: 'Illustration', noteEn: 'Stylized illustration' },
@@ -142,6 +143,7 @@ export const IMAGE_MODELS = [
 export const DEFAULT_IMAGE_MODEL = 'gpt-image-2';
 // 模型家族：菜单里每个家族只占一项，具体变体（写实/插画/4K 升采样/Pro）由 Agent 按需求自动选择。
 export const IMAGE_FAMILIES = Object.freeze([
+  { id: 'cloudflare-flux', label: 'Cloudflare FLUX.1 Schnell', tag: 'Hosted · 文生图', note: 'Workers AI 单张默认尺寸，不支持参考图；消耗 Neurons', tagEn: 'Hosted · Text to image', noteEn: 'Workers AI; one image at default size, no reference images; consumes Neurons', defaultModel: '@cf/black-forest-labs/flux-1-schnell' },
   { id: 'gpt-image-2', label: 'GPT Image 2', tag: '均衡 · 默认', note: '均衡 · 默认；4K 自动走升采样变体', tagEn: 'Balanced · Default', noteEn: 'Balanced default; 4K uses the upscale variant', defaultModel: 'gpt-image-2' },
   { id: 'gpt-image-2.5', label: 'GPT Image 2.5', tag: '写实 / 插画', note: '写实或插画两个变体，由 Agent 按描述自动选；4K 走升采样', tagEn: 'Realistic / Illustration', noteEn: 'Realistic or illustration variant chosen by Agent; 4K uses upscale', defaultModel: 'gpt-image-2.5-sunburst' },
   { id: 'nano-banana', label: 'Nano Banana', tag: 'Gemini 原生', note: 'Nano Banana 2 / 2.1 / 3 Pro 三档，由 Agent 按质量与速度需求选择', tagEn: 'Gemini native', noteEn: 'Nano Banana 2 / 2.1 / 3 Pro, chosen by quality and speed', defaultModel: 'gemini-3.1-flash-image' },
@@ -164,6 +166,7 @@ export function resolveImageVariant(familyOrModel, { style = 'auto', resolution 
   const def = IMAGE_FAMILIES.find((f) => f.id === fam);
   if (!def) return DEFAULT_IMAGE_MODEL;
   if (fam === 'midjourney') return 'midjourney';
+  if (fam === 'cloudflare-flux') return def.defaultModel;
   // 传入的是具体变体（如 gpt-image-2.5-flare）且未指定风格时，沿用该变体的角色
   const hitVariant = IMAGE_MODELS.find((m) => m.id === String(familyOrModel || ''));
   const roleStyle = hitVariant && String(style || 'auto').toLowerCase() === 'auto' ? String(hitVariant.role || '').replace(/^upscale-/, '') : '';
@@ -230,7 +233,7 @@ export function imageModelRuntimeDescription(id, { gatewayId = 'teamorouter' } =
   const family = imageFamilyOf(id) || imageFamilyOf(DEFAULT_IMAGE_MODEL);
   const info = IMAGE_FAMILIES.find(f => f.id === family);
   const variants = IMAGE_MODELS.filter(m => m.family === family);
-  const supported = (gatewayId === 'teamorouter' || (gatewayId === 'openai' && family !== 'nano-banana') || (gatewayId === 'gemini' && family === 'nano-banana') || (gatewayId === 'custom' && family !== 'nano-banana'));
+  const supported = family === 'cloudflare-flux' ? gatewayId === 'cloudflare' : (gatewayId === 'teamorouter' || (gatewayId === 'openai' && family !== 'nano-banana') || (gatewayId === 'gemini' && family === 'nano-banana') || (gatewayId === 'custom' && family !== 'nano-banana'));
   if (family === 'midjourney' && gatewayId !== 'teamorouter') return `${info.label} [${family}]；仅支持 TeamoRouter 文生图，不得切换其他系列。`;
   if (!supported) return `${info.label} [${family}]；${family === 'midjourney' ? '仅文生图；' : ''}当前网关尚未接通或未验证此系列，没有可用变体。不得切换其他系列。`;
   if (family === 'midjourney') return `${info.label} [midjourney]；仅文生图，使用 generate_image；网关实际可用性以上游响应为准。不得切换其他系列。`;

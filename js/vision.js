@@ -151,7 +151,7 @@ async function normalizeForVision(u) {
 
 /** 用识图模型看一张或多张图（data URL 或 http URL），返回模型文字。长度上限会自动续写。 */
 export async function analyzeImage({ apiKey, prompt, dataUrl, dataUrls, model, signal, onUsage, gatewayId = DEFAULT_GATEWAY_ID, gatewayBaseUrl = '' }) {
-  if (!apiKey) throw new Error('未配置 API Key');
+  if (!apiKey && !getGateway(gatewayId).noKey) throw new Error('未配置 API Key');
   const rawUrls = [];
   for (const u of (Array.isArray(dataUrls) ? dataUrls : [])) {
     if (u) rawUrls.push(u);
@@ -161,6 +161,18 @@ export async function analyzeImage({ apiKey, prompt, dataUrl, dataUrls, model, s
   // 把不被模型支持的格式先转成 PNG（SVG/BMP/ICO/TIFF/AVIF/HEIC/APNG 等）
   const urls = await Promise.all(rawUrls.map(normalizeForVision));
   const text = String(prompt || DEFAULT_VISION_PROMPT).trim() || DEFAULT_VISION_PROMPT;
+  if (gatewayId === 'cloudflare') {
+    if (urls.length !== 1) throw new Error('Cloudflare 识图每次只接受一张图片；请逐张提交。');
+    const id = defaultVisionModelForGateway(gatewayId);
+    if (model && model !== id) throw new Error('所选识图模型与 Cloudflare 网关不兼容。');
+    const res = await gatewayRequest('v1/vision', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: id, prompt: text, image: urls[0] }), signal, gatewayId, gatewayBaseUrl, noReplay: true });
+    const raw = await res.text();
+    if (!res.ok) throw new Error(`识图接口 ${res.status}：${raw.slice(0, 400)}；请勿自动重试。`);
+    let data; try { data = JSON.parse(raw); } catch { throw new Error('识图接口返回了非 JSON；请勿自动重试。'); }
+    if (typeof data.text !== 'string' || !data.text.trim()) throw new Error('识图接口没有返回内容；请勿自动重试。');
+    if (typeof onUsage === 'function' && data.usage) onUsage({ input: Number(data.usage.input_tokens) || 0, output: Number(data.usage.output_tokens) || 0 });
+    return data.text;
+  }
   const content = [{
     type: 'text',
     text: urls.length > 1 ? `${text}\n（共 ${urls.length} 张，按顺序分别分析每一张，用 Markdown 二级标题标出第几张。）` : text,

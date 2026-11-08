@@ -1,4 +1,5 @@
 import { $, $$, esc } from './ui-markdown.js?v=2026.10.25.1';
+import { getGateway } from './gateway-registry.js?v=2026.10.25.1';
 import { isOfflineModelId } from './offline-model-config.js';
 import { uiText as t } from './locale.js';
 
@@ -57,7 +58,7 @@ export function installChoiceHandler({ root, store, agent, getBusy, openKeyModal
       const items = $$('.choice-qblock', box).map((b, i) => ({ question: $('.choice-q', b).textContent.trim(), answer: answers[i] || '', other: $('.choice-other', b).value.trim() }));
       const missing = items.findIndex(x => !x.answer && !x.other);
       if (missing >= 0) { setStep(box, missing); toast(t('请回答每个问题后提交', 'Please answer every question before submitting'), 'warn'); return true; }
-      if (!store.state.apiKey && !isOfflineModelId(store.state.model)) { openKeyModal(); toast(t('请先配置 API Key', 'Please configure an API key'), 'warn'); return true; }
+      if (!store.state.apiKey && !getGateway(store.state.gatewayId).noKey && !isOfflineModelId(store.state.model)) { openKeyModal(); toast(t('请先配置 API Key', 'Please configure an API key'), 'warn'); return true; }
       const boxes = $$('.choice-box', source);
       const resultIndex = boxes.indexOf(box);
       const results = { ...(owner.choiceResults || {}), [resultIndex]: items };

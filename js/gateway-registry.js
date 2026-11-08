@@ -3,6 +3,7 @@
 // response is authoritative. Provider keys are never retried against another gateway.
 import { MODEL_CATALOG, isRetiredModel } from './model-catalog.js?v=2026.10.25.1';
 import { text as localeText } from './locale.js';
+import { CF_CHAT_MODELS, CF_AGENT_CHAT_IDS, cfChatAvailable } from './cloudflare-ai-catalog.js';
 
 export const DEFAULT_GATEWAY_ID = 'teamorouter';
 
@@ -50,6 +51,7 @@ const FIRST_PARTY_MODELS = {
     'qwen3.8-2.4t-a95b', 'qwen3.8-27b',
     'qwen3.7-plus', 'qwen3.7-flash', 'qwen3.6-plus', 'qwen3.6-flash', 'qwen3.5-plus', 'qwen3.5-flash',
   ]),
+  cloudflare: Object.entries(CF_CHAT_MODELS).filter(([id]) => cfChatAvailable(id) && CF_AGENT_CHAT_IDS.includes(id)).map(([id, spec]) => ({ id, provider: spec.provider, displayName: id, plannedDeprecation: spec.plannedDeprecation || '' })),
   custom: [],
 };
 
@@ -110,6 +112,11 @@ export const GATEWAYS = Object.freeze([
     docsUrl: 'https://help.aliyun.com/zh/model-studio/models', keyHint: 'sk-…', keyLabel: '阿里云百炼 API Key',
   },
   {
+    id: 'cloudflare', name: 'Cloudflare Workers AI', category: 'third-party', provider: 'Cloudflare',
+    baseUrl: '', protocol: 'openai', chatPath: 'v1/chat/completions', listMode: 'openai', listPath: 'v1/models',
+    docsUrl: 'https://developers.cloudflare.com/workers-ai/', keyHint: '无需 API Key', keyLabel: '无需 API Key（请填写 Worker URL）', noKey: true,
+  },
+  {
     id: 'custom', name: '自定义 OpenAI 兼容网关', category: 'third-party', provider: null,
     baseUrl: '', protocol: 'openai', chatPath: 'chat/completions', listMode: 'openai', listPath: 'models',
     docsUrl: 'https://platform.openai.com/docs/api-reference', keyHint: '网关要求的 API Key', keyLabel: '自定义网关 API Key',
@@ -139,6 +146,7 @@ export function gatewayPath(id, endpoint = 'chat') {
     if (endpoint === 'imageEdit') return '/v1/images/edits';
     return '/v1/chat/completions';
   }
+  if (spec.id === 'cloudflare' && endpoint === 'images') return 'v1/images/generations';
   if (endpoint === 'messages') return spec.chatPath || 'v1/messages';
   if (endpoint === 'responses') return spec.responsesPath || spec.chatPath || 'responses';
   if (endpoint === 'models') return spec.listPath || '';
@@ -205,6 +213,7 @@ export function isModelForGateway(gatewayId, modelId, availableIds = null) {
   const spec = getGateway(gatewayId);
   const id = String(modelId || '').trim();
   if (!id || id === '__system__') return false;
+  if (spec.id === 'cloudflare') return id.startsWith('@cf/') && (Array.isArray(availableIds) ? availableIds.includes(id) : FIRST_PARTY_MODELS.cloudflare.some((m) => m.id === id));
   if (spec.id === DEFAULT_GATEWAY_ID || spec.id === 'custom') return id !== '__smart_router__' || spec.id === DEFAULT_GATEWAY_ID;
   if (id === '__smart_router__' || providerFromModelId(id) !== spec.provider) return false;
   // A successful provider listing is authoritative, even for a same-provider ID left by an old manual entry.
@@ -236,7 +245,7 @@ export function defaultModelForGateway(gatewayId = DEFAULT_GATEWAY_ID, preferred
   const defaults = {
     anthropic: 'claude-haiku-5-5', openai: 'gpt-6-luna', gemini: 'gemini-3.8-flash',
     deepseek: 'deepseek-flash', glm: 'glm-5.3-flash', grok: 'grok-4.7', kimi: 'kimi-k3',
-    doubao: 'doubao-seed-2-1-lite-260915', qwen: 'qwen3.8-flash', custom: '',
+    doubao: 'doubao-seed-2-1-lite-260915', qwen: 'qwen3.8-flash', cloudflare: '@cf/openai/gpt-oss-20b', custom: '',
   };
   const want = defaults[spec.id];
   if (Array.isArray(availableIds)) return availableIds.includes(want) ? want : (availableIds[0] || '');
@@ -247,7 +256,7 @@ export function defaultVisionModelForGateway(gatewayId = DEFAULT_GATEWAY_ID) {
   const defaults = {
     teamorouter: 'deepseek-v4-flash-vision-exp', anthropic: 'claude-haiku-5-5', openai: 'gpt-6-luna',
     gemini: 'gemini-3.8-flash', deepseek: 'deepseek-flash', glm: 'glm-5.3', grok: 'grok-4.7',
-    kimi: 'kimi-k3', doubao: 'doubao-seed-2-1-pro-260915', qwen: 'qwen3.8-omni-flash', custom: '',
+    cloudflare: '@cf/moondream/moondream3.1-9B-A2B', kimi: 'kimi-k3', doubao: 'doubao-seed-2-1-pro-260915', qwen: 'qwen3.8-omni-flash', custom: '',
   };
   return defaults[getGateway(gatewayId).id] || '';
 }
@@ -283,6 +292,7 @@ export function filterGatewayChatModels(gatewayId, ids) {
   const spec = getGateway(gatewayId);
   return [...new Set((Array.isArray(ids) ? ids : []).map((x) => String(x || '').trim()).filter((id) => {
     if (!isLikelyChatModel(id)) return false;
+    if (spec.id === 'cloudflare') return id.startsWith('@cf/');
     if (spec.id === DEFAULT_GATEWAY_ID || spec.id === 'custom' || spec.id === 'qwen') return true;
     if (spec.id === 'grok' && id === 'latest') return true;
     return providerFromModelId(id) === spec.provider;
@@ -291,6 +301,7 @@ export function filterGatewayChatModels(gatewayId, ids) {
 
 export function gatewayModelListLabel(gatewayId) {
   const spec = getGateway(gatewayId);
+  if (spec.id === 'cloudflare') return localeText('无需 Key。填写已部署的 Workers AI 网关 URL；仅该 Worker 允许的 Cloudflare Hosted Models 可用。配额按 UTC 日重置，实际账单以 Cloudflare 为准。', 'No API key required. Enter your deployed Workers AI gateway URL. Only its allowed Cloudflare-hosted models are available; quotas reset at 00:00 UTC. Cloudflare billing is authoritative.');
   if (spec.id === 'custom') return localeText('手动添加仅适用于自定义网关；已添加的模型可点 × 移除。上游是否支持以该网关返回为准。', 'Manual model IDs are only for the custom gateway. Click × to remove one; the upstream must still support it.');
   if (spec.id === 'qwen') return localeText('百炼 API Key 与网关 URL 必须属于同一地域；可在基础 URL 填入控制台提供的业务空间专属兼容端点。', 'The Model Studio API key and gateway URL must use the same region. You can enter the workspace-specific compatible endpoint from the console.');
   if (spec.listMode === 'static') return localeText('当前网关没有已核实的通用模型目录接口；此处仅列出官方文档中的文本模型 ID，账号权限和地域可能影响实际可用性。', 'No verified general model-list API is configured for this gateway. This is a documentation-based text-model list; account access and region may affect availability.');

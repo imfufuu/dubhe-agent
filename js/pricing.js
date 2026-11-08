@@ -283,6 +283,7 @@ export function getModelPricing(modelId, { gatewayId = '' } = {}) {
 function officialModelPricing(modelId) {
   const { base, isFast } = normalizeModelKey(modelId);
   if (!base) return null;
+  if (base === '@cf/black-forest-labs/flux-1-schnell') return { id: base, kind: 'image', mode: 'neurons', priceSource: 'cloudflare' };
   if (VISION_MODEL_PRICING[base]) return { ...VISION_MODEL_PRICING[base], kind: 'vision' };
   if (IMAGE_MODEL_PRICING[base]) return { ...IMAGE_MODEL_PRICING[base], kind: 'image' };
   if (MODEL_PRICING[base]) return { ...MODEL_PRICING[base], id: base, kind: 'chat', isFast };
@@ -425,6 +426,7 @@ export function estimateVisionCost({
   gatewayId = '',
 } = {}) {
   const { base } = normalizeModelKey(model);
+  if (base === '@cf/moondream/moondream3.1-9b-a2b') return { kind: 'vision', model: base, imageCount, costUsd: 0, unpriced: true, inputUnavailable: true, rateLabel: 'Workers AI Neurons；美元费用以 Cloudflare 账单为准' };
   // 识图 / 视频识别模型可在设置里换成 Gemini / Claude：没有专表时用对话价目表（同一模型的多模态输入按文本 token 计）
   const officialP = VISION_MODEL_PRICING[base]
     || (MODEL_PRICING[base] ? { ...MODEL_PRICING[base], id: base, label: base, defaultTokensPerImage: 1100 } : VISION_MODEL_PRICING[VISION_MODEL_ID]);
@@ -475,6 +477,7 @@ export function estimateImageCost({
   gatewayId = '',
 } = {}) {
   const { base } = normalizeModelKey(model);
+  if (base === '@cf/black-forest-labs/flux-1-schnell') return { kind: 'image', model: base, count: Math.max(1, Number(count) || 1), costUsd: 0, unpriced: true, rateLabel: 'Workers AI Neurons；美元费用以 Cloudflare 账单为准' };
   const officialP = IMAGE_MODEL_PRICING[base] || getModelPricing(base) || IMAGE_MODEL_PRICING['gpt-image-2.5-sunburst'];
   const p = (isTeamoRouterGateway(gatewayId) && teamorouterOverride(base, officialP)) || officialP;
   const n = Math.max(1, Number(count) || 1);
@@ -866,7 +869,7 @@ export function summarizeTurnCost(arg1, opts = {}) {
     if (jc) jevCostUsd += jc.costUsd;
   }
 
-  const incomplete = visionItems.some(v => v.inputUnavailable);
+  const incomplete = turnGatewayId === 'cloudflare' || visionItems.some(v => v.inputUnavailable) || imageItems.some(v => v.unpriced);
   const totalCostUsd = chatCostUsd + subagentCostUsd + jevCostUsd + visionCostUsd + imageCostUsd + avCostUsd + videoGenCostUsd;
   const hasAny = hasChatUsage || visionItems.length > 0 || imageItems.length > 0 || avItems.length > 0 || videoGenItems.length > 0 || jevCostUsd > 0;
   if (!hasAny && !isConfigObj) return null;
@@ -877,20 +880,21 @@ export function summarizeTurnCost(arg1, opts = {}) {
   if (avItems.length) extraTags.push(`音视频分析 ${formatCcy(avCostUsd)}`);
   if (imageItems.length) extraTags.push(`生图 ${formatCcy(imageCostUsd)}`);
   if (videoGenItems.length) extraTags.push(`视频生成 ${formatCcy(videoGenCostUsd)}`);
-  const badgeText = extraTags.length
+  const badgeText = turnGatewayId === 'cloudflare' ? 'Workers AI · Neurons（账单以 Cloudflare 为准）' : extraTags.length
     ? `≈ ${formatCcy(totalCostUsd)}（${extraTags.join(' + ')}）`
     : `≈ ${formatCcy(totalCostUsd)}`;
 
   const tooltipLines = [trTurn
     ? `本轮 TeamoRouter 折后预估总价：${formatCcy(totalCostUsd)}`
     : `本轮官方预估总价：${formatCcy(totalCostUsd)}`];
-  if (incomplete) tooltipLines.push('音频输入用量未完整回传，以上费用不完整；以网关账单为准。');
-  if (hasChatUsage) {
+  if (turnGatewayId === 'cloudflare') tooltipLines[0] = 'Workers AI 使用 Neurons；本地美元合计不代表实际账单或免费额度，以 Cloudflare 控制台为准。';
+  else if (incomplete) tooltipLines.push('部分用量或费用未完整回传，以上费用不完整；以网关账单为准。');
+  if (hasChatUsage && turnGatewayId !== 'cloudflare') {
     const mName = [...chatModels].join(', ') || defaultModel;
     const p = estimateChatCost(mName, { input: inputTokens, output: outputTokens }, { fastMode });
     tooltipLines.push(`· 对话模型（${mName}）：${formatCcy(chatCostUsd + subagentCostUsd)}（↑${inputTokens} ↓${outputTokens} tok${p ? ` · ${p.rateLabel}` : ''}）`);
   }
-  if (visionItems.length) {
+  if (visionItems.length && turnGatewayId !== 'cloudflare') {
     const imgs = visionItems.reduce((s, x) => s + (Number(x.imageCount) || 1), 0);
     const vModels = [...new Set(visionItems.map((x) => x.model || VISION_MODEL_ID))].join(' / ');
     tooltipLines.push(`· 识图/视频/音频模型（${vModels}）：${formatCcy(visionCostUsd)}（共 ${imgs} 项 · ${visionItems[0].rateLabel || rateEstimateLabel('vision', 0.44, 1.32)}）`);
@@ -899,7 +903,7 @@ export function summarizeTurnCost(arg1, opts = {}) {
     const avModels = [...new Set(avItems.map((x) => x.model || VISION_MODEL_ID))].join(' / ');
     tooltipLines.push(`· 音视频分析模型（${avModels}）：${formatCcy(avCostUsd)}（共 ${avItems.length} 项 · ${avItems[0].rateLabel || ''}）`);
   }
-  if (imageItems.length) {
+  if (imageItems.length && turnGatewayId !== 'cloudflare') {
     const imgs = imageItems.reduce((s, x) => s + (Number(x.count) || 1), 0);
     const imgModel = imageItems[0].model || defaultImageModel;
     tooltipLines.push(`· 生图模型（${imgModel}）：${formatCcy(imageCostUsd)}（共 ${imgs} 张 · ${imageItems[0].rateLabel || ''}）`);

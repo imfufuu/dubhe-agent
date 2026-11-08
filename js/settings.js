@@ -394,13 +394,16 @@ function syncGatewayFields(store) {
   const key = $('#set-key');
   if (key) {
     key.value = store.state.apiKey || '';
+    key.disabled = !!spec.noKey;
     key.placeholder = spec.keyHint || 'API Key';
   }
   const base = $('#set-gateway-base');
   if (base) {
     base.value = (store.state.gatewayBaseUrls || {})[id] || '';
-    base.placeholder = spec.baseUrl || 'https://api.example.com/v1';
+    base.placeholder = spec.id === 'cloudflare' ? 'https://your-worker.workers.dev' : (spec.baseUrl || 'https://api.example.com/v1');
   }
+  const connectionNote = $('#set-gateway-connection-note');
+  if (connectionNote) connectionNote.textContent = id === 'cloudflare' ? gatewayModelListLabel(id) : localeText('留空使用官方默认；自定义网关必填 HTTPS URL', 'Leave blank for the official default; custom gateways require an HTTPS URL.');
   const note = $('#set-gateway-note');
   if (note) note.textContent = gatewayModelListLabel(id);
   const manualRow = $('#set-manual-model-row');
