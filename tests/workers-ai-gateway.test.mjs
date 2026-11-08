@@ -1,17 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import worker, { Quota, MODELS } from '../workers-ai/worker.js';
+import worker, { MODELS } from '../workers-ai/worker.js';
 import { getGateway, isModelForGateway, filterGatewayChatModels } from '../js/gateway-registry.js';
 import { streamChat, fetchModels, authHeaders } from '../js/api.js';
 
-function setup(ai) {
-  const data = new Map(); let alarm = null, chain = Promise.resolve();
-  const tx = { get: async k => structuredClone(data.get(k)), put: async (k, v) => data.set(k, structuredClone(v)), delete: async k => data.delete(k), getAlarm: async () => alarm, setAlarm: async x => { alarm = x; } };
-  const storage = { transaction(fn) { const p = chain.then(() => fn(tx)); chain = p.catch(() => {}); return p; }, list: async () => new Map(data), delete: async k => data.delete(k), setAlarm: async x => { alarm = x; }, getAlarm: async () => alarm };
-  const quota = new Quota({ storage });
-  const env = { AI: { run: ai }, QUOTA: { idFromName: () => 'global', get: () => ({ fetch: (url, opt) => quota.fetch(new Request(url, opt)) }) } };
-  return { env, quota, data };
-}
+function setup(ai) { return { env: { AI: { run: ai } } }; }
 const model = '@cf/openai/gpt-oss-20b';
 const request = (body, ip = '192.0.2.4') => new Request('https://x.workers.dev/v1/chat/completions', { method: 'POST', headers: { 'content-type': 'application/json', 'CF-Connecting-IP': ip }, body: JSON.stringify(body) });
 const body = { model, messages: [{ role: 'user', content: 'hello' }], stream: true };
@@ -42,40 +35,25 @@ test('real client -> gateway -> SSE normalizes output and function calls', async
     assert.ok(events.some(e => e.type === 'tool_delta' && e.name === 'ping' && e.argsText === '{"x":1}'));
   } finally { globalThis.fetch = prev; }
 });
-test('rejects unknown model and forged forwarded IP; missing bindings fail closed', async () => {
-  let count = 0; const { env } = setup(async () => { count++; return {}; });
+test('rejects unknown model and missing AI binding, without requiring quota or IP', async () => {
+  let count = 0; const { env } = setup(async () => { count++; return { response: 'ok' }; });
   assert.equal((await worker.fetch(request({ ...body, model: '@openai/gpt-4' }), env)).status, 400);
-  const noIp = new Request('https://x.workers.dev/v1/chat/completions', { method: 'POST', headers: { 'X-Forwarded-For': '192.0.2.1' }, body: JSON.stringify(body) });
-  assert.equal((await worker.fetch(noIp, env)).status, 403);
+  const noIp = new Request('https://x.workers.dev/v1/chat/completions', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  assert.equal((await worker.fetch(noIp, env)).status, 200);
   assert.equal((await worker.fetch(request(body), {})).status, 503);
-  assert.equal(count, 0);
+  assert.equal(count, 1);
 });
-test('quota reservations atomic under concurrency; failed inference is not refunded', async () => {
-  const { env, data } = setup(async () => { throw new Error('unknown outcome'); });
-  const results = await Promise.all(Array.from({ length: 16 }, () => worker.fetch(request(body), env)));
-  assert.ok(results.some(r => r.status === 502));
-  assert.ok(results.some(r => r.status === 429));
-  const entries = [...data.entries()];
-  assert.ok(entries.find(([k]) => k.endsWith(':total'))[1] <= 10000);
-  assert.ok(entries.filter(([k]) => k.includes(':ip:')).every(([,v]) => v <= 1000));
-  assert.equal(entries.filter(([k]) => k.includes(':request:')).length, 0);
+test('no application daily quota blocks repeated requests', async () => {
+  let count = 0; const { env } = setup(async () => { count++; return { response: 'ok', usage }; });
+  const results = await Promise.all(Array.from({ length: 130 }, () => worker.fetch(request(body), env)));
+  assert.ok(results.every(r => r.status === 200));
+  assert.equal(count, 130);
 });
-test('successful result reconciles token usage, unknown usage keeps reservation', async () => {
-  const { env, data } = setup(async () => ({ response: 'ok', usage }));
-  assert.equal((await worker.fetch(request(body), env)).status, 200);
-  const total = [...data.entries()].find(([k]) => k.endsWith(':total'))[1];
-  assert.ok(Math.abs(total - ((100 * MODELS[model].input + 20 * MODELS[model].output) / 1e6)) < 0.0001);
-  const missing = setup(async () => ({ response: 'ok' }));
-  await worker.fetch(request(body), missing.env);
-  assert.ok([...missing.data.entries()].find(([k]) => k.endsWith(':total'))[1] > total);
-});
-
-test('Worker pool limit is shared across distinct IPs', async () => {
-  const { env, data } = setup(async () => { throw new Error('ambiguous'); });
-  const results = await Promise.all(Array.from({ length: 130 }, (_, n) => worker.fetch(request(body, `192.0.2.${Math.floor(n / 8) + 1}`), env)));
-  const total = [...data.entries()].find(([k]) => k.endsWith(':total'))[1];
-  assert.ok(results.some(r => r.status === 429));
-  assert.ok(total <= 10000 && total > 9000, `total=${total}`);
+test('upstream 429 remains distinguishable from removed application quota', async () => {
+  const { env } = setup(async () => { throw Object.assign(new Error('rate limit'), { status: 429 }); });
+  const res = await worker.fetch(request(body), env);
+  assert.equal(res.status, 429);
+  assert.match((await res.json()).error.message, /Cloudflare/);
 });
 test('client never automatically replays an ambiguous Workers AI failure', async () => {
   const old = globalThis.fetch; let calls = 0;
@@ -102,10 +80,10 @@ test('catalog keeps paid models disabled, deprecations enforced, non-agent model
   const catalog = await (await worker.fetch(new Request('https://x.workers.dev/v1/catalog'), env)).json();
   assert.ok(catalog.paid_only_disabled.includes(CF_DISABLED_PAID[0]));
 });
-test('native specialized routes share quota, reject other IDs, URLs and missing keys', async () => {
+test('native specialized routes reject other IDs and URLs', async () => {
   let calls = [];
   const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/aZYAAAAASUVORK5CYII=', 'base64').toString('base64');
-  const { env, data } = setup(async (id, input) => {
+  const { env } = setup(async (id, input) => {
     calls.push({ id, input });
     if (id === CF_IMAGE_MODEL) return { image: png };
     if (id === CF_VISION_MODEL) return { answer: '一张图', metrics: { input_tokens: 100, output_tokens: 10 } };
@@ -121,15 +99,12 @@ test('native specialized routes share quota, reject other IDs, URLs and missing 
   const decision = await worker.fetch(post('/v1/decisions', { model: '@cf/cloudflare/clef-flash', state: 'hello', questions: { a: { type: 'noul', instructions: 'ok?' } } }), env);
   assert.equal(decision.status, 200); assert.equal(calls[2].input.model, 'clef-flash');
   assert.equal(calls[0].input.steps, 4);
-  assert.ok([...data.entries()].find(([k]) => k.endsWith(':total'))[1] < 100);
   for (const id of Object.keys(CF_DECISION_MODELS)) assert.ok(id.startsWith('@cf/cloudflare/'));
 });
-test('specialized ambiguous failure retains quota and clients never replay', async () => {
+test('specialized ambiguous failure is not replayed by clients', async () => {
   let calls = 0;
-  const { env, data } = setup(async () => { calls++; throw Error('lost'); });
+  const { env } = setup(async () => { calls++; throw Error('lost'); });
   assert.equal((await worker.fetch(post('/v1/decisions', { model: '@cf/cloudflare/clairic', state: 'x', fields: { a: { type: 'text' } } }), env)).status, 502);
-  assert.equal([...data.entries()].find(([k]) => k.endsWith(':total'))[1], 1000);
-  assert.equal((await worker.fetch(post('/v1/decisions', { model: '@cf/cloudflare/clairic', state: 'x', fields: { a: { type: 'text' } } }), env)).status, 429);
   assert.equal(calls, 1);
   const old = globalThis.fetch; let fetches = 0;
   globalThis.fetch = async () => { fetches++; return new Response('ambiguous', { status: 502 }); };

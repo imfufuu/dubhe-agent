@@ -20,11 +20,12 @@ import { analyzeImage, analyzeVideo, analyzeAudio, VISION_TOOL_MODEL, VIDEO_TOOL
 import { sanitizeSvgMarkup, svgSourceFromValue, svgDataUrl, extractSvgText } from './svg-safety.js';
 import { pdfToImages, pdfExtractText } from './pdfpages.js';
 import { SUBAGENTS } from './subagents.js';
-import { DEFAULT_IMAGE_MODEL, IMAGE_MODELS, imageFamilyOf, IMAGE_STYLES, IMAGE_RESOLUTIONS, resolveImageVariant, IMAGE_SIZES, IMAGE_QUALITIES, IMAGE_FORMATS, IMAGE_BACKGROUNDS, IMAGE_MODERATIONS, NANO_THINKING_LEVELS, resolveImageModel, resolveVisionModel, resolveVideoModel, resolveAudioModel } from './config.js?v=2026.10.25.1';
+import { DEFAULT_IMAGE_MODEL, IMAGE_MODELS, GROK_SENSITIVE_VISION_MODEL, imageFamilyOf, IMAGE_STYLES, IMAGE_RESOLUTIONS, resolveImageVariant, IMAGE_SIZES, IMAGE_QUALITIES, IMAGE_FORMATS, IMAGE_BACKGROUNDS, IMAGE_MODERATIONS, NANO_THINKING_LEVELS, resolveImageModel, resolveVisionModel, resolveVideoModel, resolveAudioModel } from './config.js?v=2026.10.25.1';
 import { fetchPage, gitRun, relaySearch, relayCrawl, relayDownload, relayCurl, fileNameFromUrl, RELAY_FILE_MAX_BYTES, localGitRun } from './net.js';
 import { createZip, fileBytesFromValue } from './zip.js';
 import { planConversion, runConversion, convertProgressNote, MAX_CONVERT_INPUT } from './convert.js';
 import { readableFileText } from './file-text.js';
+import { gatewayBase, GATEWAY_CN } from './endpoint.js';
 import { DEFAULT_GATEWAY_ID, getGateway, defaultVisionModelForGateway } from './gateway-registry.js?v=2026.10.25.1';
 import { unpackZip, unpackZipFromDataUrl } from './unzip.js';
 import { runRegex, runHash, runCodec, runUnicode } from './codetools.js';
@@ -49,8 +50,15 @@ function looksStructuredDiagramPrompt(prompt) {
 }
 function visionModelForContext(ctx) {
   const gatewayId = ctx && ctx.gatewayId || DEFAULT_GATEWAY_ID;
+  if (ctx?.visionModel === GROK_SENSITIVE_VISION_MODEL) return GROK_SENSITIVE_VISION_MODEL;
   if (gatewayId === DEFAULT_GATEWAY_ID) return resolveVisionModel(ctx && ctx.visionModel);
   return defaultVisionModelForGateway(gatewayId) || String(ctx && ctx.model || '').trim();
+}
+function guardSensitiveVision(ctx) {
+  if (ctx?.visionModel !== GROK_SENSITIVE_VISION_MODEL) return;
+  const id = ctx.gatewayId || DEFAULT_GATEWAY_ID;
+  if (typeof ctx.canUseSensitiveVision !== 'function' || !ctx.canUseSensitiveVision()) throw new Error('调用在发起前失败：敏感图像选项仅在内容审核关闭且已确认风险时可用；请求未发送。');
+  if (id !== 'grok' && !(id === DEFAULT_GATEWAY_ID && gatewayBase() !== GATEWAY_CN)) throw new Error('调用在发起前失败：当前网关不支持所选识图选项；请求未发送。');
 }
 function gatewayRequestContext(ctx) {
   return { gatewayId: ctx && ctx.gatewayId || DEFAULT_GATEWAY_ID, gatewayBaseUrl: ctx && ctx.gatewayBaseUrl || '' };
@@ -2076,6 +2084,7 @@ async function executeToolBody(outerName, outerArgs, ctx) {
               prompt: pagePrompt,
               dataUrl,
               model: visionModel,
+              beforeRequest: () => guardSensitiveVision(ctx),
               signal: ctx.signal,
               onUsage: (u) => {
                 if (u) {
@@ -2155,6 +2164,7 @@ async function executeToolBody(outerName, outerArgs, ctx) {
             prompt: String(args.prompt || '').trim() || '请完整分析这张 SVG 矢量图：描述结构、关系与含义，并按阅读顺序逐字转录全部可见文字。',
             dataUrl: svgDataUrl(safeSvg),
             model: visionModel,
+            beforeRequest: () => guardSensitiveVision(ctx),
             signal: ctx.signal,
             onUsage: (u) => { if (u) { visionIn += Number(u.input || 0); visionOut += Number(u.output || 0); } },
           });
@@ -2386,6 +2396,7 @@ async function executeToolBody(outerName, outerArgs, ctx) {
                   prompt: pagePrompt,
                   dataUrls: batch.map((img) => img.dataUrl),
                   model: visionModel,
+                  beforeRequest: () => guardSensitiveVision(ctx),
                   signal: ctx.signal,
                   onUsage: (u) => {
                     if (u) { visionIn += Number(u.input || 0); visionOut += Number(u.output || 0); }

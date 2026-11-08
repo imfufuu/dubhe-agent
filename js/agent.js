@@ -1,3 +1,4 @@
+import { gatewayBase } from './endpoint.js';
 import { videoModelRuntimeDescription } from './video-gen.js';
 import { prepareTurnAttachments } from './turn-input.js';
 import { publicTaskPlan } from './publicplan.js';
@@ -32,7 +33,7 @@ import { effectiveApiKey, isAdminAlias } from './adminkey.js';
 import { compactMessages, contextBudgetFor } from './context.js';
 import { subagentGuide, specialistPrompt } from './subagents.js';
 import { TOOL_LOOP_MAX, SUBAGENT_LOOP_MAX, systemPrompt, OUTPUT_SPEC, outputSpec, compactOutputSpec, DEFAULT_IMAGE_MODEL, imageModelRuntimeDescription, SMART_ROUTER_ID, FALLBACK_MODELS, resolveModelAlias } from './config.js?v=2026.10.25.1';
-import { routeModel, isSmartRouter } from './smartrouter.js?v=2026.10.25.1';
+import { routeModelForGateway, isSmartRouter } from './smartrouter.js?v=2026.10.25.1';
 import { planTurn, planSignals, JEV_PLAN_TIMEOUT_MS } from './jev.js';
 import { markJevOutcome, markLastUserOutcome, turnContext } from './jev-feedback.js';
 import { assembleSystemLayers, formatRuntime, formatCppRuntime, formatBudgetNote } from './prompt.js';
@@ -218,7 +219,7 @@ export function subagentTools(sandboxEnabled, def, { localCpp = true } = {}) {
   return list.length ? list : null;
 }
 
-export async function runSubagent(def, task, { apiKey, gatewayId = 'teamorouter', gatewayBaseUrl = '', model, thinking, reasoningLevel, sandboxEnabled, localCpp = true, cppMode = 'remote', webEnabled, fs, signal, onThinkingFallback, onWebFallback, imageModel, videoGenModel, visionModel, videoModel, audioModel, onSubagentUsage, memory, onThink }) {
+export async function runSubagent(def, task, { apiKey, gatewayId = 'teamorouter', gatewayBaseUrl = '', model, thinking, reasoningLevel, sandboxEnabled, localCpp = true, cppMode = 'remote', webEnabled, fs, signal, onThinkingFallback, onWebFallback, imageModel, videoGenModel, visionModel, canUseSensitiveVision, videoModel, audioModel, onSubagentUsage, memory, onThink }) {
   const offlineOnly = isNetworkOffline() || isOfflineModelId(model);
   const availableSubTools = subagentTools(sandboxEnabled, def, { localCpp });
   const subTools = offlineOnly ? (availableSubTools || []).filter((tool) => isOfflineToolAllowed(tool.name)) : availableSubTools;
@@ -294,7 +295,7 @@ export async function runSubagent(def, task, { apiKey, gatewayId = 'teamorouter'
         res = JSON.stringify({ code: 'CONFIRMATION_REQUIRED', tool: c.name, retryable: false, reason: 'ask-parent-to-run-with-approval' });
       } else {
         // The selected models and capability switches remain locked to the parent turn.
-        res = await executeTool(c.name, c.args, { fs, onUi: () => {}, apiKey, model, gatewayId, gatewayBaseUrl, imageModel: imageModel || null, videoGenModel: videoGenModel || null, visionModel: visionModel || null, videoModel: videoModel || null, audioModel: audioModel || null, sandboxEnabled, localCpp, cppMode, signal });
+        res = await executeTool(c.name, c.args, { fs, onUi: () => {}, apiKey, model, gatewayId, gatewayBaseUrl, imageModel: imageModel || null, videoGenModel: videoGenModel || null, visionModel: visionModel || null, videoModel: videoModel || null, audioModel: audioModel || null, canUseSensitiveVision, sandboxEnabled, localCpp, cppMode, signal });
       }
       messages.push({ role: 'tool', toolCallId: c.id, name: c.name, content: res });
     }
@@ -608,7 +609,7 @@ export function createAgent(store, hooks = {}) {
       offlineOnly = isNetworkOffline() || isOfflineModelId(store.state.model);
       settings = { ...(store.state.settings || {}) };
       userModel = offlineOnly ? OFFLINE_MODEL_ID : store.state.model;
-      if (isNetworkOffline()) {
+      if (isNetworkOffline() && store.state.offlineModelAvailable) {
         store.state.model = OFFLINE_MODEL_ID;
         const activeSession = (store.state.sessions || []).find((session) => session.id === store.state.activeSessionId);
         if (activeSession) activeSession.model = OFFLINE_MODEL_ID;
@@ -631,7 +632,8 @@ export function createAgent(store, hooks = {}) {
         const availableIds = Array.isArray(store.state.models) && store.state.models.length
           ? store.state.models
           : FALLBACK_MODELS.map((m) => m.id);
-        routerDecision = routeModel((lastUserMsgRaw && lastUserMsgRaw.text) || '', availableIds);
+        routerDecision = routeModelForGateway((lastUserMsgRaw && lastUserMsgRaw.text) || '', availableIds,
+          { gatewayId: store.state.gatewayId || 'teamorouter', base: gatewayBase() });
         resolvedModel = routerDecision.chosenModel;
       }
       // 废弃/改名模型自动别名到可用版本（例如 gemini-3.5-flash → gemini-3.8-flash）
@@ -1187,7 +1189,7 @@ export function createAgent(store, hooks = {}) {
               // ① 首响应超时（15s 无有效 SSE 事件）：只要还没拿到任何内容，最多重试 3 次
               // ② 其他 5xx/429/网络瞬断：零输出时重试 1 次（保留旧行为）
               const maxAttempts = firstTokenTimeout ? MAX_FT_ATTEMPTS : 1;
-              if (attempt < maxAttempts && !hasOutput && transient && !signal.aborted && err.name !== 'AbortError') {
+              if (turn.gatewayId !== 'cloudflare' && attempt < maxAttempts && !hasOutput && transient && !signal.aborted && err.name !== 'AbortError') {
                 attempt++;
                 tb = createThinkingTracker();
                 reasoning = '';
@@ -1816,7 +1818,7 @@ export function createAgent(store, hooks = {}) {
     },
 
     async send(userText, attachments = [], options = {}) {
-      if (isNetworkOffline()) {
+      if (isNetworkOffline() && store.state.offlineModelAvailable) {
         store.state.model = OFFLINE_MODEL_ID;
         const activeSession = (store.state.sessions || []).find((session) => session.id === store.state.activeSessionId);
         if (activeSession) activeSession.model = OFFLINE_MODEL_ID;

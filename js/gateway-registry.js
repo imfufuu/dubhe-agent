@@ -301,7 +301,7 @@ export function filterGatewayChatModels(gatewayId, ids) {
 
 export function gatewayModelListLabel(gatewayId) {
   const spec = getGateway(gatewayId);
-  if (spec.id === 'cloudflare') return localeText('无需 Key。填写已部署的 Workers AI 网关 URL；仅该 Worker 允许的 Cloudflare Hosted Models 可用。配额按 UTC 日重置，实际账单以 Cloudflare 为准。', 'No API key required. Enter your deployed Workers AI gateway URL. Only its allowed Cloudflare-hosted models are available; quotas reset at 00:00 UTC. Cloudflare billing is authoritative.');
+  if (spec.id === 'cloudflare') return localeText('无需 Key。填写已部署的 Workers AI 网关 URL；仅该 Worker 允许的 Cloudflare Hosted Models 可用。用量和账单以 Cloudflare 为准；请保护 Worker 地址。', 'No API key required. Enter your deployed Workers AI gateway URL. Only its allowed Cloudflare-hosted models are available; Cloudflare controls usage and billing; protect the Worker URL.');
   if (spec.id === 'custom') return localeText('手动添加仅适用于自定义网关；已添加的模型可点 × 移除。上游是否支持以该网关返回为准。', 'Manual model IDs are only for the custom gateway. Click × to remove one; the upstream must still support it.');
   if (spec.id === 'qwen') return localeText('百炼 API Key 与网关 URL 必须属于同一地域；可在基础 URL 填入控制台提供的业务空间专属兼容端点。', 'The Model Studio API key and gateway URL must use the same region. You can enter the workspace-specific compatible endpoint from the console.');
   if (spec.listMode === 'static') return localeText('当前网关没有已核实的通用模型目录接口；此处仅列出官方文档中的文本模型 ID，账号权限和地域可能影响实际可用性。', 'No verified general model-list API is configured for this gateway. This is a documentation-based text-model list; account access and region may affect availability.');

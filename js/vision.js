@@ -4,7 +4,7 @@ import { normalizeAudioData } from './audio-format.js';
 // 独立文件，避免给 api.js 新增具名导出（Pages 混版缓存会白屏）。
 import { authHeaders, gatewayRequest } from './api.js?v=2026.10.25.1';
 import { svgDataUrl } from './svg-safety.js';
-import { DEFAULT_VISION_MODEL, DEFAULT_VIDEO_MODEL, resolveVisionModel, resolveVideoModel, DEFAULT_AUDIO_MODEL, resolveAudioModel } from './config.js?v=2026.10.25.1';
+import { DEFAULT_VISION_MODEL, DEFAULT_VIDEO_MODEL, GROK_SENSITIVE_VISION_MODEL, resolveVisionModel, resolveVideoModel, DEFAULT_AUDIO_MODEL, resolveAudioModel } from './config.js?v=2026.10.25.1';
 import { protocolOf } from './config.js?v=2026.10.25.1';
 import { DEFAULT_GATEWAY_ID, getGateway, gatewayPath, defaultVisionModelForGateway } from './gateway-registry.js?v=2026.10.25.1';
 
@@ -38,7 +38,7 @@ function anthropicVisionPayload(body) {
   };
 }
 
-async function postChat(body, apiKey, signal, { gatewayId = DEFAULT_GATEWAY_ID, gatewayBaseUrl = '' } = {}) {
+async function postChat(body, apiKey, signal, { gatewayId = DEFAULT_GATEWAY_ID, gatewayBaseUrl = '', noReplay = false } = {}) {
   const spec = getGateway(gatewayId);
   if (gatewayId !== DEFAULT_GATEWAY_ID && (body.messages || []).some((m) => Array.isArray(m.content) && m.content.some((part) => part && part.type === 'file'))) {
     throw new Error(`${spec.name} 直连尚未验证当前视频/音频 file-part 协议；为避免错发密钥，请改用该网关支持的原生文件端点。`);
@@ -47,7 +47,7 @@ async function postChat(body, apiKey, signal, { gatewayId = DEFAULT_GATEWAY_ID, 
   const requestBody = protocol === 'anthropic' ? anthropicVisionPayload(body) : body;
   const path = gatewayPath(gatewayId, protocol === 'anthropic' ? 'messages' : 'chat');
   const headers = { 'Content-Type': 'application/json', ...authHeaders(protocol, apiKey, gatewayId) };
-  return gatewayRequest(path, { method: 'POST', headers, body: JSON.stringify(requestBody), signal, gatewayId, gatewayBaseUrl });
+  return gatewayRequest(path, { method: 'POST', headers, body: JSON.stringify(requestBody), signal, gatewayId, gatewayBaseUrl, noReplay });
 }
 
 function extractChoiceText(json) {
@@ -75,8 +75,8 @@ function isLengthStop(reason) {
   return /^(length|max_tokens|max_output_tokens)$/i.test(String(reason || ''));
 }
 
-async function oneShot(body, apiKey, signal, { gatewayId = DEFAULT_GATEWAY_ID, gatewayBaseUrl = '' } = {}) {
-  const res = await postChat(body, apiKey, signal, { gatewayId, gatewayBaseUrl });
+async function oneShot(body, apiKey, signal, { gatewayId = DEFAULT_GATEWAY_ID, gatewayBaseUrl = '', noReplay = false } = {}) {
+  const res = await postChat(body, apiKey, signal, { gatewayId, gatewayBaseUrl, noReplay });
   const raw = await res.text();
   if (!res.ok) {
     let msg = raw.slice(0, 400);
@@ -92,6 +92,7 @@ async function oneShot(body, apiKey, signal, { gatewayId = DEFAULT_GATEWAY_ID, g
   const { text, finishReason } = protocol === 'anthropic'
     ? { text: (json.content || []).filter((part) => part && part.type === 'text').map((part) => part.text || '').join(''), finishReason: json.stop_reason || '' }
     : extractChoiceText(json);
+  if (json?.choices?.[0]?.message?.refusal) throw new Error(`识图服务商拒绝处理：${String(json.choices[0].message.refusal).slice(0, 300)}`);
   if (!text) throw new Error('识图接口没有返回内容');
   const u = json && json.usage ? {
     input: Number(json.usage.prompt_tokens ?? json.usage.input_tokens ?? 0) || 0,
@@ -104,7 +105,7 @@ async function oneShot(body, apiKey, signal, { gatewayId = DEFAULT_GATEWAY_ID, g
 //   image/jpeg, image/png, image/gif, image/webp
 // 其它格式（bmp/ico/tiff/avif/heic/apng/svg）在此函数里先转成 image/png，避免 400。
 const VISION_COMPAT_MIME = /^image\/(jpe?g|png|gif|webp)$/i;
-async function normalizeForVision(u) {
+async function normalizeForVision(u, xaiImage = false) {
   let sourceUrl = String(u || '');
   if (!/^data:image\//i.test(sourceUrl)) return sourceUrl; // http(s) URL 原样传
   const mm = /^data:([^;,]+)(?:;[^,]*)?,/i.exec(sourceUrl);
@@ -114,7 +115,7 @@ async function normalizeForVision(u) {
     try { sourceUrl = svgDataUrl(sourceUrl); }
     catch (err) { throw new Error(`SVG 安全检查失败：${err.message || err}`); }
   }
-  if (VISION_COMPAT_MIME.test(mime)) return sourceUrl;
+  if (VISION_COMPAT_MIME.test(mime) && (!xaiImage || /^image\/(?:jpeg|jpg|png)$/i.test(mime))) return sourceUrl.replace(/^data:image\/jpg([;,])/i, 'data:image/jpeg$1');
   // 不在白名单里 → 先清理 SVG，再在本机栅格化为 PNG；绝不把原始 SVG 源码直接发给视觉模型。
   try {
     const dataURL = await new Promise((resolve, reject) => {
@@ -142,6 +143,7 @@ async function normalizeForVision(u) {
     });
     return dataURL;
   } catch (err) {
+    if (xaiImage) throw new Error(`图片无法转换成 Grok 支持的 PNG/JPEG：${err.message || err}`);
     if (isSvg) throw new Error(`SVG 安全栅格化失败：${err.message || err}`);
     // 非 SVG 解码失败时保留既有兼容回退；SVG 从不以未栅格化的原文透传。
     console.warn('[vision] normalize image failed, fall through:', err);
@@ -150,7 +152,7 @@ async function normalizeForVision(u) {
 }
 
 /** 用识图模型看一张或多张图（data URL 或 http URL），返回模型文字。长度上限会自动续写。 */
-export async function analyzeImage({ apiKey, prompt, dataUrl, dataUrls, model, signal, onUsage, gatewayId = DEFAULT_GATEWAY_ID, gatewayBaseUrl = '' }) {
+export async function analyzeImage({ apiKey, prompt, dataUrl, dataUrls, model, signal, onUsage, beforeRequest, gatewayId = DEFAULT_GATEWAY_ID, gatewayBaseUrl = '' }) {
   if (!apiKey && !getGateway(gatewayId).noKey) throw new Error('未配置 API Key');
   const rawUrls = [];
   for (const u of (Array.isArray(dataUrls) ? dataUrls : [])) {
@@ -158,13 +160,24 @@ export async function analyzeImage({ apiKey, prompt, dataUrl, dataUrls, model, s
   }
   if (dataUrl && !rawUrls.includes(dataUrl)) rawUrls.unshift(dataUrl);
   if (!rawUrls.length) throw new Error('没有可分析的图片');
-  // 把不被模型支持的格式先转成 PNG（SVG/BMP/ICO/TIFF/AVIF/HEIC/APNG 等）
-  const urls = await Promise.all(rawUrls.map(normalizeForVision));
+  if (typeof beforeRequest === 'function') beforeRequest();
+  const resolvedModel = gatewayId === DEFAULT_GATEWAY_ID ? resolveVisionModel(model) : String(model || defaultVisionModelForGateway(gatewayId) || '').trim();
+  const grokImage = resolvedModel === GROK_SENSITIVE_VISION_MODEL && (gatewayId === 'grok' || gatewayId === DEFAULT_GATEWAY_ID);
+  // xAI supports PNG/JPEG only. Convert other formats locally before upload.
+  const urls = await Promise.all(rawUrls.map(u => normalizeForVision(u, grokImage)));
+  if (grokImage) for (const url of urls) {
+    if (/^data:/i.test(url)) {
+      const match = /^data:image\/(?:jpeg|png);base64,([A-Za-z0-9+/]+={0,2})$/i.exec(url);
+      if (!match) throw new Error('Grok 识图仅接受 PNG/JPEG base64 图片。');
+      if ((Math.floor(match[1].length * 3 / 4) - (match[1].endsWith('==') ? 2 : match[1].endsWith('=') ? 1 : 0)) > 20 * 1024 * 1024) throw new Error('Grok 图片超过 20 MiB 上限。');
+    } else if (!/^https:\/\//i.test(url)) throw new Error('Grok 识图仅接受 HTTPS 图片或 PNG/JPEG data URL。');
+  }
   const text = String(prompt || DEFAULT_VISION_PROMPT).trim() || DEFAULT_VISION_PROMPT;
   if (gatewayId === 'cloudflare') {
     if (urls.length !== 1) throw new Error('Cloudflare 识图每次只接受一张图片；请逐张提交。');
     const id = defaultVisionModelForGateway(gatewayId);
     if (model && model !== id) throw new Error('所选识图模型与 Cloudflare 网关不兼容。');
+    if (typeof beforeRequest === 'function') beforeRequest();
     const res = await gatewayRequest('v1/vision', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: id, prompt: text, image: urls[0] }), signal, gatewayId, gatewayBaseUrl, noReplay: true });
     const raw = await res.text();
     if (!res.ok) throw new Error(`识图接口 ${res.status}：${raw.slice(0, 400)}；请勿自动重试。`);
@@ -178,11 +191,9 @@ export async function analyzeImage({ apiKey, prompt, dataUrl, dataUrls, model, s
     text: urls.length > 1 ? `${text}\n（共 ${urls.length} 张，按顺序分别分析每一张，用 Markdown 二级标题标出第几张。）` : text,
   }];
   for (const u of urls) content.push({ type: 'image_url', image_url: { url: u } });
-  const modelId = gatewayId === DEFAULT_GATEWAY_ID
-    ? resolveVisionModel(model)
-    : String(model || defaultVisionModelForGateway(gatewayId) || '').trim();
+  const modelId = resolvedModel;
   if (!modelId) throw new Error(`${getGateway(gatewayId).name} 尚未配置可用的识图模型`);
-  return runVisionTurns({ model: modelId, content, apiKey, signal, onUsage, promptLen: text.length, imageCount: urls.length, gatewayId, gatewayBaseUrl });
+  return runVisionTurns({ model: modelId, content, apiKey, signal, onUsage, promptLen: text.length, imageCount: urls.length, gatewayId, gatewayBaseUrl, beforeRequest, noReplay: grokImage });
 }
 
 // 只有 DeepSeek / GLM 系默认会「先思考再答」且认 reasoning:false；Gemini / Claude 不认这个字段，
@@ -192,7 +203,7 @@ function wantsReasoningOff(model) {
 }
 
 // 公共循环：发一轮，finish_reason=length 就续写，最多 VISION_CONTINUES 次；汇总 usage 回调计费。
-async function runVisionTurns({ model, content, apiKey, signal, onUsage, promptLen = 0, imageCount = 0, videoSeconds = 0, audio = false, gatewayId = DEFAULT_GATEWAY_ID, gatewayBaseUrl = '' }) {
+async function runVisionTurns({ model, content, apiKey, signal, onUsage, promptLen = 0, imageCount = 0, videoSeconds = 0, audio = false, gatewayId = DEFAULT_GATEWAY_ID, gatewayBaseUrl = '', beforeRequest, noReplay = false }) {
   const messages = [{ role: 'user', content }];
   let disableReasoning = wantsReasoningOff(model);
   const parts = [];
@@ -209,7 +220,8 @@ async function runVisionTurns({ model, content, apiKey, signal, onUsage, promptL
     if (disableReasoning) body.reasoning = false;
     let shot;
     try {
-      shot = await oneShot(body, apiKey, signal, { gatewayId, gatewayBaseUrl });
+      if (typeof beforeRequest === 'function') beforeRequest();
+      shot = await oneShot(body, apiKey, signal, { gatewayId, gatewayBaseUrl, noReplay });
     } catch (err) {
       if (disableReasoning && err && err.status === 400 && /reasoning|thinking/i.test(String(err.body || err.message || ''))) {
         disableReasoning = false;

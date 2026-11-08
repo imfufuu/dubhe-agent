@@ -930,7 +930,7 @@ function httpErrorMessage(status, text, gatewayId = DEFAULT_GATEWAY_ID) {
     401: `（请检查 ${spec.name} API Key、账号权限与模型访问权限）`,
     403: `（${spec.name} 拒绝访问；检查账号权限、区域和模型可用性）`,
     404: `（检查 ${spec.name} 的模型 ID 与网关基础 URL）`,
-    429: '（触发限流，稍后自动重试）',
+    429: gatewayId === 'cloudflare' ? '（请检查 Cloudflare 额度或限流；未自动重试）' : '（触发限流，稍后自动重试）',
   };
   return `HTTP ${status}: ${String(msg).slice(0, 400)} ${hints[status] || ''}`.trim();
 }

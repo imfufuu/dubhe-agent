@@ -384,6 +384,14 @@ async function createOfflineEngine() {
     worker: new URL(`../assets/vendor/wllama/wllama-compat-${WLLAMA_VERSION}.js`, import.meta.url).href,
     wasm: new URL(`../assets/vendor/wllama/wllama-compat-${WLLAMA_VERSION}.wasm`, import.meta.url).href,
   }, 'firefox_safari');
+  // The upstream Memory64 probe can report support on browsers that ignore the
+  // memory address option. Force the bundled wasm32/Asyncify pair; imported
+  // files are already limited to <2 GiB. This avoids runtime parse aborts.
+  runtime.getWorkerResources = () => ({
+    wasmPath: new URL(`../assets/vendor/wllama/wllama-compat-${WLLAMA_VERSION}.wasm`, import.meta.url).href,
+    jsPath: new URL(`../assets/vendor/wllama/wllama-compat-${WLLAMA_VERSION}.js`, import.meta.url).href,
+    compat: true,
+  });
   return runtime;
 }
 

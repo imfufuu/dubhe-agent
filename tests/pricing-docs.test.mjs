@@ -52,3 +52,8 @@ test('同系估价与未公开价格必须标注，不得冒充官方价', () =>
   assert.match(docs, /同系估价（目录未精确列出）/);
   assert.match(docs, /公开目录未给出价格，暂不估价/);
 });
+
+test('pricing links inherit text color in both unvisited and visited states with visible focus', () => {
+  assert.match(docs, /#page-pricing a:link,\s*#page-pricing a:visited\s*\{\s*color:\s*inherit;/);
+  assert.match(docs, /#page-pricing a:focus-visible\s*\{\s*outline:/);
+});

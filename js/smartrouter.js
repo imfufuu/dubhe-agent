@@ -3,6 +3,8 @@
 // 路由策略为本地启发式（0ms 决策），不需要额外网络请求。
 
 import { SMART_ROUTER_ID } from './config.js?v=2026.10.25.1';
+import { isCnUnavailableModel } from './api.js?v=2026.10.25.1';
+import { GATEWAY_CN } from './endpoint.js';
 
 // 路由类别
 const TASK_CATEGORY = {
@@ -94,12 +96,12 @@ const ROUTE_TABLE = {
 // 跨类兜底：某类候选全部不在网关列表里时，按这个顺序找第一个可用模型
 const ROUTE_FALLBACK = ['claude-sonnet-5-5', 'gpt-6-sol', 'gemini-3.8-flash', 'deepseek-flash', 'glm-5.3', 'claude-haiku-5-5', 'gpt-5.6-sol'];
 
-function pickRealModel(category, difficulty, availableModels) {
+function pickRealModel(category, difficulty, availableModels, fallbackModel = 'gemini-3.8-flash') {
   const ids = (availableModels || []).map((m) => (typeof m === 'string' ? m : m.id)).filter(Boolean);
   const available = new Set(ids);
   const pick = (candidates) => (candidates || []).find((id) => available.has(id)) || null;
   const own = ROUTE_TABLE[category] && (ROUTE_TABLE[category][difficulty] || Object.values(ROUTE_TABLE[category])[0]);
-  return pick(own) || pick(ROUTE_FALLBACK) || ids.find((id) => !isSmartRouter(id)) || 'gemini-3.8-flash';
+  return pick(own) || pick(ROUTE_FALLBACK) || ids.find((id) => !isSmartRouter(id)) || fallbackModel;
 }
 
 // 路由记录：每轮记录一次选择，供用户事后查看
@@ -118,9 +120,9 @@ const DIFF_LABELS = {
   [DIFFICULTY.HARD]: '困难',
 };
 
-export function routeModel(userText, availableModels) {
+export function routeModel(userText, availableModels, { fallbackModel } = {}) {
   const { category, difficulty } = classifyTask(userText);
-  const modelId = pickRealModel(category, difficulty, availableModels);
+  const modelId = pickRealModel(category, difficulty, availableModels, fallbackModel);
   return {
     router: true,
     category,
@@ -130,6 +132,13 @@ export function routeModel(userText, availableModels) {
     chosenModel: modelId,
     chosenProvider: providerOfForRouter(modelId),
   };
+}
+
+// Restrict the candidate list before scoring, including the empty-list fallback.
+export function routeModelForGateway(userText, models, { gatewayId = 'teamorouter', base = '' } = {}) {
+  const cn = gatewayId === 'teamorouter' && base === GATEWAY_CN;
+  const allowed = cn ? (models || []).filter(m => !isCnUnavailableModel(GATEWAY_CN, typeof m === 'string' ? m : m.id)) : models;
+  return routeModel(userText, allowed, { fallbackModel: cn ? 'deepseek-flash' : undefined });
 }
 
 // 独立的 providerOf（避免循环依赖）

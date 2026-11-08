@@ -122,6 +122,21 @@ export function installModelPicker({ store, agent, toast, getBusy, openKeyModal,
     store.state.model = SMART_ROUTER_ID;
     store.notify();
   }
+  const LAST_CN_MODEL_KEY = 'dubhe-last-cn-chat-model';
+  function rememberDomesticModel(id) {
+    if (!id || isSmartRouter(id) || isOfflineModelId(id) || id === '__system__' || isCnUnavailableModel(GATEWAY_CN, id)) return;
+    try { localStorage.setItem(LAST_CN_MODEL_KEY, id); } catch { /* private mode */ }
+  }
+  function ensureCnModel() {
+    if ((store.state.gatewayId || DEFAULT_GATEWAY_ID) !== DEFAULT_GATEWAY_ID || gatewayBase() !== GATEWAY_CN || !isCnUnavailableModel(GATEWAY_CN, store.state.model)) return false;
+    let previous = '';
+    try { previous = localStorage.getItem(LAST_CN_MODEL_KEY) || ''; } catch { /* private mode */ }
+    const available = mergedModels().filter(m => !isSmartRouter(m.id) && !m.localModel && !isCnUnavailableModel(GATEWAY_CN, m.id));
+    store.state.model = available.some(m => m.id === previous) ? previous : (available.find(m => m.id === 'deepseek-flash')?.id || available[0]?.id || 'deepseek-flash');
+    store.notify();
+    return true;
+  }
+  window.addEventListener('dubhe:gateway-endpoint', () => { ensureCnModel(); syncGateway(); });
   function renderModelMenu() {
     const q = ddSearch.value.trim().toLowerCase();
     // 隐藏通道：搜索 /system 出现「系统命令识别器」（输入命令获取系统反馈，如 /debug on）
@@ -275,7 +290,9 @@ export function installModelPicker({ store, agent, toast, getBusy, openKeyModal,
       toast('已退出隐藏通道，回到原会话', 'ok', 2400);
       return;
     }
-    store.state.model = id; store.notify();
+    store.state.model = id;
+    if ((store.state.gatewayId || DEFAULT_GATEWAY_ID) === DEFAULT_GATEWAY_ID) rememberDomesticModel(id);
+    store.notify();
     if (typeof syncWeb === 'function') syncWeb();
     updateModelBtn(); closeMenu();
     const fast = $('#fast-toggle');
@@ -292,7 +309,8 @@ export function installModelPicker({ store, agent, toast, getBusy, openKeyModal,
     return mergedModels();
   }
   function updateModelBtn() {
-    const displayedId = isNetworkOffline() ? OFFLINE_MODEL_ID : store.state.model;
+    ensureCnModel(); // also covers restoring a conversation or leaving /system
+    const displayedId = isNetworkOffline() && store.state.offlineModelAvailable ? OFFLINE_MODEL_ID : store.state.model;
     const selected = mergedModels().find((m) => m.id === displayedId);
     const sys = displayedId === '__system__';
     const router = !sys && isSmartRouter(displayedId);
@@ -361,6 +379,7 @@ export function installModelPicker({ store, agent, toast, getBusy, openKeyModal,
   }
   document.addEventListener('click', (e) => { if (!$('#model-picker').contains(e.target)) closeMenu(); });
   window.addEventListener('resize', closeMenu);
+  ensureCnModel();
   updateModelBtn();
 
   async function refreshModels({ silent = false, requireKey = true } = {}) {
@@ -406,6 +425,7 @@ export function installModelPicker({ store, agent, toast, getBusy, openKeyModal,
     } finally { if (button) button.classList.remove('spin'); }
   }
   function syncGateway() {
+    ensureCnModel();
     const button = $('#refresh-models');
     if (button) {
       const gatewayId = store.state.gatewayId || DEFAULT_GATEWAY_ID;

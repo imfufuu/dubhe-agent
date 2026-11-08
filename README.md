@@ -53,7 +53,8 @@ npm ci && npm test   # 一条命令跑完 tests/ 下全部 .mjs + Python 护栏�
 
 ## 自定义供应商与离线本地模型
 
-- **Cloudflare Workers AI 网关**：独立部署 [Workers AI Worker](workers-ai/README.md)，在设置中选择该网关并填写 Worker URL，无需 API Key，可切换地址。只提供经过审核的 Cloudflare Hosted 文本模型；服务端采用单 IP 1000 / Worker 10000 Neurons 的估算预算（UTC 日重置），非 Cloudflare 实际账单或费用硬上限。账号免费额度 10000 Neurons/日由同账号所有服务共享，付费计划超额可能收费。详见部署与限制说明。
+- **Grok 识图**：确认风险并关闭内容审核后，选择 Grok / xAI 直连或 TeamoRouter 国际节点，可在「设置 → 多模态模型 → 识图模型」选择 Grok 4.7 处理敏感图像。图片会上传所选网关及服务商并产生费用；关闭本地审核不改变服务商政策或保证请求被接受。重新启用审核或切换到不兼容网关后，该选项不可使用，需重新选择。xAI 官方 [Chat Completions 图片格式](https://docs.x.ai/developers/model-capabilities/legacy/chat-completions)支持 PNG/JPEG；其他格式会先在浏览器转换。
+- **Cloudflare Workers AI 网关**：独立部署 [Workers AI Worker](workers-ai/README.md)，在设置中填写 Worker URL，无需 API Key。应用不再限制每日用量；Cloudflare 自身免费额度、限流及账单规则仍适用，付费账号可能产生费用。Worker 默认无鉴权，务必保护地址并配置访问控制。
 - **自定义网关**：手动添加模型时填写供应商名称；图标可选，未上传时用名称首字母显示。支持 PNG/JPEG/WebP/SVG，也接受含 SVG 源码的 `.txt`；文本图标会先做安全清理。可预览、编辑、保存或取消，元数据仅存本机浏览器。
 - **用户自选离线 GGUF**：在「设置 → 离线本地模型」选择本机单文件 `.gguf`（小于 2 GiB）。应用只在浏览器里解析文件并复制到 OPFS；不会从网页下载模型，也不会把所选文件上传到网关。Wllama 3.8.1 直接以本地 `Blob[]` 加载。卸载浏览器站点数据会删除模型。
 - 浏览器不支持 Memory64 或 JSPI 时，自动选择同源打包的 Wllama 32 位兼容运行时（包括 Firefox）；兼容模式可能较慢且仍受浏览器内存、OPFS 与模型格式限制。兼容 WASM 约 16 MB，会作为核心离线资源缓存。
