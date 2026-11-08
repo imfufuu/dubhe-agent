@@ -3,6 +3,7 @@
 export const OFFLINE_ALLOWED_TOOL_NAMES = Object.freeze([
   'skill_library',
   'tool_library',
+  'tool_registry',
   'document_tool',
   'xlsx_tool',
   'knowledge_search',

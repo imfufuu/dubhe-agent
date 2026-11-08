@@ -1459,8 +1459,8 @@ html.show-jev-decision .jev-chip { display: block; }
 
 .composer {
   max-width: 760px; margin: 0 auto; display: grid; align-items: center;
-  grid-template-columns: auto minmax(0, 1fr) auto auto;
-  grid-template-areas: "attach input voice send";
+  grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+  grid-template-areas: "attach input tuner voice send";
   gap: 10px;
   border: 1px solid var(--line); border-radius: 28px; padding: 10px 10px 10px 18px;
   background: var(--conversation-bg, var(--bg));
@@ -1468,8 +1468,8 @@ html.show-jev-decision .jev-chip { display: block; }
 }
 .composer:focus-within { border-color: var(--line-2); box-shadow: none; }
 .composer.is-multiline {
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  grid-template-areas: "input input input" "attach voice send";
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  grid-template-areas: "input input input input" "attach tuner voice send";
   row-gap: 6px; border-radius: 28px;
 }
 .composer .attach-menu-wrap { grid-area: attach; align-self: center; }
@@ -1481,6 +1481,7 @@ html.show-jev-decision .jev-chip { display: block; }
 .composer.is-multiline #composer-input { align-self: start; }
 /* 单行时与右侧按钮同高居中；多行时文本顶对齐，避免单行偏上 */
 .composer #voice-btn { grid-area: voice; align-self: center; margin: 0; }
+.composer #tuner-btn { grid-area: tuner; align-self: center; margin: 0; }
 .composer #send-btn { grid-area: send; align-self: center; }
 #composer-input::placeholder { color: var(--fg-3); }
 #send-btn {
@@ -3663,3 +3664,75 @@ html[data-motion="off"] .pm-progress.indeterminate .pm-prog-fill { animation: no
 .pm-icon-audio, .pm-icon-video { color: #b55d80; }
 .pm-icon-archive { color: #aa7d48; }
 .pm-tree-row .pm-tree-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ─── Workers AI 模型卡片：Agent 能力 badge ───────────────────────────── */
+.badge.cf-chat { color: var(--fg-3); border-color: var(--line-2); }
+[data-theme="dark"] .badge.cf-chat { color: var(--fg-2); }
+.badge.cf-agent { color: #b45309; border-color: #fcd34d; background: rgba(251, 191, 36, .09); }
+[data-theme="dark"] .badge.cf-agent { color: #fcd34d; border-color: #92400e; }
+.dd-item.active .badge.cf-agent { color: var(--bg); border-color: var(--bg); background: transparent; }
+
+/* ─── 输入框「调节器」(2026-11-08) ───────────────────────────────────── */
+#tuner-btn { flex: 0 0 32px; width: 32px; height: 32px; align-self: center; display: grid; place-items: center; border: 0; background: transparent; color: var(--fg-2); border-radius: 8px; cursor: pointer; transition: color .18s var(--ease), background .18s var(--ease); }
+#tuner-btn svg { width: 18px; height: 18px; }
+#tuner-btn:hover, #tuner-btn.on { background: var(--bg-hover); color: var(--fg); }
+.tuner-panel {
+  position: absolute; bottom: calc(100% + 8px); right: max(28px, calc((100% - 760px) / 2));
+  width: min(420px, calc(100vw - 32px)); max-height: min(72vh, 620px);
+  display: flex; flex-direction: column; z-index: 42;
+  background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 16px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, .18); overflow: hidden;
+}
+.tuner-panel[hidden] { display: none; }
+.tuner-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+.tuner-title { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; font-size: var(--ui-fs-13px, 13px); }
+.tuner-title svg { width: 17px; height: 17px; }
+#tuner-close { width: 28px; height: 28px; display: grid; place-items: center; border: 0; background: transparent; color: var(--fg-2); border-radius: 7px; cursor: pointer; }
+#tuner-close svg { width: 15px; height: 15px; }
+#tuner-close:hover { background: var(--bg-hover); color: var(--fg); }
+.tuner-body { overflow-y: auto; padding: 4px 14px 12px; }
+.tuner-sec { padding: 12px 0; border-bottom: 1px solid var(--line); }
+.tuner-sec:last-child { border-bottom: 0; }
+.tuner-label { display: flex; align-items: center; justify-content: space-between; font-size: var(--ui-fs-12px, 12px); font-weight: 700; margin-bottom: 9px; }
+.tuner-value { font-family: var(--mono); font-size: var(--ui-fs-10_5px, 10.5px); color: var(--fg-2); font-weight: 400; }
+.tuner-seg { display: flex; flex-wrap: wrap; gap: 5px; }
+.tuner-seg-btn { padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg-soft); color: var(--fg-2); font-size: var(--ui-fs-11_5px, 11.5px); cursor: pointer; transition: all .16s var(--ease); }
+.tuner-seg-btn small { opacity: .65; font-family: var(--mono); }
+.tuner-seg-btn:hover { color: var(--fg); border-color: var(--line-2); }
+.tuner-seg-btn.on { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.tuner-custom { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.tuner-custom input[type="range"] { flex: 1; accent-color: var(--accent); }
+.tuner-custom .mono { font-size: var(--ui-fs-11px, 11px); color: var(--fg-2); min-width: 36px; text-align: right; }
+.tuner-hint { margin: 8px 0 0; font-size: var(--ui-fs-10_5px, 10.5px); line-height: 1.5; color: var(--fg-3); }
+.tuner-sub { margin-top: 10px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: var(--ui-fs-11_5px, 11.5px); }
+.tuner-sub[hidden] { display: none; }
+#tuner-level { border: 1px solid var(--line); background: var(--bg-soft); color: var(--fg); border-radius: 7px; padding: 5px 8px; font-size: var(--ui-fs-11_5px, 11.5px); }
+.tuner-check { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.tuner-pending { margin-bottom: 10px; border: 1px solid #f0b429; border-radius: 10px; background: rgba(251, 191, 36, .1); padding: 9px; }
+.tuner-pending-title { font-size: var(--ui-fs-11px, 11px); font-weight: 700; margin-bottom: 6px; }
+.tuner-pending-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 0; border-top: 1px solid var(--line); font-size: var(--ui-fs-10_5px, 10.5px); }
+.tuner-pending-row:first-of-type { border-top: 0; }
+.tuner-pending-row div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.tuner-pending-row code { color: var(--fg-3); }
+.tuner-pending-actions { flex-direction: row !important; flex-shrink: 0; }
+.tuner-allow, .tuner-deny { padding: 4px 9px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); cursor: pointer; }
+.tuner-allow { border-color: #15803d; color: #15803d; }
+.tuner-deny { color: var(--fg-2); }
+.tuner-tools-list { display: flex; flex-direction: column; gap: 7px; max-height: 170px; overflow-y: auto; }
+.tuner-tool { border: 1px solid var(--line); border-radius: 9px; padding: 7px 9px; background: var(--bg-soft); }
+.tuner-tool.disabled { opacity: .6; }
+.tuner-tool-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.tuner-tool-name { border: 0; background: transparent; color: var(--fg); cursor: pointer; padding: 0; font-family: var(--mono); font-size: var(--ui-fs-11px, 11px); }
+.tuner-tool-kind { font-size: var(--ui-fs-9px, 9px); color: var(--fg-3); border: 1px solid var(--line-2); border-radius: 4px; padding: 1px 5px; }
+.tuner-mini { margin-left: auto; border: 1px solid var(--line); background: var(--bg); color: var(--fg-2); border-radius: 6px; padding: 3px 7px; font-size: var(--ui-fs-10px, 10px); cursor: pointer; }
+.tuner-mini.danger { color: #b42318; }
+.tuner-mini.confirm { background: #b42318; color: #fff; border-color: #b42318; }
+.tuner-tool-desc { margin-top: 4px; font-size: var(--ui-fs-10_5px, 10.5px); color: var(--fg-2); }
+.tuner-tool-json { margin: 7px 0 0; max-height: 150px; overflow: auto; font-size: 10px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
+.tuner-empty { margin: 0; font-size: var(--ui-fs-10_5px, 10.5px); color: var(--fg-3); }
+.tuner-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 9px 14px; border-top: 1px solid var(--line); font-size: var(--ui-fs-10_5px, 10.5px); color: var(--fg-2); }
+.tuner-reset { border: 0; background: transparent; color: var(--fg-3); font-size: var(--ui-fs-10_5px, 10.5px); cursor: pointer; text-decoration: underline; flex-shrink: 0; }
+@media (max-width: 640px) {
+  .tuner-panel { right: 12px; left: 12px; width: auto; max-height: 66vh; }
+  .tuner-seg-btn { padding: 7px 9px; }
+}

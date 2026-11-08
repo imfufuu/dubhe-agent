@@ -1,10 +1,13 @@
 import { CN_WEAPON_EXPLOSIVE_TERMS, hasExternalProfanity } from './local-moderation-lexicons.js';
+import { hardenedTextFindings, HARDENED_CATEGORIES } from './moderation-hardening.js';
 
 // Local, language-aware policy rules. This is a conservative lexical layer, not a substitute for contextual review.
 export const BLOCKING_TEXT = new Set([
   'minor_sexual', 'adult_sexual', 'drug_crime', 'gun_crime', 'crime_facilitation',
   'mass_harm', 'credible_threat', 'public_morals', 'exploitative_sexual', 'self_harm',
   'hate', 'political_violence', 'religious_extremism', 'severe_profanity', 'cyber_crime',
+  // 2026-11-08 多语言加固层新增类别（只增不减）
+  ...HARDENED_CATEGORIES,
 ]);
 
 const list = (value) => value.split('|').map((item) => item.trim()).filter(Boolean);
@@ -325,11 +328,19 @@ export function policyTextHeuristic(text, { purpose = 'message' } = {}) {
     mark('severe_profanity', 0.92, !quoted || abusiveRequest);
   }
 
+  // 2026-11-08：多语言加固层是第二道闸，只增加拦截、不改写旧结论。
+  // 覆盖排泄物、不安全化学、商业诋毁/机密、越狱提示词、反社会言论等旧规则未覆盖的话题。
+  const hardened = hardenedTextFindings(body);
+  for (const category of hardened.categories) {
+    if (!hits.includes(category)) hits.push(category);
+    blocking.add(category);
+    score = Math.max(score, hardened.score);
+  }
   return {
     blocked: blocking.size > 0,
     score,
     categories: hits,
     reason: hits.join(', '),
-    source: 'policy-v4',
+    source: hardened.categories.length ? 'policy-v4+hardened-multilingual-v1' : 'policy-v4',
   };
 }

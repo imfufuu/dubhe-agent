@@ -8909,8 +8909,10 @@ test('ui.js 拆分：文件面板 / 全屏预览 / 附件 / 图表各自成模�
   // 2026.10.29：联网/生成类折叠行（paintWebFold）与设置页视频模型接线后调到 176 KB。
   assert.ok(Buffer.byteLength(ui, 'utf8') < 176 * 1024, `ui.js 应小于 176 KB（当前 ${Buffer.byteLength(ui, 'utf8')} B）`);
   const agentSrcP4 = fsp.readFileSync(new URL('../js/agent.js', import.meta.url), 'utf8');
-  // 2026.11.01：Jev 决策反馈闭环（回合结果回写 + 上一轮上下文，逻辑在 jev-feedback.js）接线后调到 116 KB。
-  assert.ok(Buffer.byteLength(agentSrcP4, 'utf8') < 116 * 1024, `agent.js 应小于 116 KB（当前 ${Buffer.byteLength(agentSrcP4, 'utf8')} B）`);
+  // 2026.11.01：Jev 决策反馈闭环接线后调到 116 KB。
+  // 2026.11.08：回合环境内核（温度 / Agent/对话模式 / 工具策略，逻辑都在 agent-runtime.js）
+  // 与自注册工具表接线后调到 120 KB；agent.js 只保留接线，新增策略判断一律外移。
+  assert.ok(Buffer.byteLength(agentSrcP4, 'utf8') < 120 * 1024, `agent.js 应小于 120 KB（当前 ${Buffer.byteLength(agentSrcP4, 'utf8')} B）`);
   for (const mod of ['toolrunner', 'turnfinalizer']) {
     const src = fsp.readFileSync(new URL(`../js/${mod}.js`, import.meta.url), 'utf8');
     assert.doesNotMatch(src, /from '\.\/agent\.js/, `${mod}.js 不得反向依赖 agent.js`);
@@ -9202,7 +9204,7 @@ test('analyze_video 工具：定义 / 契约 / 并行与访问表 / 执行路径
   assert.match(def.description, /不要传 model/);
   assert.match(def.description, /16MB/);
   assert.deepEqual(Object.keys(def.parameters.properties).sort(), ['path', 'prompt']);
-  assert.equal(TOOL_DEFS.length, 52, '51 工具（本机桌面新增 local_desktop；V1.9 新增 patch_apply / dom_inspect / chart_render；视频生成新增 generate_video；复杂任务清单新增 checklist；本机能力新增 run_shell / take_screenshot / local_files）：工具目录与 XLSX 能力均登记到能力表和执行契约');
+  assert.equal(TOOL_DEFS.length, 53, '52 内置工具 + 2026-11-08 新增 tool_registry（自注册工具管理入口）；工具目录与 XLSX 能力均登记到能力表和执行契约');
   const c = ex.getToolContract('analyze_video');
   assert.equal(c.sideEffect, 'remote');
   assert.equal(c.external, true);
@@ -10242,7 +10244,9 @@ test('selectToolsForTurn：核心工具稳定前置；规则在首轮请求前�
   for (const t of TOOL_DEFS) if (!ec.CORE_TOOLS.includes(t.name)) assert.ok(ec.TOOL_MOUNT_RULES[t.name], `${t.name} 缺按需挂载规则`);
   // 提示词仅有紧凑目录（名称 + 一句话）；完整 parameters schema 不预装
   const directory = ec.formatDeferredTools(hello.deferred);
-  assert.match(directory, /^按需未挂载工具目录（\d+项；完整Schema未挂载）：\n- browser_sandbox: /);
+  assert.match(directory, /^按需未挂载工具目录（\d+项；完整Schema未挂载）：\n- [a-z_]+: /);
+  assert.match(directory, /- browser_sandbox: /);
+  assert.match(directory, /- tool_registry: /, '自注册工具入口也在按需目录中');
   assert.match(directory, /document_tool: .*DOCX/);
   assert.doesNotMatch(directory, /parameters|input_schema|slides:\[/i);
   assert.match(ec.formatDeferredTools(hello.deferred, { language: 'en' }), /^On-demand tool directory \(\d+; full schemas not mounted\):\n- /);

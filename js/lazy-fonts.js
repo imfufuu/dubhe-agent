@@ -17,8 +17,11 @@ export function parseFontFaces(css) {
   return [...String(css || '').matchAll(/@font-face\s*\{[^}]*\}/g)].map((m) => {
     const block = m[0];
     const range = /unicode-range:\s*([^;]+);/.exec(block)?.[1] || '';
-    const url = /url\(\s*["']?([^"')]+)["']?\s*\)/.exec(block)?.[1];
-    return { block, url, ranges: parseRanges(range) };
+    const urls = [...block.matchAll(/url\(\s*["']?([^"')]+)["']?\s*\)/g)].map((u) => u[1]);
+    // A face may list a remote primary source plus a bundled fallback. For offline share export
+    // always embed the same-origin file — a third-party font host can expire or block CORS.
+    const url = urls.find((u) => !/^(?:https?:)?\/\//i.test(u) && !/^data:/i.test(u)) || urls[0] || '';
+    return { block, url, urls, ranges: parseRanges(range) };
   }).filter((f) => f.url);
 }
 

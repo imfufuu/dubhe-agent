@@ -257,6 +257,27 @@ jobs:
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/v19-features.test.mjs
 
+      - name: tests/workers-ai-repair.test.mjs · Workers AI 完整模型目录 / 工具双格式 / 参数规范化 / 供应商费率
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/workers-ai-repair.test.mjs
+      - name: tests/tangut-font.test.mjs · 西夏文远程字体与离线分享回退
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/tangut-font.test.mjs
+      - name: tests/agent-runtime.test.mjs · 回合环境内核（温度 / 模式 / 工具策略门）
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/agent-runtime.test.mjs
+      - name: tests/tuner-ui.test.mjs · 输入框调节器面板与自注册工具确认 UI
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/tuner-ui.test.mjs
+      - name: tests/tool-self-registration.test.mjs · 工具自注册、确认票据与声明式 handler
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/tool-self-registration.test.mjs
+      - name: tests/text-moderation-hardening.test.mjs · 多语言敏感话题审核加固与重复验证
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/text-moderation-hardening.test.mjs
+      - name: tests/cpp-toolchain.test.mjs · 本地 C++ 工具链检查脚本与报告
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/cpp-toolchain.test.mjs
       - name: '汇总测试计数（::notice:: + job summary）'
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs --summary

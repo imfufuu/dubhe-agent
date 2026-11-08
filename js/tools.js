@@ -42,6 +42,8 @@ import { evaluateMemoryWriteGate } from './memorylife.js?v=2026.10.25.1';
 import { isNetworkOffline } from './offline-network.js';
 import { isOfflineModelId } from './offline-model-config.js';
 import { isOfflineToolAllowed } from './offline-policy.js';
+// 自注册工具注册表（声明式 handler + 用户确认门），让工具表在运行时可扩展。
+import { registeredToolDefinitions, isRegisteredToolName, invokeRegisteredTool, handleRegistryAction } from './tool-registry.js';
 
 
 const STRUCTURED_DIAGRAM_RE = /(图表|统计图|折线图|柱状图|条形图|饼图|环形图|散点图|曲线图|趋势图|位移[-－—–]?时间图|路程[-－—–]?时间图|s[-－—–]?t\s*图|流程图|思维导图|脑图|架构图|时序图|甘特图|chart|line\s+chart|bar\s+chart|pie\s+chart|scatter\s+plot|flowchart|mind\s*map|architecture\s+diagram|sequence\s+diagram|mermaid|graphviz|DOT\s*(?:图|diagram|源码|source)|SVG\s*(?:图|diagram|源码|source|矢量))/i;
@@ -67,6 +69,18 @@ function gatewayRequestContext(ctx) {
 // dispatch_subagent 附件数量上限（TOOL_DEFS 的 schema 也引用它，须定义在前）
 export const SUB_ATTACH_MAX = 5;
 export const TOOL_DEFS = [
+  {
+    name: 'tool_registry',
+    description: '管理 Agent 自注册工具：action=list/read/register/update/delete/enable/disable/invoke/pending/help。可读取完整定义、删除或启停工具；注册、更新、删除、启停都需要用户在「调节器 → 自注册工具」里确认（首次调用返回 confirm_token，批准后带同一票据重试）。自注册工具名必须以 custom_ 开头，handler 只能是声明式白名单（constant / text_template / text_transform / calculator / timestamp / echo），不执行模型提供的代码，也不能覆盖或删除内置工具。',
+    parameters: { type: 'object', properties: {
+      action: { type: 'string', enum: ['list', 'read', 'register', 'update', 'delete', 'enable', 'disable', 'invoke', 'pending', 'help'] },
+      name: { type: 'string', description: '自注册工具名（custom_ 前缀）' },
+      definition: { type: 'object', description: 'register 用的完整定义：{name, description, parameters, handler:{kind,…}, risk?}' },
+      patch: { type: 'object', description: 'update 用的部分定义' },
+      args: { type: 'object', description: 'invoke 传给自注册工具的参数' },
+      confirm_token: { type: 'string', description: '用户批准后返回的一次性确认票据' },
+    }, required: ['action'] },
+  },
   {
     name: 'browser_sandbox',
     description: '在本地服务中运行沙箱内的 HTML/CSS/JS 项目，用真实 Chromium 调试并截图；不是公网网页截图，不接受 URL 或 shell 命令。start 指定 entry（如 site/index.html）与 root（默认入口目录）；返回 preview_id，后续 inspect/click/fill/evaluate/screenshot/stop 都复用同一页面状态。reload 可重新同步 entry/root 的文件快照。截图保存 outputs/*.png，纯浏览器静态站点不可用，需本机 server.py + Puppeteer/Chromium。外部网络默认阻止，仅项目内资源可加载；不运行 npm 或后端服务。',
@@ -824,9 +838,14 @@ function validCustomImageSize(value, model) {
   return r >= 1 / 3 && r <= 3;
 }
 
+/** 当前完整工具表：静态定义 + 用户已批准的自注册工具（唯一来源，Agent 与 UI 都从这里取）。 */
+export function allToolDefinitions() {
+  return [...TOOL_DEFS, ...registeredToolDefinitions()];
+}
 export function toolsFor(sandboxEnabled, { localCpp = true } = {}) {
-  if (sandboxEnabled) return localCpp ? TOOL_DEFS : TOOL_DEFS.filter((t) => t.name !== 'execute_cpp');
-  return TOOL_DEFS.filter((t) => !CODE_TOOL_NAMES.includes(t.name));
+  const base = allToolDefinitions();
+  if (sandboxEnabled) return localCpp ? base : base.filter((t) => t.name !== 'execute_cpp');
+  return base.filter((t) => !CODE_TOOL_NAMES.includes(t.name));
 }
 
 // 模型给的沙箱路径经常带前导 '/' 或 './'，直接当字典键就会分裂成两套目录树
@@ -1176,6 +1195,12 @@ async function executeToolBody(outerName, outerArgs, ctx) {
   const umbrella = resolveUmbrellaTool(outerName, outerArgs);
   if (umbrella && umbrella.error) { emit({ status: 'error', error: { message: umbrella.error } }); return umbrella.error; }
   if (umbrella) { name = umbrella.name; args = umbrella.args; }
+  // 自注册工具与注册表管理入口：在任何文件/网络分支之前接管，声明式 handler 不触碰沙箱。
+  if (outerName === 'tool_registry') return handleRegistryAction(outerArgs || {}, ctx);
+  if (isRegisteredToolName(outerName)) {
+    const out = invokeRegisteredTool(outerName, outerArgs || {}, { confirmToken: outerArgs?.confirm_token });
+    return typeof out === 'string' ? out : JSON.stringify(out, null, 2);
+  }
   if (ANALYZE_URL_TOOLS.has(name)) {
     const pre = await materializeExternalAnalyzeArgs(name, args, ctx, emit);
     if (pre.error) { emit({ status: 'error', error: { message: pre.error } }); return pre.error; }

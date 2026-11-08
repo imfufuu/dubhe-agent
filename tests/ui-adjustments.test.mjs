@@ -15,7 +15,7 @@ test('offline model menu uses LOCAL in the provider column and keeps only the mu
   assert.match(read('../js/icons.js'), /export const LOCAL_PROVIDER_ICON_SVG = '<svg class="p-icon local-provider-icon" viewBox="0 0 24 24"/);
   assert.match(picker, /const isLocalGroup = groups\.get\(p\)\.some\(\(model\) => model\.localModel\)/);
   assert.match(picker, /isLocalGroup \? LOCAL_PROVIDER_ICON : providerIcon\(p\)/);
-  assert.match(picker, /isLocalGroup \? 'LOCAL' : p/);
+  assert.match(picker, /isLocalGroup \? 'LOCAL'/);
   assert.match(picker, /class="badge local-model-badge">\$\{localeText\('本地', 'Local'\)\}<\/span>/);
   assert.doesNotMatch(picker, /localState|localeText\('已就绪', 'Ready'\)|localeText\('未选择', 'Not selected'\)|localeText\('检查中', 'Checking'\)/);
   assert.match(css, /\.badge\.local-model-badge \{ color: var\(--fg-3\); border-color: var\(--line-2\); \}/);

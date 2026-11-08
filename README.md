@@ -822,3 +822,14 @@ JS/Python 支持 `path` 读取已存在源码代替重复 `code`；长内联 JS/
 - 其他方案
 :::
 ```
+
+
+---
+
+## 2026-11-08 维护更新
+
+- Workers AI 独立网关：完整模型目录（20 个，标注 `agent_tools`）、function tools 双格式降级、参数规范化与 `/health`，已重新部署并真实请求验证；详见 [`workers-ai/README.md`](./workers-ai/README.md)。
+- 架构：回合环境内核 + 运行时工具注册表，见 [`AGENT_ARCHITECTURE.md`](./AGENT_ARCHITECTURE.md)；Agent 可自注册工具（需用户确认），见 [`SELF_REGISTERED_TOOLS.md`](./SELF_REGISTERED_TOOLS.md)。
+- 输入框新增「调节器」：温度默认智能自调节、可手选档位；Agent 模式可设思考等级并使用全部工具，对话模式可设思考开关且完全不调用工具。
+- 审核：多语言加固与 3 轮重复验证报告 [`MODERATION_AUDIT.md`](./MODERATION_AUDIT.md)；C++ 工具链检查 [`CPP_TOOLCHAIN_REPORT.md`](./CPP_TOOLCHAIN_REPORT.md)。
+- 西夏文字体首选用户提供的 Tangut Yinchuan TTF，本地 Wenhai 分片作为失效回退；离线分享仍内嵌本地字体。

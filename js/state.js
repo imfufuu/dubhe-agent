@@ -300,6 +300,8 @@ export function createStore(onChange) {
     models: [],
     // webEnabled：联网开关。控制模型原生联网格式与已探测到的 Worker 搜索/抓取工具；
     // fetch_url/search_web/crawl_site 仍须存在相应 relay capability 才会进入工具表。
+    // 调节器：温度策略 + Agent/对话环境（由 agent-runtime.js 统一解释）。
+    tuner: { temperatureMode: 'auto', customTemperature: 0.7, environment: 'agent', agentReasoningLevel: 'inherit', chatThinking: false },
     settings: { showJevDecision: false, autoReview: true, sandboxEnabled: true, localCppEnabled: true, cppMode: 'remote', fastMode: false, theme: 'light', thinking: true, reasoningLevel: 'medium', webEnabled: true, jevEnabled: true, visionModel: 'deepseek-v4-flash-vision-exp', videoModel: 'gemini-3.5-flash-lite', audioModel: 'gemini-3.5-flash-lite', imageRemoteReview: true, cleanupUnreferencedFiles: false, userSalutation: '' },
     sessions: [newSession()],
     activeSessionId: null,
@@ -585,6 +587,9 @@ export function createStore(onChange) {
       const localCppEnabled = storedSettings.localCppEnabled !== undefined
         ? storedSettings.localCppEnabled !== false
         : storedSettings.remoteCppEnabled !== false;
+      // 旧快照没有 tuner 时补默认值，并且不接受坏形状（agent-runtime 还会再归一化一次）。
+      const storedTuner = state.tuner && typeof state.tuner === 'object' && !Array.isArray(state.tuner) ? state.tuner : {};
+      state.tuner = Object.assign({ temperatureMode: 'auto', customTemperature: 0.7, environment: 'agent', agentReasoningLevel: 'inherit', chatThinking: false }, storedTuner);
       state.settings = Object.assign({ showJevDecision: false, autoReview: true, sandboxEnabled: true, localCppEnabled: true, cppMode: 'remote', fastMode: false, theme: 'light', thinking: true, reasoningLevel: 'medium', webEnabled: true, jevEnabled: true, visionModel: 'deepseek-v4-flash-vision-exp', videoModel: 'gemini-3.5-flash-lite', audioModel: 'gemini-3.5-flash-lite', imageRemoteReview: true, cleanupUnreferencedFiles: false, userSalutation: '' }, storedSettings, { localCppEnabled });
       delete state.settings.remoteCppEnabled;
       const sandboxOverride = state.settings.capabilityConstraints?.sandbox;

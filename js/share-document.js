@@ -143,8 +143,11 @@ async function embedLazyFonts(textContent) {
     const bytes = new Uint8Array(await res.arrayBuffer());
     let bin = '';
     for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-    const mime = /\.ttf(?:$|[?#])/i.test(face.url) ? 'font/ttf' : 'font/woff2';
-    out.push(face.block.replace(/url\([^)]*\)/, `url(data:${mime};base64,${btoa(bin)})`));
+    const isTtf = /\.ttf(?:$|[?#])/i.test(face.url);
+    const mime = isTtf ? 'font/ttf' : 'font/woff2';
+    // Replace the whole src list: a face can have a remote primary + local fallback, and the
+    // exported bytes come from the local file, so its format hint must match the embedded bytes.
+    out.push(face.block.replace(/src:\s*[^;]+;/i, `src: url(data:${mime};base64,${btoa(bin)}) format('${isTtf ? 'truetype' : 'woff2'}');`));
   }
   return out.join('\n');
 }

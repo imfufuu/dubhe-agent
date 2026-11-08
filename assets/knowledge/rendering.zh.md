@@ -147,7 +147,7 @@ Pandoc 风格围栏容器可写 `::: {.notice #intro}`，容器内容，最后�
 ## Unicode 文字与旗帜字体
 关键词：BabelStone、旗帜、flag、regional indicator、tag sequence、西夏文、契丹小字、Roman、Pigpen
 
-拉丁正文使用 BabelStone Roman；Unicode 西夏文可用 `:::font Tangut`，本地 Wenhai 字体仅覆盖部分字，不要宣称完整；契丹小字可用 `:::font Khitan`，是横向逐字符显示，非完整字簇排版。`:::font Pigpen` 将普通拉丁字母映射成猪圈密码，不是加密；只用于明确要求的短文本。`:::font Goblin` 使用 Tolkien 哥布林字母，U+E000–E027 为该字体私用连字映射，普通 A–Z 可经 OpenType 组合；仅在明确选择此字体时使用，不要把私用码视为通用 Unicode 字符或与其他 PUA 字体混用。字体也接受完整的 BabelStone 字族名。
+拉丁正文使用 BabelStone Roman；Unicode 西夏文可用 `:::font Tangut`，首选远程字体「Tangut Yinchuan / 唐兀银川」（覆盖 6913 个西夏文码位），临时托管链接失效时回退到随应用分发的本地 Wenhai 分片（仅覆盖部分字），离线分享页面内嵌的是本地分片；契丹小字可用 `:::font Khitan`，是横向逐字符显示，非完整字簇排版。`:::font Pigpen` 将普通拉丁字母映射成猪圈密码，不是加密；只用于明确要求的短文本。`:::font Goblin` 使用 Tolkien 哥布林字母，U+E000–E027 为该字体私用连字映射，普通 A–Z 可经 OpenType 组合；仅在明确选择此字体时使用，不要把私用码视为通用 Unicode 字符或与其他 PUA 字体混用。字体也接受完整的 BabelStone 字族名。
 
 ## 行内旗帜指令（BabelStone Flags 4.13）
 关键词：::flag、旗帜、国旗、地区、ZWJ、PUA、私用区、BabelStone

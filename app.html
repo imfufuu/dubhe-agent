@@ -385,8 +385,42 @@
         <input id="camera-input" type="file" hidden accept="image/*" capture="environment" aria-label="拍摄照片" />
         <input id="attach-input" type="file" multiple hidden />
         <textarea id="composer-input" rows="1" aria-label="消息输入框" placeholder="你出想法，Duhbe来实现"></textarea>
+        <button id="tuner-btn" class="tuner-btn" type="button" title="Tuner" aria-label="Tuner" aria-haspopup="dialog" aria-expanded="false" aria-controls="tuner-panel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg></button>
         <button id="voice-btn" type="button" aria-describedby="voice-privacy" title="语音输入" aria-label="语音输入" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3M8 22h8"/></svg></button>
         <button id="send-btn" type="button" title="发送 (Enter)" aria-label="发送"><span id="send-ico">↑</span></button>
+      </div>
+      <div id="tuner-panel" class="tuner-panel" hidden role="dialog" aria-label="Tuner" aria-labelledby="tuner-title">
+        <div class="tuner-head">
+          <div class="tuner-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg><span id="tuner-title"></span></div>
+          <button id="tuner-close" type="button" aria-label="Close" title="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6 18 18M18 6 6 18"/></svg></button>
+        </div>
+        <div class="tuner-body">
+          <section class="tuner-sec">
+            <div class="tuner-label"><span id="tuner-label-temp"></span><span id="tuner-temp-value" class="tuner-value"></span></div>
+            <div id="tuner-temp-options" class="tuner-seg" role="group" aria-label="Temperature presets"></div>
+            <div id="tuner-custom-wrap" class="tuner-custom" hidden><input id="tuner-custom-range" type="range" min="0" max="1.5" step="0.05" value="0.7" aria-label="Custom temperature"/><span id="tuner-custom-number" class="mono">0.70</span></div>
+            <p id="tuner-temp-hint" class="tuner-hint"></p>
+          </section>
+          <section class="tuner-sec">
+            <div class="tuner-label"><span id="tuner-label-env"></span></div>
+            <div id="tuner-env-options" class="tuner-seg" role="group" aria-label="Environment mode"></div>
+            <div id="tuner-agent-block" class="tuner-sub">
+              <label for="tuner-level" id="tuner-level-label"></label>
+              <select id="tuner-level" aria-label="Agent reasoning level"></select>
+            </div>
+            <div id="tuner-chat-block" class="tuner-sub" hidden>
+              <label class="tuner-check"><input id="tuner-chat-thinking" type="checkbox"/><span id="tuner-chat-thinking-label"></span></label>
+            </div>
+            <p id="tuner-env-hint" class="tuner-hint"></p>
+          </section>
+          <section class="tuner-sec tuner-tools-sec">
+            <div class="tuner-label"><span id="tuner-label-tools"></span><span id="tuner-tools-count" class="tuner-value"></span></div>
+            <div id="tuner-pending" class="tuner-pending" hidden></div>
+            <div id="tuner-tools-list" class="tuner-tools-list"></div>
+            <p class="tuner-hint" id="tuner-tools-note"></p>
+          </section>
+        </div>
+        <div class="tuner-foot"><span id="tuner-summary"></span><button id="tuner-reset" type="button" class="tuner-reset"></button></div>
       </div>
       <div id="welcome-quick-prompts" class="welcome-quick-prompts" hidden></div>
       <span id="voice-privacy" class="sr-only">语音识别不会自动发送消息；音频由浏览器原生服务处理</span>

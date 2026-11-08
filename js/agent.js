@@ -24,6 +24,8 @@ import { getLanguage } from './locale.js';
 import { CODE_TOOL_NAMES as REG_CODE_TOOL_NAMES } from './capabilities.js';
 import { streamChat, createToolCallAccumulator, createThinkingTracker, getTransport, isEmptyAssistantMessage } from './api.js?v=2026.10.25.1';
 import { TOOL_DEFS, executeTool } from './tools.js';
+import * as ToolRuntime from './tools.js';
+import { resolveTurnEnvironment, toolCallsForEnvironment } from './agent-runtime.js';
 import { probeLocalBrowser, localBrowserAvailable } from './localbrowser.js?v=2026.10.25.1';
 import { probeLocalMachine, localMachineAvailable, LOCAL_MACHINE_TOOLS } from './localmachine.js';
 import { recordOutputText, recordOutputTool } from './toolflow.js?v=2026.10.25.1';
@@ -157,8 +159,11 @@ import { buildFileEditPreview, formatEditPreviewNote, pathsOfEdits } from './edi
 // 跨模块「新增具名导出」在混版缓存下会让整个模块图 link 失败（表现为页面直接白屏），
 // 而 TOOL_DEFS 是新旧两版都存在的导出，用它本地过滤最稳。
 const CODE_TOOL_NAMES = [...REG_CODE_TOOL_NAMES]; // Helix 3.0：能力登记处派生
+// Live tool table (built-ins + approved self-registered); namespace lookup survives mixed caches.
+const liveToolDefs = () => (typeof ToolRuntime.allToolDefinitions === 'function' ? ToolRuntime.allToolDefinitions() : TOOL_DEFS);
+let activeTurnEnv = null;
 const toolsFor = (sandboxEnabled, { localCpp = true } = {}) =>
-  (sandboxEnabled ? TOOL_DEFS : TOOL_DEFS.filter((t) => !CODE_TOOL_NAMES.includes(t.name)))
+  (sandboxEnabled ? liveToolDefs() : liveToolDefs().filter((t) => !CODE_TOOL_NAMES.includes(t.name)))
     .filter((t) => localCpp || t.name !== 'execute_cpp');
 // 只在具备中继路由时可用的网页工具；搜索/爬虫还须由 Worker health 明确声明对应特性。
 const RELAY_ONLY_TOOLS = new Set(['fetch_url', 'search_web', 'crawl_site', 'download_file', 'pull_github_project', 'curl']);
@@ -215,7 +220,7 @@ export function subagentTools(sandboxEnabled, def, { localCpp = true } = {}) {
   // 但读写文件之类不执行任意代码的工具仍应留给子智能体（旧写法直接给了 null，
   // 等于一关沙箱就把所有子智能体退化成纯推理）。
   const allow = new Set(toolsFor(sandboxEnabled, { localCpp }).map((t) => t.name));
-  const list = TOOL_DEFS.filter((t) => (t.name === 'knowledge_search' || t.name === 'skill_library' || def.tools.includes(t.name)) && t.name !== 'dispatch_subagent' && allow.has(t.name) && !classifyToolRisk({ name: t.name }).requiresConfirmation);
+  const list = liveToolDefs().filter((t) => (t.name === 'knowledge_search' || t.name === 'skill_library' || def.tools.includes(t.name)) && t.name !== 'dispatch_subagent' && allow.has(t.name) && !classifyToolRisk({ name: t.name }).requiresConfirmation);
   return list.length ? list : null;
 }
 
@@ -249,6 +254,7 @@ export async function runSubagent(def, task, { apiKey, gatewayId = 'teamorouter'
     const roundUsage = { input: 0, output: 0, reasoning: 0, cached: 0, cacheCreation: 0, cacheCreation5m: 0, cacheCreation1h: 0 };
     await streamChat({
       model, apiKey, gatewayId, gatewayBaseUrl, thinking, reasoningLevel, signal, tools: subTools,
+      temperature: activeTurnEnv?.temperature ?? undefined,
       subagentId: def.id, iteration: i + 1,
       onThinkingFallback,
       webEnabled: !offlineOnly && !!webEnabled, onWebFallback,
@@ -367,7 +373,7 @@ export function createAgent(store, hooks = {}) {
     const lastUser = [...messages].reverse().find((m) => m.role === 'user');
     const userText = lastUser && lastUser.text ? String(lastUser.text) : '';
     const webOn = store.state.settings.webEnabled !== false && relayOk;
-    const st = store.state.settings || {};
+    const st = activeTurnEnv ? { ...(store.state.settings || {}), ...activeTurnEnv.settingsOverrides } : (store.state.settings || {});
     const turnTools = nexusState && Array.isArray(nexusState.turnTools) ? nexusState.turnTools : null;
     const tierState = resolveEffectiveReasoningState({
       thinking: st.thinking,
@@ -608,6 +614,9 @@ export function createAgent(store, hooks = {}) {
       // 管理员别名（admin-…）在这里换成真密钥：密钥只在内存里，且不进本轮日志/导出
       offlineOnly = isNetworkOffline() || isOfflineModelId(store.state.model);
       settings = { ...(store.state.settings || {}) };
+      const env = resolveTurnEnvironment({ tuner: store.state.tuner, settings, gatewayId: store.state.gatewayId || DEFAULT_GATEWAY_ID });
+      activeTurnEnv = env;
+      settings = { ...settings, ...env.settingsOverrides };
       userModel = offlineOnly ? OFFLINE_MODEL_ID : store.state.model;
       if (isNetworkOffline() && store.state.offlineModelAvailable) {
         store.state.model = OFFLINE_MODEL_ID;
@@ -715,7 +724,7 @@ export function createAgent(store, hooks = {}) {
         })
         .filter((t) => t.name !== 'dispatch_subagent' || canDispatch)
         .filter((t) => !offlineOnly || isOfflineToolAllowed(t.name));
-      tools = legacyTools;
+      tools = activeTurnEnv?.toolsEnabled === false ? [] : legacyTools;
       const gatewayId = store.state.gatewayId || DEFAULT_GATEWAY_ID;
       const gatewayBaseUrl = (store.state.gatewayBaseUrls || {})[gatewayId] || '';
       turn = {
@@ -723,8 +732,11 @@ export function createAgent(store, hooks = {}) {
         userModel, // 用户在 UI 选择的模型（可能是 __smart_router__），UI 显示用
         routerDecision, // 智能路由结果：含 provider/类别/难度，不含具体模型 ID
         fastMode: !offlineOnly && !!settings.fastMode,
-        thinking: settings.thinking !== false,
-        reasoningLevel: lv,
+        thinking: activeTurnEnv ? activeTurnEnv.thinking : settings.thinking !== false,
+        reasoningLevel: activeTurnEnv ? activeTurnEnv.reasoningLevel : lv,
+        environment: activeTurnEnv?.mode || 'agent',
+        toolsEnabled: activeTurnEnv?.toolsEnabled !== false,
+        temperature: activeTurnEnv?.temperature ?? null,
         canDispatch,
         sandboxEnabled: settings.sandboxEnabled,
         localCpp: settings.localCppEnabled !== false,
@@ -912,9 +924,9 @@ export function createAgent(store, hooks = {}) {
 
     // ── Stage 3 · select：能力裁剪 → 两层下发（核心必带 + 按需挂载）→ 一致性校验 → turn-received 审计 → 断点续跑计划 ──
     function stageSelect() {
-      // 派生输入是**完整工具表**（TOOL_DEFS）：能力裁剪（沙箱/联网/委派）从此只发生在一个地方，
+      // 派生输入是完整工具表：能力裁剪（沙箱/联网/委派）只发生在一个地方，
       // 旧路径结果只用来交叉验证——两条独立计算必须逐项一致，否则说明有人只改了一处。
-      whitelist = deriveToolWhitelist(exec.turnContext, TOOL_DEFS);
+      whitelist = deriveToolWhitelist(exec.turnContext, liveToolDefs());
       if (offlineOnly) {
         const blocked = whitelist.allowed.filter((tool) => !isOfflineToolAllowed(toolName(tool)));
         whitelist = {
@@ -932,6 +944,7 @@ export function createAgent(store, hooks = {}) {
         recentTools: recentToolNames(store.state.messages),
       });
       tools = selection.mounted;
+      if (activeTurnEnv?.toolsEnabled === false) tools = [];
       nexusState.turnTools = tools;
       nexusState.turnDropped = whitelist.dropped; // P3 修正：系统提示的能力说明段从这里生成，与 UI 弹层同源
       nexusState.turnDeferred = selection.deferred; // P6：按需未挂载（≠ 禁用），系统提示只列名字
@@ -1091,6 +1104,7 @@ export function createAgent(store, hooks = {}) {
             const pullUsage = {};
             return streamChat({
                 model, apiKey, gatewayId: turn.gatewayId, gatewayBaseUrl: turn.gatewayBaseUrl, tools, signal, smoothText: true,
+                temperature: turn.temperature ?? undefined,
                 fastMode: settings.fastMode,
                 thinking: streamThinking, // 空正文恢复时临时关闭思考，避免再次只消耗 token 不产出正文
                 reasoningLevel: streamThinking ? turn.reasoningLevel : 'off',
@@ -1266,7 +1280,7 @@ export function createAgent(store, hooks = {}) {
             }
           }
 
-          let toolCalls = acc.result();
+          let toolCalls = toolCallsForEnvironment(acc.result(), activeTurnEnv);
           // 有些模型在 stop / end_turn 下只返回隐藏思考，或 200 空流而没有可见正文。
           // 工具执行已经成功时也必须再要一次最终答复；只补一次，杜绝无限请求。
           if (!toolCalls.length && !String(text || '').trim() && !signal.aborted && lengthContinues === 0) {
@@ -1686,7 +1700,7 @@ export function createAgent(store, hooks = {}) {
       localCpp: settings.localCppEnabled !== false,
       browser: !offlineOnly && localBrowserAvailable(),
       localMachine: localMachineAvailable(),
-    }, TOOL_DEFS);
+    }, liveToolDefs());
     let allowed = wl.allowed;
     let dropped = wl.dropped;
     if (offlineOnly) {
@@ -1703,7 +1717,7 @@ export function createAgent(store, hooks = {}) {
       deferred: sel.deferred.map((d) => d.name),
       mountReasons: sel.reasons,
       tier: { effectiveLevel: tier.effectiveLevel, displayTier: tier.displayTier, canDispatch: canDispatchPreview },
-      total: TOOL_DEFS.length,
+      total: liveToolDefs().length,
     };
   };
 

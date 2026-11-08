@@ -878,6 +878,7 @@ const contract = (o) => Object.freeze({
 export const TOOL_CONTRACTS = Object.freeze({
   skill_library: contract({ sideEffect: 'none', idempotent: true, timeoutMs: 20000, riskLevel: 'L0', note: '按需探索内置技能，仅加载目录或单篇说明' }),
   tool_library: contract({ sideEffect: 'none', idempotent: true, timeoutMs: 10000, riskLevel: 'L0', note: '搜索短工具目录并按需读取一份 Schema' }),
+  tool_registry: contract({ sideEffect: 'none', idempotent: true, timeoutMs: 5000, riskLevel: 'L1', note: '本地注册表；注册/更新/删除/启停需要一次性用户确认票据，handler 为声明式白名单' }),
   document_tool: contract({ sideEffect: 'filesystem', idempotent: false, timeoutMs: 70000, riskLevel: 'L2', verifyAfterRun: true, note: '本地 Worker 读写 DOCX/PPTX/PDF；保存为新输出，不上传原件' }),
   xlsx_tool: contract({ sideEffect: 'filesystem', idempotent: false, timeoutMs: 70000, riskLevel: 'L2', verifyAfterRun: true, note: '本地 Worker 检查或创建 XLSX 工作簿；公式不执行' }),
   knowledge_search: contract({ sideEffect: 'none', idempotent: true, timeoutMs: 12000, riskLevel: 'L0', note: '按需检索项目内置知识，无外部副作用' }),

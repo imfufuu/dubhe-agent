@@ -248,7 +248,7 @@ export function installModelPicker({ store, agent, toast, getBusy, openKeyModal,
                   ${hit.vendor ? `<span class="badge model-tag" title="${localeText('模型原厂（由 Cloudflare 托管推理）', 'Model author (inference hosted by Cloudflare)')}">${esc(hit.vendor)}</span>` : ''}
                   ${hit.agentTools
                     ? `<span class="badge cf-agent" title="${localeText('支持 Agent function calling 与全部工具', 'Supports Agent function calling and all tools')}">AGENT</span>`
-                    : `<span class="badge ghost" title="${localeText('仅纯文本对话，不接收工具', 'Text chat only; no tools')}">CHAT</span>`}
+                    : `<span class="badge cf-chat" title="${localeText('仅纯文本对话，不接收工具', 'Text chat only; no tools')}">CHAT</span>`}
                 </span>`
               : `<span class="dd-item-id mono">${esc(m.id)}</span>
               <span class="dd-item-badges">

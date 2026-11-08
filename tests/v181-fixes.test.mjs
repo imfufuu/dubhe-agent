@@ -591,7 +591,7 @@ test('convert_file：三条通路计划、ffmpeg 参数、注册表/契约/挂�
   assert.equal(String.fromCharCode(wav[0], wav[1], wav[2], wav[3]), 'RIFF');
   const { TOOL_DEFS } = await import('../js/tools.js');
   assert.ok(TOOL_DEFS.some((t) => t.name === 'convert_file' && /ffmpeg\.wasm/.test(t.description)));
-  assert.equal(TOOL_DEFS.length, 52, '含新增的 tool_library 与 xlsx_tool；V1.9 再增 patch_apply / dom_inspect / chart_render；视频生成增 generate_video；复杂任务清单增 checklist；本机桌面 local_desktop');
+  assert.equal(TOOL_DEFS.length, 53, '含新增的 tool_library 与 xlsx_tool；V1.9 再增 patch_apply / dom_inspect / chart_render；视频生成增 generate_video；复杂任务清单增 checklist；本机桌面 local_desktop');
   const caps = await import('../js/capabilities.js');
   assert.ok(caps.CAPABILITY_REGISTRY.convert_file, '能力登记');
   assert.ok(caps.TOOL_MOUNT_RULES.convert_file, '按需挂载规则（no-rule 会全量下发）');
@@ -823,8 +823,8 @@ test('暖纸色编辑对话、助手无回复卡片、用户气泡保留及编�
   assert.match(css, /\.composer \{[^}]*background: var\(--conversation-bg, var\(--bg\)\)/, '输入容器使用对话暖纸色');
   assert.match(css, /\.composer \{[^}]*border-radius: 28px/);
   assert.match(css, /\.composer\.is-multiline \{[^}]*border-radius: 28px/);
-  assert.match(css, /\.composer \{[^}]*display: grid[^}]*grid-template-areas: "attach input voice send"/s, '基础网格仍保留附件—文本—语音—发送顺序');
-  assert.match(css, /\.composer\.is-multiline \{[^}]*grid-template-areas: "input input input" "attach voice send"/s, '多行文本独占上方一行，附件与操作按钮固定在下方');
+  assert.match(css, /\.composer \{[^}]*display: grid[^}]*grid-template-areas: "attach input tuner voice send"/s, '基础网格仍保留附件—文本—语音—发送顺序');
+  assert.match(css, /\.composer\.is-multiline \{[^}]*grid-template-areas: "input input input input" "attach tuner voice send"/s, '多行文本独占上方一行，附件与操作按钮固定在下方');
   assert.match(css, /#composer-input \{[^}]*min-height: 24px; max-height: min\(42vh, 360px\)/, '空输入保持紧凑；按真实文本高度增长并在视口上限内滚动');
   assert.doesNotMatch(css, /#composer-input \{[^}]*transition: height/, '避免高度过渡与插入点滚动不同步');
   const composerUi = read('../js/ui.js');

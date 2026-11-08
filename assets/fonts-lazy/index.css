@@ -6780,7 +6780,10 @@
 }
 /* Additional BabelStone fonts; license and pinned source: licenses/babelstone-extra.txt */
 @font-face { font-family: "BabelStone Roman"; font-style: normal; font-weight: 400; font-display: swap; src: url("./babelstone/roman.woff2") format("woff2"); unicode-range: U+0000-024F, U+0300-036F, U+1D00-1DFF, U+1E00-1EFF, U+2C60-2C7F, U+A720-A7FF, U+AB30-AB6F; }
-@font-face { font-family: "BabelStone Tangut Wenhai"; font-style: normal; font-weight: 400; font-display: swap; src: url("./babelstone/wenhai.woff2") format("woff2"); unicode-range: U+17000-18AFF, U+18D00-18D8F; }
+/* 2026-11-08：西夏文字体改为用户指定的远程 TTF「Tangut Yinchuan / 唐兀银川」（首选，
+   覆盖 6913 个西夏文码位）；catbox 是临时托管，链接失效或被拦截时浏览器自动回退到
+   随应用分发的本地 Wenhai 分片。离线分享仍内嵌本地分片，不依赖第三方主机。 */
+@font-face { font-family: "BabelStone Tangut Wenhai"; font-style: normal; font-weight: 400; font-display: swap; src: url("https://litter.catbox.moe/t8rntt.ttf") format("truetype"), url("./babelstone/wenhai.woff2") format("woff2"); unicode-range: U+17000-18AFF, U+18D00-18D8F; }
 @font-face { font-family: "BabelStone Khitan Small Linear"; font-style: normal; font-weight: 400; font-display: swap; src: url("./babelstone/khitan.ttf") format("truetype"); unicode-range: U+18B00-18CFF; }
 @font-face { font-family: "BabelStone Pigpen"; font-style: normal; font-weight: 400; font-display: swap; src: url("./babelstone/pigpen.woff2") format("woff2"); unicode-range: U+0000-00FF; }
 @font-face { font-family: "BabelStone Flags"; font-style: normal; font-weight: 400; font-display: swap; src: url("./babelstone/flags.woff2") format("woff2"); unicode-range: U+200D, U+2620, U+26A7, U+2B1B, U+F000-F002, U+F400, U+FE0E-FE0F, U+1F1E6-1F1FF, U+1F308, U+1F3F3-1F3F4, U+1F7E7, U+1F998, U+E0020-E007F; }
