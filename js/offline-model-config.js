@@ -10,7 +10,7 @@ export const OFFLINE_MODEL_MAX_OUTPUT_TOKENS = 768;
 export const OFFLINE_MODEL_DISPLAY_NAME = '本地 GGUF';
 export const OFFLINE_MODEL_PROVIDER_ZH = '本地模型';
 export const OFFLINE_MODEL_PROVIDER_EN = 'Local model';
-export const MAX_SINGLE_GGUF_BYTES = (2 * 1024 ** 3) - 1;
+export const MAX_SINGLE_GGUF_BYTES = 16 * 1024 ** 3; // 单个 GGUF 最大 16 GiB（2026-11-08 放宽；OPFS 直接传 File，不读入内存）
 export const WLLAMA_VERSION = '3.8.1';
 
 export function isOfflineModelId(value) {

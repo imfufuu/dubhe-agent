@@ -3597,9 +3597,19 @@ html[data-motion="off"] .pm-progress.indeterminate .pm-prog-fill { animation: no
 .pm-context-menu button:hover, .pm-context-menu button:focus-visible { background: var(--conversation-card-hover, var(--bg-hover)); outline: none; }
 .pm-context-menu button:disabled { opacity: .4; cursor: default; }
 
-/* Keep each Unicode flag in its own shaping run, including adjacent RI pairs. */
-.md-flag { display: inline-block; white-space: nowrap; unicode-bidi: isolate; font-family: "BabelStone Flags", sans-serif; font-feature-settings: "ccmp" 1; }
-.md-flag-pua { font-family: "BabelStone Flags PUA", sans-serif; }
+/* Keep each Unicode flag in its own shaping run, including adjacent RI pairs.
+   font-variant-emoji:text 阻止浏览器把 RI / ZWJ / tag 序列交给系统彩色 emoji 字体
+   （Chrome 131+ / Firefox 141+；不支持的浏览器仍能用 PUA 单码位正常渲染）。
+   两个字体都列在回退链里，旧消息里的 Unicode 序列与新版 PUA 字形都能显示。 */
+.md-flag { display: inline-block; white-space: nowrap; unicode-bidi: isolate; font-family: "BabelStone Flags", "BabelStone Flags PUA", sans-serif; font-feature-settings: "ccmp" 1; font-variant-emoji: text; }
+.md-flag-pua { font-family: "BabelStone Flags PUA", "BabelStone Flags", sans-serif; font-variant-emoji: text; }
+/* 旗帜字体尚未就绪时显示可辨识的代码占位，避免切标签页后「全部隐身」。
+   静态分享页没有 data-flags-ready 属性，因此永远显示真实字形。 */
+html[data-flags-ready="pending"] .md-flag { position: relative; color: transparent; }
+html[data-flags-ready="pending"] .md-flag::after {
+  content: attr(data-code); position: absolute; left: 0; top: 0; white-space: nowrap;
+  color: var(--fg-2); font: 600 10px/1.6 var(--mono, monospace); letter-spacing: .04em;
+}
 
 /* Permission request: a compact, legible review surface with a single primary action. */
 .confirm-card { width: min(100% - 32px, 680px); margin: 24px auto; padding: 20px; border: 1px solid var(--line); border-radius: 16px; background: var(--bg); box-shadow: 0 12px 36px rgba(0, 0, 0, .08); }
@@ -3734,5 +3744,23 @@ html[data-motion="off"] .pm-progress.indeterminate .pm-prog-fill { animation: no
 .tuner-reset { border: 0; background: transparent; color: var(--fg-3); font-size: var(--ui-fs-10_5px, 10.5px); cursor: pointer; text-decoration: underline; flex-shrink: 0; }
 @media (max-width: 640px) {
   .tuner-panel { right: 12px; left: 12px; width: auto; max-height: 66vh; }
+  .tuner-seg-btn { padding: 7px 9px; }
+}
+
+/* ── 调节器 v2：独立页面（2026-11-08），与设置页同款 modal，平滑展开且不会跑出视口 ── */
+.modal[hidden] { display: none !important; }
+.tuner-card {
+  width: min(520px, calc(100vw - 40px)); max-height: min(86vh, 760px);
+  padding: 0; display: flex; flex-direction: column; overflow: hidden;
+}
+.tuner-card .modal-head { margin: 0; padding: 16px 20px 12px; border-bottom: 1px solid var(--line); }
+.tuner-card .modal-actions { margin: 0; padding: 12px 20px 16px; border-top: 1px solid var(--line); justify-content: space-between; align-items: center; }
+.tuner-card .tuner-body { flex: 1; overflow-y: auto; padding: 4px 20px 10px; }
+.tuner-summary { font-size: var(--ui-fs-11_5px, 11.5px); color: var(--fg-3); }
+.tool-manager-root { width: 100%; }
+.tool-manager-pending { display: inline-block; margin-left: 8px; font-size: var(--ui-fs-10_5px, 10.5px); color: var(--warn); }
+.tool-approval-card .confirm-body { white-space: pre-wrap; }
+@media (max-width: 640px) {
+  .tuner-card { max-height: 88vh; }
   .tuner-seg-btn { padding: 7px 9px; }
 }

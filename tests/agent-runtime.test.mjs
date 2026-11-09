@@ -30,13 +30,14 @@ test('默认值与坏数据归一化：默认不劫持设置页', () => {
   assert.equal(off.reasoningLevel, 'off');
 });
 
-test('温度档位：智能自调节 + 手动档位 + 自定义钳制', () => {
+test('温度档位：智能自调节 + 四个手动档位（自定义已移除）', () => {
   assert.equal(temperatureValueFor({ temperatureMode: 'auto' }), null);
   assert.equal(temperatureValueFor({ temperatureMode: 'precise' }), 0.15);
   assert.equal(temperatureValueFor({ temperatureMode: 'creative' }), 0.95);
-  assert.equal(temperatureValueFor({ temperatureMode: 'custom', customTemperature: 1.2 }), 1.2);
-  assert.equal(temperatureValueFor({ temperatureMode: 'custom', customTemperature: 99 }), 1.5);
-  assert.equal(TEMPERATURE_PRESETS.length, 6);
+  // 旧版本存下来的 custom 自动回落到均衡档，UI 已不再提供自定义滑杆。
+  assert.equal(temperatureValueFor({ temperatureMode: 'custom', customTemperature: 1.2 }), 0.65);
+  assert.equal(TEMPERATURE_PRESETS.length, 5);
+  assert.ok(TEMPERATURE_PRESETS.every((p) => p.id !== 'custom'));
   for (const preset of TEMPERATURE_PRESETS) assert.ok(preset.zh && preset.en && preset.hintZh && preset.hintEn);
   const precise = env({ temperatureMode: 'precise' });
   assert.equal(precise.temperature, 0.15);

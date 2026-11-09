@@ -1,4 +1,4 @@
-// 西夏文字体：远程 TTF 为主源、本地 Wenhai 分片为回退，离线分享仍可内嵌。
+// 西夏文字体：仓库自托管完整 TTF 为首选源，临时 CDN 降级为第二回退；离线分享仍内嵌轻量分片。
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -10,7 +10,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const TANGUT_URL = 'https://litter.catbox.moe/t8rntt.ttf';
 const sheets = ['assets/fonts-lazy/index.css', 'assets/fonts-lazy/babelstone-extra.css'];
 
-test('西夏文 @font-face 使用指定远程字体，并保留本地回退', () => {
+test('西夏文 @font-face 使用仓库自托管的完整 TTF 作为首选源', () => {
   for (const rel of sheets) {
     const css = fs.readFileSync(path.join(root, rel), 'utf8');
     const face = css.split('@font-face').find((b) => b.includes('"BabelStone Tangut Wenhai"'));
@@ -18,7 +18,8 @@ test('西夏文 @font-face 使用指定远程字体，并保留本地回退', ()
     assert.ok(face.includes(TANGUT_URL), `${rel} 未引用指定 TTF`);
     assert.ok(face.includes('./babelstone/wenhai.woff2'), `${rel} 缺少本地回退`);
     assert.ok(face.includes('./babelstone/tangut-yinchuan.ttf'), `${rel} 缺少完整字体本地副本`);
-    assert.ok(face.indexOf(TANGUT_URL) < face.indexOf('./babelstone/tangut-yinchuan.ttf'), '远程字体必须是首选');
+    assert.ok(face.indexOf('./babelstone/tangut-yinchuan.ttf') < face.indexOf(TANGUT_URL), '仓库自托管副本必须是首选源，临时 CDN 只能作回退');
+    assert.ok(face.indexOf(TANGUT_URL) < face.indexOf('./babelstone/wenhai.woff2'), '临时 CDN 仍优先于旧子集分片');
     assert.ok(face.indexOf('./babelstone/tangut-yinchuan.ttf') < face.indexOf('./babelstone/wenhai.woff2'), '完整副本优先于旧分片');
     assert.match(face, /U\+17000-18AFF/, '西夏文 unicode-range 不能丢失');
   }
@@ -45,7 +46,7 @@ test('懒加载解析器选择可内嵌的本地字体，分享导出不依赖�
   assert.ok(tangut[0].ranges.some(([lo, hi]) => cps.some((c) => c >= lo && c <= hi)));
 });
 
-test('全部懒加载分片仍是本地可读文件（远程主源不破坏清单）', () => {
+test('全部懒加载分片仍是本地可读文件（自托管主源不破坏清单）', () => {
   const css = fs.readFileSync(path.join(root, 'assets/fonts-lazy/index.css'), 'utf8');
   const faces = parseFontFaces(css);
   assert.ok(faces.length > 600);

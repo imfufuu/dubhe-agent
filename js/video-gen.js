@@ -197,7 +197,7 @@ export function videoJobError(job) {
 
 export const VIDEO_POLL_INTERVAL_MS = 5000;
 export const VIDEO_MAX_WAIT_MS = 15 * 60 * 1000;
-export const VIDEO_SANDBOX_MAX_BYTES = 16 * 1024 * 1024;
+export const VIDEO_SANDBOX_MAX_BYTES = 128 * 1024 * 1024;
 
 // ── 其余生成参数（Seedance / MiniMax 共用请求格式；字段名即请求体键名）──
 // 未提供则不发送，沿用模型默认。范围依据 video-openapi.json；模型级限制以网关 GET /models 为准，

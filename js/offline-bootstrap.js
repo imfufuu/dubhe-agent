@@ -34,7 +34,7 @@
     const policy = document.createElement('meta');
     policy.httpEquiv = 'Content-Security-Policy';
     policy.dataset.dubheOfflineCsp = '1';
-    policy.content = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' 'sha256-KWAlpbtB4R45zBOqEtLM+90JdLvHqoOyoaQRSGS6uBs=' 'sha256-LjPqEsoSyXosQVrr222sSixEHpbDYV2tn3a1TzWcXpg='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: data:; font-src 'self' data:; connect-src 'self' blob:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'";
+    policy.content = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' 'sha256-DZC/V3eOlvmpvmydMfuxu2cb1nKweLI71/y3PWegoqE=' 'sha256-LjPqEsoSyXosQVrr222sSixEHpbDYV2tn3a1TzWcXpg='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: data:; font-src 'self' data:; connect-src 'self' blob:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'";
     document.head.appendChild(policy);
     gate.cspLocked = true;
   };

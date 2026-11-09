@@ -356,7 +356,7 @@ export function installFilesPanel({ store, agent, toast, fmtSize, highlightCode,
         : /\.pptx$/i.test(lower) ? 'pptx'
           : /\.zip$/i.test(lower) ? 'zip' : '';
     const isLegacyOffice = /\.(doc|ppt|xls)$/i.test(lower);
-    const FV_OFFICE_MAX = 16 * 1024 * 1024;
+    const FV_OFFICE_MAX = 128 * 1024 * 1024;
     if (videoUrl) {
       bodyHtml = `<div class="fv-video"><video controls playsinline preload="metadata" src="${esc(videoUrl)}" title="${esc(path)}"></video><div class="fv-video-meta mono">${esc(path.split('/').pop())} · ${fmtSize(byteLen)}</div></div>`;
     } else if (isAudio) {
@@ -367,7 +367,7 @@ export function installFilesPanel({ store, agent, toast, fmtSize, highlightCode,
     } else if (officeKind && byteLen <= FV_OFFICE_MAX) {
       bodyHtml = `<div class="fv-office-host" data-office="${officeKind}"><div class="fv-pdf-loading">${localeText('正在解析预览…', 'Preparing preview…')}</div></div>`;
     } else if (officeKind) {
-      bodyHtml = fvNoticeHtml('tooBig', localeText(`此文件 <strong>${fmtSize(byteLen)}</strong>，超过预览上限 16MB`, `This file is <strong>${fmtSize(byteLen)}</strong>, above the 16MB preview limit`),
+      bodyHtml = fvNoticeHtml('tooBig', localeText(`此文件 <strong>${fmtSize(byteLen)}</strong>，超过预览上限 128MB`, `This file is <strong>${fmtSize(byteLen)}</strong>, above the 128MB preview limit`),
         localeText('为避免界面卡顿已禁用内联预览，请下载后用本地程序打开。', 'Inline preview is disabled to keep the UI responsive; download it to view.'));
     } else if (isLegacyOffice) {
       bodyHtml = fvNoticeHtml('binary', localeText('旧版 Office 格式 · <strong>不支持内联预览</strong>', 'Legacy Office format · <strong>no inline preview</strong>'),

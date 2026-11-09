@@ -6780,12 +6780,14 @@
 }
 /* Additional BabelStone fonts; license and pinned source: licenses/babelstone-extra.txt */
 @font-face { font-family: "BabelStone Roman"; font-style: normal; font-weight: 400; font-display: swap; src: url("./babelstone/roman.woff2") format("woff2"); unicode-range: U+0000-024F, U+0300-036F, U+1D00-1DFF, U+1E00-1EFF, U+2C60-2C7F, U+A720-A7FF, U+AB30-AB6F; }
-/* 2026-11-08：西夏文字体改为用户指定的远程 TTF「Tangut Yinchuan / 唐兀银川」（首选，
-   覆盖 6913 个西夏文码位）；catbox 是临时托管，链接失效时浏览器自动回退到随应用
-   分发的同一份完整 TTF 本地副本，再退到旧 Wenhai 分片（仅部分字）。离线分享仍内嵌轻量分片。 */
-@font-face { font-family: "BabelStone Tangut Wenhai"; font-style: normal; font-weight: 400; font-display: swap; src: url("https://litter.catbox.moe/t8rntt.ttf") format("truetype"), url("./babelstone/tangut-yinchuan.ttf") format("truetype"), url("./babelstone/wenhai.woff2") format("woff2"); unicode-range: U+17000-18AFF, U+18D00-18D8F; }
+/* 2026-11-08：西夏文使用用户指定的「Tangut Yinchuan / 唐兀银川」完整 TTF（6913 个西夏文码位）。
+   自托管优先：随仓库 / GitHub Pages 分发的本地副本为首选源，不依赖任何第三方主机；
+   catbox 临时链接仅作第二回退，最后退到旧 Wenhai 子集分片。离线分享仍内嵌轻量分片。 */
+@font-face { font-family: "BabelStone Tangut Wenhai"; font-style: normal; font-weight: 400; font-display: swap; src: url("./babelstone/tangut-yinchuan.ttf") format("truetype"), url("https://litter.catbox.moe/t8rntt.ttf") format("truetype"), url("./babelstone/wenhai.woff2") format("woff2"); unicode-range: U+17000-18AFF, U+18D00-18D8F; }
 @font-face { font-family: "BabelStone Khitan Small Linear"; font-style: normal; font-weight: 400; font-display: swap; src: url("./babelstone/khitan.ttf") format("truetype"); unicode-range: U+18B00-18CFF; }
 @font-face { font-family: "BabelStone Pigpen"; font-style: normal; font-weight: 400; font-display: swap; src: url("./babelstone/pigpen.woff2") format("woff2"); unicode-range: U+0000-00FF; }
+/* 旗帜字体保留 font-display: swap：optional/fallback 的 swap period 在后台标签页会过期，
+   导致切回后字体永不交换（整批隐身）；加载与恢复由 js/flag-fonts.js 显式负责。 */
 @font-face { font-family: "BabelStone Flags"; font-style: normal; font-weight: 400; font-display: swap; src: url("./babelstone/flags.woff2") format("woff2"); unicode-range: U+200D, U+2620, U+26A7, U+2B1B, U+F000-F002, U+F400, U+FE0E-FE0F, U+1F1E6-1F1FF, U+1F308, U+1F3F3-1F3F4, U+1F7E7, U+1F998, U+E0020-E007F; }
 @font-face { font-family: "BabelStone Flags PUA"; font-style: normal; font-weight: 400; font-display: swap; src: url("./babelstone/flags-pua.ttf") format("truetype"); unicode-range: U+E000-E43F; }
 @font-face { font-family: "BabelStone Goblin"; font-style: normal; font-weight: 400; font-display: swap; src: url("./babelstone/goblin.woff2") format("woff2"); unicode-range: U+0000-00FF, U+200B-200D, U+E000-E027; }

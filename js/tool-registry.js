@@ -20,6 +20,7 @@ let memoryStore = null;
 let hooks = { onApprovalRequest: null };
 const pending = new Map();   // token -> { action, summary, createdAt }
 const approved = new Set();  // 一次性票据，消费即删除
+const autoRunDone = new Set(); // UI 确认卡已执行完的票据：Agent 带票据重试时直接返回成功，不重复执行
 
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const id = () => (globalThis.crypto?.randomUUID?.() || `tok-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`);
@@ -43,7 +44,7 @@ function save(list) {
 }
 export function configureRegistryHooks(next = {}) { hooks = { ...hooks, ...next }; }
 export function resetRegistryForTests() {
-  memoryStore = null; pending.clear(); approved.clear(); hooks = { onApprovalRequest: null };
+  memoryStore = null; pending.clear(); approved.clear(); autoRunDone.clear(); hooks = { onApprovalRequest: null };
   try { storage()?.removeItem(STORAGE_KEY); } catch { /* private mode */ }
 }
 
@@ -57,18 +58,27 @@ export function pendingApprovals() {
   return [...pending].map(([token, item]) => ({ token, action: item.action, summary: item.summary, createdAt: item.createdAt }));
 }
 export function approvePending(token, { autoRun = false } = {}) {
-  sweep();
   const key = String(token || '');
+  // 先取票据再清理过期项：用户已经点了「允许」，不能因为刚好跨过 TTL 边界被判成拒绝。
   const item = pending.get(key);
   if (!item) return false;
   pending.delete(key);
+  sweep();
   if (autoRun && typeof item.operation === 'function') {
-    // UI 点「允许」：直接完成这次变更（操作体只在注册时由本模块生成，不来自模型）。
-    try { const list = load(); item.operation(list); save(list); } catch { approved.add(key); }
+    // 确认卡点「允许」：直接完成这次变更（操作体只在注册时由本模块生成，不来自模型）。
+    try { const list = load(); item.operation(list); save(list); autoRunDone.add(key); }
+    catch { approved.add(key); }
   } else {
     approved.add(key); // Agent 带同一票据重试时消费
   }
   return true;
+}
+/** UI 已执行完的票据：避免 Agent 带旧票据重试时重复变更，或把「已存在」误报成用户拒绝。 */
+export function consumeAutoRun(token) {
+  const key = String(token || '');
+  if (!autoRunDone.has(key)) return null;
+  autoRunDone.delete(key);
+  return { ok: true, alreadyApproved: true, message: '✅ 用户已在对话输出的确认卡里批准，工具变更已生效，无需重试同一操作。' };
 }
 export function denyPending(token) {
   sweep();
@@ -76,6 +86,7 @@ export function denyPending(token) {
 }
 function requireApproval(action, summary, confirmToken, operation = null) {
   const token = String(confirmToken || '');
+  if (token && autoRunDone.has(token)) return consumeAutoRun(token); // 确认卡已执行，不重复副作用
   if (token && approved.has(token)) { approved.delete(token); return null; } // 一次性消费
   sweep();
   const existing = [...pending].find(([, item]) => item.action === action && item.summary === summary);
@@ -87,7 +98,7 @@ function requireApproval(action, summary, confirmToken, operation = null) {
   return {
     needsConfirmation: true,
     confirmToken: issued,
-    message: `⏸ 需要用户安全确认：${summary}。请在输入框「调节器 → 自注册工具 → 待确认」里点「允许」；批准后带 confirm_token=${issued} 重试同一操作。工具未被修改，也没有执行任何副作用。`,
+    message: `⏸ 需要用户安全确认：${summary}。请在对话输出里的确认卡点「允许」；批准后带 confirm_token=${issued} 重试同一操作。工具未被修改，也没有执行任何副作用。`,
   };
 }
 
@@ -138,6 +149,8 @@ function mutate(action, summary, confirmToken, fn) {
   return { ok: true, ...result };
 }
 export function registerTool(def, { confirmToken = '', origin = 'agent' } = {}) {
+  const done = consumeAutoRun(confirmToken);
+  if (done) return done;
   const clean = validateDefinition(def);
   if (load().some((t) => t.name === clean.name)) return { ok: false, error: `工具 ${clean.name} 已存在；请用 update 修改或先 delete。` };
   if (load().length >= MAX_TOOLS) return { ok: false, error: `最多 ${MAX_TOOLS} 个自注册工具。` };
@@ -148,6 +161,8 @@ export function registerTool(def, { confirmToken = '', origin = 'agent' } = {}) 
   });
 }
 export function updateTool(name, patch, { confirmToken = '' } = {}) {
+  const done = consumeAutoRun(confirmToken);
+  if (done) return done;
   const key = String(name || '').trim();
   const old = readRegisteredTool(key);
   if (!old) return { ok: false, error: `找不到自注册工具 ${key}` };
@@ -159,6 +174,8 @@ export function updateTool(name, patch, { confirmToken = '' } = {}) {
   });
 }
 export function deleteTool(name, { confirmToken = '' } = {}) {
+  const done = consumeAutoRun(confirmToken);
+  if (done) return done;
   const key = String(name || '').trim();
   if (!readRegisteredTool(key)) return { ok: false, error: `找不到自注册工具 ${key}` };
   return mutate('delete', `删除工具 ${key}（不可恢复）`, confirmToken, (list) => {
@@ -168,6 +185,8 @@ export function deleteTool(name, { confirmToken = '' } = {}) {
   });
 }
 export function setToolEnabled(name, enabled, { confirmToken = '' } = {}) {
+  const done = consumeAutoRun(confirmToken);
+  if (done) return done;
   const key = String(name || '').trim();
   if (!readRegisteredTool(key)) return { ok: false, error: `找不到自注册工具 ${key}` };
   return mutate(enabled ? 'enable' : 'disable', `${enabled ? '启用' : '停用'}工具 ${key}`, confirmToken, (list) => {
@@ -278,7 +297,7 @@ export function invokeRegisteredTool(name, args = {}, { confirmToken = '' } = {}
 /** tool_registry 工具的统一入口；返回给模型的纯文本结果。 */
 export function handleRegistryAction(args = {}, ctx = {}) {
   const action = String(args.action || '').trim().toLowerCase();
-  const summary = (r) => (r && r.needsConfirmation ? r.message : JSON.stringify(r, null, 2));
+  const summary = (r) => (r && (r.needsConfirmation || r.alreadyApproved) ? r.message : JSON.stringify(r, null, 2));
   try {
     switch (action) {
       case 'list': {
@@ -305,7 +324,7 @@ export function handleRegistryAction(args = {}, ctx = {}) {
         'tool_registry：自注册工具的注册 / 读取 / 管理 / 调用。',
         '可用 action：list, read, register, update, delete, enable, disable, invoke, pending, help。',
         'register/update/delete/enable/disable 都需要用户确认：第一次调用返回 confirm_token，',
-        '用户在「调节器 → 自注册工具 → 待确认」批准后，带同一个 confirm_token 重试即可（票据一次性、5 分钟有效）。',
+        '用户在「对话输出的确认卡」批准后，带同一个 confirm_token 重试即可（票据一次性、5 分钟有效）。',
         `名称必须 custom_ 开头；handler.kind：${HANDLER_KINDS.join(' / ')}；模型提供的代码永远不会被执行。`,
         'definition 示例：{name:"custom_greet",description:"打招呼",parameters:{type:"object",properties:{who:{type:"string"}},required:["who"]},handler:{kind:"text_template",template:"你好，{{who}}！"}}',
       ].join('\n');

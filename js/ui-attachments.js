@@ -7,6 +7,7 @@ import { uiText as localeText } from './locale.js';
 import { ICON } from './icons.js';
 import { openPhotoEditor } from './photo-editor.js?v=2026.10.25.1';
 import { relayDownload, relaySupports, relayAvailable, RELAY_FILE_MAX_BYTES } from './net.js';
+import { ATTACHMENT_MAX_BYTES, attachmentLimitLabel } from './attachment-limits.js';
 import { svgDataUrl } from './svg-safety.js';
 import { fileCardIconHtml } from './file-card.js';
 
@@ -23,12 +24,14 @@ export function installAttachments({ composer, toast, safeImgSrc, fmtSize, onCha
   const TEXT_RE = /\.(txt|md|markdown|js|mjs|cjs|ts|tsx|jsx|py|pyi|java|c|cc|cpp|cxx|h|hpp|cs|go|rs|rb|php|swift|kt|scala|dart|m|r|jl|sh|bash|zsh|ps1|bat|cmd|json|jsonc|jsonl|csv|tsv|log|html?|css|scss|less|xml|ya?ml|toml|ini|env|conf|cfg|sql|vue|svelte|tex|latex|lua|hs|erl|exs?|clj|cljs|fsx?|ml|mli|asm|diff|patch)$/i;
   const PDF_RE = /\.pdf$/i;
   const ZIP_RE = /\.zip$/i;
-  // 视频：原样进沙箱 uploads/，由 Agent 调用 analyze_video（Gemini 视频理解）；16MB ≈ 手机 1080p 30–60 秒
+  // 视频：原样进沙箱 uploads/，由 Agent 调用 analyze_video（Gemini 视频理解）；128MB 内可传较长视频；大文件先抽帧再上传
   const VIDEO_RE = /\.(mp4|webm|mov|m4v)$/i;
   const VIDEO_MIME_RE = /^video\/(mp4|webm|quicktime|x-m4v)$/i;
-  const MAX_IMG = 5 * 1024 * 1024, MAX_TEXT = 512 * 1024, MAX_PDF = 12 * 1024 * 1024, MAX_ZIP = 12 * 1024 * 1024, MAX_VIDEO = 16 * 1024 * 1024, MAX_FILES = 8;
+  // 2026-11-08：单个附件统一放宽到 128 MiB（大对象走 IndexedDB 外置，不占 localStorage 配额）。
+  const MAX_ATTACHMENT = ATTACHMENT_MAX_BYTES;
+  const MAX_IMG = MAX_ATTACHMENT, MAX_TEXT = MAX_ATTACHMENT, MAX_PDF = MAX_ATTACHMENT, MAX_ZIP = MAX_ATTACHMENT, MAX_VIDEO = MAX_ATTACHMENT, MAX_FILES = 8;
   // 任意格式：未被上面专门分支接住的文件，小于此上限即可附加；小且像 UTF-8 文本的按文本读，其余按二进制 data URL 原样落盘
-  const MAX_ANY = 16 * 1024 * 1024;
+  const MAX_ANY = MAX_ATTACHMENT;
   // 嗅探：前 4KB 不含 NUL 且能按 UTF-8 解码（末尾截断的多字节字符容忍）→ 视为文本
   const looksLikeText = async (f) => {
     const head = new Uint8Array(await f.slice(0, 4096).arrayBuffer());
@@ -217,22 +220,22 @@ export function installAttachments({ composer, toast, safeImgSrc, fmtSize, onCha
           });
           toast(`${f.name}：已作为 PDF 附件加入${pages ? `（约 ${pages} 页）` : ''}，发送后 Agent 会调用 analyze_pdf 识别`, 'ok', 4200);
         } else if (AUDIO_EXT_RE.test(f.name) || AUDIO_MIME_RE.test(f.type)) {
-          if (f.size > AUDIO_MAX_BYTES) { toast(`${f.name}：音频超过 16MB，请裁剪或压缩`, 'err'); continue; }
+          if (f.size > AUDIO_MAX_BYTES) { toast(`${f.name}：音频超过 ${attachmentLimitLabel()}，请裁剪或压缩`, 'err'); continue; }
           const mime = AUDIO_MIME_RE.test(f.type) ? f.type : audioMimeOf(f.name);
           const dataUrl = String(await readAs('dataURL', f)).replace(/^data:[^;]*;base64,/, `data:${mime};base64,`);
           pending.push({ id: Math.random().toString(36).slice(2), kind: 'file', source: 'audio', name: f.name, mime, size: f.size, dataUrl });
           toast(localeText(`${f.name}：已加入音频；发送分析时会上传网关，未做本地语音内容审核`, `${f.name}: audio attached; analysis uploads it to the gateway. No local speech-content moderation.`), 'ok', 5000);
         } else if (/\.(docx|pptx|xlsx|doc)$/i.test(f.name)) {
-          if (f.size > 16 * 1024 * 1024) { toast(`${f.name}：Office 文件超过 16MB`, 'err'); continue; }
+          if (f.size > MAX_ATTACHMENT) { toast(`${f.name}：Office 文件超过 ${attachmentLimitLabel()}`, 'err'); continue; }
           const ext = f.name.split('.').pop().toLowerCase();
           const mime = ext === 'docx' ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : ext === 'pptx' ? 'application/vnd.openxmlformats-officedocument.presentationml.presentation' : ext === 'xlsx' ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' : 'application/msword';
           pending.push({ id: Math.random().toString(36).slice(2), kind: 'file', source: 'office', name: f.name, mime, size: f.size, dataUrl: String(await readAs('dataURL', f)).replace(/^data:[^;]*;base64,/, `data:${mime};base64,`) });
           if (ext === 'doc') toast(localeText('旧版 .doc 可保存，但暂不能在浏览器解析；请先另存为 .docx', 'Legacy .doc can be stored, but must be converted to .docx for local parsing.'), 'warn', 5000);
         } else if (VIDEO_RE.test(f.name) || VIDEO_MIME_RE.test(f.type)) {
-          if (f.size > MAX_VIDEO) { toast(`${f.name}：视频超过 16MB，请裁剪或压缩后再传`, 'err'); continue; }
+          if (f.size > MAX_VIDEO) { toast(`${f.name}：视频超过 ${attachmentLimitLabel()}，请裁剪或压缩后再传`, 'err'); continue; }
           const ext = (f.name.toLowerCase().split('.').pop() || 'mp4');
           const mime = VIDEO_MIME_RE.test(f.type) ? f.type : (ext === 'webm' ? 'video/webm' : ext === 'mov' ? 'video/quicktime' : ext === 'm4v' ? 'video/x-m4v' : 'video/mp4');
-          // 抽帧 + 读 16MB base64 在手机上要好几秒：先立刻给反馈，不然用户点了「加入」什么都没看见（.33）
+          // 抽帧 + 读大文件 base64 在手机上要好几秒：先立刻给反馈，不然用户点了「加入」什么都没看见（.33）
           const busyToast = toast(`${f.name}：正在读取视频…`, 'info', 30000);
           const doneBusy = () => { try { busyToast && typeof busyToast.dismiss === 'function' && busyToast.dismiss(); } catch { /* noop */ } };
           let cap;
@@ -274,7 +277,7 @@ export function installAttachments({ composer, toast, safeImgSrc, fmtSize, onCha
           pending.push({ id: Math.random().toString(36).slice(2), kind: 'text', name: f.name, mime: f.type || 'text/plain', size: f.size, text: await readAs('text', f) });
         } else {
           // 任意格式（不做白名单）：小的 UTF-8 文本按文本附加；其余按二进制 data URL 附加，发送后写入 uploads/
-          if (f.size > MAX_ANY) { toast(`${f.name}：超过 16MB，请压缩或分割后再传`, 'err'); continue; }
+          if (f.size > MAX_ANY) { toast(`${f.name}：超过 ${attachmentLimitLabel()}，请压缩或分割后再传`, 'err'); continue; }
           if (f.size <= MAX_TEXT && await looksLikeText(f)) {
             pending.push({ id: Math.random().toString(36).slice(2), kind: 'text', name: f.name, mime: f.type || 'text/plain', size: f.size, text: await readAs('text', f) });
           } else {
@@ -421,7 +424,7 @@ export function installAttachments({ composer, toast, safeImgSrc, fmtSize, onCha
   if (linkBtn) {
     linkBtn.addEventListener('click', async () => {
       setAttachMenuOpen(false);
-      const url = prompt('粘贴文件链接（图片 / 视频 / PDF / ZIP / 文本，≤ 16MB，经中继跨域拉取）：', '');
+      const url = prompt(`粘贴文件链接（图片 / 视频 / PDF / ZIP / 文本，≤ ${attachmentLimitLabel()}，经中继跨域拉取）：`, '');
       if (url && url.trim()) await addFromUrl(url.trim());
     });
   }

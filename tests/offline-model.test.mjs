@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { RECOMMENDED_LIGHTWEIGHT_MODELS, recommendedModelById, recommendedModelLabel } from '../js/recommended-models.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { OFFLINE_MODEL_CONTEXT_BUDGET, OFFLINE_MODEL_CONTEXT_SIZE, OFFLINE_MODEL_ID, LEGACY_OFFLINE_MODEL_IDS, MAX_SINGLE_GGUF_BYTES, isOfflineModelId } from '../js/offline-model-config.js';
@@ -72,7 +73,7 @@ test('offline model identity is a generic GGUF slot and recognizes the former lo
   assert.equal(isOfflineModelId('gpt-5.6-sol'), false);
   assert.equal(OFFLINE_MODEL_CONTEXT_SIZE, 4096);
   assert.equal(OFFLINE_MODEL_CONTEXT_BUDGET, 3072);
-  assert.equal(MAX_SINGLE_GGUF_BYTES, (2 * 1024 ** 3) - 1);
+  assert.equal(MAX_SINGLE_GGUF_BYTES, 16 * 1024 ** 3, '单个 GGUF 上限已放宽到 16 GiB');
 });
 
 test('OPFS support requires a secure context and the browser storage API', () => {
@@ -157,7 +158,7 @@ test('invalid extensions, oversized files and a clearly insufficient OPFS quota 
   const wrongExtension = namedGGUF('model.bin');
   await assert.rejects(importOfflineModel(wrongExtension, { storage: opfs.storage }), /只接受单文件 \.gguf/);
   const tooLarge = { name: 'huge.gguf', size: MAX_SINGLE_GGUF_BYTES + 1, stream() { throw new Error('should not read an oversized file'); } };
-  await assert.rejects(importOfflineModel(tooLarge, { storage: opfs.storage }), /小于 2 GiB/);
+  await assert.rejects(importOfflineModel(tooLarge, { storage: opfs.storage }), /小于 16 GiB/);
   await assert.rejects(importOfflineModel(namedGGUF(), { storage: opfs.storage }), /本地存储空间可能不足/);
   assert.equal(opfs.files.size, 0);
 });
@@ -204,7 +205,7 @@ test('local inference passes the OPFS Blob array to Wllama 3.8.1 and never fetch
     assert.equal(loaded[0].options.n_ctx, 4096);
     assert.equal(request.model, OFFLINE_MODEL_ID);
     assert.equal(request.stream, true);
-    assert.ok(request.max_tokens <= 768);
+    assert.equal('max_tokens' in request, false, '本地推理不再指定最大输出 token（避免 4096 上下文报错）');
     assert.deepEqual(seen, chunks);
     await streamOfflineModel({ messages: [] }, {
       engineProvider: async () => engine,
@@ -441,4 +442,30 @@ test('offline send without an imported GGUF leaves the selected chat model intac
     assert.equal(store.state.model, '__smart_router__');
     assert.equal(calls, 0);
   } finally { globalThis.fetch = previousFetch; restore(); }
+});
+
+test('推荐超轻量模型配置与真实推理报告一致', () => {
+  assert.equal(RECOMMENDED_LIGHTWEIGHT_MODELS.length, 2);
+  const ids = new Set();
+  for (const m of RECOMMENDED_LIGHTWEIGHT_MODELS) {
+    ids.add(m.id);
+    assert.match(m.downloadUrl, /^https:\/\/huggingface\.co\//);
+    assert.match(m.sha256, /^[0-9a-f]{64}$/);
+    assert.ok(m.bytes > 100 * 1024 ** 2 && m.parameterCount > 0 && m.contextLength > 0);
+    assert.equal(m.chatTemplate, 'chatml');
+    assert.equal(m.quantization, 'Q4_K_M');
+    assert.equal(recommendedModelById(m.id), m);
+    assert.match(recommendedModelLabel(m), /Q4_K_M/);
+  }
+  assert.equal(ids.size, 2);
+  assert.equal(recommendedModelById('qwen2.5-0.5b-instruct-q4_k_m').verified, true);
+  assert.equal(recommendedModelById('smollm2-135m-instruct-q4_k_m').verified, 'english-only');
+  const report = fs.readFileSync(new URL('../REAL_MODEL_TEST_REPORT.md', import.meta.url), 'utf8');
+  for (const needle of ['The capital of France is Paris.', '我是Qwen', '74a4da8c9fdbcd15bd1f6d01d621410d31c6fc00986f5eb687824e7b93d7a9db', 'llama.cpp']) assert.ok(report.includes(needle), needle);
+  const tool = fs.readFileSync(new URL('../tools/real-model-smoke.py', import.meta.url), 'utf8');
+  assert.match(tool, /-st/); assert.match(tool, /chatml/);
+  const app = fs.readFileSync(new URL('../app.html', import.meta.url), 'utf8');
+  const settings = fs.readFileSync(new URL('../js/settings.js', import.meta.url), 'utf8');
+  assert.match(app, /id="set-recommended-models"/);
+  assert.match(settings, /RECOMMENDED_LIGHTWEIGHT_MODELS/);
 });

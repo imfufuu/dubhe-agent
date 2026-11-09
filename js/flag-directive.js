@@ -1,4 +1,9 @@
-// The shortcuts below emit BabelStone's Unicode sequences, never image URLs.
+// 旗帜快捷指令（2026-11-09）：默认渲染 BabelStone Flags PUA 的**单码位**字形。
+// 官网明确建议：RI / tag 序列依赖 COLR/CPAL + GSUB ccmp 合成，且属于 Emoji_Presentation，
+// 浏览器可能改用系统彩色 emoji 字体或让 default-ignorable tag 字符整段不可见；
+// PUA 版「does not use OpenType features to render character sequences as glyphs」。
+// 单码位不受 shaping 缓存与 emoji 字体回退影响，切换标签页后不会整批隐身。
+// 仍保留 ZWJ / 旧设计 / 少数无 PUA 映射的序列作为兼容回退。
 import { regionalFlags, subdivisionFlags, puaFlags } from './flag-registry.js?v=2026.10.25.1';
 
 const zwjFlags = Object.freeze({
@@ -24,6 +29,40 @@ const puaAlias = Object.freeze({
   'nl-bq1': 'bq-bo', 'nl-bq2': 'bq-sa', 'nl-bq3': 'bq-se', 'us-pr': 'pr', 'us-um': 'um',
   'gb-cym': 'gb-wls', 'gb-ynm': 'gb-agy', 'gb-ffl': 'gb-fln', 'gb-fyn': 'gb-mon', 'gb-bnf': 'gb-pem', 'gb-bmg': 'gb-vgl',
 });
+/** 把旗帜 ID 归一化后查 PUA 码位；无映射返回 null（调用方回退到 Unicode 序列）。 */
+export function puaCodeFor(id) {
+  const key = String(id || '').toLowerCase();
+  const alias = Object.hasOwn(puaAlias, key) ? puaAlias[key] : key;
+  const hex = Object.hasOwn(puaFlags, alias) ? puaFlags[alias] : null;
+  return hex ? String.fromCodePoint(parseInt(hex, 16)) : null;
+}
+
+/** 复制语义：PUA 单码位没有 Unicode 表示时用它占位。 */
+export const FLAG_COPY_PLACEHOLDER = '[flag]';
+
+/** 把旗帜 ID 还原成标准 Unicode emoji 序列；PUA 专有设计返回 null。 */
+export function unicodeFlagSequence(id) {
+  const key = String(id || '').toLowerCase();
+  if (Object.hasOwn(zwjFlags, key)) return zwjFlags[key];
+  if (regionalFlags.has(key)) return [...key].map(c => String.fromCodePoint(0x1f1e6 + c.charCodeAt(0) - 97)).join('');
+  if (subdivisionFlags.has(key)) {
+    const tags = [...key.replace('-', '')].map(c => String.fromCodePoint(0xe0000 + c.charCodeAt(0))).join('');
+    return `🏴${tags}${String.fromCodePoint(0xe007f)}`;
+  }
+  return null;
+}
+
+/** PUA 码位 → 复制文本：有 Unicode 对应就还原成 emoji，否则给占位符。 */
+export const FLAG_COPY_MAP = (() => {
+  const map = new Map();
+  for (const [id, hex] of Object.entries(puaFlags)) {
+    map.set(String.fromCodePoint(parseInt(hex, 16)), unicodeFlagSequence(id) || FLAG_COPY_PLACEHOLDER);
+  }
+  // 普通字体里的私用区设计（历史旗帜 / 巴伐利亚备选）同样没有 Unicode 表示
+  for (const code of [0xf000, 0xf001, 0xf002, 0xf400]) map.set(String.fromCodePoint(code), FLAG_COPY_PLACEHOLDER);
+  return map;
+})();
+
 const availablePuaCodes = new Set(Object.values(puaFlags));
 const normalPuaCodes = new Set([0xf000, 0xf001, 0xf002, 0xf400]);
 const escapeAttr = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -43,8 +82,11 @@ export function flagSequence(id) {
     return null;
   }
   if (/^f(?:000|001|002|400)$/.test(id) && normalPuaCodes.has(parseInt(id, 16))) return { value: String.fromCodePoint(parseInt(id, 16)), puaFont: false };
-  if (regionalFlags.has(id)) return { value: [...id].map(c => String.fromCodePoint(0x1f1e6 + c.charCodeAt(0) - 97)).join(''), puaFont: false };
-  if (subdivisionFlags.has(id)) {
+  if (regionalFlags.has(id) || subdivisionFlags.has(id)) {
+    const pua = puaCodeFor(id);
+    if (pua) return { value: pua, puaFont: true };
+    // 只有 4 个自定义伪代码（xe/xn/xs/xw）没有 PUA 映射，保留 Unicode 序列。
+    if (regionalFlags.has(id)) return { value: [...id].map(c => String.fromCodePoint(0x1f1e6 + c.charCodeAt(0) - 97)).join(''), puaFont: false };
     const tags = [...id.replace('-', '')].map(c => String.fromCodePoint(0xe0000 + c.charCodeAt(0))).join('');
     return { value: `🏴${tags}${String.fromCodePoint(0xe007f)}`, puaFont: false };
   }
@@ -59,7 +101,8 @@ export function flagMarkup(input) {
   if (!label || /[<>\u0000-\u001f\uE000-\uF8FF]/u.test(label)) return null;
   const flag = flagSequence(match[1]);
   if (!flag) return null;
-  return { length: match[0].length, html: `<span class="md-flag${flag.puaFont ? ' md-flag-pua' : ''}" role="img" aria-label="${escapeAttr(label)}">${flag.value}</span>` };
+  const code = escapeAttr(String(match[1] || '').toUpperCase());
+  return { length: match[0].length, html: `<span class="md-flag${flag.puaFont ? ' md-flag-pua' : ''}" role="img" aria-label="${escapeAttr(label)}" data-code="${code}">${flag.value}</span>` };
 }
 
 // Pipe characters in a directive are not table separators. Protect only on

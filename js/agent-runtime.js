@@ -14,7 +14,7 @@ import { REASONING_LEVELS, normalizeReasoningLevel } from './reasoning.js?v=2026
 import { gatewayAgentToolModelIds } from './gateway-registry.js?v=2026.10.25.1';
 
 export const TUNER_DEFAULTS = Object.freeze({
-  temperatureMode: 'auto',   // auto | precise | focused | balanced | creative | custom
+  temperatureMode: 'auto',   // auto | precise | focused | balanced | creative（custom 已移除）
   customTemperature: 0.7,    // 仅 custom 使用
   environment: 'agent',      // agent | chat
   agentReasoningLevel: 'inherit',  // inherit = 沿用设置页；调节器里明确选档才覆盖
@@ -27,7 +27,6 @@ export const TEMPERATURE_PRESETS = Object.freeze([
   { id: 'focused', value: 0.35, zh: '严谨', en: 'Focused', hintZh: '事实问答、技术核对，抑制发散', hintEn: 'Factual answers and technical checks' },
   { id: 'balanced', value: 0.65, zh: '均衡', en: 'Balanced', hintZh: '日常对话与概念讲解', hintEn: 'Everyday conversation and explanations' },
   { id: 'creative', value: 0.95, zh: '创意', en: 'Creative', hintZh: '故事、诗歌、文案与头脑风暴', hintEn: 'Stories, poetry, copywriting and brainstorming' },
-  { id: 'custom', value: null, zh: '自定义', en: 'Custom', hintZh: '手动指定 0–1.5 之间的数值', hintEn: 'Set an explicit value between 0 and 1.5' },
 ]);
 export const REASONING_LEVEL_CHOICES = Object.freeze([
   { id: 'inherit', zh: '跟随设置', en: 'Follow settings' },
@@ -46,7 +45,8 @@ const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
 /** 容错归一化：坏数据、旧版本、手工编辑 localStorage 都不会让 UI 或 Agent 崩掉。 */
 export function normalizeTuner(raw) {
   const t = (raw && typeof raw === 'object') ? raw : {};
-  const temperatureMode = MODE_IDS.has(t.temperatureMode) ? t.temperatureMode : TUNER_DEFAULTS.temperatureMode;
+  // 旧版本可能存着 custom：UI 已无滑杆，自动回落到均衡档而不是崩掉。
+  const temperatureMode = t.temperatureMode === 'custom' ? 'balanced' : (MODE_IDS.has(t.temperatureMode) ? t.temperatureMode : TUNER_DEFAULTS.temperatureMode);
   const customTemperature = Number.isFinite(Number(t.customTemperature))
     ? Math.round(clamp(Number(t.customTemperature), 0, 1.5) * 100) / 100
     : TUNER_DEFAULTS.customTemperature;

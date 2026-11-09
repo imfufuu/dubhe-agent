@@ -271,7 +271,7 @@ export async function relayCurl({ url, method = 'GET', headers = {}, body, signa
 }
 
 // ── 跨域文件拉取（/api/file）────────────────────────────────────────────
-export const RELAY_FILE_MAX_BYTES = 16 * 1024 * 1024;
+export const RELAY_FILE_MAX_BYTES = 128 * 1024 * 1024; // 2026-11-08：与附件统一上限一致（中继自身可能有更小限制，实际以响应为准）
 export function fileNameFromUrl(u, contentType = '') {
   let name = '';
   try { name = decodeURIComponent(new URL(u).pathname.split('/').filter(Boolean).pop() || ''); } catch { name = ''; }

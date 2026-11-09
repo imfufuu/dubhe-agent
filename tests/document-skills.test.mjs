@@ -30,7 +30,10 @@ test('audio MIME normalization validates encoding, size and supported formats be
   assert.equal(normalizeAudioData(audio).mime, 'audio/wav');
   assert.equal(normalizeAudioData('data:application/octet-stream;base64,YWJj', 'voice.mp3').mime, 'audio/mpeg');
   for (const raw of ['plain text', 'data:audio/wav;base64,', 'data:audio/wav;base64,!!!', 'data:audio/wav;base64,YQ', 'data:text/plain;base64,YWJj']) assert.throws(() => normalizeAudioData(raw, 'voice.mp3'));
-  assert.throws(() => normalizeAudioData('data:audio/mpeg;base64,' + 'AAAA'.repeat(Math.floor(AUDIO_MAX_BYTES / 3) + 1)), /16MB/);
+  assert.equal(AUDIO_MAX_BYTES, 128 * 1024 * 1024, '单个音频附件上限已放宽到 128MB');
+  // 不再构造 >128 MiB 的 base64 字符串（单测内存开销过大），改为核对上限与错误文案。
+  const audioSrc = fs.readFileSync(new URL('../js/audio-format.js', import.meta.url), 'utf8');
+  assert.match(audioSrc, /音频超过 128MB/);
 });
 test('audio request uses the same filename/file_data parts as video, never audio_url/input_audio', async () => {
   const old = globalThis.fetch, requests = []; let usage;

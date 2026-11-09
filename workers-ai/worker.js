@@ -10,7 +10,8 @@
 //    text-part arrays accepted in messages, chat-only models degrade to a tool-free answer instead
 //    of refusing the request when an Agent client sends tools.
 //  · Upstream errors are surfaced in a short, redacted form so 502s are diagnosable.
-import { CF_CHAT_MODELS, CF_AGENT_CHAT_IDS, CF_DISABLED_PAID, CF_IMAGE_MODEL, CF_VISION_MODEL, CF_DECISION_MODELS, cfChatAvailable, cfCanonicalModelId, cfModelCard } from '../js/cloudflare-ai-catalog.js';
+//  · Optional gateway authentication (GATEWAY_TOKEN secret + ALLOWED_ORIGINS var); see AUTH_MATRIX.md.
+import { CF_CHAT_MODELS, CF_AGENT_CHAT_IDS, CF_DISABLED_PAID, CF_IMAGE_MODEL, CF_VISION_MODEL, CF_DECISION_MODELS, cfChatAvailable, cfCanonicalModelId, cfModelCard, cfModelTags } from '../js/cloudflare-ai-catalog.js';
 export const MODELS = CF_CHAT_MODELS;
 // Legacy class retained solely for existing deployment migration history.
 // No inference path uses it; existing stored data is not deleted.
@@ -19,10 +20,60 @@ export class Quota {
   async alarm() { /* retire any previously scheduled cleanup */ }
 }
 const MAX_BODY = 180000, MAX_OUTPUT = 8192, DEFAULT_OUTPUT = 2048;
-const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type', 'Cache-Control': 'no-store' };
-const json = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: { ...cors, 'Content-Type': 'application/json; charset=utf-8' } });
+const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Dubhe-Gateway-Token', 'Cache-Control': 'no-store' };
+const json = (data, status = 200, extra = {}) => new Response(JSON.stringify(data), { status, headers: { ...cors, 'Content-Type': 'application/json; charset=utf-8', ...extra } });
 const fail = (message, status = 400) => json({ error: { message } }, status);
 const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
+
+// ── 网关鉴权（可选配置，但私有部署强烈建议启用）──
+// GATEWAY_TOKEN 由 `wrangler secret put GATEWAY_TOKEN` 写入，绝不进仓库。
+// ALLOWED_ORIGINS 是逗号分隔的 Origin 白名单（留空或 * 表示不限制）。
+// 静态前端无法保守服务端秘密：见 AUTH_MATRIX.md，真正的多用户隔离请用 Cloudflare Access。
+function allowedOrigins(env) {
+  return String(env?.ALLOWED_ORIGINS || '').split(',').map((s) => s.trim()).filter(Boolean);
+}
+function originIsAllowed(env, request) {
+  const allow = allowedOrigins(env);
+  const origin = String(request.headers.get('origin') || '').trim();
+  return !allow.length || allow.includes('*') || !origin || allow.includes(origin);
+}
+// 定长比较，避免用 === 提前返回造成时序侧信道（长度仍会暴露，令牌本身不会）。
+function safeEqual(a, b) {
+  const A = String(a), B = String(b);
+  let diff = A.length ^ B.length;
+  for (let i = 0; i < Math.max(A.length, B.length); i++) diff |= (A.charCodeAt(i) || 0) ^ (B.charCodeAt(i) || 0);
+  return diff === 0;
+}
+function presentedToken(request) {
+  const bearer = /^Bearer\s+(.+)$/iu.exec(String(request.headers.get('authorization') || '').trim());
+  const raw = bearer ? bearer[1] : String(request.headers.get('x-dubhe-gateway-token') || '');
+  return raw.trim().slice(0, 512);
+}
+function authorize(request, env) {
+  const url = new URL(request.url);
+  const path = url.pathname.replace(/\/+$/, '') || '/';
+  if (request.method === 'OPTIONS') return originIsAllowed(env, request) ? null : json({ error: { message: 'Origin 不在允许列表。' } }, 403);
+  // 健康检查不含任何秘密，保持无需令牌，便于部署探针。
+  if (request.method === 'GET' && (path === '/health' || path === '/v1/health')) return null;
+  if (!originIsAllowed(env, request)) return json({ error: { message: 'Origin 不在允许列表。' } }, 403);
+  const expected = String(env?.GATEWAY_TOKEN || '').trim();
+  if (!expected) return null; // 未配置 secret：保持公开，由部署者用 Cloudflare Access / WAF / 额度限制保护
+  const got = presentedToken(request);
+  if (!got || !safeEqual(got, expected)) {
+    return json({ error: { message: '未授权：请提供网关访问令牌。', code: 'gateway_token_required' } }, 401,
+      { 'WWW-Authenticate': 'Bearer realm="dubhe-workers-ai"' });
+  }
+  return null;
+}
+function withCors(response, env, request) {
+  const allow = allowedOrigins(env);
+  const origin = String(request.headers.get('origin') || '').trim();
+  if (allow.length && !allow.includes('*') && origin && allow.includes(origin)) {
+    response.headers.set('Access-Control-Allow-Origin', origin);
+    response.headers.append('Vary', 'Origin');
+  }
+  return response;
+}
 
 function upstreamDetail(error) {
   const raw = String(error?.message ?? error ?? '').replace(/\s+/gu, ' ').trim().slice(0, 220);
@@ -66,12 +117,32 @@ function sse(result, model) {
     if (typeof reasoning === 'string' && reasoning.trim()) content = reasoning.trim();
   }
   const delta = { role: 'assistant', content, ...(calls.length ? { tool_calls: calls } : {}) };
+  const usage = normaliseUsage(result, choice, content);
+  // 标准 OpenAI SSE：正文 chunk 不带 usage，最后一个空 choices chunk 携带完整用量。
+  // 旧实现把 result.usage 原样塞进第一个 chunk，缺 total_tokens / 字段命名不一 / 上游无 usage 时全空。
   const event = {
     id: crypto.randomUUID(), object: 'chat.completion.chunk', model,
     choices: [{ index: 0, delta, finish_reason: calls.length ? 'tool_calls' : (choice?.finish_reason || 'stop') }],
-    usage: result?.usage || null,
   };
-  return new Response(`data: ${JSON.stringify(event)}\n\ndata: [DONE]\n\n`, { headers: { ...cors, 'Content-Type': 'text/event-stream; charset=utf-8' } });
+  const tail = {
+    id: event.id, object: 'chat.completion.chunk', model, choices: [], usage,
+  };
+  return new Response(`data: ${JSON.stringify(event)}\n\ndata: ${JSON.stringify(tail)}\n\ndata: [DONE]\n\n`, { headers: { ...cors, 'Content-Type': 'text/event-stream; charset=utf-8' } });
+}
+
+// Cloudflare 不同模型返回的用量字段名不一致（usage / metrics / input_tokens / output_tokens…），
+// 统一成 OpenAI 形状并补齐 total_tokens；完全没有用量时按输出长度估算并明确标注 estimated。
+function normaliseUsage(result, choice, content) {
+  const raw = result?.usage || result?.metrics || choice?.usage || null;
+  const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+  const prompt = num(raw?.prompt_tokens ?? raw?.input_tokens ?? raw?.input ?? raw?.prompt);
+  const completion = num(raw?.completion_tokens ?? raw?.output_tokens ?? raw?.output ?? raw?.completion);
+  const total = num(raw?.total_tokens) || (prompt + completion);
+  if (!prompt && !completion && !total) {
+    const est = Math.max(1, Math.ceil(String(content || '').length / 4));
+    return { prompt_tokens: 0, completion_tokens: est, total_tokens: est, estimated: true };
+  }
+  return { prompt_tokens: prompt, completion_tokens: completion, total_tokens: total || (prompt + completion) };
 }
 // The Worker owner controls access and billing; application-side daily quotas are disabled.
 async function specialized(work) {
@@ -109,7 +180,7 @@ async function handleImage(body, env) {
   if (run.error) return run.error;
   const info = imageInfo(run.result?.image);
   if (!info) return fail('图像生成结果无效；可能已产生费用，请勿自动重试。', 502);
-  return json({ created: Math.floor(Date.now() / 1000), data: [{ b64_json: info.raw, width: info.width, height: info.height }] });
+  return json({ created: Math.floor(Date.now() / 1000), data: [{ b64_json: info.raw, width: info.width, height: info.height }], usage: run.result?.usage || run.result?.metrics || null });
 }
 async function handleVision(body, env) {
   const id = cfCanonicalModelId(body?.model, [CF_VISION_MODEL]);
@@ -133,7 +204,7 @@ async function handleDecision(body, env) {
   const run = await specialized(() => env.AI.run(canonical, inputs));
   if (run.error) return run.error;
   if (!run.result?.answers || typeof run.result.answers !== 'object') return fail('决策结果无效；请勿自动重试。', 502);
-  return json(run.result);
+  return json({ ...run.result, usage: run.result?.usage || run.result?.metrics || null });
 }
 
 // ── Request normalisation: accept what real OpenAI-compatible clients send ──
@@ -204,14 +275,14 @@ async function runWithTools(env, id, inputs, defs) {
 }
 const TOOLS_DISABLED_NOTE = '当前模型不支持原生工具调用；本轮已切换为纯文本回答，请勿输出工具调用语法。';
 
-export default {
-  async fetch(request, env) {
+async function handle(request, env) {
     const url = new URL(request.url);
-    if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
     const path = url.pathname.replace(/\/+$/, '') || '/';
     if (request.method === 'GET' && (path === '/health' || path === '/v1/health')) {
       const ids = Object.keys(MODELS).filter(id => cfChatAvailable(id));
-      return json({ ok: true, ai: !!env.AI, models: ids.length, agent_models: CF_AGENT_CHAT_IDS.filter(id => cfChatAvailable(id)).length, now: new Date().toISOString() });
+      return json({ ok: true, ai: !!env.AI, models: ids.length, agent_models: CF_AGENT_CHAT_IDS.filter(id => cfChatAvailable(id)).length,
+        auth_required: !!String(env.GATEWAY_TOKEN || '').trim(), origin_restricted: allowedOrigins(env).length > 0,
+        now: new Date().toISOString() });
     }
     if (request.method === 'GET' && path === '/v1/models') {
       const agentOnly = url.searchParams.get('agent_tools') === '1';
@@ -225,6 +296,7 @@ export default {
             provider: card.provider || 'Cloudflare', vendor: card.vendor || '',
             display_name: card.displayName || id,
             agent_tools: CF_AGENT_CHAT_IDS.includes(id),
+            tags: cfModelTags(id),
             planned_deprecation: MODELS[id].plannedDeprecation || null,
           };
         }),
@@ -293,5 +365,13 @@ export default {
       return fail('Workers AI 返回了无效响应；可能已产生费用，请勿自动重试。', 502);
     }
     return sse(result, id);
+}
+
+export default {
+  async fetch(request, env) {
+    const denied = authorize(request, env);
+    if (denied) return withCors(denied, env, request);
+    if (request.method === 'OPTIONS') return withCors(new Response(null, { status: 204, headers: cors }), env, request);
+    return withCors(await handle(request, env), env, request);
   },
 };

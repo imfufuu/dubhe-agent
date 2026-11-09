@@ -327,7 +327,7 @@ export const TOOL_DEFS = [
       '分析沙箱中的一段视频（用户上传的视频原样存放在 uploads/*.mp4|webm|mov|m4v）：按时间顺序描述画面与动作、转录字幕 / 屏幕文字 / 可听清的语音、概括主题。' +
       '对话模型本身是纯文本，不能直接看视频：必须调用本工具。' +
       `内部使用用户在设置里选定的视频识别模型（Gemini 系，默认 ${VIDEO_TOOL_MODEL}），不要传 model；也不要试图把视频拆帧后逐张 analyze_image。` +
-      'path 省略时自动取用户最近上传的视频。单个视频 ≤ 16MB、建议 ≤ 3 分钟；更长的请让用户裁剪。' +
+      'path 省略时自动取用户最近上传的视频。单个视频 ≤ 128MB、建议 ≤ 3 分钟；更长的请让用户裁剪。' +
       '返回完整结果（不截成摘要）；全文同时写入沙箱 internal/ocr/{去掉扩展名的文件名}.video.md（如 uploads/a.mp4 → internal/ocr/a.video.md），可用 read_file 再读。',
     parameters: {
       type: 'object',
@@ -339,7 +339,7 @@ export const TOOL_DEFS = [
   },
   {
     name: 'analyze_audio',
-    description: '分析 uploads/ 中的音频：转录、语言、近似时间点、说话人 A/B、摘要和声音事件。原音频通过与视频相同的 file 部件上传网关，使用用户配置的三个 Gemini 模型之一，不传 model。仅凭声音不确定真实身份；时间点不是强制对齐。≤16MB；结果全文写入 internal/ocr/*.audio.md。',
+    description: '分析 uploads/ 中的音频：转录、语言、近似时间点、说话人 A/B、摘要和声音事件。原音频通过与视频相同的 file 部件上传网关，使用用户配置的三个 Gemini 模型之一，不传 model。仅凭声音不确定真实身份；时间点不是强制对齐。≤128MB；结果全文写入 internal/ocr/*.audio.md。',
     parameters: { type: 'object', properties: { path: { type: 'string', description: '音频沙箱路径或外部 http(s) 音频链接；省略时取最近音频' }, prompt: { type: 'string', description: '转录或分析要求' } } },
   },
   {
@@ -475,7 +475,7 @@ export const TOOL_DEFS = [
   {
     name: 'download_file',
     description:
-      '把一个 http(s) 链接指向的文件（图片 / 视频 / PDF / ZIP / 音频 / 任意二进制或文本）经中继跨域拉进沙箱 uploads/，单文件 ≤ 16MB。' +
+      '把一个 http(s) 链接指向的文件（图片 / 视频 / PDF / ZIP / 音频 / 任意二进制或文本）经中继跨域拉进沙箱 uploads/，单文件 ≤ 128MB。' +
       '浏览器直连会被目标站 CORS 拦下，所以本工具只在中继声明 file 能力时出现。' +
       '拉下来后图片可 analyze_image / 作 generate_image 参考图，视频可 analyze_video，PDF 可 analyze_pdf，ZIP 可 unzip_file，文本可 read_file。' +
       '与 fetch_url 的区别：fetch_url 读网页正文文本；download_file 原样保存文件字节。网页链接（HTML）请用 fetch_url。',
@@ -491,7 +491,7 @@ export const TOOL_DEFS = [
   {
     name: 'pull_github_project',
     description:
-      '快捷拉取一个公开 GitHub 仓库到会话沙箱。只接受 https://github.com/<owner>/<repo>；可选 ref 指定分支、tag 或 commit SHA，不填时读取默认分支。通过已声明 file 能力的中继 /api/file（支持 Cloudflare Worker）下载 ZIP 源码快照，≤16MB；解压上限 24MB、最多 2048 个文件。默认写入 uploads/github/<owner>/<repo>，也可用 path 指定目录；不覆盖已有文件，先报冲突。只含源码快照、不含 Git 历史；不支持私有仓库或认证令牌。不会执行导入文件。',
+      '快捷拉取一个公开 GitHub 仓库到会话沙箱。只接受 https://github.com/<owner>/<repo>；可选 ref 指定分支、tag 或 commit SHA，不填时读取默认分支。通过已声明 file 能力的中继 /api/file（支持 Cloudflare Worker）下载 ZIP 源码快照，≤128MB；解压上限 24MB、最多 2048 个文件。默认写入 uploads/github/<owner>/<repo>，也可用 path 指定目录；不覆盖已有文件，先报冲突。只含源码快照、不含 Git 历史；不支持私有仓库或认证令牌。不会执行导入文件。',
     parameters: { type: 'object', properties: {
       url: { type: 'string', description: '公开仓库首页，如 https://github.com/octocat/Hello-World' },
       ref: { type: 'string', description: '可选：分支、tag 或 commit SHA；缺省读取 GitHub 默认分支' },
@@ -1870,7 +1870,7 @@ async function executeToolBody(outerName, outerArgs, ctx) {
         }
         const bytes = new Uint8Array(await fetchVideoContent(id, common));
         if (bytes.byteLength > VIDEO_SANDBOX_MAX_BYTES) {
-          const message = `视频已生成但超过沙箱存储上限（${Math.round(bytes.byteLength / 1048576)} MB > 16 MB），未写入沙箱。任务 ${id} 的媒体在网关保留 7 天。`;
+          const message = `视频已生成但超过沙箱存储上限（${Math.round(bytes.byteLength / 1048576)} MB > 128 MB），未写入沙箱。任务 ${id} 的媒体在网关保留 7 天。`;
           emit({ status: 'error', error: { message } });
           return message;
         }
@@ -2234,7 +2234,7 @@ async function executeToolBody(outerName, outerArgs, ctx) {
         }
         const bytes = Math.round((dataUrl.length - dataUrl.indexOf(',') - 1) * 0.75);
         if (bytes > VIDEO_MAX_BYTES) {
-          return `analyze_video 失败：${path} 约 ${(bytes / 1024 / 1024).toFixed(1)} MB，超过 16MB 上限。请让用户裁剪或压缩后再上传。`;
+          return `analyze_video 失败：${path} 约 ${(bytes / 1024 / 1024).toFixed(1)} MB，超过 128MB 上限。请让用户裁剪或压缩后再上传。`;
         }
         const prompt = String(args.prompt || '').trim();
         const videoModel = resolveVideoModel(ctx.videoModel);
@@ -2943,7 +2943,7 @@ function collectCppFiles(fs, args, code, mainPath, { projectScope = false } = {}
   let totalBytes = 0;
   for (const file of map.values()) {
     totalBytes += contentByteSize(file.contents);
-    if (totalBytes > 16 * 1024 * 1024) throw new Error('本地 C++ 附带文件超过 16 MiB 上限；请缩小 dir 或 files 范围。');
+    if (totalBytes > 128 * 1024 * 1024) throw new Error('本地 C++ 附带文件超过 128 MiB 上限；请缩小 dir 或 files 范围。');
   }
   if (map.size > 256) throw new Error('本地 C++ 一次最多接收 256 个附带文件；请缩小 dir 或 files 范围。');
   return [...map.values()];
@@ -2983,7 +2983,7 @@ function collectAnalyzePaths(fs, args, listImgs) {
 }
 
 const VIDEO_EXT_RE = /\.(mp4|webm|mov|m4v)$/i;
-const VIDEO_MAX_BYTES = 16 * 1024 * 1024;
+const VIDEO_MAX_BYTES = 128 * 1024 * 1024;
 function videoMimeOf(path) {
   const ext = String(path || '').toLowerCase().split('.').pop();
   return ext === 'webm' ? 'video/webm' : ext === 'mov' ? 'video/quicktime' : ext === 'm4v' ? 'video/x-m4v' : 'video/mp4';

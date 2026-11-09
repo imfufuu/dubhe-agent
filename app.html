@@ -13,7 +13,7 @@
      ·   （DeepSeek、Anthropic、OpenAI、Gemini、GLM、Grok、Kimi、Doubao、Qwen 的官方域名——
      ·    少了这些，设置里切到第一方网关时 fetch 会被本 CSP 直接拦下，表现为「直连失败」）/ C++ 远程执行 / Pyodide CDN / 本站代理
      · 'wasm-unsafe-eval' 为 Pyodide 在 Worker 内编译 WebAssembly 所需 -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' 'sha256-KWAlpbtB4R45zBOqEtLM+90JdLvHqoOyoaQRSGS6uBs=' https://cdn.jsdelivr.net https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; img-src 'self' data: blob: https:; media-src 'self' blob: data:; font-src 'self' data: https://fonts.gstatic.com https://cdn.jsdelivr.net; connect-src 'self' https://challenges.cloudflare.com https://godbolt.org https://api.teamorouter.com https://api.teamorouter.cn https://api.deepseek.com https://api.anthropic.com https://api.openai.com https://generativelanguage.googleapis.com https://open.bigmodel.cn https://api.x.ai https://api.moonshot.ai https://api.moonshot.cn https://ark.cn-beijing.volces.com https://dashscope.aliyuncs.com https://dashscope-intl.aliyuncs.com https://cdn.jsdelivr.net https://*.workers.dev https://huggingface.co https://*.hf.co; worker-src 'self' blob:; frame-src https://challenges.cloudflare.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' 'sha256-DZC/V3eOlvmpvmydMfuxu2cb1nKweLI71/y3PWegoqE=' https://cdn.jsdelivr.net https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; img-src 'self' data: blob: https:; media-src 'self' blob: data:; font-src 'self' data: https://fonts.gstatic.com https://cdn.jsdelivr.net; connect-src 'self' https://challenges.cloudflare.com https://godbolt.org https://api.teamorouter.com https://api.teamorouter.cn https://api.deepseek.com https://api.anthropic.com https://api.openai.com https://generativelanguage.googleapis.com https://open.bigmodel.cn https://api.x.ai https://api.moonshot.ai https://api.moonshot.cn https://ark.cn-beijing.volces.com https://dashscope.aliyuncs.com https://dashscope-intl.aliyuncs.com https://cdn.jsdelivr.net https://*.workers.dev https://huggingface.co https://*.hf.co; worker-src 'self' blob:; frame-src https://challenges.cloudflare.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'" />
 <!-- Runs synchronously before fonts or remote resources; offline entry immediately fences the page. -->
 <script src="js/offline-bootstrap.js?v=2026.10.25.1"></script>
 <meta name="app-version" content="2026.10.25.1" />
@@ -104,7 +104,7 @@
 <!-- 启动兜底：脚本在 boot-screen 之后，这样能立即拿到 boot 元素。
      ① 提前套用已保存的主题，避免深色用户先闪一下白屏
      ② 动态插入第三方字体样式表（不阻塞脚本执行）
-     ③ 真实阶段进度 + 慢网提示；只在实际未捕获异常或 90 秒仍未挂载时才判失败（两个重载按钮也只在那之后出现） -->
+     ③ 真实阶段进度 + 慢网提示；只在实际未捕获异常或 120 秒仍未挂载时才判失败（两个重载按钮也只在那之后出现） -->
 <script>(function(){
   var doc=document.documentElement;
   try{
@@ -243,8 +243,8 @@
   window.__dubheBootGuard={complete:complete,stage:setStage};
   setStage('assets');
   // 慢网提示：某个阶段停留超过 6 秒就把等待秒数说出来（文件名在下面网络明细行，这里不重复）；
-  // 「重新加载 / 清缓存后重载」两个按钮只在 90 秒超时（或真实报错）之后才出现，等待期间不打扰
-  var BOOT_TIMEOUT_MS=90000;
+  // 「重新加载 / 清缓存后重载」两个按钮只在 120 秒超时（或真实报错）之后才出现，等待期间不打扰
+  var BOOT_TIMEOUT_MS=120000; // 120 秒：弱网或首次下载完整西夏文 TTF 时不误判启动卡死
   slowTimer=setInterval(function(){
     if(settled||revealed) return;
     var wait=Math.round((Date.now()-lastAt)/1000), total=Math.round((Date.now()-t0)/1000);
@@ -254,7 +254,7 @@
       setHint(LABEL[name].replace('…','')+' · '+why+' · 已等待 '+total+' 秒');
     }
   },1000);
-  t=setTimeout(function(){ forceReveal('启动超过 90 秒仍未完成：多半是网络过慢或缓存了损坏的旧版本。可先「清缓存后重载」，若仍失败请检查网络后重试'); },BOOT_TIMEOUT_MS);
+  t=setTimeout(function(){ forceReveal('启动超过 120 秒仍未完成：多半是网络过慢或缓存了损坏的旧版本。可先「清缓存后重载」，若仍失败请检查网络后重试'); },BOOT_TIMEOUT_MS);
   var reloadBtn=document.getElementById('boot-reload'), resetBtn=document.getElementById('boot-reset');
   if(reloadBtn) reloadBtn.addEventListener('click',function(){ location.reload(); });
   if(resetBtn) resetBtn.addEventListener('click',function(){
@@ -385,42 +385,9 @@
         <input id="camera-input" type="file" hidden accept="image/*" capture="environment" aria-label="拍摄照片" />
         <input id="attach-input" type="file" multiple hidden />
         <textarea id="composer-input" rows="1" aria-label="消息输入框" placeholder="你出想法，Duhbe来实现"></textarea>
-        <button id="tuner-btn" class="tuner-btn" type="button" title="Tuner" aria-label="Tuner" aria-haspopup="dialog" aria-expanded="false" aria-controls="tuner-panel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg></button>
+        <button id="tuner-btn" class="tuner-btn" type="button" title="Tuner" aria-label="Tuner" aria-haspopup="dialog" aria-expanded="false" aria-controls="tuner-modal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg></button>
         <button id="voice-btn" type="button" aria-describedby="voice-privacy" title="语音输入" aria-label="语音输入" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3M8 22h8"/></svg></button>
         <button id="send-btn" type="button" title="发送 (Enter)" aria-label="发送"><span id="send-ico">↑</span></button>
-      </div>
-      <div id="tuner-panel" class="tuner-panel" hidden role="dialog" aria-label="Tuner" aria-labelledby="tuner-title">
-        <div class="tuner-head">
-          <div class="tuner-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg><span id="tuner-title"></span></div>
-          <button id="tuner-close" type="button" aria-label="Close" title="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6 18 18M18 6 6 18"/></svg></button>
-        </div>
-        <div class="tuner-body">
-          <section class="tuner-sec">
-            <div class="tuner-label"><span id="tuner-label-temp"></span><span id="tuner-temp-value" class="tuner-value"></span></div>
-            <div id="tuner-temp-options" class="tuner-seg" role="group" aria-label="Temperature presets"></div>
-            <div id="tuner-custom-wrap" class="tuner-custom" hidden><input id="tuner-custom-range" type="range" min="0" max="1.5" step="0.05" value="0.7" aria-label="Custom temperature"/><span id="tuner-custom-number" class="mono">0.70</span></div>
-            <p id="tuner-temp-hint" class="tuner-hint"></p>
-          </section>
-          <section class="tuner-sec">
-            <div class="tuner-label"><span id="tuner-label-env"></span></div>
-            <div id="tuner-env-options" class="tuner-seg" role="group" aria-label="Environment mode"></div>
-            <div id="tuner-agent-block" class="tuner-sub">
-              <label for="tuner-level" id="tuner-level-label"></label>
-              <select id="tuner-level" aria-label="Agent reasoning level"></select>
-            </div>
-            <div id="tuner-chat-block" class="tuner-sub" hidden>
-              <label class="tuner-check"><input id="tuner-chat-thinking" type="checkbox"/><span id="tuner-chat-thinking-label"></span></label>
-            </div>
-            <p id="tuner-env-hint" class="tuner-hint"></p>
-          </section>
-          <section class="tuner-sec tuner-tools-sec">
-            <div class="tuner-label"><span id="tuner-label-tools"></span><span id="tuner-tools-count" class="tuner-value"></span></div>
-            <div id="tuner-pending" class="tuner-pending" hidden></div>
-            <div id="tuner-tools-list" class="tuner-tools-list"></div>
-            <p class="tuner-hint" id="tuner-tools-note"></p>
-          </section>
-        </div>
-        <div class="tuner-foot"><span id="tuner-summary"></span><button id="tuner-reset" type="button" class="tuner-reset"></button></div>
       </div>
       <div id="welcome-quick-prompts" class="welcome-quick-prompts" hidden></div>
       <span id="voice-privacy" class="sr-only">语音识别不会自动发送消息；音频由浏览器原生服务处理</span>
@@ -536,6 +503,33 @@
   <div id="tok-pop-body" class="tok-pop-body"></div>
 </div>
 <!-- 设置弹窗 -->
+<div id="tuner-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="tuner-title" hidden>
+  <div class="modal-card tuner-card">
+    <div class="modal-head"><h3 id="tuner-title"></h3><button id="tuner-close" class="icon-btn" type="button" aria-label="Close"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6 18 18"/><path d="M18 6 6 18"/></svg></button></div>
+    <div class="tuner-body">
+      <section class="tuner-sec">
+        <div class="tuner-label"><span id="tuner-label-temp"></span><span id="tuner-temp-value" class="tuner-value"></span></div>
+        <div id="tuner-temp-options" class="tuner-seg" role="group"></div>
+        <p id="tuner-temp-hint" class="tuner-hint"></p>
+      </section>
+      <section class="tuner-sec">
+        <div class="tuner-label"><span id="tuner-label-env"></span></div>
+        <div id="tuner-env-options" class="tuner-seg" role="group"></div>
+        <div id="tuner-chat-block" class="tuner-sub" hidden>
+          <label class="tuner-check"><input id="tuner-chat-thinking" type="checkbox"/><span id="tuner-chat-thinking-label"></span></label>
+        </div>
+        <p id="tuner-env-hint" class="tuner-hint"></p>
+      </section>
+      <section class="tuner-sec">
+        <div class="tuner-label"><span id="tuner-label-tools"></span></div>
+        <button id="tuner-open-tools" type="button" class="ghost-btn"></button>
+        <p class="tuner-hint" id="tuner-tools-note"></p>
+      </section>
+    </div>
+    <div class="modal-actions"><span id="tuner-summary" class="tuner-summary"></span><button id="tuner-reset" type="button" class="ghost-btn"></button></div>
+  </div>
+</div>
+
 <div id="settings-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="settings-modal-title">
   <div class="modal-card settings-card">
     <div class="modal-head">
@@ -570,6 +564,10 @@
         <div id="set-gateway-base-row" class="set-row">
           <div class="set-lbl"><div class="set-title">网关基础 URL（可选）</div><div class="set-sub" id="set-gateway-connection-note">留空使用官方默认；自定义网关必填 HTTPS URL</div></div>
           <div class="set-ctl"><input id="set-gateway-base" class="set-input mono" type="url" placeholder="https://api.example.com/v1" spellcheck="false" autocomplete="off"/></div>
+        </div>
+        <div class="set-row" id="set-gateway-token-row">
+          <div class="set-lbl"><div class="set-title">网关访问令牌（可选）</div><div class="set-sub">仅保存在本机浏览器；私有网关启用鉴权后填写，不写入会话导出</div></div>
+          <div class="set-ctl manual-model-controls"><input id="set-gateway-token" class="set-input mono" type="password" placeholder="Bearer token (optional)" spellcheck="false" autocomplete="off"/><button id="set-gateway-token-clear" class="mini-btn" type="button">清除</button></div>
         </div>
         <div class="set-row" id="set-manual-model-row" hidden>
           <div class="set-lbl"><div class="set-title">自定义网关模型 ID</div><div class="set-sub" id="set-gateway-note">仅自定义网关支持手动添加</div></div>
@@ -692,7 +690,7 @@
         <h4 id="set-offline-model-heading">离线本地模型</h4>
         <input id="set-offline-model-file-input" type="file" accept=".gguf,application/octet-stream" hidden aria-label="选择本地 GGUF 模型文件"/>
         <div class="set-row">
-          <div class="set-lbl"><div class="set-title" id="set-offline-model-title">本地 GGUF</div><div class="set-sub" id="set-offline-model-description">选择一个本地 GGUF 文件；单文件上限约 2 GiB。</div></div>
+          <div class="set-lbl"><div class="set-title" id="set-offline-model-title">本地 GGUF</div><div class="set-sub" id="set-offline-model-description">选择一个本地 GGUF 文件；单文件上限 16 GiB（受浏览器磁盘配额限制）。</div></div>
           <div class="set-ctl offline-model-actions">
             <button type="button" id="set-offline-model-choose" class="ghost-btn">选择 GGUF 文件</button>
             <button type="button" id="set-offline-model-cancel" class="mini-btn" hidden>取消</button>
@@ -711,11 +709,12 @@
               <div class="set-sub">GGUF 保存在本机浏览器 OPFS，不上传；清理站点数据会删除。</div>
               <div class="set-sub">参数量优先读 GGUF 元数据；缺失时按张量或文件名估算。</div>
               <div class="set-sub">内存估算为粗略工作集提示，不代表可用 RAM 或运行保证。</div>
-              <div class="set-sub">浏览器可能不提供设备内存信息；限单文件 &lt;2 GiB，不支持分片。</div>
+              <div class="set-sub">设备内存信息可能不可用；单文件 ≤16 GiB，不支持分片。</div>
               <div class="set-sub">模型许可以你选择的文件对应模型卡与上游条款为准。</div>
             </div>
           </div>
         </div>
+        <div class="set-sub" id="set-recommended-models"></div>
       </section>
 
       <section class="set-sec">
@@ -731,6 +730,12 @@
         <div class="set-row"><div class="set-lbl"><div class="set-title">临时缓存</div><div class="set-sub" id="set-cache-note">不含会话、密钥、设置与记忆</div></div><div class="set-ctl"><button type="button" id="set-clear-cache" class="ghost-btn">清除临时缓存</button></div></div>
         <div class="set-row cache-refresh-row"><div class="set-lbl"><div class="set-title">脚本缓存更新</div><div class="set-sub" id="set-cache-update-status" role="status" aria-live="polite">点击后自动检查线上版本；有更新时缓存脚本并显示进度，不会打断当前页面。</div></div><div class="set-ctl"><button type="button" id="set-update-cache" class="ghost-btn" aria-controls="set-cache-update-progress-wrap">检查并更新</button></div></div>
         <div id="set-cache-update-progress-wrap" class="cache-refresh-progress" role="group" aria-label="脚本缓存更新进度" hidden><progress id="set-cache-update-progress" max="100" value="0" aria-label="脚本缓存更新进度"></progress><span id="set-cache-update-progress-label">0%</span></div>
+
+        <div class="set-row" id="set-tool-manager">
+          <div class="set-lbl"><div class="set-title" id="tool-manager-title"></div><div class="set-sub" id="tool-manager-desc"></div></div>
+          <div class="set-ctl"><span id="tool-manager-count" class="mono"></span><span class="tool-manager-pending" id="tool-manager-pending" hidden></span></div>
+        </div>
+        <div class="set-row"><div class="set-ctl"><div id="tool-manager-root" class="tool-manager-root"></div></div></div>
 
       </section>
 

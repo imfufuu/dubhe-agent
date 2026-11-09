@@ -16,9 +16,9 @@ Agent 现在可以在对话中用 `tool_registry` **创建、读取、更新、�
 ```
 
 2. 工具返回 `⏸ 需要用户安全确认：注册新工具 custom_greet（text_template）… confirm_token=…`，**此时工具没有被创建**，也没有任何副作用。
-3. 输入框「调节器 → 自注册工具 → 待确认」出现这条请求，列出动作、工具名、handler 类型和票据前缀。点「允许」会直接完成这次变更；点「拒绝」则票据作废。
+3. 对话输出里出现一张「执行内核」同款确认卡（操作 / 原因 / 影响 / 可逆性 / 票据前缀），列出动作、工具名、handler 类型和票据前缀。点「允许」会直接完成这次变更；点「拒绝」则票据作废。
 4. 若走 Agent 重试路径，批准后的票据是一次性的（5 分钟有效），带 `confirm_token` 重发同一 action 即可完成。票据只能消费一次，Agent 侧**没有** `approve` action，无法自行批准。
-5. 之后模型可以直接调用 `custom_greet({"who":"小明"})` → `你好，小明！`，也可以在调节器里查看完整定义、停用或删除（删除需二次点击确认）。
+5. 之后模型可以直接调用 `custom_greet({"who":"小明"})` → `你好，小明！`，也可以在「设置 → 自注册工具」里查看完整定义、停用或删除（删除需二次点击确认）。
 
 ## 安全模型
 
@@ -37,7 +37,8 @@ Agent 现在可以在对话中用 `tool_registry` **创建、读取、更新、�
 
 - `js/tool-registry.js`：注册表、确认门、声明式 handler、定义校验。
 - `js/tools.js`：`TOOL_DEFS` 新增 `tool_registry`；`allToolDefinitions()` 合并动态工具；`executeTool()` 分发到注册表。
-- `js/ui-tuner.js`：待确认列表、工具管理（读取完整定义 / 启停 / 二次确认删除）。
+- `js/ui-tool-manager.js`：设置页里的工具管理（读取完整定义 / 启停 / 二次确认删除）。
+- `js/tool-approval-card.js`：对话输出里的用户确认卡（复用执行内核 `.confirm-card` 样式）。
 - 能力登记处、执行契约、按需挂载规则、离线白名单、工具目录摘要均已同步登记。
 - 回归：`tests/tool-self-registration.test.mjs`（6 项）、`tests/tuner-ui.test.mjs`（5 项）、能力三方一致性自检。
 

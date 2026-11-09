@@ -5,6 +5,12 @@ compatibility_date = "2025-04-01"
 [ai]
 binding = "AI"
 
+# 私有部署鉴权（见 ../AUTH_MATRIX.md）；secret 绝不写进仓库：
+#   npx wrangler secret put GATEWAY_TOKEN      # 启用后所有 /v1/*（除 /health）需 Bearer 令牌
+#   npx wrangler secret put ALLOWED_ORIGINS    # 可选：逗号分隔 Origin 白名单，如 https://imfufuu.github.io
+# 未配置 GATEWAY_TOKEN 时网关保持公开；deploy --keep-vars 会保留已写入的 secret。
+# 静态 Pages 前端无法保守服务端秘密，多用户场景请另配 Cloudflare Access / WAF / 速率限制。
+
 # Preserve existing migration history; quota objects are no longer bound or used.
 [[migrations]]
 tag = "v1"

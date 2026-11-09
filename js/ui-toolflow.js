@@ -268,7 +268,15 @@ export function webGroupLabel(rows, running) {
   if (names.length === 1 && WEB_SPEC[names[0]]) {
     const spec = WEB_SPEC[names[0]];
     const verb = running ? spec.run : spec.done;
-    if (n === 1) return spec.one ? `${verb} ${spec.one}` : verb;
+    if (n === 1) {
+      // search_web 没有 one 名词：旧实现直接返回 "Searched for"，后面什么都没有，
+      // 看起来像一个空标题/错误菜单名。补上真实搜索词，无词时退化为完整短语。
+      if (!spec.one) {
+        const q = String(rows[0]?.summary || '').trim();
+        return q ? `${verb} ${q}` : (running ? 'Searching the web' : 'Searched the web');
+      }
+      return `${verb} ${spec.one}`;
+    }
     return `${verb} ${n} ${spec.many}`;
   }
   return running ? `Web tools · ${n}` : `Used ${n} web tools`;

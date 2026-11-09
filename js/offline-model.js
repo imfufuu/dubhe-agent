@@ -299,7 +299,7 @@ export async function importOfflineModel(file, {
     throw new Error('请选择有效的本地 GGUF 文件。');
   }
   if (!/\.gguf$/i.test(String(file.name || ''))) throw new Error('当前只接受单文件 .gguf；分片模型暂不支持。');
-  if (file.size > MAX_SINGLE_GGUF_BYTES) throw new Error('单个 GGUF 文件需小于 2 GiB；超大或分片模型当前不支持。');
+  if (file.size > MAX_SINGLE_GGUF_BYTES) throw new Error('单个 GGUF 文件需小于 16 GiB；分片模型当前不支持。');
   const parsed = parsedMetadata || await metadataReader(file, { fileName: file.name || '' });
   if (parsed?.format !== 'gguf') throw new Error('没有识别到有效的 GGUF 元数据。');
   if (Number(parsed.fileSize) !== Number(file.size)) throw new Error('GGUF 元数据与所选文件大小不一致；请重新选择文件。');
@@ -386,7 +386,7 @@ async function createOfflineEngine() {
   }, 'firefox_safari');
   // The upstream Memory64 probe can report support on browsers that ignore the
   // memory address option. Force the bundled wasm32/Asyncify pair; imported
-  // files are already limited to <2 GiB. This avoids runtime parse aborts.
+  // files are already limited to 16 GiB. This avoids runtime parse aborts.
   runtime.getWorkerResources = () => ({
     wasmPath: new URL(`../assets/vendor/wllama/wllama-compat-${WLLAMA_VERSION}.wasm`, import.meta.url).href,
     jsPath: new URL(`../assets/vendor/wllama/wllama-compat-${WLLAMA_VERSION}.js`, import.meta.url).href,
@@ -412,7 +412,7 @@ export async function streamOfflineModel({
   tools = [],
   signal,
   temperature = 0.7,
-  maxTokens = OFFLINE_MODEL_MAX_OUTPUT_TOKENS,
+  maxTokens: _legacyMaxTokens = OFFLINE_MODEL_MAX_OUTPUT_TOKENS, // 兼容旧签名，已不再使用
   onChunk = () => {},
 } = {}, { engineProvider = getOfflineModelEngine, modelFileProvider = getOfflineModelFile } = {}) {
   activeOfflineRuns++;
@@ -458,7 +458,9 @@ export async function streamOfflineModel({
       stream: true,
       temperature: Number.isFinite(Number(temperature)) ? Number(temperature) : 0.7,
       top_p: 0.9,
-      max_tokens: Math.max(1, Math.min(OFFLINE_MODEL_MAX_OUTPUT_TOKENS, Number(maxTokens) || OFFLINE_MODEL_MAX_OUTPUT_TOKENS)),
+      // 不传 max_tokens：wllama 依 n_ctx 自行决定上限；显式指定会触发「最大 token 为 4096」
+      // 之类的错误（固定 4096 上下文里，输出预算与提示词相加会越界）。
+      // maxTokens 仅保留旧签名兼容，不再下发到运行时。
       abortSignal: signal,
     })), signal, abandon);
     if (!stream || typeof stream[Symbol.asyncIterator] !== 'function') throw new Error('本地推理运行时未返回可读流。');

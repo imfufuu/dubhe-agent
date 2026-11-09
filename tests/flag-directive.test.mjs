@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { flagMarkup, flagSequence } from '../js/flag-directive.js';
+import { flagMarkup, flagSequence, puaCodeFor } from '../js/flag-directive.js';
 import { regionalFlags, subdivisionFlags, puaFlags } from '../js/flag-registry.js';
 import { selectLazyFaces, codepointsOf } from '../js/lazy-fonts.js';
 
@@ -18,22 +18,35 @@ fallback('warm up'); globalThis.markdownit = sandbox.markdownit; markdown('warm 
 const cps = text => [...text].map(ch => ch.codePointAt(0));
 const seq = id => flagSequence(id)?.value;
 
-test('all supported regional codes emit complete regional indicator sequences', () => {
+test('all supported regional codes emit stable single-codepoint PUA glyphs', () => {
   assert.equal(regionalFlags.size, 187);
+  // 2026-11-09：默认改用 BabelStone Flags PUA；官网建议用它规避 emoji 字体回退与
+  // GSUB ccmp 序列合成，切换标签页后不会整批隐身。4 个伪代码没有 PUA 映射，保留 RI 序列。
+  const fallbackToSequence = new Set(['xe', 'xn', 'xs', 'xw']);
   for (const id of regionalFlags) {
-    assert.deepEqual(cps(seq(id)), [...id].map(c => 0x1f1e6 + c.charCodeAt(0) - 97), id);
-    assert.equal(flagSequence(id).puaFont, false);
+    if (fallbackToSequence.has(id)) {
+      assert.deepEqual(cps(seq(id)), [...id].map(c => 0x1f1e6 + c.charCodeAt(0) - 97), id);
+      assert.equal(flagSequence(id).puaFont, false);
+      continue;
+    }
+    assert.deepEqual(cps(seq(id)), [parseInt(puaFlags[id], 16)], id);
+    assert.equal(flagSequence(id).puaFont, true, id);
+    assert.equal(seq(id), puaCodeFor(id), id);
   }
   assert.equal(seq('USSR'), seq('su'));
   for (const id of ['us', 'su', 'eu', 'un', 'aq', 'cs', 'dd', 'yu', 'cq']) assert.ok(seq(id), id);
 });
 
-test('all supported subdivision codes emit full tag sequences and a cancel tag', () => {
+test('all supported subdivision codes emit stable PUA glyphs with aliases normalized', () => {
   assert.equal(subdivisionFlags.size, 87);
   for (const id of subdivisionFlags) {
-    const expected = [0x1f3f4, ...[...id.replace('-', '')].map(c => 0xe0000 + c.charCodeAt(0)), 0xe007f];
-    assert.deepEqual(cps(seq(id)), expected, id);
+    assert.equal(flagSequence(id).puaFont, true, id);
+    const points = cps(seq(id));
+    assert.equal(points.length, 1, `${id} 应为单码位字形`);
+    assert.ok(points[0] >= 0xe000 && points[0] <= 0xe43f, id);
   }
+  assert.equal(seq('gb-cym'), seq('gb-wls'));
+  assert.equal(seq('nl-bq1'), seq('bq-bo'));
   assert.ok(seq('gb-xbr')); assert.ok(seq('iq-kr'));
 });
 
@@ -91,7 +104,7 @@ test('code, escapes, table cells and link destinations retain their semantics', 
   for (const source of ['| flag | note |\n|---|---|\n| ::flag[us|Name]:: | yes |', 'flag | note\n--- | ---\n::flag[us|Name]:: | yes']) {
     const html = markdown(source); assert.equal((html.match(/<td>/g) || []).length, 2); assert.match(html, /aria-label="Name"/);
   }
-  assert.equal((markdown('::flag[us]::::flag[eu]::').match(/class="md-flag"/g) || []).length, 2);
+  assert.equal((markdown('::flag[us]::::flag[eu]::').match(/class="md-flag/g) || []).length, 2);
 });
 
 test('labels are escaped and placeholders cannot introduce HTML into attributes', () => {

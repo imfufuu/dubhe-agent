@@ -1,7 +1,7 @@
 // Audio containers accepted by the dedicated Gemini file-input tool.
 export const AUDIO_EXT_RE = /\.(mp3|mpga|wav|m4a|aac|ogg|oga|opus|flac|weba)$/i;
 export const AUDIO_MIME_RE = /^audio\/(mpeg|mp3|wav|wave|x-wav|mp4|x-m4a|aac|ogg|opus|flac|x-flac|webm)$/i;
-export const AUDIO_MAX_BYTES = 16 * 1024 * 1024;
+export const AUDIO_MAX_BYTES = 128 * 1024 * 1024; // 2026-11-08：与附件统一上限一致
 export function audioMimeOf(path) {
   const ext = String(path).split('.').pop().toLowerCase();
   return ({ mp3:'audio/mpeg', mpga:'audio/mpeg', wav:'audio/wav', m4a:'audio/mp4', aac:'audio/aac', ogg:'audio/ogg', oga:'audio/ogg', opus:'audio/ogg', flac:'audio/flac', weba:'audio/webm', webm:'audio/webm' })[ext] || '';
@@ -14,6 +14,6 @@ export function normalizeAudioData(dataUrl, filename = '') {
   const base64 = match[2].replace(/[\r\n]/g, '');
   if (base64.length % 4 !== 0) throw Error('音频 base64 数据不完整');
   const bytes = base64.length / 4 * 3 - (base64.endsWith('==') ? 2 : base64.endsWith('=') ? 1 : 0);
-  if (bytes > AUDIO_MAX_BYTES) throw Error('音频超过 16MB，请裁剪或压缩后再传');
+  if (bytes > AUDIO_MAX_BYTES) throw Error('音频超过 128MB，请裁剪或压缩后再传');
   return { dataUrl: `data:${mime};base64,${base64}`, mime, bytes };
 }

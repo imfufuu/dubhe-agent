@@ -1,4 +1,9 @@
 export const UI_STRINGS = {
+  "选择一个本地 GGUF 文件；单文件上限 16 GiB（受浏览器磁盘配额限制）。": "Choose a local GGUF file; single-file limit is 16 GiB (browser storage quota may be lower).",
+  "设备内存信息可能不可用；单文件 ≤16 GiB，不支持分片。": "Device memory info may be unavailable; single file ≤16 GiB, no shards.",
+  "网关访问令牌（可选）": "Gateway access token (optional)",
+  "仅保存在本机浏览器；私有网关启用鉴权后填写，不写入会话导出": "Stored only in this browser; fill in when your private gateway requires a token. Never included in session exports.",
+  "清除": "Clear",
   "C++ 运行方式": "C++ run mode",
   "远程": "Remote",
   "远程（默认）：源码发送至 godbolt.org（Compiler Explorer）编译执行，需要网络。本地：在浏览器内用 Clang/LLD WASM 编译，源码、附带文件与 stdin 不离开本机。聊天仍走所选网关。": "Remote (default): source is sent to godbolt.org (Compiler Explorer) to compile and run; requires network. Local: compiled in your browser with Clang/LLD WASM; source, attached files and stdin never leave this device. Chat still uses your selected gateway.",

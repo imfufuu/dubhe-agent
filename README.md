@@ -830,6 +830,15 @@ JS/Python 支持 `path` 读取已存在源码代替重复 `code`；长内联 JS/
 
 - Workers AI 独立网关：完整模型目录（20 个，标注 `agent_tools`）、function tools 双格式降级、参数规范化与 `/health`，已重新部署并真实请求验证；详见 [`workers-ai/README.md`](./workers-ai/README.md)。
 - 架构：回合环境内核 + 运行时工具注册表，见 [`AGENT_ARCHITECTURE.md`](./AGENT_ARCHITECTURE.md)；Agent 可自注册工具（需用户确认），见 [`SELF_REGISTERED_TOOLS.md`](./SELF_REGISTERED_TOOLS.md)。
-- 输入框新增「调节器」：温度默认智能自调节、可手选档位；Agent 模式可设思考等级并使用全部工具，对话模式可设思考开关且完全不调用工具。
+- **调节器 v2**：独立页面（与设置页同款、平滑展开）；温度只剩智能自调节 + 四个预设档位；环境可在 Agent 模式（全部工具与系统提示词）与对话模式（**不上传任何提示词、零工具**）间切换。自注册工具管理与用户确认已迁到设置页 / 对话输出确认卡。
 - 审核：多语言加固与 3 轮重复验证报告 [`MODERATION_AUDIT.md`](./MODERATION_AUDIT.md)；C++ 工具链检查 [`CPP_TOOLCHAIN_REPORT.md`](./CPP_TOOLCHAIN_REPORT.md)。
-- 西夏文字体首选用户提供的 Tangut Yinchuan TTF，并随仓库分发同一份完整 TTF 作为第二回退、旧 Wenhai 分片兜底；临时托管过期也不会退化成缺字，离线分享仍内嵌轻量分片。
+- 西夏文字体**以仓库自托管的完整 Tangut Yinchuan TTF 为首选源**（随 Pages 一起发布），用户提供的 `t8rntt.ttf` 临时链接降为第二回退、旧 Wenhai 分片兜底；临时托管过期也不会退化成缺字，离线分享仍内嵌轻量本地分片。
+- 鉴权矩阵 [`AUTH_MATRIX.md`](./AUTH_MATRIX.md)：Workers AI 网关可选 `GATEWAY_TOKEN` / `ALLOWED_ORIGINS`，客户端「网关访问令牌（可选）」只存本机且不进导出；静态 Pages 不能保守服务端秘密，公开站点需 Cloudflare Access / WAF / 速率限制。
+- 项目模式修复：删除当前选中预览的主目录后不再残留旧文件高亮与媒体内容；加载屏兜底阈值提高到 **120 秒**。
+- 会话修复：网关白名单漏掉 Cloudflare 导致「删除对话后切回其他会话」网关/模型不对，已改为取自网关注册表。
+- Workers AI：模型卡片标签仅「流行 / 低价」；SSE 用量补齐 `prompt_tokens`/`completion_tokens`/`total_tokens`；搜索折叠行不再出现空的 "Searched for" 标题。
+- 本地 GGUF 不再指定 `max_tokens`（消除 4096 上限报错）；单个 GGUF 上限 **16 GiB**、单个附件 **128 MB**。
+- 全项目鉴权矩阵 [`AUTH_MATRIX.md`](./AUTH_MATRIX.md)、全局检查与改进建议 [`PROJECT_IMPROVEMENT_REPORT.md`](./PROJECT_IMPROVEMENT_REPORT.md)。
+- 旗帜渲染修复：切换标签页后彩色旗帜不再「短暂显现又整批隐身」——默认改用 BabelStone Flags PUA 单码位、显式加载并在标签页恢复时重载字体、阻止系统 emoji 字体抢占、字体未就绪时显示代码占位。研究与取舍见 [`FLAG_RENDERING_REPORT.md`](./FLAG_RENDERING_REPORT.md)。
+- 旗帜复制：Unicode 内旗帜复制成对应 emoji，纯 PUA 设计复制成 `[flag]` 占位符。
+- 超轻量本地 LLM：新增 [`REAL_MODEL_TEST_REPORT.md`](./REAL_MODEL_TEST_REPORT.md)（4 个真实推理样例与输出、llama.cpp 调试过程）、`js/recommended-models.js`（HF 直链与校验和）与 `tools/real-model-smoke.py`；设置页给出推荐模型下载入口。推荐 Qwen2.5-0.5B-Instruct Q4_K_M。

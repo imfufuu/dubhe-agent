@@ -3,6 +3,7 @@ import { updateScriptCache } from './cache-update.js';
 import { syncOfflineModelAvailability, importOfflineModel, getOfflineModelStatus, removeOfflineModel, renameOfflineModel } from './offline-model.js';
 import { defaultLocalModelName, validateLocalModelName } from './local-model-name.js';
 import { MAX_SINGLE_GGUF_BYTES, OFFLINE_MODEL_CONTEXT_SIZE, OFFLINE_MODEL_DISPLAY_NAME, OFFLINE_MODEL_ID, formatByteSize, isOfflineModelId } from './offline-model-config.js';
+import { RECOMMENDED_LIGHTWEIGHT_MODELS, recommendedModelLabel } from './recommended-models.js';
 import { estimateGGUFMemory, formatGGUFMemoryWarning, formatParameterCount, readDeviceMemoryGB, readGGUFMetadata } from './gguf.js';
 import { isNetworkOffline } from './offline-network.js';
 import { providerIcon } from './icons.js';
@@ -20,6 +21,7 @@ import { currentRelay, relayState, resetRelayProbe, RELAY_OVERRIDE_KEY } from '.
 import { DEFAULT_TURN_BUDGET } from './execution.js?v=2026.10.25.1';
 import { NEXUS_ARCHITECTURE_SPEC } from './nexus.js';
 import { readLocal, writeLocal, removeLocal } from './legacy-keys.js';
+import { readGatewayToken, writeGatewayToken } from './gateway-auth.js';
 
 const FONT_SIZE_KEY = 'dubhe-fontsize';
 const MOTION_KEY = 'dubhe-motion'; // 'auto' | 'on' | 'off'：auto = 跟随系统 prefers-reduced-motion
@@ -82,11 +84,28 @@ function renderOfflineModelUI(status = null) {
     contextSize: OFFLINE_MODEL_CONTEXT_SIZE,
   }) : null;
 
+  // 推荐已通过真实推理验证的超轻量模型：只给 HF 下载链接，不自动下载几百 MB 到浏览器。
+  const recommendedEl = $('#set-recommended-models');
+  if (recommendedEl && !recommendedEl.childNodes.length) {
+    const label = document.createElement('strong');
+    label.textContent = localeText('推荐已验证的超轻量模型（点击下载后导入）：', 'Verified lightweight models (download, then import): ');
+    recommendedEl.appendChild(label);
+    for (const model of RECOMMENDED_LIGHTWEIGHT_MODELS) {
+      const a = document.createElement('a');
+      a.href = model.downloadUrl; a.target = '_blank'; a.rel = 'noopener noreferrer';
+      a.textContent = recommendedModelLabel(model);
+      recommendedEl.appendChild(a);
+      recommendedEl.appendChild(document.createTextNode('　·　'));
+    }
+    const tip = document.createElement('span');
+    tip.textContent = localeText('模型只保存在本机 OPFS，不上传；校验和与测试输出见 REAL_MODEL_TEST_REPORT.md。', 'Stored locally in OPFS; checksums and outputs: REAL_MODEL_TEST_REPORT.md.');
+    recommendedEl.appendChild(tip);
+  }
   if (heading) heading.textContent = localeText('离线本地模型', 'Offline local model');
   if (title) title.textContent = metadata?.displayName || localeText(OFFLINE_MODEL_DISPLAY_NAME, 'Local GGUF');
   if (description) description.textContent = metadata
     ? `${metadata.parameterCount ? `${formatParameterCount(metadata.parameterCount, 'en')}${metadata.parameterCountSource === 'gguf-metadata' ? '' : ' ≈'}` : localeText('参数量未知', 'parameter count unknown')} · ${fileSize ? formatByteSize(fileSize) : ''} · ${localeText('本机推理', 'runs locally')}`
-    : localeText('选择一个本地 GGUF 文件；单文件上限约 2 GiB。', 'Choose a local GGUF file; single-file limit is about 2 GiB.');
+    : localeText('选择一个本地 GGUF 文件；单文件上限 16 GiB（受浏览器磁盘配额限制）。', 'Choose a local GGUF file; single-file limit is 16 GiB (browser storage quota may be lower).');
   if (statusEl) statusEl.classList.toggle('is-loading', offlineModelBusy || offlineModelStatusChecking);
   if (statusEl && offlineModelStore) {
     if (offlineModelBusy) {
@@ -408,6 +427,11 @@ function syncGatewayFields(store) {
     base.value = (store.state.gatewayBaseUrls || {})[id] || '';
     base.placeholder = spec.id === 'cloudflare' ? 'https://your-worker.workers.dev' : (spec.baseUrl || 'https://api.example.com/v1');
   }
+  // 网关访问令牌只存 localStorage，不进 store.state（会话导出/分享/快照都不携带）。
+  const gatewayToken = $('#set-gateway-token');
+  if (gatewayToken) gatewayToken.value = readGatewayToken(id);
+  const gatewayTokenClear = $('#set-gateway-token-clear');
+  if (gatewayTokenClear) gatewayTokenClear.hidden = !readGatewayToken(id);
   const connectionNote = $('#set-gateway-connection-note');
   if (connectionNote) connectionNote.textContent = id === 'cloudflare' ? localeText('填写自己的 Worker HTTPS 地址', 'Enter your Worker HTTPS URL') : localeText('留空使用官方默认；自定义网关必填 HTTPS URL', 'Leave blank for the official default; custom gateways require an HTTPS URL.');
   const note = $('#set-gateway-note');
@@ -737,6 +761,33 @@ export function mountSettings(store, { onRelayChanged, onKeySaved, onSettingChan
     if (gatewayBaseInput.value.trim() !== before) saveGatewayBase();
   });
 
+  const clearGatewayModelCache = (id) => {
+    store.state.modelsByGateway = store.state.modelsByGateway || {};
+    store.state.modelsFetchedAtByGateway = store.state.modelsFetchedAtByGateway || {};
+    store.state.modelsByGateway[id] = [];
+    delete store.state.modelsFetchedAtByGateway[id];
+  };
+  const gatewayTokenInput = $('#set-gateway-token');
+  const saveGatewayToken = () => {
+    const id = store.state.gatewayId || DEFAULT_GATEWAY_ID;
+    const ok = writeGatewayToken(id, gatewayTokenInput.value);
+    if (!ok) { toast('浏览器拒绝存储网关令牌（可能禁用了本地存储）', 'err', 4000); return; }
+    gatewayTokenInput.value = readGatewayToken(id);
+    const clearBtn = $('#set-gateway-token-clear');
+    if (clearBtn) clearBtn.hidden = !gatewayTokenInput.value;
+    clearGatewayModelCache(id); // 令牌变化后带新凭据重新拉取模型列表
+    toast('网关访问令牌已保存在本机，不会写入会话导出', 'ok');
+  };
+  if (gatewayTokenInput) gatewayTokenInput.addEventListener('change', saveGatewayToken);
+  $('#set-gateway-token-clear')?.addEventListener('click', () => {
+    const id = store.state.gatewayId || DEFAULT_GATEWAY_ID;
+    writeGatewayToken(id, '');
+    if (gatewayTokenInput) gatewayTokenInput.value = '';
+    $('#set-gateway-token-clear').hidden = true;
+    clearGatewayModelCache(id);
+    toast('已清除该网关的访问令牌', 'info');
+  });
+
   const addModel = () => {
     const gatewayId = store.state.gatewayId || DEFAULT_GATEWAY_ID;
     if (gatewayId !== 'custom') { toast('手动添加模型 ID 仅适用于自定义网关', 'warn'); return; }
@@ -849,7 +900,7 @@ export function mountSettings(store, { onRelayChanged, onKeySaved, onSettingChan
       return;
     }
     if (file.size > MAX_SINGLE_GGUF_BYTES) {
-      toast(localeText('单文件需小于 2 GiB；当前不支持超大或分片 GGUF。', 'The single file must be under 2 GiB; oversized or sharded GGUF is not supported yet.'), 'warn', 5000);
+      toast(localeText('单文件需小于 16 GiB；当前不支持分片 GGUF。浏览器存储配额不足时会提示。', 'The single file must be under 16 GiB; sharded GGUF is not supported yet. Your browser may refuse files beyond its storage quota.'), 'warn', 5000);
       return;
     }
     offlineModelController = new AbortController();

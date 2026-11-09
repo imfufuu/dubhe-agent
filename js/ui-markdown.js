@@ -211,7 +211,7 @@ export const contextBudgetLabel = (model) => {
 
 // 附件展示（用户气泡内）
 export const fmtVideoLen = (sec) => { const s = Math.max(0, Math.round(Number(sec) || 0)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
-// data:video/… → blob URL（16MB 的 data URL 直接塞 <video src> 既慢又占内存；blob 可被 <video> 流式读）
+// data:video/… → blob URL（大体积 data URL 直接塞 <video src> 既慢又占内存；blob 可被 <video> 流式读）
 export function videoBlobUrl(dataUrl) {
   const s = String(dataUrl || '');
   const m = /^data:([^;,]+);base64,/.exec(s);

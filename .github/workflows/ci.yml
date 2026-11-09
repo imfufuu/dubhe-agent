@@ -1,283 +1,282 @@
 name: CI
 
-# 精简版：每个保留的测试一个 step，统一经 tools/run-tests.mjs 执行（计数写入 job summary）。
-# 本地复现：`npm ci && npm test`。
-
 on:
   push:
-    branches: ['**']
+    branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
   test:
-    name: 测试 + 语法检查
+    name: Full regression
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
-          cache: npm
-      - name: 安装依赖（jsdom）
+          node-version: '20'
+      - name: Install dependencies
         run: npm ci
-      - name: '语法检查（js/*.js relay/*.js sw.js tools/*.mjs）'
+      - name: Syntax check · js / relay / sw / tools
         run: |
           for f in js/*.js relay/*.js sw.js tools/*.mjs; do node --check "$f" || exit 1; done
-          echo "全部 JS 模块语法通过"
-      - name: 服务端语法检查（python3 -m py_compile server.py）
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs server.py
-      - name: tests/server_checks.py · 中继护栏自检
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/server_checks.py
-      - name: tests/sandbox_server_checks.py · 本地网页项目与 API 安全边界
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/sandbox_server_checks.py
-      - name: tests/local_relay_checks.py · 本机能力（shell / 截图 / 文件）护栏自检
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/local_relay_checks.py
-      - name: tests/local_desktop_checks.py · 本机桌面交互（键位 / 参数 / 平台命令构造 / Linux 会话检查）
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/local_desktop_checks.py
-      - name: tests/interaction-regressions.test.mjs · 交互回归
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/interaction-regressions.test.mjs
-      - name: tests/helix-hardening.test.mjs · Helix 3.5 安全与恢复
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/helix-hardening.test.mjs
-      - name: tests/independent-project.test.mjs · 独立项目与导入审核
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/independent-project.test.mjs
-      - name: tests/agent.test.mjs · 主单测
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/agent.test.mjs
-      - name: tests/cn-routing.test.mjs · 国内节点路由
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/cn-routing.test.mjs
-      - name: tests/grok-vision.test.mjs · Grok 识图授权与协议
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/grok-vision.test.mjs
-      - name: tests/workers-ai-gateway.test.mjs · Workers AI 网关与配额
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/workers-ai-gateway.test.mjs
-      - name: tests/local-cpp-policy.test.mjs · 本地 C++ 策略、工具门控与无网络集成
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/local-cpp-policy.test.mjs
-      - name: tests/local-cpp.test.mjs · 本地 C++ WASM 多文件编译执行
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/local-cpp.test.mjs
-      - name: tests/cpp-remote.test.mjs · C++ 远程模式（Compiler Explorer）默认与隔离
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/cpp-remote.test.mjs
-      - name: tests/input-system-fixes.test.mjs · 输入区布局 / 浮层定位 / LOCAL 标签 / C++ 进度 / /system 补全
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/input-system-fixes.test.mjs
-      - name: tests/wllama-abort-compat.test.mjs · Wllama 取消兼容
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/wllama-abort-compat.test.mjs
-      - name: tests/checklist.test.mjs · 复杂任务清单（闸门 / 卡片 / 接线）
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/checklist.test.mjs
-      - name: tests/share-download.test.mjs · 长图 / HTML 导出：自动下载与进度条
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/share-download.test.mjs
-      - name: tests/analyze-url.test.mjs · 分析工具直接接受外部链接，失败原因回传
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/analyze-url.test.mjs
-      - name: tests/project-mode.test.mjs · 项目模式纯逻辑与接线
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/project-mode.test.mjs
-      - name: tests/convert-retry.test.mjs · FFmpeg 失败与手动重试
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/convert-retry.test.mjs
-      - name: tests/copy-text.test.mjs · 复制降级路径（非安全上下文 / 权限拒绝）
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/copy-text.test.mjs
-      - name: tests/ui-polish-fixes.test.mjs · 项目入口 / 菜单配色 / C++ 进度 / 点击灰底
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/ui-polish-fixes.test.mjs
-      - name: tests/project-run.test.mjs · 项目模式运行 / 报错定位
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/project-run.test.mjs
-      - name: tests/human-check.test.mjs · 防人机（Worker 挑战 / 通行证 / 客户端透明）
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/human-check.test.mjs
-      - name: tests/doc-scan-live.test.mjs · 文稿扫描实时取景角点（节流 / Worker / 全屏入口）
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/doc-scan-live.test.mjs
-      - name: tests/reasoning-body.test.mjs · 流式思考块与正文不互相覆盖
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/reasoning-body.test.mjs
-      - name: tests/md-fx.test.mjs · 排版扩展（渐变 / 动效 / 微交互）与懒加载字体筛选
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/md-fx.test.mjs
-      - name: tests/auto-review.test.mjs · 自动审批层（codex-auto-review）触发 / 请求 / 失败回落
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/auto-review.test.mjs
-      - name: tests/localmachine.test.mjs · 本机能力（shell / 截图 / 本机文件）登记、门控、风险与强制确认
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/localmachine.test.mjs
-      - name: tests/jev-plan.test.mjs · Jev 回合等待上限（3s fail-open）与结论缓存（TTL / 容量 / 计费）
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/jev-plan.test.mjs
-      - name: tests/jev-feedback.test.mjs · Jev 决策反馈（上一轮上下文 / 回合结果回写）
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/jev-feedback.test.mjs
-      - name: tests/jev-thresholds-failover.test.mjs · Jev 阈值锁定 / 遥测信号 / 共用网关故障转移
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/jev-thresholds-failover.test.mjs
-      - name: tests/i18n-packs.test.mjs · 语言包登记 / 覆盖 / 漏翻审计
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/i18n-packs.test.mjs
-      - name: tests/app-boot.mjs · 应用装配冒烟
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/app-boot.mjs
-      - name: tests/composer-newline-guard.test.mjs · 换行与发送键行为
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/composer-newline-guard.test.mjs
-      - name: tests/local-text-policy.test.mjs · 本地文本审核规则
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/local-text-policy.test.mjs
-      - name: tests/text-moderation-bypass.test.mjs · 文本审核规避写法回归
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/text-moderation-bypass.test.mjs
-      - name: tests/tools-v19.test.mjs · V1.9 工具（patch_apply / dom_inspect / chart_render）
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/tools-v19.test.mjs
-
-      - name: tests/turn-settle.test.mjs · 回合结束释放工具呈现队列
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/turn-settle.test.mjs
-
-      - name: tests/search-fallback.test.mjs · 回退到 DuckDuckGo 的搜索结果不判为工具失败
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/search-fallback.test.mjs
-
-      - name: tests/video-and-attachments.test.mjs · 视频生成（generate_video）与子智能体附件
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/video-and-attachments.test.mjs
-      - name: tests/image-params.test.mjs · 生图官方参数（GPT Image / Nano Banana）按模型发送
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/image-params.test.mjs
-      - name: tests/cjk-fonts.test.mjs · 宋体风格（Noto Serif SC）与扩展 B 区（BabelStone）字体注册
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/cjk-fonts.test.mjs
-      - name: tests/moderation-prewarm.test.mjs · 图像审核按需加载，避免与本地 C++ 抢内存
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/moderation-prewarm.test.mjs
-      - name: tests/user-salutation.test.mjs · 本地称谓审核与状态
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/user-salutation.test.mjs
-      - name: tests/dom-smoke.mjs · DOM 冒烟
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/dom-smoke.mjs
-      - name: tests/edit-demo.test.mjs · 文件差异与导航演示回归
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/edit-demo.test.mjs
-      - name: tests/flag-directive.test.mjs · 行内旗帜渲染和导出
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/flag-directive.test.mjs
-      - name: tests/gateway-models.test.mjs · 网关模型目录与手动 ID 规则
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/gateway-models.test.mjs
-      - name: tests/image-variants.test.mjs · 生图家族 / 4K 升采样变体归并与决策层（Jev）版本
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/image-variants.test.mjs
-      - name: tests/midjourney-currency-tokens.test.mjs · Midjourney 文生图 / 识图栏 / 新增币种
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/midjourney-currency-tokens.test.mjs
-      - name: tests/any-format-attachments.test.mjs · 附件不限格式与卡片图标
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/any-format-attachments.test.mjs
-      - name: tests/mj-pm-pdf-fixes.test.mjs · MJ 菜单 / 失败不计费 / 项目模式 / PDF 排版 / 换行与光标
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/mj-pm-pdf-fixes.test.mjs
-      - name: tests/teamorouter-pricing.test.mjs · TeamoRouter 折后价与音视频 / 视频生成计费分桶
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/teamorouter-pricing.test.mjs
-      - name: tests/pricing-docs.test.mjs · 文档价目表与生成器同步、覆盖 TeamoRouter 与全部官方网关
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/pricing-docs.test.mjs
-      - name: tests/gguf.test.mjs · GGUF 元数据与内存估算
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/gguf.test.mjs
-      - name: tests/github-project.test.mjs · GitHub 项目 ZIP 导入与 Worker 路由
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/github-project.test.mjs
-      - name: tests/i18n.test.mjs · 多语言基础与 Intl 格式
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/i18n.test.mjs
-      - name: tests/offline-model.test.mjs · 离线模型、工具白名单与网络围栏
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/offline-model.test.mjs
-      - name: tests/page-fx.test.mjs · 页面动效安全与减少动效
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/page-fx.test.mjs
-      - name: tests/svg-safety.test.mjs · SVG 安全清理与本地文本提取
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/svg-safety.test.mjs
-      - name: tests/ui-adjustments.test.mjs · 本轮 UI 与流式修复回归
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/ui-adjustments.test.mjs
-      - name: tests/ui-chunks.test.mjs · 流式 Markdown 尾文本浮现
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/ui-chunks.test.mjs
-      - name: tests/ui-foot.test.mjs · Assistant 脚注与元信息
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/ui-foot.test.mjs
-      - name: tests/ui-motion-new.test.mjs · 新版 UI 动效回归
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/ui-motion-new.test.mjs
-      - name: tests/ui-runtime.test.mjs · 演示动效与 Python 按需依赖
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/ui-runtime.test.mjs
-      - name: tests/ui-turn-toolbar.test.mjs · 单轮工具栏
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/ui-turn-toolbar.test.mjs
-      - name: tests/reasoning-rhythm.test.mjs · 模型努力映射与消息间距
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/reasoning-rhythm.test.mjs
-      - name: V1.8 static preview and shared motion
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/v18-preview.test.mjs
-      - name: Manifest-based incremental static cache
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/static-cache.test.mjs
-      - name: Discoverable document skills and audio analysis
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/document-skills.test.mjs
-      - name: V1.8.1 fixes — thinking, command merge, skill loop, file tools
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/v181-fixes.test.mjs
-
-      - name: tests/v19-features.test.mjs · V1.9 直连/文件卡片/Office 预览/全屏/OG/音视频合并
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/v19-features.test.mjs
-
-      - name: tests/workers-ai-repair.test.mjs · Workers AI 完整模型目录 / 工具双格式 / 参数规范化 / 供应商费率
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/workers-ai-repair.test.mjs
-      - name: tests/tangut-font.test.mjs · 西夏文远程字体与离线分享回退
-        if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/tangut-font.test.mjs
-      - name: tests/agent-runtime.test.mjs · 回合环境内核（温度 / 模式 / 工具策略门）
+      - name: i18n audit
+        run: node scripts/i18n-audit.mjs --json
+      - name: tests/agent-runtime.test.mjs · regression
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/agent-runtime.test.mjs
-      - name: tests/tuner-ui.test.mjs · 输入框调节器面板与自注册工具确认 UI
+      - name: tests/agent.test.mjs · regression
         if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/tuner-ui.test.mjs
-      - name: tests/tool-self-registration.test.mjs · 工具自注册、确认票据与声明式 handler
+        run: node tools/run-tests.mjs tests/agent.test.mjs
+      - name: tests/analyze-url.test.mjs · regression
         if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/tool-self-registration.test.mjs
-      - name: tests/text-moderation-hardening.test.mjs · 多语言敏感话题审核加固与重复验证
+        run: node tools/run-tests.mjs tests/analyze-url.test.mjs
+      - name: tests/any-format-attachments.test.mjs · regression
         if: ${{ !cancelled() }}
-        run: node tools/run-tests.mjs tests/text-moderation-hardening.test.mjs
-      - name: tests/cpp-toolchain.test.mjs · 本地 C++ 工具链检查脚本与报告
+        run: node tools/run-tests.mjs tests/any-format-attachments.test.mjs
+      - name: tests/app-boot.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/app-boot.mjs
+      - name: tests/auto-review.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/auto-review.test.mjs
+      - name: tests/boot-guard.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/boot-guard.test.mjs
+      - name: tests/checklist.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/checklist.test.mjs
+      - name: tests/cjk-fonts.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/cjk-fonts.test.mjs
+      - name: tests/cn-routing.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/cn-routing.test.mjs
+      - name: tests/composer-newline-guard.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/composer-newline-guard.test.mjs
+      - name: tests/convert-retry.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/convert-retry.test.mjs
+      - name: tests/copy-text.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/copy-text.test.mjs
+      - name: tests/cpp-remote.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/cpp-remote.test.mjs
+      - name: tests/cpp-toolchain.test.mjs · regression
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/cpp-toolchain.test.mjs
-      - name: '汇总测试计数（::notice:: + job summary）'
+      - name: tests/doc-scan-live.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/doc-scan-live.test.mjs
+      - name: tests/document-skills.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/document-skills.test.mjs
+      - name: tests/dom-smoke.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/dom-smoke.mjs
+      - name: tests/edit-demo.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/edit-demo.test.mjs
+      - name: tests/flag-directive.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/flag-directive.test.mjs
+      - name: tests/flag-fonts.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/flag-fonts.test.mjs
+      - name: tests/gateway-auth.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/gateway-auth.test.mjs
+      - name: tests/gateway-models.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/gateway-models.test.mjs
+      - name: tests/gguf.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/gguf.test.mjs
+      - name: tests/github-project.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/github-project.test.mjs
+      - name: tests/grok-vision.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/grok-vision.test.mjs
+      - name: tests/helix-hardening.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/helix-hardening.test.mjs
+      - name: tests/human-check.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/human-check.test.mjs
+      - name: tests/i18n-packs.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/i18n-packs.test.mjs
+      - name: tests/i18n.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/i18n.test.mjs
+      - name: tests/image-params.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/image-params.test.mjs
+      - name: tests/image-variants.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/image-variants.test.mjs
+      - name: tests/independent-project.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/independent-project.test.mjs
+      - name: tests/input-system-fixes.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/input-system-fixes.test.mjs
+      - name: tests/interaction-regressions.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/interaction-regressions.test.mjs
+      - name: tests/jev-feedback.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/jev-feedback.test.mjs
+      - name: tests/jev-plan.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/jev-plan.test.mjs
+      - name: tests/jev-thresholds-failover.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/jev-thresholds-failover.test.mjs
+      - name: tests/local-cpp-policy.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/local-cpp-policy.test.mjs
+      - name: tests/local-cpp.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/local-cpp.test.mjs
+      - name: tests/local-text-policy.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/local-text-policy.test.mjs
+      - name: tests/localmachine.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/localmachine.test.mjs
+      - name: tests/md-fx.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/md-fx.test.mjs
+      - name: tests/midjourney-currency-tokens.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/midjourney-currency-tokens.test.mjs
+      - name: tests/mj-pm-pdf-fixes.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/mj-pm-pdf-fixes.test.mjs
+      - name: tests/moderation-prewarm.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/moderation-prewarm.test.mjs
+      - name: tests/offline-model.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/offline-model.test.mjs
+      - name: tests/page-fx.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/page-fx.test.mjs
+      - name: tests/phase-b2.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/phase-b2.test.mjs
+      - name: tests/pricing-docs.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/pricing-docs.test.mjs
+      - name: tests/project-mode.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/project-mode.test.mjs
+      - name: tests/project-preview-cleanup.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/project-preview-cleanup.test.mjs
+      - name: tests/project-run.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/project-run.test.mjs
+      - name: tests/reasoning-body.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/reasoning-body.test.mjs
+      - name: tests/reasoning-rhythm.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/reasoning-rhythm.test.mjs
+      - name: tests/search-fallback.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/search-fallback.test.mjs
+      - name: tests/share-download.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/share-download.test.mjs
+      - name: tests/static-cache.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/static-cache.test.mjs
+      - name: tests/svg-safety.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/svg-safety.test.mjs
+      - name: tests/tangut-font.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/tangut-font.test.mjs
+      - name: tests/teamorouter-pricing.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/teamorouter-pricing.test.mjs
+      - name: tests/text-moderation-bypass.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/text-moderation-bypass.test.mjs
+      - name: tests/text-moderation-hardening.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/text-moderation-hardening.test.mjs
+      - name: tests/tool-self-registration.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/tool-self-registration.test.mjs
+      - name: tests/tools-v19.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/tools-v19.test.mjs
+      - name: tests/tuner-ui.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/tuner-ui.test.mjs
+      - name: tests/turn-settle.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/turn-settle.test.mjs
+      - name: tests/ui-adjustments.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/ui-adjustments.test.mjs
+      - name: tests/ui-chunks.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/ui-chunks.test.mjs
+      - name: tests/ui-foot.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/ui-foot.test.mjs
+      - name: tests/ui-motion-new.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/ui-motion-new.test.mjs
+      - name: tests/ui-polish-fixes.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/ui-polish-fixes.test.mjs
+      - name: tests/ui-runtime.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/ui-runtime.test.mjs
+      - name: tests/ui-turn-toolbar.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/ui-turn-toolbar.test.mjs
+      - name: tests/user-salutation.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/user-salutation.test.mjs
+      - name: tests/v18-preview.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/v18-preview.test.mjs
+      - name: tests/v181-fixes.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/v181-fixes.test.mjs
+      - name: tests/v19-features.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/v19-features.test.mjs
+      - name: tests/video-and-attachments.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/video-and-attachments.test.mjs
+      - name: tests/wllama-abort-compat.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/wllama-abort-compat.test.mjs
+      - name: tests/workers-ai-gateway.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/workers-ai-gateway.test.mjs
+      - name: tests/workers-ai-repair.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/workers-ai-repair.test.mjs
+      - name: server.py compile check
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs server.py
+      - name: server_checks.py
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/server_checks.py
+      - name: Test count summary
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs --summary

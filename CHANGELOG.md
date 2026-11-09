@@ -1,5 +1,43 @@
 # Changelog
 
+## 2026-11-09 旗帜复制语义 + 超轻量本地 LLM 真实测试
+
+- **复制语义**：新增 `js/flag-copy.js`；有标准 Unicode 表示（RI / tag / ZWJ）的旗帜复制时还原成 emoji，纯 PUA 设计复制成 `[flag]`；`text/plain` 与 `text/html` 都处理，普通复制零干预。`flag-directive.js` 新增 `unicodeFlagSequence()` 与 267 项 `FLAG_COPY_MAP`；`tests/flag-fonts.test.mjs` 增加 2 项回归。
+- **真实模型**：从 Hugging Face 拉取 `bartowski/SmolLM2-135M-Instruct-GGUF`（105 MB）与 `Qwen/Qwen2.5-0.5B-Instruct-GGUF`（469 MB）的 Q4_K_M，用 llama.cpp b12212 CPU 跑 4 个样例。SmolLM2 中文输出循环退化（调 `temp 0 + repeat-penalty` 仍不理想）→ 换 Qwen2.5 0.5B，英文事实 / 代码 / 中文 / 简单推理全部正确。应用侧 `js/gguf.js` 的 `readGGUFMetadata()` / `estimateGGUFMemory()` 用真实文件解析通过。
+- 新增 `js/recommended-models.js`（HF 直链 + SHA-256 + GGUF 元数据）、设置页「推荐已验证的超轻量模型」下载入口、`tools/real-model-smoke.py` 可复现脚本、`REAL_MODEL_TEST_REPORT.md`（含测试样例与真实输出）。模型文件不进仓库，用户下载后导入 OPFS。
+
+## 2026-11-09 旗帜复制语义
+
+- 新增 `js/flag-copy.js`：复制含旗帜的文本时，**有标准 Unicode 表示**的旗帜（RI / tag / ZWJ 序列）还原成对应 emoji 复制；**只有 PUA 码位**的设计（历史旗帜、PUA 专有旗形、U+F000–F002/F400）复制成占位符 `[flag]`。`flag-directive.js` 新增 `unicodeFlagSequence()` 与 267 项 `FLAG_COPY_MAP`，`main.js` 安装 `copy` 事件处理器；纯文本与 `text/html` 都做还原，普通复制完全不干预。
+- `tests/flag-fonts.test.mjs` 增加 2 项复制回归（含 jsdom `copy` 事件）。
+
+## 2026-11-09 旗帜「切换标签页后整批隐身」修复
+
+- **上游研究**：核对 [BabelStone Flags 4.13 官方页](https://www.babelstone.co.uk/Fonts/Flags.html) 与 `BabelStone.css`——旗帜是 COLR/CPAL 彩色字形，靠 GSUB `ccmp` 把 RI / tag / ZWJ 序列合成为旗形；官网自身没有 `font-display`、没有预加载，且明确建议「显示/打印异常时改用 PUA 版」。浏览器对 Emoji_Presentation 序列会优先找系统彩色 emoji 字体，tag 字符又 default-ignorable；后台标签页暂停字体下载，切回重绘时旧彩色图层闪一下后整段不可见。详见 `FLAG_RENDERING_REPORT.md`。
+- **默认改渲染 PUA 单码位**：`js/flag-directive.js` 新增 `puaCodeFor()`（含别名归一），270/274 个旗帜改用 `flags-pua.ttf` 的字形；4 个无映射伪代码与 5 个 ZWJ 旗帜保留原序列。不依赖 `ccmp` shaping，也不被系统 emoji 字体抢走。
+- **显式加载 / 可见性恢复**：新增 `js/flag-fonts.js`，启动即 `document.fonts.load()` 两个旗帜面，`visibilitychange` 重新可见时复查重载并强制 reflow 重光栅化；`main.js` 安装。
+- **CSS 兜底**：`.md-flag` 加 `font-variant-emoji: text`、双字体回退链；`data-flags-ready="pending"` 时用 `::after` 显示 `data-code` 代码占位，字体失败也不会整批消失。旗帜面刻意保留 `font-display: swap`（`optional`/`fallback` 的 swap period 会让后台标签页字体永不交换）。
+- 回归：`tests/flag-fonts.test.mjs`（7 项）、`tests/flag-directive.test.mjs` 更新；全量 `node tools/run-tests.mjs` → **1641 项 / 86 个文件 / 0 失败**。
+
+## 2026-11-08 第三批：会话网关恢复、标签/用量、调节器 v2、大文件支持
+
+- **会话网关/模型 BUG**：根因是 `js/state.js` 的 `validGatewayIds` 为硬编码白名单且**漏了 `cloudflare`**，导致按会话恢复网关失败；改为直接取 `GATEWAYS` 注册表，并在 `deleteSession()` 中先 `commit()` 落盘当前会话选择、删除后同步刷新顶栏。新增 `tests/phase-b2.test.mjs` 行为回归。
+- **Cloudflare 模型标签**：只保留「流行 / 低价」两种（人工精选 + Neurons 费率阈值），撤下原厂 / AGENT / CHAT / FREE badge，能力信息移到 tooltip；`cfModelTags()` 经 `cfModelCard()` 与 `/v1/models.tags` 下发。
+- **Workers AI 用量完整**：SSE 最后一个空 choices chunk 携带规范化 `usage`（`prompt_tokens` / `completion_tokens` / `total_tokens`，兼容 `usage`/`metrics`/`input_tokens` 等字段名；上游无用量时按输出长度估算并标 `estimated`）；图像与决策端点也补 `usage`。
+- **本地 GGUF**：不再下发 `max_tokens`，消除「最大 token 为 4096」报错；`maxTokens` 仅保留旧签名兼容。
+- **搜索折叠行**：`webGroupLabel()` 对 `search_web` 补上真实搜索词（旧实现只返回 "Searched for" 空标题），行名改为 `Web search` / `Searching`。
+- **调节器 v2**：改为与设置页同款的独立 modal 页面（平滑展开、不跑出视口）；删除温度自定义与滑杆、删除 Agent 思考等级设置；**对话模式不上传任何提示词**（`agent.js` 过滤所有 system/developer 消息，`api.js` 的 `bareChat` 二次过滤且不注入思考策略，工具表为空）；自注册工具管理迁到「设置 → 自注册工具」，用户确认改为对话输出里的执行内核同款确认卡，并修复「同意后返回用户拒绝/重复注册」的票据 BUG。
+- **大文件**：单个 GGUF 上限 2 GiB → **16 GiB**，单个附件 / 音频 / 视频 / 中继下载上限 16 MB → **128 MB**（大对象仍走 IndexedDB 外置）；提示词、UI 与工具描述同步。
+- 全局检查：`node tools/run-tests.mjs` → **1634 项 / 85 个文件 / 0 失败**；`node scripts/i18n-audit.mjs --json` → `[]`；语法检查、CSP 哈希同步、秘密扫描通过。详见 `PROJECT_IMPROVEMENT_REPORT.md`。
+
+## 2026-11-08 第二批：自托管字体、预览清理、全项目鉴权、120s 兜底
+
+- **TTF 真正自托管**：`assets/fonts-lazy/index.css` 与 `babelstone-extra.css` 把随仓库 / Pages 分发的 `tangut-yinchuan.ttf`（9.75 MB，6913 个西夏文码位）提升为 `@font-face` **首选源**；`https://litter.catbox.moe/t8rntt.ttf` 降为第二回退，旧 `wenhai.woff2` 子集兜底。离线分享仍内嵌轻量本地分片，不再依赖第三方主机作为主源。测试 `tests/tangut-font.test.mjs` 已改为断言本地优先。
+- **项目模式 BUG**：删除当前选中预览的主目录 / 文件夹后，底层语法高亮、媒体预览 DOM 与旧文件内容会滞留在背景上。新增 `js/project-preview-cleanup.js` 集中清空 textarea / `hlCode` / `marks` / gutter / `hl-on` / 媒体 DOM 与缓存，`removePath()` 用 `isActiveUnderPath()` 复位 `state.active`；新增 `tests/project-preview-cleanup.test.mjs`（含 jsdom 集成回归，4 项）。
+- **全项目鉴权**：Workers AI 网关新增可选 `GATEWAY_TOKEN`（Wrangler secret）与 `ALLOWED_ORIGINS` 白名单，401/403、定长比较、CORS 放行鉴权头、`/health` 报告鉴权状态；客户端 `js/gateway-auth.js` + 设置页「网关访问令牌（可选）」按网关隔离存 localStorage、不进会话导出，`js/api.js` 统一注入且不覆盖 API Key。完整矩阵与边界见 `AUTH_MATRIX.md`，部署说明见 `workers-ai/README.md`。新增 `tests/gateway-auth.test.mjs`。
+- **加载屏阈值**：`app.html` 的 `BOOT_TIMEOUT_MS` 由 90000 提高到 **120000**（120 秒），注释 / 慢网说明 / 强制显示文案同步；内联脚本 sha256 与 `app.html`、`js/offline-bootstrap.js` 的 CSP 同步更新。新增 `tests/boot-guard.test.mjs`。
+- 全局检查：`node tools/run-tests.mjs`、`node scripts/i18n-audit.mjs --json`、语法检查、CI 与 Pages 部署、线上 URL 探测结果见 `DELIVERY_REPORT.md` 与本文末尾报告。
+
 ## 2026-11-08 Workers AI 网关修复、工具自注册与审核加固
 
 - **Workers AI 网关**：带 function tools 的请求不再 502（工具 schema 归一 + 双格式确定性降级）；`/v1/models` 从 3 个模型补全到 20 个并标注 `agent_tools`/供应商；消除大小写 ID、max_tokens、多模态 content、chat-only 模型带 tools 等 400；502 附带脱敏上游错误；新增 `/health`。已通过 GitHub Actions 重新部署并在 `dubhe-workers-ai.dubhe-agent.workers.dev` 真实请求验证。

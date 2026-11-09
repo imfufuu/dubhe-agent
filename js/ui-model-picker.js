@@ -17,6 +17,7 @@ import { fetchModels, isCnUnavailableModel } from './api.js?v=2026.10.25.1';
 import { gatewayBase, GATEWAY_CN } from './endpoint.js';
 import { effectiveApiKey } from './adminkey.js';
 import { formatRate } from './pricing.js';
+import { cfModelTags } from './cloudflare-ai-catalog.js';
 import { USD_TO_CNY_RATE, USD_TO_CNY_RATE_DATE } from './currency.js';
 import { isNetworkOffline } from './offline-network.js';
 import { OFFLINE_MODEL_DISPLAY_NAME, OFFLINE_MODEL_ID, OFFLINE_MODEL_PROVIDER_EN, OFFLINE_MODEL_PROVIDER_ZH, isOfflineModelId } from './offline-model-config.js';
@@ -229,6 +230,11 @@ export function installModelPicker({ store, agent, toast, getBusy, openKeyModal,
             ? localeText(`本机 GGUF · ${localModelDetails() || '参数量未知'} · 仅本机推理，不请求网关。`, `Local GGUF · ${localModelDetails() || 'parameter count unknown'} · local inference; no gateway request.`)
             : localeText('尚未选择本地 GGUF；请先在设置 → 离线本地模型中选择文件。', 'No local GGUF is selected. Choose a file in Settings → Offline local model first.'))
           : modelPriceTitle(hit);
+        if (hit.pricingUnit === 'neurons') {
+          item.title += hit.agentTools
+            ? localeText(' · 支持 Agent 工具调用', ' · supports Agent tool calls')
+            : localeText(' · 仅纯文本对话', ' · text chat only');
+        }
         const isRouter = isSmartRouter(m.id);
         item.innerHTML = isRouter
           ? `<span class="dd-item-id mono router-name">${esc(SMART_ROUTER_LABEL)}</span>
@@ -241,14 +247,13 @@ export function installModelPicker({ store, agent, toast, getBusy, openKeyModal,
                 <span class="badge local-model-badge">${localeText('本地', 'Local')}</span>
               </span>`
             : (hit.pricingUnit === 'neurons'
-              // Workers AI card: friendly name, Cloudflare as serving provider in the group
-              // header, model author as a badge, and an explicit tools capability badge.
+              // Workers AI 卡片：只保留「流行 / 低价」两种标签（2026-11-08）。
+              // 原厂、AGENT/CHAT 能力不再占 badge，改由 title 提示，避免标签拥挤与误读。
               ? `<span class="dd-item-id mono">${esc(hit.displayName || m.id)}</span>
                 <span class="dd-item-badges">
-                  ${hit.vendor ? `<span class="badge model-tag" title="${localeText('模型原厂（由 Cloudflare 托管推理）', 'Model author (inference hosted by Cloudflare)')}">${esc(hit.vendor)}</span>` : ''}
-                  ${hit.agentTools
-                    ? `<span class="badge cf-agent" title="${localeText('支持 Agent function calling 与全部工具', 'Supports Agent function calling and all tools')}">AGENT</span>`
-                    : `<span class="badge cf-chat" title="${localeText('仅纯文本对话，不接收工具', 'Text chat only; no tools')}">CHAT</span>`}
+                  ${cfModelTags(m.id).map((tag) => tag === 'popular'
+                    ? `<span class="badge hot" title="${localeText('应用精选的流行模型，非实时使用量排行', 'App-curated popular model, not a live usage ranking')}">${localeText('流行', 'Popular')}</span>`
+                    : `<span class="badge cheap" title="${esc(cheapBadgeTitle)}">${localeText('低价', 'Cheap')}</span>`).join('')}
                 </span>`
               : `<span class="dd-item-id mono">${esc(m.id)}</span>
               <span class="dd-item-badges">

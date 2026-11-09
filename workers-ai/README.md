@@ -13,6 +13,21 @@ npx wrangler deploy
 
 `wrangler.toml` 绑定 `AI`。旧配额 Durable Object 的迁移记录和存储保留，但不再绑定或用于推理，升级不会主动删除历史数据。首次部署需要创建 Worker 和绑定 Workers AI 的账号权限。本仓库的 relay 部署工作流**不会**部署本网关；可在 GitHub Actions 手动运行 `Deploy Workers AI gateway`，使用仓库的 Cloudflare Actions 密钥和账号变量。部署后才会有可用 URL。Cloudflare 的配额与模型可用性依账号和计划变化。
 
+## 鉴权（2026-11-08 新增）
+
+公开 Worker URL 等于把账号的 Workers AI 额度开放给所有人。本网关现在支持服务端可校验的令牌与来源限制：
+
+```sh
+cd workers-ai
+npx wrangler secret put GATEWAY_TOKEN       # 输入一个随机长令牌，例如 openssl rand -hex 32
+npx wrangler secret put ALLOWED_ORIGINS     # 可选，例如 https://imfufuu.github.io,http://localhost:8080
+```
+
+- 设置 `GATEWAY_TOKEN` 后，除 `OPTIONS` 预检与 `GET /health` 外，所有 `/v1/*` 请求都必须带 `Authorization: Bearer <令牌>` 或 `X-Dubhe-Gateway-Token: <令牌>`，否则返回 **401**（响应不回显令牌，比较为定长）。`/health` 会报告 `auth_required: true` / `origin_restricted: true`，但不泄露令牌。
+- 设置 `ALLOWED_ORIGINS` 后，带 `Origin` 的浏览器请求必须命中白名单，否则 **403**；命中时响应回显该 Origin 并带 `Vary: Origin`。CORS 预检明确放行 `Authorization` 与 `X-Dubhe-Gateway-Token` 头。
+- 网页端：**设置 → 网关访问令牌（可选）** 填同一个令牌。它只存在浏览器 `localStorage`（按网关隔离），不写入 `store.state`，因此会话导出、分享链接与快照都不会携带；清除按钮可随时删除。`js/api.js` 只在请求本来没有 `Authorization` / `x-api-key` / `x-goog-api-key` 时注入令牌，绝不覆盖用户自己的 API Key。
+- **重要边界**：静态 GitHub Pages 前端无法持有服务端秘密，任何能打开页面的人都能从 DevTools 读到这个令牌，所以它适合「私有部署、部署者分发给自己的浏览器」，**不是多用户身份认证**。公开站点请使用 Cloudflare Access（应用策略）、WAF 自定义规则与速率限制/额度告警；更彻底的做法是要求每位用户填自己的 API Key 或改走自建后端。完整矩阵见 [`AUTH_MATRIX.md`](../AUTH_MATRIX.md)。
+
 ## 2026-11-08 修复与云端验证
 
 部署后对 `https://dubhe-workers-ai.dubhe-agent.workers.dev` 做了真实请求验证：
@@ -27,11 +42,16 @@ npx wrangler deploy
 
 `inferenceFailure` 只在**请求参数被确定性拒绝**时换一次工具 schema；对限流、超时、疑似已计费的模糊失败保持「不自动重试」，客户端也保留 `noReplay`。
 
+## 模型标签与用量（2026-11-08）
+
+- `GET /v1/models` 每项除 `agent_tools` 外新增 `tags`，取值只有 `popular`（应用精选流行）与 `cheap`（Neurons 费率低于阈值）；模型选择器据此只显示「流行 / 低价」两个 badge，原厂与 AGENT/CHAT 信息移到 tooltip。
+- 聊天 SSE 在正文 chunk 之后、`[DONE]` 之前追加一个空 `choices` 的 chunk，携带规范化 `usage`：`prompt_tokens` / `completion_tokens` / `total_tokens`。上游可能用 `usage` / `metrics` / `input_tokens` 等不同字段名，Worker 统一转换；完全没有用量时按输出长度估算并标注 `estimated: true`，避免统计面板空白或重复累计。
+
 ## 配额和边界
 
 - `GET /v1/models` 列出全部启用模型；`agent_tools: true` 的三个模型（GPT-OSS 20B / 120B、Llama 3.3 70B fast）可接收 function tools，其余仅供纯文本对话。在网页「调节器 → 对话模式」里会开放全部模型且不发送任何工具；Agent 模式请选 `agent_tools: true` 的模型。
 - 只允许 `js/cloudflare-ai-catalog.js` 中显式启用的 Cloudflare Hosted 模型；`GET /v1/catalog` 列出各类型、Neurons 费率及禁用的 Paid-only ID。其余 ID、第三方代理、LoRA 和未适配的接口均拒绝。模型、价格和 Free 可用性可能变化，目录不代表账号有权访问；使用前请核对 [Cloudflare 官方定价](https://developers.cloudflare.com/workers-ai/platform/pricing/) 和模型说明。部分模型计划 2026-11-20 退役，到期自动拒绝。
 - 图像通过单独的 `/v1/images/generations` 使用 FLUX.1 Schnell（每次一张，固定 4 steps 和默认尺寸）；识图通过 `/v1/vision` 的 Moondream 3.1（每次单图、PNG/JPEG/WebP、最大 2 MiB）；决策/提取模型只提供独立的 `/v1/decisions` 原生结构化接口。图像编辑、其他尺寸、批量、FLUX.2 和 Leonardo 尚未接通；没有真实云端生图/识图推理验证。
 - **不设置应用侧每日用量上限**。Cloudflare 自身的免费额度、速率限制和账号账单规则仍然生效；免费 Neurons 为同账号共享，付费计划可能产生费用。请求失败或结果不明仍可能产生费用，不要盲目重试。
-- Worker 默认没有身份认证或访问控制，公开 URL 会让任何人调用并可能造成费用；建议配置 Cloudflare Access、WAF 和速率限制。请勿向不信任者公开 Worker URL。
+- **未配置 `GATEWAY_TOKEN` 时 Worker 仍默认公开**（兼容既有部署），公开 URL 会让任何人调用并可能造成费用；生产环境请按上节启用令牌 + `ALLOWED_ORIGINS`，并叠加 Cloudflare Access、WAF 与速率限制。请勿向不信任者公开 Worker URL。
 - API：`GET /health`、`GET /v1/models`、`GET /v1/catalog`、`POST /v1/chat/completions`、`POST /v1/images/generations`、`POST /v1/vision`、`POST /v1/decisions`。聊天内部使用非流式推理再封装为 SSE，首字可能较慢；仅函数工具格式、参数范围与模型白名单经过真实云端验证。

@@ -578,6 +578,11 @@ export function createAgent(store, hooks = {}) {
         checklistReminder(turnChecklist),
       ].filter((s) => s && String(s).trim()).join('\n\n'),
     });
+    if (activeTurnEnv?.environment === 'chat') {
+      // 对话模式：不上传任何提示词。系统/开发者消息、工具表、记忆、技能与运行规则全部不下发，
+      // 只保留真实的用户/助手历史（不是「简单禁用几个功能」）。
+      return compacted.filter((m) => m && m.role !== 'system' && m.role !== 'developer');
+    }
     return [...layers.messages, ...compacted];
   }
 
@@ -1103,7 +1108,9 @@ export function createAgent(store, hooks = {}) {
           const pull = () => {
             const pullUsage = {};
             return streamChat({
-                model, apiKey, gatewayId: turn.gatewayId, gatewayBaseUrl: turn.gatewayBaseUrl, tools, signal, smoothText: true,
+                model, apiKey, gatewayId: turn.gatewayId, gatewayBaseUrl: turn.gatewayBaseUrl,
+                tools: activeTurnEnv?.toolsEnabled === false ? [] : tools,
+                bareChat: activeTurnEnv?.environment === 'chat', signal, smoothText: true,
                 temperature: turn.temperature ?? undefined,
                 fastMode: settings.fastMode,
                 thinking: streamThinking, // 空正文恢复时临时关闭思考，避免再次只消耗 token 不产出正文

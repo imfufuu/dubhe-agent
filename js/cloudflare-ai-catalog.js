@@ -31,6 +31,24 @@ export const CF_CHAT_MODELS = Object.freeze({
   '@cf/deepseek-ai/deepseek-r1-distill-qwen-32b': { input: 45170, output: 443756, vendor: 'DeepSeek', provider: 'Cloudflare', label: 'DeepSeek R1 Distill 32B', plannedDeprecation: '2026-11-20', agentTools: false },
 });
 // Only models with an explicitly adapted function-calling protocol may receive tools.
+// 2026-11-08：Workers AI 模型卡片只使用两种标签 —— 流行（人工精选）与低价（Neurons 费率阈值）。
+// 供应商/原厂、AGENT/CHAT、FREE、视觉等旧 badge 全部撤下，能力信息保留在 tooltip 里。
+export const CF_POPULAR_IDS = Object.freeze([
+  '@cf/openai/gpt-oss-20b', '@cf/openai/gpt-oss-120b',
+  '@cf/meta/llama-3.3-70b-instruct-fp8-fast', '@cf/meta/llama-4-scout-17b-16e-instruct',
+  '@cf/qwen/qwen3.8-27b', '@cf/zai-org/glm-4.7-flash',
+]);
+export const CF_CHEAP_INPUT_MAX = 6000;   // Neurons / 1M input tokens
+export const CF_CHEAP_OUTPUT_MAX = 40000; // Neurons / 1M output tokens
+export function cfModelTags(id) {
+  const m = Object.hasOwn(CF_CHAT_MODELS, id) ? CF_CHAT_MODELS[id] : null;
+  if (!m) return [];
+  const tags = [];
+  if (CF_POPULAR_IDS.includes(id)) tags.push('popular');
+  if (Number(m.input) <= CF_CHEAP_INPUT_MAX && Number(m.output) <= CF_CHEAP_OUTPUT_MAX) tags.push('cheap');
+  return tags;
+}
+
 export const CF_AGENT_CHAT_IDS = Object.freeze(Object.keys(CF_CHAT_MODELS).filter(id => CF_CHAT_MODELS[id].agentTools === true));
 export const CF_DISABLED_PAID = Object.freeze([
   '@cf/deepseek-ai/deepseek-v4-flash-0731', '@cf/deepseek-ai/deepseek-v4-pro-0813', '@cf/deepseek-ai/deepseek-v4.1-flash-1017',
@@ -72,6 +90,7 @@ export function cfModelCard(id) {
     provider: model.provider || 'Cloudflare',
     vendor: model.vendor || '',
     agentTools: model.agentTools === true,
+    tags: cfModelTags(id),
     plannedDeprecation: model.plannedDeprecation || null,
     // Neurons, not USD: never let a USD rate card render a bogus chart for hosted models.
     pricing: { unit: 'neurons', input: model.input, output: model.output, currency: null },

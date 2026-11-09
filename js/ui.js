@@ -717,9 +717,12 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
           if ((store.state.messages || []).length && typeof store.ensureDraft === 'function') store.ensureDraft();
           loadComposerDraft(); agent.loadFiles(store.state.files);
           wrapLazyInit = false; lazyLoadedFrom = 0;
-          rebuildMessages({ scroll: 'bottom' }); renderFiles(); renderTimeStats(); updateModelBtn();
+          rebuildMessages({ scroll: 'bottom' }); renderFiles(); renderTimeStats();
           syncThinking(); syncCapLine();
         }
+        // 删除会触发 store.hydrate()（按会话恢复网关/模型），顶栏与能力行必须同步刷新，
+        // 否则随后切到其他会话时显示的仍是上一次的网关/模型。
+        updateModelBtn(); syncCapLine();
         renderSessions(); updateStats();
         setPanelCollapsed(true);
         if (!busyAtDelete) setStatus('idle');
@@ -1643,7 +1646,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     };
     // 联网 / 生成类工具（搜索、抓取、生图、生视频）：与 Explored File(s) 同样的折叠行，逐条列出调用。
     // 只由同一簇的最后一条消息绘制（与路径折叠一致）；结果折在每行的「结果」里，不再逐条占用命令芯片。
-    const WEB_LABELS = { curl: ['HTTP request', 'HTTP request'], search_web: ['Searched for', 'Searching for'], fetch_url: ['Fetched page', 'Fetching page'], generate_image: ['Generated image', 'Generating image'], generate_video: ['Generated video', 'Generating video'] };
+    const WEB_LABELS = { curl: ['HTTP request', 'HTTP request'], search_web: ['Web search', 'Searching'], fetch_url: ['Fetched page', 'Fetching page'], generate_image: ['Generated image', 'Generating image'], generate_video: ['Generated video', 'Generating video'] };
     const webIcon = (name) => ({ curl: ICON.globe, search_web: ICON.globe, fetch_url: ICON.globe, generate_image: ICON.image, generate_video: ICON.video })[name] || ICON.globe || '';
     const paintWebFold = (afterEl) => {
       let node = $('.web-activity', wrap);

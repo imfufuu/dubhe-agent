@@ -1,4 +1,5 @@
 import { focusForegroundWorkspace } from './modal-selection.js';
+import { resetPreviewSurface, isActiveUnderPath } from './project-preview-cleanup.js';
 import { projectIconType, projectIconSvg } from './project-icons.js';
 import { createProjectFS, isProjectUserPath } from './project-store.js';
 import { reviewProjectImport } from './project-import-review.js';
@@ -556,6 +557,11 @@ export function openProjectMode({ store, agent, projectFileSystem = null }) {
       return flash((restoreFailed ? T('删除失败且回滚不完整，请检查文件：', 'Delete failed and rollback was incomplete; check files: ') : T('删除失败：', 'Delete failed: ')) + err.message, true);
     }
     for (const p of targets) if (tabOf(p)) closeTab(p, { silent: true });
+    // 当前预览可能是一个目录级选择 / 未在标签里的路径：即使没有对应 tab，也必须把 active 与预览层清干净。
+    if (isActiveUnderPath(state.active, path)) {
+      state.active = '';
+      showEmpty();
+    }
     if (state.selected === path || state.selected.startsWith(path + '/')) state.selected = '';
     state.lastSnap = null;
     sync();
@@ -656,11 +662,8 @@ export function openProjectMode({ store, agent, projectFileSystem = null }) {
   }
 
   function showEmpty() {
-    mediaView.hidden = true;
-    textarea.value = '';
-    textarea.hidden = true;
-    gutter.textContent = '';
-    emptyNote.hidden = false;
+    // 清空所有叠层（高亮 / 行号 / 标记 / 媒体 DOM），否则删除当前选中目录后旧文件内容会留在背景上。
+    resetPreviewSurface({ textarea, gutter, hlCode, hlPre, codeWrap, marks, mediaView, emptyNote });
     emptyNote.textContent = T('从左侧打开一个文件开始编辑。', 'Open a file from the explorer to start editing.');
     updateStatus();
   }

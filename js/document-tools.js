@@ -26,7 +26,7 @@ export function prepareDocumentRequest(input, fs) {
     const raw = String(fs.read(path));
     if (!/^data:[^;,]*;base64,/.test(raw)) throw Error('Expected binary attachment at ' + path);
     const bytes = (raw.length - raw.indexOf(',') - 1) * 0.75;
-    if (bytes > 16 * 1024 * 1024) throw Error('Input file exceeds 16MB: ' + path);
+    if (bytes > 128 * 1024 * 1024) throw Error('Input file exceeds 128MB: ' + path);
     size += bytes; if (size > MAX_INPUT) throw Error('Combined inputs exceed 32MB');
     files[path] = raw;
   }

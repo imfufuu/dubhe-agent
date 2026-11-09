@@ -22,6 +22,10 @@ import { syncOfflineModelAvailability } from './offline-model.js';
 import { bindJevDecisionVisibility } from './jev-decision-visibility.js';
 import { installProjectEntry } from './project-mode.js';
 import { installTuner } from './ui-tuner.js';
+import { installToolManager } from './ui-tool-manager.js';
+import { installToolApproval } from './tool-approval-card.js';
+import { installFlagFontRecovery } from './flag-fonts.js';
+import { installFlagCopyHandler } from './flag-copy.js';
 
 installOfflineNetworkFence();
 
@@ -122,6 +126,11 @@ bindJevDecisionVisibility(store);
 bootStage('ui');
 ui = mountUI(store, agent);
 installTuner({ store, toast });
+installToolManager();
+installToolApproval({ toast });
+// 旗帜字体：启动即显式加载，并在标签页重新可见时复查重载（防止彩色字形整批隐身）。
+installFlagFontRecovery();
+installFlagCopyHandler();
 installProjectEntry({ store, agent });
 installDeviceControls();
 // 旧浏览器提示（.32）：缺 color-mix / :has 时样式会「有骨架、丢细节」，用户容易以为是加载失败；说清原因与版本建议，每个会话只提一次

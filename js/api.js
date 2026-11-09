@@ -12,6 +12,7 @@ import { resolveTemperature, canSendTemperature } from './temperature.js';
 import { CORE_TOOL_NAMES } from './capabilities.js';
 import { isNetworkOffline } from './offline-network.js';
 import { isOfflineModelId } from './offline-model-config.js';
+import { mergeGatewayAuth, gatewayAuthHeader } from './gateway-auth.js';
 import { streamOfflineModel } from './offline-model.js';
 import {
   DEFAULT_GATEWAY_ID, getGateway, gatewayPath, gatewayBaseUrl as configuredGatewayBaseUrl,
@@ -58,7 +59,9 @@ export function tookEndpointSwitch() { const v = endpointSwitched; endpointSwitc
 //      —— 中国大陆网络下 api.teamorouter.com 常常打不开，而 api.teamorouter.cn 正常，
 //         这一步让用户不用手动改配置
 //   ③ 仍失败 → 本地服务端代理 /api/proxy（本地跑 server.py 时可用，能绕开浏览器网络限制）
-async function request(path, { method = 'POST', headers = {}, body, signal, gatewayId = DEFAULT_GATEWAY_ID, gatewayBaseUrl = '', noReplay = false } = {}) {
+async function request(path, { method = 'POST', headers: inputHeaders = {}, body, signal, gatewayId = DEFAULT_GATEWAY_ID, gatewayBaseUrl = '', noReplay = false } = {}) {
+  // 统一注入网关访问令牌（仅当调用方尚未提供任何鉴权头时）；不覆盖 API Key。
+  const headers = mergeGatewayAuth(inputHeaders, gatewayId);
   if (isNetworkOffline()) throw new Error(localeText('离线模式已阻止网关请求。', 'Offline mode blocked the gateway request.'));
   // First-party and user-defined gateways are isolated: one direct HTTPS destination only,
   // with no TeamoRouter failover or same-origin proxy fallback.
@@ -126,7 +129,14 @@ export function gatewayRequest(path, options = {}) { return request(path, option
 
 // ── 认证头（调研结论：Anthropic 用 x-api-key；OpenAI/Gemini 用 Bearer）──
 export function authHeaders(protocol, apiKey, gatewayId = DEFAULT_GATEWAY_ID) {
-  if (getGateway(gatewayId).noKey) return {};
+  const spec = getGateway(gatewayId);
+  // 无 API Key 的自建网关（如 Workers AI）：用设置页保存的访问令牌，服务端可校验。
+  if (spec.noKey) return gatewayAuthHeader(gatewayId);
+  // 自定义网关若未填 API Key 但配置了访问令牌，也用令牌（不把空 Bearer 发出去）。
+  if (!apiKey && gatewayId !== DEFAULT_GATEWAY_ID) {
+    const shared = gatewayAuthHeader(gatewayId);
+    if (Object.keys(shared).length) return shared;
+  }
   if (protocol === 'anthropic') {
     return {
       'x-api-key': apiKey,
@@ -596,14 +606,18 @@ export function buildAnthropicPayload(messages, { maxTokens = MAX_TOKENS, includ
 // onThinkingFallback：思考参数被 400 降级时回调（用于向用户提示，避免静默关闭）
 // 首响应超时：HTTP 200 已返回但读流时超过该毫秒数仍未解析到有效 JSON SSE 事件 → 视为连接假死
 export const FIRST_TOKEN_TIMEOUT_MS = 15000;
-export async function streamChat({ model, apiKey, messages, tools, fastMode = false, thinking = false, reasoningLevel = 'medium', temperature, plan = null, iteration = 1, phase = '', subagentId = '', signal, onEvent, onThinkingFallback, webEnabled = false, onWebFallback, gatewayId = DEFAULT_GATEWAY_ID, gatewayBaseUrl = '', firstTokenTimeoutMs = FIRST_TOKEN_TIMEOUT_MS, streamTimeoutMs = REQUEST_TIMEOUT_MS, smoothText = false }) {
+export async function streamChat({ model, apiKey, messages, tools, fastMode = false, thinking = false, reasoningLevel = 'medium', temperature, plan = null, iteration = 1, phase = '', subagentId = '', signal, onEvent, onThinkingFallback, webEnabled = false, onWebFallback, gatewayId = DEFAULT_GATEWAY_ID, gatewayBaseUrl = '', firstTokenTimeoutMs = FIRST_TOKEN_TIMEOUT_MS, streamTimeoutMs = REQUEST_TIMEOUT_MS, smoothText = false, bareChat = false }) {
   // 废弃/改名模型别名解析（agent 层已做，但子智能体直传时再保底一次）
   model = resolveModelAlias(model);
   if (isNetworkOffline() && !isOfflineModelId(model)) {
     throw new Error(localeText('离线模式只允许使用已保存的本地 GGUF；没有发送网关请求。', 'Offline mode only permits the saved local GGUF; no gateway request was sent.'));
   }
   if (isOfflineModelId(model)) {
-    const localMessages = buildOpenAIMessages(stripEmptyAssistantMessages(messages), { includeReasoning: false });
+    const localBase = stripEmptyAssistantMessages(messages);
+    const localMessages = buildOpenAIMessages(
+      bareChat ? localBase.filter((m) => !['system', 'developer'].includes(String(m?.role || ''))) : localBase,
+      { includeReasoning: false },
+    );
     if (localMessages.some((message) => Array.isArray(message.content))) {
       throw new Error(localeText('本地 GGUF 目前仅支持文本；离线模式暂不处理图片/视频附件。', 'Local GGUF currently supports text only; image/video attachments are not supported offline.'));
     }
@@ -621,7 +635,11 @@ export async function streamChat({ model, apiKey, messages, tools, fastMode = fa
   const modelKey = modelScopeKey(model, gateway.id);
   const level = normalizeReasoningLevel(reasoningLevel);
   const wantThinking = thinking && !thinkingUnsupported.has(modelKey);
-  const requestMessages = withReasoningStrategy(stripEmptyAssistantMessages(messages), { thinking, level });
+  // bareChat（对话模式）：请求体里不出现任何 system/developer 消息，也不注入思考策略提示。
+  const cleanedMessages = stripEmptyAssistantMessages(messages);
+  const requestMessages = bareChat
+    ? cleanedMessages.filter((m) => !['system', 'developer'].includes(String(m?.role || '')))
+    : withReasoningStrategy(cleanedMessages, { thinking, level });
   const tempInfo = typeof temperature === 'number'
     ? { temperature, profile: 'custom', label: `T=${temperature}` }
     : resolveTemperature({ messages, plan, iteration, phase, subagentId });

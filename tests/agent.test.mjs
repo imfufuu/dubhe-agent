@@ -9202,7 +9202,7 @@ test('analyze_video 工具：定义 / 契约 / 并行与访问表 / 执行路径
   assert.ok(def, '缺少 analyze_video 工具');
   assert.match(def.description, /mp4\|webm\|mov\|m4v/);
   assert.match(def.description, /不要传 model/);
-  assert.match(def.description, /16MB/);
+  assert.match(def.description, /128MB/);
   assert.deepEqual(Object.keys(def.parameters.properties).sort(), ['path', 'prompt']);
   assert.equal(TOOL_DEFS.length, 53, '52 内置工具 + 2026-11-08 新增 tool_registry（自注册工具管理入口）；工具目录与 XLSX 能力均登记到能力表和执行契约');
   const c = ex.getToolContract('analyze_video');
@@ -9212,7 +9212,7 @@ test('analyze_video 工具：定义 / 契约 / 并行与访问表 / 执行路径
   const tools = fsp.readFileSync(new URL('../js/tools.js', import.meta.url), 'utf8');
   assert.match(tools, /case 'analyze_video': \{/);
   assert.match(tools, /const VIDEO_EXT_RE = \/\\\.\(mp4\|webm\|mov\|m4v\)\$\/i;/);
-  assert.match(tools, /const VIDEO_MAX_BYTES = 16 \* 1024 \* 1024;/);
+  assert.match(tools, /const VIDEO_MAX_BYTES = 128 \* 1024 \* 1024;/);
   assert.match(tools, /\[视频识别完成\] 模型 \$\{videoModel\} · 文件 \$\{path\} · 全文 \$\{text\.length\} 字已写入 \$\{outPath\}/);
   assert.match(tools, /kind: 'vision',\s*media: 'video',\s*model: videoModel,/, '计费事件带真实模型与音视频分类');
   // analyze_image / analyze_pdf use the selected gateway's vision model (TeamoRouter honors ctx.visionModel).
@@ -9230,8 +9230,10 @@ test('analyze_video 工具：定义 / 契约 / 并行与访问表 / 执行路径
   assert.match(await executeTool('analyze_video', {}, { fs, onUi: () => {}, apiKey: 'sk-teamo-x' }), /沙箱里还没有视频/);
   fs.write('uploads/a.mp4', 'hello');
   assert.match(await executeTool('analyze_video', { path: 'uploads/a.mp4' }, { fs, onUi: () => {}, apiKey: 'sk-teamo-x' }), /不是视频 data URL/);
-  fs.write('uploads/big.mp4', 'data:video/mp4;base64,' + 'A'.repeat(Math.ceil(17 * 1024 * 1024 / 0.75)));
-  assert.match(await executeTool('analyze_video', { path: 'uploads/big.mp4' }, { fs, onUi: () => {}, apiKey: 'sk-teamo-x' }), /超过 16MB 上限/);
+  // 上限提高到 128MB，不再在单测里构造 >128 MiB 的 base64 字符串：改为核对源码中的上限与文案。
+  const toolsSrc = fsp.readFileSync(new URL('../js/tools.js', import.meta.url), 'utf8');
+  assert.match(toolsSrc, /VIDEO_MAX_BYTES = 128 \* 1024 \* 1024/);
+  assert.match(toolsSrc, /超过 128MB 上限/);
   assert.match(await executeTool('analyze_video', { path: 'uploads/none.mp4' }, { fs, onUi: () => {}, apiKey: 'sk-teamo-x' }), /找不到 uploads\/none\.mp4/);
   // 其余触点
   const agent = fsp.readFileSync(new URL('../js/toolrunner.js', import.meta.url), 'utf8'); // P4：toolAccessSet 住在 toolrunner.js
@@ -9243,7 +9245,7 @@ test('analyze_video 工具：定义 / 契约 / 并行与访问表 / 执行路径
     ['../js/config.js', /- analyze_video：分析沙箱中的视频/],
     ['../js/api.js', /请调用 analyze_video 工具/],
     ['../js/ui-attachments.js', /source: 'video'/],
-    ['../js/ui-attachments.js', /MAX_VIDEO = 16 \* 1024 \* 1024/],
+    ['../js/ui-attachments.js', /MAX_VIDEO = MAX_ATTACHMENT/],
   ]) assert.match(fsp.readFileSync(new URL(file, import.meta.url), 'utf8'), re, `${file} 缺少 analyze_video 触点`);
   assert.match(readUiSource(), /const pathsOfAnalyzeVideo = \(msg\) =>/);
 });
@@ -9344,7 +9346,7 @@ test('download_file 工具：定义 / 契约 / 能力门控 / 网络类限流 / 
   const ag = await import('../js/agent.js');
   const def = TOOL_DEFS.find((t) => t.name === 'download_file');
   assert.ok(def, '缺少 download_file');
-  assert.match(def.description, /16MB/);
+  assert.match(def.description, /128MB/);
   assert.match(def.description, /CORS/);
   assert.deepEqual(def.parameters.required, ['url']);
   assert.deepEqual(Object.keys(def.parameters.properties).sort(), ['path', 'url']);
@@ -9381,7 +9383,7 @@ test('download_file 工具：定义 / 契约 / 能力门控 / 网络类限流 / 
 
 test('net.js relayDownload：走声明 file 能力的 Worker，超限拒绝，文件名按 Content-Type 补扩展名', async () => {
   const net = await import('../js/net.js');
-  assert.equal(net.RELAY_FILE_MAX_BYTES, 16 * 1024 * 1024);
+  assert.equal(net.RELAY_FILE_MAX_BYTES, 128 * 1024 * 1024);
   assert.equal(net.fileNameFromUrl('https://a.b/c/d.png?x=1'), 'd.png');
   assert.equal(net.fileNameFromUrl('https://a.b/c/123', 'video/mp4'), '123.mp4');
   assert.equal(net.fileNameFromUrl('https://a.b/', 'application/pdf'), 'download.pdf');
@@ -9409,7 +9411,7 @@ test('net.js relayDownload：走声明 file 能力的 Worker，超限拒绝，�
     assert.equal(r.mime, 'image/png');
     assert.equal(r.name, 'logo.png');
     assert.deepEqual([...r.bytes], [1, 2, 3, 4]);
-    assert.ok(seen.some((u) => /\/api\/file\?url=https%3A%2F%2Fcdn\.example\.org%2Flogo\.png&max=16777216$/.test(u)), `应带 url+max 调 /api/file：${seen.join(' | ')}`);
+    assert.ok(seen.some((u) => /\/api\/file\?url=https%3A%2F%2Fcdn\.example\.org%2Flogo\.png&max=134217728$/.test(u)), `应带 url+max 调 /api/file：${seen.join(' | ')}`);
     assert.equal(net.relaySupports('file'), true);
   } finally {
     globalThis.fetch = origFetch;

@@ -1,5 +1,5 @@
 import { isRetiredModel } from './model-catalog.js?v=2026.10.25.1';
-import { defaultModelForGateway, isModelForGateway } from './gateway-registry.js?v=2026.10.25.1';
+import { defaultModelForGateway, isModelForGateway, GATEWAYS } from './gateway-registry.js?v=2026.10.25.1';
 import { normalizeFeedback } from './feedback.js';
 // ─── 会话状态：多会话记录、消息、检查点（回滚）、持久化 ────────────────
 // 侧栏展示「会话记录」；回滚操作全部发生在对话区（消息级按钮 + 撤销浮条）
@@ -638,7 +638,9 @@ export function createStore(onChange) {
   if (!state.project.files || typeof state.project.files !== 'object' || Array.isArray(state.project.files)) state.project.files = {};
   if (!state.project.blobFiles || typeof state.project.blobFiles !== 'object' || Array.isArray(state.project.blobFiles)) state.project.blobFiles = {};
   // Gateway isolation/migration: legacy snapshots have one TeamoRouter apiKey + model cache.
-  const validGatewayIds = new Set(['teamorouter', 'anthropic', 'openai', 'gemini', 'deepseek', 'glm', 'grok', 'kimi', 'doubao', 'qwen', 'custom']);
+  // 直接取自网关注册表：硬编码白名单曾漏掉 cloudflare，导致「删除会话后切回其他会话」
+  // 无法恢复该会话的网关与模型（2026-11-08 修复）。
+  const validGatewayIds = new Set(GATEWAYS.map((g) => g.id));
   if (!validGatewayIds.has(String(state.gatewayId || ''))) state.gatewayId = 'teamorouter';
   const cleanMap = (value) => value && typeof value === 'object' && !Array.isArray(value) ? value : {};
   state.gatewayKeys = cleanMap(state.gatewayKeys);
@@ -722,6 +724,9 @@ export function createStore(onChange) {
     deleteSession(id) {
       const idx = state.sessions.findIndex((s) => s.id === id);
       if (idx < 0) return false;
+      // 删除任何会话都会触发 hydrate()；先把当前会话的网关 / 模型写回它自己的记录，
+      // 否则「刚切换网关 → 删掉另一条会话 → 切回来」会把当前选择回滚到旧值（2026-11-08 修复）。
+      commit();
       state.sessions.splice(idx, 1);
       if (!state.sessions.length) state.sessions = [newSession()];
       if (!state.sessions.some((s) => s.id === state.activeSessionId)) {
