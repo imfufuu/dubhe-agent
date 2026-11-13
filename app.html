@@ -521,6 +521,10 @@
         <p id="tuner-env-hint" class="tuner-hint"></p>
       </section>
       <section class="tuner-sec">
+        <div class="tuner-label"><span id="tuner-label-personal"></span><span id="tuner-personal-count" class="tuner-value"></span></div>
+        <textarea id="tuner-personal-prompt" class="tuner-personal" rows="3" maxlength="2000"></textarea>
+      </section>
+      <section class="tuner-sec">
         <div class="tuner-label"><span id="tuner-label-tools"></span></div>
         <button id="tuner-open-tools" type="button" class="ghost-btn"></button>
         <p class="tuner-hint" id="tuner-tools-note"></p>
@@ -593,6 +597,15 @@
           <div class="set-ctl"><input id="set-relay" class="set-input mono" type="url" placeholder="https://xxx.workers.dev" spellcheck="false" autocomplete="off"/></div>
         </div>
         <div class="set-row"><div class="set-lbl"><div class="set-title">当前中继</div><div class="set-sub" id="set-relay-msg">检测中…</div></div></div>
+      </section>
+
+      <section class="set-sec" id="set-tool-manager-sec">
+        <h4>自注册工具</h4>
+        <div class="set-row" id="set-tool-manager">
+          <div class="set-lbl"><div class="set-title" id="tool-manager-title"></div><div class="set-sub" id="tool-manager-desc"></div></div>
+          <div class="set-ctl"><span id="tool-manager-count" class="mono"></span><span class="tool-manager-pending" id="tool-manager-pending" hidden></span></div>
+        </div>
+        <div class="set-row"><div class="set-ctl"><div id="tool-manager-root" class="tool-manager-root"></div></div></div>
       </section>
 
       <section class="set-sec">
@@ -731,11 +744,6 @@
         <div class="set-row cache-refresh-row"><div class="set-lbl"><div class="set-title">脚本缓存更新</div><div class="set-sub" id="set-cache-update-status" role="status" aria-live="polite">点击后自动检查线上版本；有更新时缓存脚本并显示进度，不会打断当前页面。</div></div><div class="set-ctl"><button type="button" id="set-update-cache" class="ghost-btn" aria-controls="set-cache-update-progress-wrap">检查并更新</button></div></div>
         <div id="set-cache-update-progress-wrap" class="cache-refresh-progress" role="group" aria-label="脚本缓存更新进度" hidden><progress id="set-cache-update-progress" max="100" value="0" aria-label="脚本缓存更新进度"></progress><span id="set-cache-update-progress-label">0%</span></div>
 
-        <div class="set-row" id="set-tool-manager">
-          <div class="set-lbl"><div class="set-title" id="tool-manager-title"></div><div class="set-sub" id="tool-manager-desc"></div></div>
-          <div class="set-ctl"><span id="tool-manager-count" class="mono"></span><span class="tool-manager-pending" id="tool-manager-pending" hidden></span></div>
-        </div>
-        <div class="set-row"><div class="set-ctl"><div id="tool-manager-root" class="tool-manager-root"></div></div></div>
 
       </section>
 

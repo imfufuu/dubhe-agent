@@ -80,7 +80,8 @@ export function isSafeFsPath(path) {
 
 // 把沙箱 Worker 回传的 files 快照合并回真实文件系统（Worker 代码可能是对抗性的）：
 //   · 键必须通过 isSafeFsPath；值必须是字符串
-//   · internal/ 与 .git/ 为受保护前缀：Worker 不能新增、修改或删除（保留 before 里的版本）
+//   · internal/ 与 .git/ 为受保护前缀：仅限本函数处理的 Worker 回写通道，不能新增、修改或删除（保留 before 里的版本）；
+//     write_file 等工具写入通道不受此限制（已实测：write_file 可写 internal/）
 //   · 总量不得超过 SANDBOX_STORAGE_CAP、文件数不得超过 FS_MAX_FILES；超限时整体拒收，保留 before
 export function sanitizeWorkerFiles(before, after, { cap = SANDBOX_STORAGE_CAP, maxFiles = FS_MAX_FILES } = {}) {
   const prev = before && typeof before === 'object' ? before : {};

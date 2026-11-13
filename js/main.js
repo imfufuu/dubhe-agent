@@ -26,6 +26,8 @@ import { installToolManager } from './ui-tool-manager.js';
 import { installToolApproval } from './tool-approval-card.js';
 import { installFlagFontRecovery } from './flag-fonts.js';
 import { installFlagCopyHandler } from './flag-copy.js';
+import { takeFinalReport, announceFinalReport } from './final-report.js';
+import { installFirstVisit } from './ui-first-visit.js';
 
 installOfflineNetworkFence();
 
@@ -86,6 +88,8 @@ const hooks = {
   onTaskFinished: (info) => { notifications.finish(info).catch(() => {}); },
   onTurnEnd: () => {
     ui && ui.settleTurn && ui.settleTurn();
+    const report = takeFinalReport();
+    if (report) announceFinalReport(report);
     ui && ui.renderFiles(); ui && ui.renderSessions(); ui && ui.updateStats();
     // 回合结束后让 Agent 给这次会话起个标题（用户手改过的不会被覆盖；失败静默退回兜底标题）
     ui && ui.autoTitle && ui.autoTitle();
@@ -131,6 +135,9 @@ installToolApproval({ toast });
 // 旗帜字体：启动即显式加载，并在标签页重新可见时复查重载（防止彩色字形整批隐身）。
 installFlagFontRecovery();
 installFlagCopyHandler();
+installFirstVisit();
+// 用户手动取消 Cloudflare 人机验证：把决策写进本轮提示词，避免 Agent 自动重试。
+globalThis.addEventListener?.('dubhe:turnstile-cancelled', () => { globalThis.__dubheUserDecision = '用户手动取消了 Cloudflare 人机验证；本轮不要重试该工具，也不要再次弹出验证。'; });
 installProjectEntry({ store, agent });
 installDeviceControls();
 // 旧浏览器提示（.32）：缺 color-mix / :has 时样式会「有骨架、丢细节」，用户容易以为是加载失败；说清原因与版本建议，每个会话只提一次

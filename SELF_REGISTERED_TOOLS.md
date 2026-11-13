@@ -37,7 +37,8 @@ Agent 现在可以在对话中用 `tool_registry` **创建、读取、更新、�
 
 - `js/tool-registry.js`：注册表、确认门、声明式 handler、定义校验。
 - `js/tools.js`：`TOOL_DEFS` 新增 `tool_registry`；`allToolDefinitions()` 合并动态工具；`executeTool()` 分发到注册表。
-- `js/ui-tool-manager.js`：设置页里的工具管理（读取完整定义 / 启停 / 二次确认删除）。
+- `js/ui-tool-manager.js`：设置页「网关」之后的工具管理（读取完整定义 / 启停 / 二次确认删除）。
+- `js/tool-code-review.js` / `js/tool-code-runtime.js`：代码类工具的安全初审与受限执行器。
 - `js/tool-approval-card.js`：对话输出里的用户确认卡（复用执行内核 `.confirm-card` 样式）。
 - 能力登记处、执行契约、按需挂载规则、离线白名单、工具目录摘要均已同步登记。
 - 回归：`tests/tool-self-registration.test.mjs`（6 项）、`tests/tuner-ui.test.mjs`（5 项）、能力三方一致性自检。

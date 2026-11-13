@@ -19,6 +19,7 @@ export const TUNER_DEFAULTS = Object.freeze({
   environment: 'agent',      // agent | chat
   agentReasoningLevel: 'inherit',  // inherit = 沿用设置页；调节器里明确选档才覆盖
   chatThinking: false,
+  personalPrompt: '',
 });
 
 export const TEMPERATURE_PRESETS = Object.freeze([
@@ -58,6 +59,7 @@ export function normalizeTuner(raw) {
     environment: t.environment === 'chat' ? 'chat' : 'agent',
     agentReasoningLevel,
     chatThinking: t.chatThinking === true,
+    personalPrompt: String(t.personalPrompt ?? '').slice(0, 2000),
   };
 }
 

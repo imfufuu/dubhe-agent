@@ -1,4 +1,5 @@
 export const UI_STRINGS = {
+  "自注册工具": "Self-registered tools",
   "选择一个本地 GGUF 文件；单文件上限 16 GiB（受浏览器磁盘配额限制）。": "Choose a local GGUF file; single-file limit is 16 GiB (browser storage quota may be lower).",
   "设备内存信息可能不可用；单文件 ≤16 GiB，不支持分片。": "Device memory info may be unavailable; single file ≤16 GiB, no shards.",
   "网关访问令牌（可选）": "Gateway access token (optional)",
@@ -397,7 +398,7 @@ export const UI_STRINGS = {
   "不经过我们的账号": "No account system from us",
   "少而准的工具，而不是仪表盘。": "Focused tools. Not another dashboard.",
   "模型只调用真实存在的能力：浏览器内的代码与文件、网关生图与识图、本地编解码。没有的功能不会假装有。": "The model calls real capabilities: browser code and files, gateway image tools and local utilities. Missing capabilities are disclosed, not simulated.",
-  "JavaScript Worker、Pyodide（可装第三方库）与 C++20/WASI（本地 WASM 或远程 Compiler Explorer）。本地模式 C++ 源码不离开本机；远程模式源码发送至 godbolt.org。WASI 无网络或文件预打开，异常与线程不支持。Python 只放行装包的 CDN 与 PyPI；回写文件先过路径与容量校验，internal/ 受保护。超时可杀，stdout / 返回值可捕获。": "JavaScript Workers, persistent Pyodide and C++20/WASI (local WASM or remote Compiler Explorer). In local mode C++ source never leaves this device; in remote mode source is sent to godbolt.org. WASI has no network or preopened filesystem, and exceptions/threads are unsupported. Python permits package/runtime CDNs only; file write-back passes path and size checks, and internal/ is protected. Runs can time out, and stdout / return values are captured.",
+  "JavaScript Worker、Pyodide（可装第三方库）与 C++20/WASI（本地 WASM 或远程 Compiler Explorer）。本地模式 C++ 源码不离开本机；远程模式源码发送至 godbolt.org。WASI 无网络或文件预打开，异常与线程不支持。Python 只放行装包的 CDN 与 PyPI；沙箱 files/FILES 回写通道不能写 internal/ 与 .git/，此限制仅限该通道，write_file 工具不受限。超时可杀，stdout / 返回值可捕获。": "JavaScript Workers, persistent Pyodide and C++20/WASI (local WASM or remote Compiler Explorer). In local mode C++ source never leaves this device; in remote mode source is sent to godbolt.org. WASI has no network or preopened filesystem, and exceptions/threads are unsupported. Python permits package/runtime CDNs only. The sandbox files/FILES write-back channel cannot write internal/ or .git/; this restriction applies only to that channel, and the write_file tool is not subject to it. Runs can time out, and stdout / return values are captured.",
   "工作区": "Workspace",
   "读写、追加、局部替换、复制删除、正则搜索、文本差分、JSON 整理。ZIP 打包带走，容量 120 MB。": "Read/write, append, targeted replacement, copy/delete, regex search, diffs and JSON. Export everything as ZIP, with a 120MB workspace budget.",
   "图像": "Images",

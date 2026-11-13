@@ -38,7 +38,7 @@ test('调节器是独立 modal 页面，不再挤在输入框里', () => {
   assert.equal($('tuner-modal').hidden, false);
   assert.ok($('tuner-modal').classList.contains('open'));
   tuner.close();
-  assert.equal($('tuner-modal').hidden, true);
+  assert.equal($('tuner-modal').classList.contains('open'), false, '关闭先移除 .open 播放淡出动画');
 });
 
 test('删除温度自定义/滑杆与 Agent 思考等级设置', () => {
@@ -56,11 +56,11 @@ test('删除温度自定义/滑杆与 Agent 思考等级设置', () => {
   assert.match($('tuner-temp-value').textContent, /0\.15/);
 });
 
-test('对话模式不上传任何提示词且零工具；思考开关仍可独立切换', () => {
+test('对话模式只注入一条身份声明且零工具；思考开关仍可独立切换', () => {
   click($('tuner-env-options').querySelector('[data-env="chat"]'));
   assert.equal($('tuner-chat-block').hidden, false);
   assert.equal(tuner.environment().toolsEnabled, false);
-  assert.match($('tuner-env-hint').textContent, /不上传任何提示词|no prompts are uploaded/i);
+  assert.match($('tuner-env-hint').textContent, /只上传一条简短身份声明|only a short identity line/i);
   const thinking = $('tuner-chat-thinking');
   thinking.checked = true; change(thinking);
   assert.equal(tuner.environment().thinking, true);
@@ -68,8 +68,8 @@ test('对话模式不上传任何提示词且零工具；思考开关仍可独�
   const api = fs.readFileSync(new URL('../js/api.js', import.meta.url), 'utf8');
   const agent = fs.readFileSync(new URL('../js/agent.js', import.meta.url), 'utf8');
   assert.match(api, /bareChat = false/);
-  assert.match(api, /bareChat\s*\?\s*cleanedMessages\.filter/);
-  assert.match(agent, /对话模式：不上传任何提示词/);
+  assert.match(api, /bareChat\s*\?\s*\[chatIdentityMessage\(model\)/);
+  assert.match(agent, /唯一的简短身份声明由 api\.js/);
 });
 
 test('恢复默认复位温度、环境与思考开关', () => {

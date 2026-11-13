@@ -1,4 +1,6 @@
 import { createStreamSmoother } from './stream-smoothing.js';
+import { expandMjResult } from './mj-quad.js';
+import { fitMessagesToContext } from './offline-context.js';
 // ─── TeamoRouter API 客户端 ────────────────────────────────────────────
 // 协议路由 + SSE 流式解析 + 传输层（浏览器直连 / 服务端代理兜底）
 // 纯函数导出，便于 node 单测（tests/agent.test.mjs）
@@ -11,7 +13,7 @@ import { webCapFor, injectWeb, buildResponsesInput, createResponsesStream } from
 import { resolveTemperature, canSendTemperature } from './temperature.js';
 import { CORE_TOOL_NAMES } from './capabilities.js';
 import { isNetworkOffline } from './offline-network.js';
-import { isOfflineModelId } from './offline-model-config.js';
+import { isOfflineModelId, OFFLINE_MODEL_CONTEXT_BUDGET } from './offline-model-config.js';
 import { mergeGatewayAuth, gatewayAuthHeader } from './gateway-auth.js';
 import { streamOfflineModel } from './offline-model.js';
 import {
@@ -606,16 +608,23 @@ export function buildAnthropicPayload(messages, { maxTokens = MAX_TOKENS, includ
 // onThinkingFallback：思考参数被 400 降级时回调（用于向用户提示，避免静默关闭）
 // 首响应超时：HTTP 200 已返回但读流时超过该毫秒数仍未解析到有效 JSON SSE 事件 → 视为连接假死
 export const FIRST_TOKEN_TIMEOUT_MS = 15000;
-export async function streamChat({ model, apiKey, messages, tools, fastMode = false, thinking = false, reasoningLevel = 'medium', temperature, plan = null, iteration = 1, phase = '', subagentId = '', signal, onEvent, onThinkingFallback, webEnabled = false, onWebFallback, gatewayId = DEFAULT_GATEWAY_ID, gatewayBaseUrl = '', firstTokenTimeoutMs = FIRST_TOKEN_TIMEOUT_MS, streamTimeoutMs = REQUEST_TIMEOUT_MS, smoothText = false, bareChat = false }) {
+/** 对话模式的唯一提示词：简短身份声明，不含工具表/规则/记忆/技能。 */
+export function chatIdentityMessage(model) {
+  const zh = `你是运行在 Dubhe Agent 网页里的 ${model} 模型，当前为对话模式，不能运行任何工具，只做模型测试。`;
+  const en = `You are the ${model} model running inside the Dubhe Agent web app. Chat mode: no tools are available; this is a model-only test.`;
+  return { role: 'system', content: localeText(zh, en) };
+}
+
+export async function streamChat({ model, apiKey, messages, tools, fastMode = false, thinking = false, reasoningLevel = 'medium', temperature, plan = null, iteration = 1, phase = '', subagentId = '', signal, onEvent, onThinkingFallback, webEnabled = false, onWebFallback, gatewayId = DEFAULT_GATEWAY_ID, gatewayBaseUrl = '', firstTokenTimeoutMs = FIRST_TOKEN_TIMEOUT_MS, streamTimeoutMs = REQUEST_TIMEOUT_MS, smoothText = false, bareChat = false, personalPrompt = '' }) {
   // 废弃/改名模型别名解析（agent 层已做，但子智能体直传时再保底一次）
   model = resolveModelAlias(model);
   if (isNetworkOffline() && !isOfflineModelId(model)) {
     throw new Error(localeText('离线模式只允许使用已保存的本地 GGUF；没有发送网关请求。', 'Offline mode only permits the saved local GGUF; no gateway request was sent.'));
   }
   if (isOfflineModelId(model)) {
-    const localBase = stripEmptyAssistantMessages(messages);
+    const localBase = fitMessagesToContext(stripEmptyAssistantMessages(messages), OFFLINE_MODEL_CONTEXT_BUDGET);
     const localMessages = buildOpenAIMessages(
-      bareChat ? localBase.filter((m) => !['system', 'developer'].includes(String(m?.role || ''))) : localBase,
+      bareChat ? [chatIdentityMessage(model), ...localBase.filter((m) => !['system', 'developer'].includes(String(m?.role || '')))] : localBase,
       { includeReasoning: false },
     );
     if (localMessages.some((message) => Array.isArray(message.content))) {
@@ -635,11 +644,21 @@ export async function streamChat({ model, apiKey, messages, tools, fastMode = fa
   const modelKey = modelScopeKey(model, gateway.id);
   const level = normalizeReasoningLevel(reasoningLevel);
   const wantThinking = thinking && !thinkingUnsupported.has(modelKey);
-  // bareChat（对话模式）：请求体里不出现任何 system/developer 消息，也不注入思考策略提示。
+  // bareChat（对话模式）：只保留用户/助手历史 + 一条简短身份声明；
+  // 工具表、系统规则、记忆、技能与思考策略提示一律不下发。
   const cleanedMessages = stripEmptyAssistantMessages(messages);
-  const requestMessages = bareChat
-    ? cleanedMessages.filter((m) => !['system', 'developer'].includes(String(m?.role || '')))
+  let requestMessages = bareChat
+    ? [chatIdentityMessage(model), ...cleanedMessages.filter((m) => !['system', 'developer'].includes(String(m?.role || '')))]
     : withReasoningStrategy(cleanedMessages, { thinking, level });
+  if (!bareChat) {
+    // 个性化系统提示词与用户决策作为独立补充层追加，不改写应用主提示词。
+    const extras = [];
+    const personal = String(personalPrompt || '').trim().slice(0, 2000);
+    if (personal) extras.push(`【用户个性化补充（不改变上述基础规则）】\n${personal}`);
+    const decision = String(globalThis.__dubheUserDecision || '').trim();
+    if (decision) { extras.push(`【用户决策】${decision}`); globalThis.__dubheUserDecision = ''; }
+    if (extras.length) requestMessages = [...requestMessages.filter((m) => m?.role === 'system' || m?.role === 'developer'), { role: 'system', content: extras.join('\n\n') }, ...requestMessages.filter((m) => m?.role !== 'system' && m?.role !== 'developer')];
+  }
   const tempInfo = typeof temperature === 'number'
     ? { temperature, profile: 'custom', label: `T=${temperature}` }
     : resolveTemperature({ messages, plan, iteration, phase, subagentId });

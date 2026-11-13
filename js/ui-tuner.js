@@ -12,6 +12,7 @@ const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 
 export function installTuner({ store, toast = () => {} } = {}) {
   const btn = $('tuner-btn'), modal = $('tuner-modal'), close = $('tuner-close');
+  let hideTimer = 0;
   if (!btn || !modal || !store) return null;
 
   const tuner = () => normalizeTuner(store.state.tuner);
@@ -22,6 +23,7 @@ export function installTuner({ store, toast = () => {} } = {}) {
   };
   const open = () => {
     render();
+    clearTimeout(hideTimer);
     modal.hidden = false;
     void modal.offsetHeight; // 强制 reflow，让 .modal 的 opacity / transform 过渡真正播放
     modal.classList.add('open');
@@ -29,10 +31,12 @@ export function installTuner({ store, toast = () => {} } = {}) {
     btn.classList.add('on');
   };
   const hide = () => {
+    // 与设置页一致：先移除 .open 触发 .3s 淡出 + translate 过渡，动画结束再真正隐藏。
     modal.classList.remove('open');
-    modal.hidden = true;
     btn.setAttribute('aria-expanded', 'false');
     btn.classList.remove('on');
+    clearTimeout(hideTimer);
+    hideTimer = setTimeout(() => { if (!modal.classList.contains('open')) modal.hidden = true; }, 320);
   };
   const toggle = () => (modal.classList.contains('open') ? hide() : open());
 
@@ -68,10 +72,21 @@ export function installTuner({ store, toast = () => {} } = {}) {
     $('tuner-chat-thinking').checked = cur.chatThinking === true;
   }
 
+  function renderPersonalPrompt() {
+    const box = $('tuner-personal-prompt');
+    if (!box) return;
+    const cur = tuner();
+    if (box.value !== cur.personalPrompt) box.value = cur.personalPrompt;
+    const count = $('tuner-personal-count');
+    if (count) count.textContent = `${cur.personalPrompt.length} / 2000`;
+  }
+
   function localize() {
     const setText = (id, value) => { const el = $(id); if (el) el.textContent = value; };
     const setAttr = (id, attr, value) => { const el = $(id); if (el) el.setAttribute(attr, value); };
     setText('tuner-title', t('调节器', 'Tuner'));
+    setText('tuner-label-personal', t('个性化系统提示词', 'Personal system prompt'));
+    setAttr('tuner-personal-prompt', 'placeholder', t('补充你的偏好，不会覆盖应用主提示词；对话模式下不发送', 'Add your preferences; does not replace the app prompt and is not sent in Chat mode'));
     setText('tuner-label-temp', t('回答温度', 'Temperature'));
     setText('tuner-label-env', t('环境设置', 'Environment'));
     setText('tuner-label-tools', t('自注册工具', 'Self-registered tools'));
@@ -90,18 +105,19 @@ export function installTuner({ store, toast = () => {} } = {}) {
 
   function render() {
     localize();
-    renderTemperature(); renderEnvironment();
+    renderTemperature(); renderEnvironment(); renderPersonalPrompt();
     const env = resolveTurnEnvironment({ tuner: tuner(), settings: store.state.settings || {}, gatewayId: store.state.gatewayId });
     $('tuner-summary').textContent = t(env.summaryZh, env.summaryEn);
     const hint = $('tuner-env-hint');
     if (hint) hint.textContent = env.toolsEnabled
       ? t('Agent 模式：下发工具表与系统提示词。', 'Agent: tool table and system prompts are sent.')
-      : t('对话模式：不上传任何提示词，工具表为空，模型幻觉出的工具调用也会被丢弃。', 'Chat: no prompts are uploaded, the tool table is empty, and hallucinated tool calls are dropped.');
+      : t('对话模式：只上传一条简短身份声明，工具表为空，仅做模型测试。', 'Chat: only a short identity line is sent; no tools, model test only.');
   }
 
   btn.addEventListener('click', toggle);
   close?.addEventListener('click', hide);
   $('tuner-open-tools')?.addEventListener('click', () => { hide(); openToolManager(); });
+  $('tuner-personal-prompt')?.addEventListener('change', (e) => commit({ personalPrompt: String(e.target.value || '').slice(0, 2000) }));
   $('tuner-chat-thinking')?.addEventListener('change', (e) => commit({ chatThinking: e.target.checked }));
   $('tuner-reset')?.addEventListener('click', () => { store.state.tuner = { ...TUNER_DEFAULTS }; store.notify(); render(); });
   modal.addEventListener('click', (e) => { if (e.target === modal) hide(); }); // 点遮罩关闭

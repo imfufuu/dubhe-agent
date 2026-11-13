@@ -1796,7 +1796,7 @@ test('TeamoRouter 新增 Doubao / Kimi / Qwen / MiniMax，品牌图标均为本�
     assert.ok(cfg.FALLBACK_MODELS.some((model) => model.id === id), `${id} offline fallback`);
     assert.ok(cfg.PROVIDER_ORDER.includes(provider), `${provider} has a group`);
   }
-  assert.equal(MODEL_CATALOG_DATE, '2026-10-24');
+  assert.equal(MODEL_CATALOG_DATE, '2026-11-09');
   const { PROVIDER_ICON, providerIcon } = await import('../js/icons.js');
   const fs = await import('node:fs');
   for (const [provider, file] of [['Doubao', 'doubao.svg'], ['Kimi', 'kimi.svg'], ['Qwen', 'qwen.svg'], ['MiniMax', 'minimax.svg'], ['Xiaomi', 'xiaomi.svg']]) {
@@ -6061,8 +6061,8 @@ test('Req 3：全模型官方价格查询（识图与生图单独处理）与单
 
   // 新增国产模型使用供应商公开标准价；CNY 价目归一到 USD 内部口径，界面再按语言显示。
   const catalog = await import('../js/model-catalog.js');
-  assert.equal(catalog.TEAMOROUTER_CONFIRMED_MODEL_IDS.length, 55);
-  assert.equal(new Set(catalog.TEAMOROUTER_CONFIRMED_MODEL_IDS).size, 55, 'TeamoRouter 确认清单无重复');
+  assert.equal(catalog.TEAMOROUTER_CONFIRMED_MODEL_IDS.length, 58);
+  assert.equal(new Set(catalog.TEAMOROUTER_CONFIRMED_MODEL_IDS).size, 58, 'TeamoRouter 确认清单无重复');
   const mergedConfirmed = catalog.mergeAvailableModels([], [], true, { gatewayId: 'teamorouter' });
   for (const id of catalog.TEAMOROUTER_CONFIRMED_MODEL_IDS) {
     assert.ok(catalog.MODEL_CATALOG_BY_ID.has(id), `${id} 应有目录数据`);
@@ -6644,7 +6644,7 @@ test('2026.10.24：支持固定对话目录（DeepSeek 两个免费档继续下�
     assert.ok(fallbackIds.has(id), `FALLBACK_MODELS 缺少模型：${id}`);
   }
   const chatModels = cfg.FALLBACK_MODELS.filter((m) => m.id !== cfg.SMART_ROUTER_ID && !cfg.isImageModel(m.id));
-  assert.equal(chatModels.length, 55, '排除智能路由、识图/生图专用模型后应恰好包含用户确认的 55 个固定对话模型（不含 DeepSeek 免费档）');
+  assert.equal(chatModels.length, 58, '排除智能路由、识图/生图专用模型后应恰好包含用户确认的 55 个固定对话模型（不含 DeepSeek 免费档）');
   assert.ok(!fallbackIds.has('deepseek-v4-flash-free') && !fallbackIds.has('deepseek-flash-free'), 'DeepSeek 两个免费模型必须下架');
 
   // Claude 与 GPT 新模型热度与组内版本优先级排序验证
@@ -8907,7 +8907,9 @@ test('ui.js 拆分：文件面板 / 全屏预览 / 附件 / 图表各自成模�
   // 2026.10.21：160 KB 预算在上一版就只剩 104 B 余量，本轮新增知识库检索折叠行后正式调到 168 KB
   //（折叠绘制逻辑已抽到 ui-toolflow.js，ui.js 只留接线）。
   // 2026.10.29：联网/生成类折叠行（paintWebFold）与设置页视频模型接线后调到 176 KB。
-  assert.ok(Buffer.byteLength(ui, 'utf8') < 176 * 1024, `ui.js 应小于 176 KB（当前 ${Buffer.byteLength(ui, 'utf8')} B）`);
+  // 2026.11.09：对话模式 UI 降级与最终产物报告接线后调到 184 KB；
+  // 新增逻辑都在 ui-chat-mode.js / final-report.js，ui.js 只留调用，3000 行硬约束不变。
+  assert.ok(Buffer.byteLength(ui, 'utf8') < 184 * 1024, `ui.js 应小于 184 KB（当前 ${Buffer.byteLength(ui, 'utf8')} B）`);
   const agentSrcP4 = fsp.readFileSync(new URL('../js/agent.js', import.meta.url), 'utf8');
   // 2026.11.01：Jev 决策反馈闭环接线后调到 116 KB。
   // 2026.11.08：回合环境内核（温度 / Agent/对话模式 / 工具策略，逻辑都在 agent-runtime.js）
@@ -9204,7 +9206,7 @@ test('analyze_video 工具：定义 / 契约 / 并行与访问表 / 执行路径
   assert.match(def.description, /不要传 model/);
   assert.match(def.description, /128MB/);
   assert.deepEqual(Object.keys(def.parameters.properties).sort(), ['path', 'prompt']);
-  assert.equal(TOOL_DEFS.length, 53, '52 内置工具 + 2026-11-08 新增 tool_registry（自注册工具管理入口）；工具目录与 XLSX 能力均登记到能力表和执行契约');
+  assert.equal(TOOL_DEFS.length, 54, '53 内置工具 + 2026-11-08 新增 tool_registry（自注册工具管理入口）；工具目录与 XLSX 能力均登记到能力表和执行契约');
   const c = ex.getToolContract('analyze_video');
   assert.equal(c.sideEffect, 'remote');
   assert.equal(c.external, true);
@@ -10515,10 +10517,10 @@ test('#10 视频识别默认模型改为 Gemini 3.5 Flash Lite（设置档位 / 
   assert.equal(cfg2.DEFAULT_VIDEO_MODEL, 'gemini-3.5-flash-lite');
   assert.equal(cfg2.resolveVideoModel(undefined), 'gemini-3.5-flash-lite');
   assert.equal(cfg2.resolveVideoModel('not-a-model'), 'gemini-3.5-flash-lite');
-  assert.equal(cfg2.VIDEO_MODELS.find((m) => m.id === 'gemini-3.5-flash-lite').tag, '默认 · 低价');
-  assert.equal(cfg2.VIDEO_MODELS.find((m) => m.id === 'gemini-3.5-flash-lite').tagEn, 'Default · Cheap');
+  assert.equal(cfg2.VIDEO_MODELS.find((m) => m.id === 'gemini-3.5-flash-lite').tag, '低价');
+  assert.equal(cfg2.VIDEO_MODELS.find((m) => m.id === 'gemini-3.5-flash-lite').tagEn, 'Cheap');
   assert.equal(cfg2.VISION_MODELS.find((m) => m.id === 'gemini-3.5-flash-lite').tagEn, 'Cheap');
-  assert.equal(cfg2.VIDEO_MODELS.find((m) => m.id === 'gemini-3.8-flash').tag, '通用');
+  assert.equal(cfg2.VIDEO_MODELS.find((m) => m.id === 'gemini-3.8-flash').tag, '热门');
   const { createStore } = await import('../js/state.js');
   assert.equal(createStore().state.settings.videoModel, 'gemini-3.5-flash-lite');
   assert.equal(createStore().state.settings.imageRemoteReview, true);
@@ -11029,7 +11031,7 @@ test('Nano Banana 2.1（gemini-nano-banana-2.1，.34 实测 ID）是生图模型
   const pricing = await import('../js/pricing.js');
   assert.ok(c.IMAGE_MODELS.some((m) => m.id === 'gemini-nano-banana-2.1'));
   assert.ok(!c.IMAGE_MODELS.some((m) => m.id === 'nano-banana-2-1'), '.33 猜的 ID 不对，.34 用网关价目表 / 实测的 gemini-nano-banana-2.1');
-  assert.equal(c.IMAGE_MODELS.length, 11); // Cloudflare FLUX 与原有系列分开
+  assert.equal(c.IMAGE_MODELS.length, 15); // Cloudflare FLUX 与原有系列分开
   assert.ok(c.IMAGE_MODELS.every((m) => m.tag && m.label && m.note), '设置页下拉需要 label · tag');
   assert.equal(c.DEFAULT_IMAGE_MODEL, 'gpt-image-2');
   for (const id of ['gemini-nano-banana-2.1', 'nano-banana-2-1', 'nano-banana-2', 'gpt-image-3', 'dall-e-4', 'flux-2-pro', 'imagen-4']) assert.equal(c.isImageModel(id), true, id);

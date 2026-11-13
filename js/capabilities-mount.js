@@ -6,6 +6,7 @@
 
 export const TOOL_MOUNT_RULES_SOURCE = Object.freeze({
   tool_registry: { text: /自注册|注册工具|自定义工具|管理工具|新建工具|删除工具|tool_registry|register (?:a )?(?:custom )?tool|self.?register/i },
+  set_final_report: { text: /最终产物|交付报告|产物报告|final[ _-]?report|deliverable/i },
   get_current_time: { text: /现在(?:几点|是几号|时间|日期)|当前时间|几点|今天|明天|昨天|这周|本周|上周|这个月|本月|今年|日期|星期|周几|几号|\bnow\b|\btoday\b|\btime\b|\bdate\b/i },
   get_browser_environment: { text: /浏览器|运行环境|user.?agent|分辨率|时区|语言设置|\bbrowser\b|\benvironment\b|\bplatform\b/i },
   generate_image: { text: /画(?:一|个|张|幅|出)|生成.{0,8}(?:图片|照片|插画|海报|头像|logo|封面|壁纸)|生图|文生图|插画|海报|\bimage\b|\bpicture\b|\billustration\b|\bposter\b|\bdraw\b|\blogo\b/i, exclude: /折线图|柱状图|饼图|散点图|图表|流程图|架构图|时序图|思维导图|关系图|类图|状态图|甘特图|依赖图|拓扑/i },

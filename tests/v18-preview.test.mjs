@@ -83,9 +83,9 @@ test('reduced-motion popover is immediate and does not create animations', () =>
 test('live catalog snapshot includes TeamoRouter V4.1 Flash 1017 and evidence-based low-cost labels', async () => {
   const { MODEL_CATALOG, MODEL_CATALOG_BY_ID } = await import('../js/model-catalog.js');
   const { FALLBACK_MODELS, resolveModelAlias } = await import('../js/config.js');
-  assert.equal(MODEL_CATALOG.length,68);assert.equal(new Set(MODEL_CATALOG.map(m=>m.id)).size,68);
+  assert.equal(MODEL_CATALOG.length,71);assert.equal(new Set(MODEL_CATALOG.map(m=>m.id)).size,71);
   assert.deepEqual(MODEL_CATALOG.filter(m=>m.newlyListed).map(m=>m.id).sort(),['MiniMax-M3','claude-haiku-5-5','doubao-seed-2.0-lite','gemini-4-argon','grok-4.7','kimi-k3.1-pro','mimo-v2.6-flash','mimo-v2.6-pro']);
-  assert.equal(FALLBACK_MODELS.length,57);assert.equal(FALLBACK_MODELS.some(m=>m.id.startsWith('kimi')),true);
+  assert.equal(FALLBACK_MODELS.length,60);assert.equal(FALLBACK_MODELS.some(m=>m.id.startsWith('kimi')),true);
   for(const [id,provider] of [['doubao-seed-2.1-pro','Doubao'],['kimi-k3','Kimi'],['MiniMax-M3','MiniMax'],['qwen3.8-max','Qwen']]) {
     const model=MODEL_CATALOG_BY_ID.get(id);assert.equal(model?.provider,provider,id);assert.ok(FALLBACK_MODELS.some(m=>m.id===id),id+' offline fallback');
   }
@@ -179,7 +179,7 @@ test('thumb down has its own downward path, with no second CSS or SVG rotation',
 // ── 2026-10-24：目录热度复核（补齐 TeamoRouter 清单、供应商排序与价格标签） ──
 test('2026-10-24 目录复核：热门按当前清单重排并补齐国产供应商标签', async () => {
   const { MODEL_CATALOG_BY_ID } = await import('../js/model-catalog.js');
-  const hotIds = ['MiniMax-M3','claude-fable-5-1','claude-haiku-5-5','claude-opus-5-5','claude-sonnet-5-5','deepseek-flash','deepseek-v4-pro','doubao-seed-2.1-pro','gemini-3.8-flash','gemini-4-argon','glm-5.3','glm-5.3-flash','gpt-6-astra','gpt-6-luna','gpt-6.1-sol','grok-4.7','kimi-k3.1-pro','mimo-v2.6-pro','qwen3.8-max'];
+  const hotIds = ['MiniMax-M3','claude-fable-5-1','claude-fable-5-2','claude-haiku-5-5','claude-opus-5-5','claude-sonnet-5-5','deepseek-flash','deepseek-v4-pro','doubao-seed-2.1-pro','gemini-3.8-flash','gemini-4-argon','gemini-4-carbon','glm-5.3','glm-5.3-flash','gpt-6-astra','gpt-6-luna','gpt-6.1-sol','grok-4.7','kimi-k3.1-pro','mimo-v2.6-pro','qwen3.8-max'];
   const { MODEL_CATALOG } = await import('../js/model-catalog.js');
   assert.deepEqual(MODEL_CATALOG.filter(m => m.hot).map(m => m.id).sort(), [...hotIds].sort(), '热门集合应与调研结论一致');
   assert.equal(MODEL_CATALOG_BY_ID.get('grok-4.6').hot, undefined, 'grok-4.6 已被 4.7 取代，不再标热门');

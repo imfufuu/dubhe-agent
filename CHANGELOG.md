@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026-11-09 十一项更新（TeamoRouter 模型/价格、识图修复、交互与安全）
+
+- 用 API key 实测 `/v1/models`（80 个 ID）与 `/v1/models/pricing`；加入 GPT Image 2.6 四变体（$0.02/张）与 Claude Fable 5.2（$8/$40）、Gemini 4 Carbon（$2/$10）、Hydrogen（$1.5/$7.5）官方价目；标签只保留「热门 / 低价」。
+- Midjourney 四宫格切分、识图空正文（隐藏思考吃光输出）兜底、调节器关闭动画、Workers AI 不计价、删除会话不切换网关模型、项目导入遵循审核开关、首次称谓弹窗与真实网名预设、取消验证码传回用户决策、个性化系统提示词、本地模型上下文 8192 + 历史裁剪。
+- 真实探测：生图 HTTP 200 返回 `b64_json`；识图 HTTP 200 但正文为空（20 thinking tokens），已修。详见 `UPDATE_2026_11_09_REPORT.md`。
+- 全量回归 **1657 项 / 89 文件 / 0 失败**。
+
+## 2026-11-09 四项：最终产物报告 / 对话模式身份声明 / 代码注册双门 / 对话模式 UI 降级
+
+- **最终产物报告**：新增 `set_final_report` 工具与 `js/final-report.js`，Agent 指定非内部工作区文件，回合结束自动展开面板并打开；完整登记到能力表/执行契约/工具目录/离线白名单。
+- **对话模式提示词**：`api.js` 的 `chatIdentityMessage()` 只注入一条简短身份声明（模型名 / 对话模式 / 无工具 / 仅模型测试），其余 system/developer 层全部过滤。
+- **代码注册**：`handler.kind=code`，先过 `tool-code-review.js` 静态安全初审，再走输出确认卡的用户确认；`tool-code-runtime.js` 提供受限执行器并说明 CSP 限制。自注册工具菜单移到设置页「网关」之后。
+- **对话模式 UI**：思考菜单退化为普通开关按钮、隐藏沙箱与联网、附件仅文本类且解析后直接拼进消息；逻辑抽出到 `js/ui-chat-mode.js` 以守住 `ui.js` 3000 行预算（2999 行，字节预算按新增接线调到 184 KB）。
+- 新增 `tests/v4-features.test.mjs`；全量回归 **1652 项 / 88 个文件 / 0 失败**。详见 `V4_FEATURES_REPORT.md`。
+
+## 2026-11-09 提示词限制条款：作用域、反例、禁止外推与先实测
+
+- 原句「Worker不能写internal/和.git/」易被外推为全局保护；实测确认限制只在 `execute_javascript` 的 `files` / `execute_python` 的 `FILES` 回写通道（`sanitizeWorkerFiles`），`write_file` 可写 `internal/`。
+- 中英核心提示词改为「作用域限定 + 反例」，并加入两条元规则：能力限制按字面作用域理解、禁止外推（未写出的对象/通道默认允许，全局性判断须实测确认）；边界存疑先做最小探针实测（写 → 验证 → 清理），禁止用全局词汇描述未经验证的限制范围。
+- `js/config.js` 参考提示词、`js/tools.js` 两个工具描述、`js/ui-strings.js` 设置页文案、`js/sandbox.js` 注释、`assets/knowledge/index.json` 同步；知识库索引校验通过。新增 `tests/prompt-boundaries.test.mjs`（含实测探针），详见 `PROMPT_SCOPE_REPORT.md`。
+
 ## 2026-11-09 旗帜复制语义 + 超轻量本地 LLM 真实测试
 
 - **复制语义**：新增 `js/flag-copy.js`；有标准 Unicode 表示（RI / tag / ZWJ）的旗帜复制时还原成 emoji，纯 PUA 设计复制成 `[flag]`；`text/plain` 与 `text/html` 都处理，普通复制零干预。`flag-directive.js` 新增 `unicodeFlagSequence()` 与 267 项 `FLAG_COPY_MAP`；`tests/flag-fonts.test.mjs` 增加 2 项回归。

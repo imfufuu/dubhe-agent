@@ -1,4 +1,5 @@
 import { focusForegroundWorkspace } from './modal-selection.js';
+import { effectiveModeration } from './ui-moderation-setting.js';
 import { resetPreviewSurface, isActiveUnderPath } from './project-preview-cleanup.js';
 import { projectIconType, projectIconSvg } from './project-icons.js';
 import { createProjectFS, isProjectUserPath } from './project-store.js';
@@ -471,7 +472,8 @@ export function openProjectMode({ store, agent, projectFileSystem = null }) {
       if (!segOk || !isProjectUserPath(path) || taken.has(path) || !destinationFree(path) || file.size > PM_IMPORT_MAX_BYTES) { skipped++; continue; }
       flash(T(`正在审核 ${rel}…`, `Reviewing ${rel}…`), true);
       try {
-        const result = await reviewProjectImport(file);
+        // 设置页关闭审核后，项目模式上传同样跳过本地审核（与全局开关一致）。
+        const result = effectiveModeration(store.state.settings) ? await reviewProjectImport(file) : { ok: true, content: await file.text() };
         if (!result.ok) { blocked++; reasons.push(`${rel}: ${result.reason || 'review'}`); continue; }
         if (taken.has(path) || !destinationFree(path)) { skipped++; continue; }
         projectFS.write(path, result.content); taken.add(path); done++;

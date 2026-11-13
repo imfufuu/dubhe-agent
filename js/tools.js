@@ -44,6 +44,7 @@ import { isOfflineModelId } from './offline-model-config.js';
 import { isOfflineToolAllowed } from './offline-policy.js';
 // 自注册工具注册表（声明式 handler + 用户确认门），让工具表在运行时可扩展。
 import { registeredToolDefinitions, isRegisteredToolName, invokeRegisteredTool, handleRegistryAction } from './tool-registry.js';
+import { setFinalReport } from './final-report.js';
 
 
 const STRUCTURED_DIAGRAM_RE = /(图表|统计图|折线图|柱状图|条形图|饼图|环形图|散点图|曲线图|趋势图|位移[-－—–]?时间图|路程[-－—–]?时间图|s[-－—–]?t\s*图|流程图|思维导图|脑图|架构图|时序图|甘特图|chart|line\s+chart|bar\s+chart|pie\s+chart|scatter\s+plot|flowchart|mind\s*map|architecture\s+diagram|sequence\s+diagram|mermaid|graphviz|DOT\s*(?:图|diagram|源码|source)|SVG\s*(?:图|diagram|源码|source|矢量))/i;
@@ -70,8 +71,15 @@ function gatewayRequestContext(ctx) {
 export const SUB_ATTACH_MAX = 5;
 export const TOOL_DEFS = [
   {
+    name: 'set_final_report',
+    description: '把沙箱工作区中的一个非内部文件设为本次任务的最终产物报告；回合结束后自动展开沙箱面板并打开它。路径必须是已存在的工作区相对路径，不能用 internal/ 或 .git/。',
+    parameters: { type: 'object', properties: {
+      path: { type: 'string', description: '报告文件相对路径，例如 report.md 或 outputs/summary.html' },
+    }, required: ['path'] },
+  },
+  {
     name: 'tool_registry',
-    description: '管理 Agent 自注册工具：action=list/read/register/update/delete/enable/disable/invoke/pending/help。可读取完整定义、删除或启停工具；注册、更新、删除、启停都需要用户在「调节器 → 自注册工具」里确认（首次调用返回 confirm_token，批准后带同一票据重试）。自注册工具名必须以 custom_ 开头，handler 只能是声明式白名单（constant / text_template / text_transform / calculator / timestamp / echo），不执行模型提供的代码，也不能覆盖或删除内置工具。',
+    description: '管理 Agent 自注册工具：action=list/read/register/update/delete/enable/disable/invoke/pending/help。可读取完整定义、删除或启停工具；注册、更新、删除、启停都需要用户在「调节器 → 自注册工具」里确认（首次调用返回 confirm_token，批准后带同一票据重试）。自注册工具名必须以 custom_ 开头，handler 可为声明式白名单（constant / text_template / text_transform / calculator / timestamp / echo）或 code（需先通过安全部门静态初审，再经用户确认）；不能覆盖或删除内置工具。',
     parameters: { type: 'object', properties: {
       action: { type: 'string', enum: ['list', 'read', 'register', 'update', 'delete', 'enable', 'disable', 'invoke', 'pending', 'help'] },
       name: { type: 'string', description: '自注册工具名（custom_ 前缀）' },
@@ -111,7 +119,7 @@ export const TOOL_DEFS = [
   { name: 'checklist', description: 'Task checklist for extremely complex multi-step work only (simple tasks do not use it). Create it BEFORE starting, with 3-12 concrete verifiable items; call again with the full list to update statuses as you go (pending / in_progress / done / failed / skipped). skipped = not applicable, with the reason in text. You may add, remove, rename or reorder items at any time by sending the full list. The turn cannot end while any item is neither done nor skipped. Do not repeat the checklist in your reply text; the UI shows it live. 仅用于极复杂的多步任务：开始前创建 3–12 个可验证项，执行中用完整列表重新调用更新状态；未全部 done 不得结束回合；不要在正文里重复清单。', parameters: { type:'object', properties: { items: { type:'array', maxItems: 30, description: 'Full checklist state (replaces the previous one)', items: { type:'object', properties: { id:{type:'string', description:'Short stable id, e.g. c1'}, text:{type:'string', description:'One concrete, verifiable step'}, status:{type:'string', enum:['pending','in_progress','done','failed','skipped']} }, required:['text','status'] } } }, required:['items'] } },
   {
     name: 'execute_javascript',
-    description: '在隔离的 Web Worker 沙箱中执行 JavaScript（支持顶层 await）。有 console、files，以及 Node 风格垫片：require（fs→映射到 files / path / buffer / util / events / crypto[sha256·sha1·md5·hmac·随机] / os / process / assert / url / querystring / timers）、Buffer、process、document.createElement("canvas")（OffscreenCanvas，await canvas.toDataURL()）。联网开启且中继可用时 fetch（仅 GET，经中继，≤8 次 / ≤2MB 每次）与 importScripts（加载 CDN 库，如 jsDelivr UMD 包）可用，否则调用会报「沙箱内网络未开启」；没有真实 DOM、XMLHttpRequest、WebSocket、child_process / http 等 Node 原生模块。files 是无原型的字典对象（Object.create(null)：files.constructor 为 undefined，用 Object.keys(files) / "k" in files 判断），键=完整相对路径，例 files["files/a.txt"] = "hi"。它是会话文件系统的完整快照：此前 write_file / 其它工具 / 上一次沙箱写的文件都在里面；本次对 files 的新增、修改、delete 在执行结束后同步回会话文件系统，后续任何工具（read_file / text_tool / 下一次 execute_*）都能看到，结果末尾的 files_keys 列出同步后的键。不熟悉就先探测：typeof console、Object.keys(files)。失败后先探测环境，不要换一个 API 名再猜。首段代码必须完整可运行；长命令保留源码 path，小错误最小补丁再按 path 执行。return 值或最后表达式作为结果。默认代码执行超时 30 秒；可传 timeout_sec（1–600 秒）为本次运行单独设定，超时会强制终止 Worker。',
+    description: '在隔离的 Web Worker 沙箱中执行 JavaScript（支持顶层 await）。有 console、files，以及 Node 风格垫片：require（fs→映射到 files / path / buffer / util / events / crypto[sha256·sha1·md5·hmac·随机] / os / process / assert / url / querystring / timers）、Buffer、process、document.createElement("canvas")（OffscreenCanvas，await canvas.toDataURL()）。联网开启且中继可用时 fetch（仅 GET，经中继，≤8 次 / ≤2MB 每次）与 importScripts（加载 CDN 库，如 jsDelivr UMD 包）可用，否则调用会报「沙箱内网络未开启」；没有真实 DOM、XMLHttpRequest、WebSocket、child_process / http 等 Node 原生模块。files 是无原型的字典对象（Object.create(null)：files.constructor 为 undefined，用 Object.keys(files) / "k" in files 判断），键=完整相对路径，例 files["files/a.txt"] = "hi"。它是会话文件系统的完整快照：此前 write_file / 其它工具 / 上一次沙箱写的文件都在里面；本次对 files 的新增、修改、delete 在执行结束后同步回会话文件系统，后续任何工具（read_file / text_tool / 下一次 execute_*）都能看到，结果末尾的 files_keys 列出同步后的键。不熟悉就先探测：typeof console、Object.keys(files)。失败后先探测环境，不要换一个 API 名再猜。首段代码必须完整可运行；长命令保留源码 path，小错误最小补丁再按 path 执行。return 值或最后表达式作为结果。默认代码执行超时 30 秒；可传 timeout_sec（1–600 秒）为本次运行单独设定，超时会强制终止 Worker。作用域限定：本沙箱回写通道（files 字典）不能写 internal/ 与 .git/，仅限该通道；write_file 工具不受此限制，可写 internal/（除非另有明确限制）。',
     parameters: {
       type: 'object',
       properties: {
@@ -124,7 +132,7 @@ export const TOOL_DEFS = [
   },
   {
     name: 'execute_python',
-    description: '在 Pyodide（WebAssembly Python 3）沙箱中执行 Python。提供 FILES 字典，键=完整相对路径，例 FILES["files/a.txt"] = "hi"。FILES 是会话文件系统的完整快照（含此前 write_file / 上一次沙箱写的文件），对它的增删改在执行结束后同步回会话文件系统，后续任何工具都能看到。没有 Node/浏览器宿主 API；沙箱禁网（requests / js.fetch 对任意网址都会被拒，只有装包时的 Pyodide CDN 与 PyPI 放行），要抓网页用 fetch_url。写入 FILES 的路径必须是合法相对路径，internal/ 与 .git/ 受保护。print 输出被捕获；最终结果赋给 result。code 必须完整可运行。可用 micropip / loadPackage 装第三方库（numpy、pandas 等）。本会话已装的包不会重装；刷新后运行时重建，会再 loadPackage（通常走浏览器缓存）。运行时常驻，仅会话首次需下载（约 10-30 秒）。默认用户代码执行超时 30 秒；可传 timeout_sec（1–600 秒）设定本次时限。冷启动和按需装包另有 120 秒准备窗口，不计入代码时限。',
+    description: '在 Pyodide（WebAssembly Python 3）沙箱中执行 Python。提供 FILES 字典，键=完整相对路径，例 FILES["files/a.txt"] = "hi"。FILES 是会话文件系统的完整快照（含此前 write_file / 上一次沙箱写的文件），对它的增删改在执行结束后同步回会话文件系统，后续任何工具都能看到。没有 Node/浏览器宿主 API；沙箱禁网（requests / js.fetch 对任意网址都会被拒，只有装包时的 Pyodide CDN 与 PyPI 放行），要抓网页用 fetch_url。写入 FILES 的路径必须是合法相对路径；本沙箱回写通道（FILES 字典）不能写 internal/ 与 .git/，此限制仅限该通道。反例：write_file 工具不受此限制，可写 internal/（除非另有明确限制）。print 输出被捕获；最终结果赋给 result。code 必须完整可运行。可用 micropip / loadPackage 装第三方库（numpy、pandas 等）。本会话已装的包不会重装；刷新后运行时重建，会再 loadPackage（通常走浏览器缓存）。运行时常驻，仅会话首次需下载（约 10-30 秒）。默认用户代码执行超时 30 秒；可传 timeout_sec（1–600 秒）设定本次时限。冷启动和按需装包另有 120 秒准备窗口，不计入代码时限。',
     parameters: {
       type: 'object',
       properties: {
@@ -1217,6 +1225,12 @@ async function executeToolBody(outerName, outerArgs, ctx) {
 
   try {
     switch (name) {
+      case 'set_final_report': {
+        try {
+          const p = setFinalReport(args.path, ctx.fs || null);
+          return `已把 ${p} 设为本次任务的最终产物报告；回合结束后会自动打开面板与该文件。`;
+        } catch (err) { return `set_final_report 失败：${String(err?.message || err)}`; }
+      }
       case 'browser_sandbox': {
         const supported = new Set(['action', 'entry', 'root', 'preview_id', 'selector', 'text', 'expression', 'width', 'height', 'full_page', 'wait_ms', 'path']);
         if (Object.keys(args).some((k) => !supported.has(k))) throw new Error('网页沙箱收到不支持的参数；禁止 URL、主机、端口或 shell 命令');

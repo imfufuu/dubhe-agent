@@ -21,6 +21,9 @@ export const MODEL_PRICING = {
   // Anthropic Claude
   'claude-opus-5-5':          { input: 4.0,   output: 20.0,  cachedInput: 0.2,   cacheCreation: 5.0, cacheCreation1h: 8.0 },
   'claude-sonnet-5-5':        { input: 2.0,   output: 10.0,  cachedInput: 0.1,   cacheCreation: 2.5, cacheCreation1h: 4.0 },
+  'claude-fable-5-2':         { input: 8.0,   output: 40.0,  cachedInput: 0.2,   cacheCreation: 10.0, cacheCreation1h: 16.0 },
+  'gemini-4-carbon':          { input: 2.0,   output: 10.0,  cachedInput: 0.1 },
+  'gemini-4-hydrogen':        { input: 1.5,   output: 7.5,   cachedInput: 0.075 },
   'claude-fable-5-1':         { input: 10.0,  output: 50.0,  cachedInput: 0.25,  cacheCreation: 12.5, cacheCreation1h: 20.0 },
   'claude-opus-5':            { input: 5.0,   output: 25.0,  cachedInput: 0.5,   cacheCreation: 6.25, cacheCreation1h: 10.0 },
   'claude-fable-5':           { input: 10.0,  output: 50.0,  cachedInput: 1.0,   cacheCreation: 12.5, cacheCreation1h: 20.0 },
@@ -120,6 +123,10 @@ export const VISION_MODEL_PRICING = {
 
 // 生图模型专用官方价格表（含按张阶梯官方价 per_call_tiers 与按 token 官方价）
 export const IMAGE_MODEL_PRICING = {
+  'gpt-image-2.6-sunburst': { id: 'gpt-image-2.6-sunburst', kind: 'image', mode: 'tier', priceSource: 'official', tiers: { '1k': 0.02, '2k': 0.02, '4k': 0.02 }, listTiers: { '1k': 0.2, '2k': 0.2, '4k': 0.2 }, label: 'GPT Image 2.6 Sunburst' },
+  'gpt-image-2.6-flare': { id: 'gpt-image-2.6-flare', kind: 'image', mode: 'tier', priceSource: 'official', tiers: { '1k': 0.02, '2k': 0.02, '4k': 0.02 }, listTiers: { '1k': 0.2, '2k': 0.2, '4k': 0.2 }, label: 'GPT Image 2.6 Flare' },
+  'gpt-image-2.6-sunburst-4k-upscale': { id: 'gpt-image-2.6-sunburst-4k-upscale', kind: 'image', mode: 'tier', priceSource: 'official', tiers: { '1k': 0.02, '2k': 0.02, '4k': 0.02 }, label: 'GPT Image 2.6 Sunburst 4K Upscale' },
+  'gpt-image-2.6-flare-4k-upscale': { id: 'gpt-image-2.6-flare-4k-upscale', kind: 'image', mode: 'tier', priceSource: 'official', tiers: { '1k': 0.02, '2k': 0.02, '4k': 0.02 }, label: 'GPT Image 2.6 Flare 4K Upscale' },
   // Midjourney（非官方，经 TeamoRouter /mj）：每个任务 $0.079，三档同价；每次调用按 1 张计
   midjourney: {
     id: 'midjourney', label: 'Midjourney', mode: 'tier', priceSource: 'teamorouter',
@@ -591,7 +598,7 @@ function rateEstimateLabel(kind, input, output, extras = '', language = getLangu
 export function priceBadgeFor(modelId, { fastMode = false, language = getLanguage(), gatewayId = '' } = {}) {
   const p = getModelPricing(modelId, { gatewayId });
   if (!p) return '';
-  if (p.mode === 'neurons') return language === 'en' ? 'Neurons · Cloudflare billing' : 'Neurons · Cloudflare 计费';
+  if (p.mode === 'neurons') return ''; // Workers AI 不计价（美元/神经元换算不可靠）
   if (p.kind === 'vision') return `${language === 'en' ? 'Vision' : '识图'} ${formatRate(p.input, language)}/${formatRate(p.output, language)} /M`;
   if (p.kind === 'image') {
     if (p.mode === 'tier' && p.tiers) return `${language === 'en' ? 'Image' : '生图'} ${formatCcy(p.tiers['1k'] || 0.06, language)}~${formatCcy(p.tiers['4k'] || 0.25, language)}/${language === 'en' ? 'image' : '张'}`;
@@ -901,14 +908,14 @@ export function summarizeTurnCost(arg1, opts = {}) {
   if (avItems.length) extraTags.push(`音视频分析 ${formatCcy(avCostUsd)}`);
   if (imageItems.length) extraTags.push(`生图 ${formatCcy(imageCostUsd)}`);
   if (videoGenItems.length) extraTags.push(`视频生成 ${formatCcy(videoGenCostUsd)}`);
-  const badgeText = turnGatewayId === 'cloudflare' ? 'Workers AI · Neurons（账单以 Cloudflare 为准）' : extraTags.length
+  const badgeText = turnGatewayId === 'cloudflare' ? 'Workers AI · 不计价（账单以 Cloudflare 为准）' : extraTags.length
     ? `≈ ${formatCcy(totalCostUsd)}（${extraTags.join(' + ')}）`
     : `≈ ${formatCcy(totalCostUsd)}`;
 
   const tooltipLines = [trTurn
     ? `本轮 TeamoRouter 折后预估总价：${formatCcy(totalCostUsd)}`
     : `本轮官方预估总价：${formatCcy(totalCostUsd)}`];
-  if (turnGatewayId === 'cloudflare') tooltipLines[0] = 'Workers AI 使用 Neurons；本地美元合计不代表实际账单或免费额度，以 Cloudflare 控制台为准。';
+  if (turnGatewayId === 'cloudflare') tooltipLines[0] = 'Workers AI 不计价；本地美元合计不代表实际账单或免费额度，以 Cloudflare 控制台为准。';
   else if (incomplete) tooltipLines.push('部分用量或费用未完整回传，以上费用不完整；以网关账单为准。');
   if (hasChatUsage && turnGatewayId !== 'cloudflare') {
     const mName = [...chatModels].join(', ') || defaultModel;

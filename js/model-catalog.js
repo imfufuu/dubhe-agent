@@ -10,16 +10,16 @@
 // K3 [1M] is user-confirmed; the incorrect K3.1 Pro [1M] ID is retired.
 export const RETIRED_MODEL_IDS = new Set(['kimi-k3.1-pro[1M]']);
 export const isRetiredModel = (id, gatewayId = 'teamorouter') => gatewayId === 'teamorouter' && RETIRED_MODEL_IDS.has(String(id || '').trim());
-export const MODEL_CATALOG_DATE = '2026-10-24';
+export const MODEL_CATALOG_DATE = '2026-11-09';
 // User-confirmed TeamoRouter availability list. Merge these IDs even if the public pricing endpoint omits an entry.
 export const TEAMOROUTER_CONFIRMED_MODEL_IDS = Object.freeze([
   'MiniMax-M3',
-  'claude-fable-5', 'claude-fable-5-1', 'claude-haiku-4-5', 'claude-haiku-4-5-20251001', 'claude-haiku-5-5',
+  'claude-fable-5', 'claude-fable-5-1', 'claude-fable-5-2', 'claude-haiku-4-5', 'claude-haiku-4-5-20251001', 'claude-haiku-5-5',
   'claude-opus-4-6', 'claude-opus-4-7', 'claude-opus-4-8', 'claude-opus-5', 'claude-opus-5-5',
   'claude-sonnet-4-6', 'claude-sonnet-5', 'claude-sonnet-5-5',
   'deepseek-flash', 'deepseek-flash-1017', 'deepseek-v4-flash', 'deepseek-v4-pro', 'deepseek-v4-pro-260425',
   'doubao-seed-2.0-lite', 'doubao-seed-2.1-lite', 'doubao-seed-2.1-pro',
-  'gemini-3.1-pro-preview', 'gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-3.6-flash', 'gemini-3.7-flash', 'gemini-3.8-flash', 'gemini-4-argon',
+  'gemini-3.1-pro-preview', 'gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-3.6-flash', 'gemini-3.7-flash', 'gemini-3.8-flash', 'gemini-4-argon', 'gemini-4-carbon', 'gemini-4-hydrogen',
   'glm-5.2', 'glm-5.3', 'glm-5.3-flash',
   'gpt-5.4', 'gpt-5.4-mini', 'gpt-5.5', 'gpt-5.6-luna', 'gpt-5.6-sol', 'gpt-5.6-terra',
   'gpt-6.1-terra',
@@ -30,6 +30,9 @@ export const TEAMOROUTER_CONFIRMED_MODEL_IDS = Object.freeze([
   'qwen3.7-flash', 'qwen3.7-max', 'qwen3.8-flash', 'qwen3.8-max',
 ]);
 export const MODEL_CATALOG = [
+  {"id": "claude-fable-5-2", "provider": "Anthropic", "displayName": "Claude Fable 5.2", "channel": "chat", "hot": true, "listPrice": {"currency": "USD", "input": 8.0, "output": 40.0, "cached_input": 0.2, "cache_write": 10.0}, "contextWindow": 1000000, "priceSource": "official", "priceSourceUrl": "https://platform.claude.com/docs/en/about-claude/pricing", "priceNote": "Anthropic 官方价 $8/$40 每百万 token（2026-11-09 API 价目表 list_cost 核实）。", "priceNoteEn": "Official Anthropic rate $8/$40 per million tokens, verified against the 2026-11-09 API price list."},
+  {"id": "gemini-4-carbon", "provider": "Google", "displayName": "Gemini 4 Carbon", "channel": "chat", "hot": true, "listPrice": {"currency": "USD", "input": 2.0, "output": 10.0, "cached_input": 0.1}, "contextWindow": 1000000, "priceSource": "official", "priceSourceUrl": "https://teamorouter.ai/models", "priceNote": "官方引入价 $2/$10 每百万 token（2026-11-30 后 $4/$20）。", "priceNoteEn": "Introductory official rate $2/$10 per million tokens ($4/$20 after Nov 30, 2026)."},
+  {"id": "gemini-4-hydrogen", "provider": "Google", "displayName": "Gemini 4 Hydrogen", "channel": "chat", "listPrice": {"currency": "USD", "input": 1.5, "output": 7.5, "cached_input": 0.075}, "contextWindow": 1000000, "priceSource": "official", "priceSourceUrl": "https://teamorouter.ai/models", "priceNote": "官方价 $1.50/$7.50 每百万 token，含免费额度。", "priceNoteEn": "Official rate $1.50/$7.50 per million tokens with a free tier."},
   {"id":"claude-fable-5","provider":"Anthropic","displayName":"Claude Fable 5","channel":"chat","listPrice":{"currency":"USD","input":10.0,"output":50.0,"cached_input":1.0,"cache_write":12.5},"contextWindow":1000000,"priceSource":"official","priceSourceUrl":"https://platform.claude.com/docs/en/about-claude/pricing","priceNote":"Anthropic 官方 Claude Platform API 价；5 分钟缓存写入为输入价的 1.25×，1 小时写入为 2×。估价优先使用 usage 报告的 TTL 分项；只有汇总写入量时按 5 分钟档估算。","priceNoteEn":"Official Anthropic Claude Platform API rate card. Cache writes are 1.25× base input for 5 minutes and 2× for 1 hour. Estimates use reported TTL-specific usage; aggregate-only writes default to the 5-minute rate."},
   {"id":"claude-fable-5-1","provider":"Anthropic","displayName":"Claude Fable 5.1","channel":"chat","hot":true,"listPrice":{"currency":"USD","input":10.0,"output":50.0,"cached_input":0.25,"cache_write":12.5},"contextWindow":1000000,"priceSource":"official","priceSourceUrl":"https://platform.claude.com/docs/en/about-claude/pricing","priceNote":"Anthropic 官方 Claude Platform API 价；5 分钟缓存写入为输入价的 1.25×，1 小时写入为 2×。估价优先使用 usage 报告的 TTL 分项；只有汇总写入量时按 5 分钟档估算。","priceNoteEn":"Official Anthropic Claude Platform API rate card. Cache writes are 1.25× base input for 5 minutes and 2× for 1 hour. Estimates use reported TTL-specific usage; aggregate-only writes default to the 5-minute rate."},
   {"id":"claude-haiku-4-5","provider":"Anthropic","displayName":"Claude Haiku 4.5","channel":"chat","listPrice":{"currency":"USD","input":1.0,"output":5.0,"cached_input":0.1,"cache_write":1.25},"cheap":true,"contextWindow":200000,"priceSource":"official","priceSourceUrl":"https://platform.claude.com/docs/en/about-claude/pricing","priceNote":"Anthropic 官方 Claude Platform API 价；5 分钟缓存写入为输入价的 1.25×，1 小时写入为 2×。估价优先使用 usage 报告的 TTL 分项；只有汇总写入量时按 5 分钟档估算。","priceNoteEn":"Official Anthropic Claude Platform API rate card. Cache writes are 1.25× base input for 5 minutes and 2× for 1 hour. Estimates use reported TTL-specific usage; aggregate-only writes default to the 5-minute rate."},

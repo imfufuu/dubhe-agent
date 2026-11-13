@@ -66,15 +66,11 @@ export function installModelPicker({ store, agent, toast, getBusy, openKeyModal,
     // generic branch below would render "$0.00/M" (and a zero-valued price chart). Always use
     // the Neurons rate card and the real serving provider instead.
     if (hit?.pricingUnit === 'neurons' || (hit?.id || '').startsWith('@cf/')) {
+      // 不计价：只说明账单口径，不显示 Neurons 费率，避免换算错误。
       const card = gatewayModelCard(store.state.gatewayId, hit.id) || hit;
-      const rates = Number.isFinite(Number(card.pricing?.input)) && Number.isFinite(Number(card.pricing?.output))
-        ? localeText(
-          `输入 ${Number(card.pricing.input).toLocaleString('zh-CN')} / 输出 ${Number(card.pricing.output).toLocaleString('zh-CN')} Neurons（每百万 token）`,
-          `${Number(card.pricing.input).toLocaleString('en-US')} input / ${Number(card.pricing.output).toLocaleString('en-US')} output Neurons per million tokens`)
-        : '';
       return localeText(
-        `Cloudflare Workers AI 托管${card.vendor ? ` · 原厂 ${card.vendor}` : ''}；按 Neurons 计费，非美元价目表。${rates} 实际账单与免费额度以 Cloudflare 控制台为准。`,
-        `Hosted by Cloudflare Workers AI${card.vendor ? ` · model author ${card.vendor}` : ''}; billed in Neurons, not USD. ${rates} Billing and free allowance are set by your Cloudflare account.`);
+        `Cloudflare Workers AI 托管${card.vendor ? ` · 原厂 ${card.vendor}` : ''}；本应用不计价，不显示美元/Neurons 换算。实际账单与免费额度以 Cloudflare 控制台为准。`,
+        `Hosted by Cloudflare Workers AI${card.vendor ? ` · model author ${card.vendor}` : ''}; the app does not price this model. Billing and free allowance are set by your Cloudflare account.`);
     }
     const p = hit?.listPrice;
     if (!p) return hit?.id || '';
@@ -239,7 +235,7 @@ export function installModelPicker({ store, agent, toast, getBusy, openKeyModal,
         item.innerHTML = isRouter
           ? `<span class="dd-item-id mono router-name">${esc(SMART_ROUTER_LABEL)}</span>
             <span class="dd-item-badges">
-              <span class="badge hot" title="${localeText('按任务类型 / 难度自动选模型', 'Auto-selects a model by task type and difficulty')}">${localeText('自动', 'Auto')}</span>
+
             </span>`
           : (local
             ? `<span class="dd-item-id mono">${esc(localModelName())}</span>
@@ -257,10 +253,8 @@ export function installModelPicker({ store, agent, toast, getBusy, openKeyModal,
                 </span>`
               : `<span class="dd-item-id mono">${esc(m.id)}</span>
               <span class="dd-item-badges">
-                ${hot ? `<span class="badge hot" title="${localeText('应用预设热门精选，非实时使用热度或质量实测排行', 'App-curated popular pick, not live usage popularity or benchmark rank')}">${localeText('热门', 'Popular')}</span>` : ''}
-                ${(Array.isArray(hit.tags) ? hit.tags : []).map((t) => `<span class="badge model-tag">${esc(t)}</span>`).join('')}
-                ${free ? '<span class="badge">FREE</span>' : (cheap ? `<span class="badge cheap" title="${esc(cheapBadgeTitle)}">${localeText('低价', 'Cheap')}</span>` : '')}
-                ${supportsVision(m.id) ? '<span class="badge vision" title="支持图片输入（多模态）"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg></span>' : ''}
+                ${hot ? `<span class="badge hot" title="${localeText('应用精选热门，非实时使用量排行', 'App-curated popular pick, not a live usage ranking')}">${localeText('热门', 'Popular')}</span>` : ''}
+                ${cheap ? `<span class="badge cheap" title="${esc(cheapBadgeTitle)}">${localeText('低价', 'Cheap')}</span>` : ''}
               </span>`));
         item.addEventListener('click', () => selectModel(m.id));
         g.appendChild(item);

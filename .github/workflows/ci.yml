@@ -184,6 +184,9 @@ jobs:
       - name: tests/project-run.test.mjs · regression
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/project-run.test.mjs
+      - name: tests/prompt-boundaries.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/prompt-boundaries.test.mjs
       - name: tests/reasoning-body.test.mjs · regression
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/reasoning-body.test.mjs
@@ -259,6 +262,12 @@ jobs:
       - name: tests/v19-features.test.mjs · regression
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/v19-features.test.mjs
+      - name: tests/v4-features.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/v4-features.test.mjs
+      - name: tests/v5-updates.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/v5-updates.test.mjs
       - name: tests/video-and-attachments.test.mjs · regression
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/video-and-attachments.test.mjs

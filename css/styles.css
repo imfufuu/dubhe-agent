@@ -3764,3 +3764,9 @@ html[data-flags-ready="pending"] .md-flag::after {
   .tuner-card { max-height: 88vh; }
   .tuner-seg-btn { padding: 7px 9px; }
 }
+
+/* 调节器：个性化系统提示词 / 首次进入称谓弹窗 */
+.tuner-personal { width: 100%; box-sizing: border-box; resize: vertical; min-height: 64px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--bg-soft); color: var(--fg); font: 12px/1.6 var(--sans); }
+.first-visit-presets { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+.first-visit-preset { cursor: pointer; }
+.first-visit-card { width: min(420px, calc(100vw - 40px)); }

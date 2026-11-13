@@ -842,3 +842,7 @@ JS/Python 支持 `path` 读取已存在源码代替重复 `code`；长内联 JS/
 - 旗帜渲染修复：切换标签页后彩色旗帜不再「短暂显现又整批隐身」——默认改用 BabelStone Flags PUA 单码位、显式加载并在标签页恢复时重载字体、阻止系统 emoji 字体抢占、字体未就绪时显示代码占位。研究与取舍见 [`FLAG_RENDERING_REPORT.md`](./FLAG_RENDERING_REPORT.md)。
 - 旗帜复制：Unicode 内旗帜复制成对应 emoji，纯 PUA 设计复制成 `[flag]` 占位符。
 - 超轻量本地 LLM：新增 [`REAL_MODEL_TEST_REPORT.md`](./REAL_MODEL_TEST_REPORT.md)（4 个真实推理样例与输出、llama.cpp 调试过程）、`js/recommended-models.js`（HF 直链与校验和）与 `tools/real-model-smoke.py`；设置页给出推荐模型下载入口。推荐 Qwen2.5-0.5B-Instruct Q4_K_M。
+- 提示词限制条款加「作用域 + 反例」与防外推 / 先实测元规则，避免把沙箱回写限制外推成 `internal/` 全局禁写；研究与实测证据见 [`PROMPT_SCOPE_REPORT.md`](./PROMPT_SCOPE_REPORT.md)。
+- Agent 可通过 `set_final_report` 指定任务最终产物报告，回合结束自动打开面板与文件；对话模式只发送一条身份声明、UI 降级（普通思考按钮 / 隐藏沙箱联网 / 文本附件直接解析）。
+- 自注册工具支持代码 handler（静态安全初审 + 用户确认两道门），菜单位置前置到设置页「网关」之后；见 [`V4_FEATURES_REPORT.md`](./V4_FEATURES_REPORT.md)。
+- 2026-11-09：TeamoRouter 新模型/官方价目、GPT Image 2.6 与 MJ 四宫格切分、识图空正文修复、Workers AI 不计价、首次称谓与个性化提示词等；见 [`UPDATE_2026_11_09_REPORT.md`](./UPDATE_2026_11_09_REPORT.md)。

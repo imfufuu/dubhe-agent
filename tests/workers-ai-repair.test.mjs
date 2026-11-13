@@ -98,12 +98,12 @@ test('model cards show Cloudflare as provider, the author as vendor, and Neurons
   assert.equal(card.provider, 'Cloudflare');
   assert.equal(card.vendor, 'OpenAI');
   assert.equal(card.agentTools, true);
-  assert.equal(card.pricing.currency, null);
-  assert.match(priceBadgeFor(model, { language: 'en' }), /Neurons/);
+  assert.equal(card.pricing, null, 'Workers AI 不计价，不再返回 Neurons 费率');
+  assert.equal(priceBadgeFor(model, { language: 'en' }), '', 'Workers AI 不计价');
   const cost = estimateChatCost(model, { input: 100, output: 20 });
   assert.equal(cost.unpriced, true);
   assert.equal(cost.costUsd, 0);
-  assert.match(cost.rateLabel, /Neurons/);
+  assert.match(cost.rateLabel, /不计价|unpriced|Cloudflare/i);
   const chatOnly = '@cf/qwen/qwq-32b';
   assert.equal(cfModelCard(chatOnly).agentTools, false);
   assert.equal(isModelForGateway('cloudflare', chatOnly), true);

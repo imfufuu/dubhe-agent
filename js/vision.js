@@ -93,12 +93,15 @@ async function oneShot(body, apiKey, signal, { gatewayId = DEFAULT_GATEWAY_ID, g
     ? { text: (json.content || []).filter((part) => part && part.type === 'text').map((part) => part.text || '').join(''), finishReason: json.stop_reason || '' }
     : extractChoiceText(json);
   if (json?.choices?.[0]?.message?.refusal) throw new Error(`识图服务商拒绝处理：${String(json.choices[0].message.refusal).slice(0, 300)}`);
-  if (!text) throw new Error('识图接口没有返回内容');
+  // 2026-11-09 实测：DeepSeek 识图可能 HTTP 200 但 content 为空，输出预算全花在隐藏思考上。
+  // 先把 reasoning_content 作为兜底，再交给 runVisionTurns 做一次「关闭思考」重发。
+  const msg = json?.choices?.[0]?.message || json || {};
+  const reasoning = String(msg.reasoning_content || msg.reasoning || json?.reasoning_content || '').trim();
   const u = json && json.usage ? {
     input: Number(json.usage.prompt_tokens ?? json.usage.input_tokens ?? 0) || 0,
     output: Number(json.usage.completion_tokens ?? json.usage.output_tokens ?? 0) || 0,
   } : null;
-  return { text, finishReason, usage: u };
+  return { text, finishReason, usage: u, reasoning };
 }
 
 // 视觉接口兼容 MIME 白名单（DeepSeek/OpenAI/Claude/Gemini 共通支持的格式）：
@@ -206,6 +209,7 @@ function wantsReasoningOff(model) {
 async function runVisionTurns({ model, content, apiKey, signal, onUsage, promptLen = 0, imageCount = 0, videoSeconds = 0, audio = false, gatewayId = DEFAULT_GATEWAY_ID, gatewayBaseUrl = '', beforeRequest, noReplay = false }) {
   const messages = [{ role: 'user', content }];
   let disableReasoning = wantsReasoningOff(model);
+  let emptyRetry = false;
   const parts = [];
   let totalInput = 0;
   let totalOutput = 0;
@@ -235,9 +239,19 @@ async function runVisionTurns({ model, content, apiKey, signal, onUsage, promptL
       totalInput += shot.usage.input;
       totalOutput += shot.usage.output;
     }
-    parts.push(shot.text);
+    let text = String(shot.text || '');
+    if (!text.trim()) {
+      if (String(shot.reasoning || '').trim()) text = String(shot.reasoning).trim();
+      else if (!emptyRetry) {
+        // 隐藏思考吃光输出预算：强制关闭思考并明确要求直接作答，只重试一次（避免重复计费式轮询）。
+        emptyRetry = true; disableReasoning = true; i -= 1;
+        messages[0] = { ...messages[0], content: [...(Array.isArray(messages[0].content) ? messages[0].content : []), { type: 'text', text: '请直接给出简短答案，不要只在内部思考。' }] };
+        continue;
+      } else throw new Error('识图接口只返回了隐藏思考、没有正文；已尝试关闭思考重发，请勿自动重试。');
+    }
+    parts.push(text);
     if (!isLengthStop(shot.finishReason)) break;
-    messages.push({ role: 'assistant', content: shot.text });
+    messages.push({ role: 'assistant', content: text });
     messages.push({ role: 'user', content: '上次输出因长度上限被截断。请从中断处紧接着继续写完，不要重复已输出的内容，不要道歉或加前言。' });
   }
   const fullText = parts.join('');

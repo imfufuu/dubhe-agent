@@ -3,8 +3,9 @@ import { policyTextHeuristic } from './local-text-policy.js';
 export const USER_SALUTATION_KEY = 'dubhe.user-salutation.v1';
 export const MAX_USER_SALUTATION_LENGTH = 16;
 
-const SAFE_DEFAULTS_ZH = ['小星', '青禾', '远山', '云舟', '知微', '小满', '星野', '清和', '北辰', '拾光', '阿澈', '听雨', '行舟', '青松', '小岚', '一诺', '沐风', '向晚', '麦芽', '秋白'];
-const SAFE_DEFAULTS_EN = ['Nova', 'Sage', 'River', 'Sky', 'Sunny', 'Robin', 'Avery', 'Rowan', 'Riley', 'Quinn', 'Casey', 'Taylor', 'Jamie', 'Morgan', 'Reese', 'Alex'];
+const SAFE_DEFAULTS_ZH = ['阿泽', '小北', '橙子', '林一', '南风', '栗子', '阿柒', '小舟', '沐沐', '阿澈', '柚子', '阿屿', '小麦', '知了', '阿禾', '小鹿', '青柠', '阿南', '豆子', '山茶'];
+export const SALUTATION_PRESETS = Object.freeze(['阿泽', '小北', '橙子', '林一', '南风', '栗子', '阿柒', '小舟', '沐沐', '柚子', 'Alex', 'Sam', 'Jordan', 'Robin']);
+const SAFE_DEFAULTS_EN = ['Alex', 'Sam', 'Jordan', 'Robin', 'Casey', 'Riley', 'Jamie', 'Morgan', 'Taylor', 'Avery', ' Quinn', 'Reese', 'Rowan', 'Sage', 'Skyler', 'Drew'].map(x => x.trim());
 const CONTROL_CHARS = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2060-\u206f]/u;
 const ALLOWED_CHARS = /^[\p{L}\p{N}\p{M} _.'’·-]+$/u;
 let memoryFallback = '';

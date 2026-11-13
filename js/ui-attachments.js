@@ -151,9 +151,26 @@ export function installAttachments({ composer, toast, safeImgSrc, fmtSize, onCha
     return { dataUrl, mime: outMime, scaled: true, origW, origH, newW: width, newH: height };
   }
 
+  let chatMode = false;
+  const TEXT_EXT_RE = /\.(?:txt|md|markdown|json|csv|tsv|log|xml|ya?ml|ini|css|js|mjs|cjs|ts|py|html?|svg|tex|sql|toml|conf)$/i;
+  async function addTextOnlyFiles(files) {
+    for (const f of files) {
+      if (pending.length >= MAX_FILES) { toast(`单次最多 ${MAX_FILES} 个附件`, 'warn'); break; }
+      const isText = TEXT_EXT_RE.test(f.name) || /^text\//i.test(f.type) || /\b(?:json|xml|javascript)\b/i.test(f.type);
+      if (!isText) { toast(`${f.name}：对话模式仅支持文本类附件`, 'warn'); continue; }
+      try {
+        const parsed = await readAs('text', f);
+        pending.push({ id: Math.random().toString(36).slice(2), kind: 'text', name: f.name, size: f.size, text: String(parsed).slice(0, 200000) });
+        toast(`${f.name}：已解析文本，发送时直接传入`, 'ok', 2400);
+      } catch { toast(`${f.name}：文本解析失败`, 'err'); }
+    }
+    renderAttachChips();
+    if (onChange) onChange();
+  }
   async function addFiles(fileList) {
     const files = [...(fileList || [])];
     if (!files.length) return;
+    if (chatMode) return addTextOnlyFiles(files);
     for (const f of files) {
       if (pending.length >= MAX_FILES) { toast(`单次最多 ${MAX_FILES} 个附件`, 'warn'); break; }
       try {
@@ -429,6 +446,7 @@ export function installAttachments({ composer, toast, safeImgSrc, fmtSize, onCha
     });
   }
   return {
+    setChatMode: (v) => { chatMode = !!v; },
     hasPending: () => pending.length > 0,
     takePending: () => { const atts = pending; pending = []; renderAttachChips(); return atts; },
     addFiles,

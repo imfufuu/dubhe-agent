@@ -3,9 +3,9 @@ export const OFFLINE_MODEL_ID = 'local/gguf';
 export const LEGACY_OFFLINE_MODEL_IDS = Object.freeze([
   'local/qwen2.5-1.5b-instruct-heretic-q4_k_m',
 ]);
-export const OFFLINE_MODEL_CONTEXT_SIZE = 4096;
+export const OFFLINE_MODEL_CONTEXT_SIZE = 8192; // 2026-11-09：修复 7248 token 请求超出 4096 上下文
 // Reserve room for output and template/tool overhead in the local context.
-export const OFFLINE_MODEL_CONTEXT_BUDGET = 3072;
+export const OFFLINE_MODEL_CONTEXT_BUDGET = 6144;
 export const OFFLINE_MODEL_MAX_OUTPUT_TOKENS = 768;
 export const OFFLINE_MODEL_DISPLAY_NAME = '本地 GGUF';
 export const OFFLINE_MODEL_PROVIDER_ZH = '本地模型';

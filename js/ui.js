@@ -38,6 +38,7 @@ import { shortSuggest } from './commands.js';
 import { getOrCreateUserSalutation, buildWelcomeGreeting } from './user-salutation.js';
 import { installShiftEnterGuard } from './composer-newline-guard.js';
 import { copyText } from './copy-text.js';
+import { installChatModeUI, installFinalReportOpener, toggleChatThinking, chatModeThinkingTitle, sendChatTurn } from './ui-chat-mode.js';
 import { installWelcomeMotion } from './ui-welcome-motion.js?v=2026.10.25.1';
 import { paintReasoningBlocks } from './ui-reasoning-motion.js?v=2026.10.25.1';
 import { summarizeTurnCost, formatCcy, turnCostTitle, turnCostTipParts } from './pricing.js';
@@ -385,6 +386,7 @@ export function mountUI(store, agent) {
     thinkingToggle.title = on
       ? localeText(`思考强度：${reasoningLevelLabel(store.state.settings.reasoningLevel)} · 点击调整`, `Reasoning: ${reasoningLevelLabel(store.state.settings.reasoningLevel)} · Click to adjust`)
       : localeText('思考已关闭 · 点击开启', 'Reasoning off · Click to enable');
+    if (document.documentElement.getAttribute('data-chat-mode') === '1') thinkingToggle.title = chatModeThinkingTitle(localeText);
     syncCapLine();
   };
   const renderThinkMenu = () => {
@@ -410,6 +412,7 @@ export function mountUI(store, agent) {
   };
   thinkingToggle.addEventListener('click', (e) => {
     e.stopPropagation();
+    if (document.documentElement.getAttribute('data-chat-mode') === '1') { toggleChatThinking({ store, syncThinking, closeThinkMenu }); return; }
     if (thinkMenu && thinkMenu.classList.contains('open')) closeThinkMenu();
     else openThinkMenu();
   });
@@ -711,7 +714,8 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
         const busyAtDelete = getBusy();
         if (busyAtDelete && wasActive) return toast('当前会话正在输出，不能删这一条', 'warn');
         if (!confirm(`删除会话「${s.title || '新对话'}」？不可恢复。`)) return;
-        store.deleteSession(s.id);
+        // 删除会话不改变用户当前选择的网关与模型（会话级恢复只在主动切换时发生）。
+        const keptGateway = store.state.gatewayId, keptModel = store.state.model; store.deleteSession(s.id); store.state.gatewayId = keptGateway; store.state.model = keptModel;
         if (wasActive) {
           // 删除当前会话后，若自动落到另一个有内容的会话，则切回空白草稿；非当前会话绝不打断正在运行的任务。
           if ((store.state.messages || []).length && typeof store.ensureDraft === 'function') store.ensureDraft();
@@ -722,8 +726,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
         }
         // 删除会触发 store.hydrate()（按会话恢复网关/模型），顶栏与能力行必须同步刷新，
         // 否则随后切到其他会话时显示的仍是上一次的网关/模型。
-        updateModelBtn(); syncCapLine();
-        renderSessions(); updateStats();
+        updateModelBtn(); syncCapLine(); renderSessions(); updateStats();
         setPanelCollapsed(true);
         if (!busyAtDelete) setStatus('idle');
         toast(wasActive ? '会话已删除，已回到新对话' : '会话已删除');
@@ -967,7 +970,8 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     if (filesTab && !filesTab.classList.contains('on')) filesTab.click();
     openFileViewer(path);
   };
-  renderFiles();
+  const chatModeUI = installChatModeUI({ store, thinkingToggle, thinkMenu, syncThinking, getAttachments: () => attachmentsRef, $ });
+  installFinalReportOpener({ setPanelCollapsed, openFileViewer }); renderFiles();
   // ── 消息渲染 ──────────────────────────────────────────────────────────
   function loadLastSuggest() {
     try { return JSON.parse(sessionStorage.getItem('dubhe.suggest.last') || '[]'); } catch { return []; }
@@ -2287,7 +2291,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
   });
 
   // ── 附件：见 ui-attachments.js（按钮 / 相机 / 拖拽 / 粘贴 → addFiles；发送时 takePending()）──
-  const attachments = installAttachments({ composer, toast, safeImgSrc, fmtSize, onChange: () => syncSendButton() }); attachmentsRef = attachments;
+  const attachments = installAttachments({ composer, toast, safeImgSrc, fmtSize, onChange: () => syncSendButton() }); attachmentsRef = attachments; chatModeUI.sync();
 
   // ── 输入区 ────────────────────────────────────────────────────────────
   let composerFollowFrame = 0;
@@ -2376,7 +2380,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
   // 发送按钮：运行中（停止态）始终可点；空闲时输入为空且无附件则禁用（灰色）
   function syncSendButton() { if (sendBtn) sendBtn.disabled = !getBusy() && !(composer.value.trim() || attachmentsRef?.hasPending()); }
   function doSend() {
-    const text = composer.value.trim();
+    let text = composer.value.trim();
     if (!text && !attachments.hasPending()) return;
     if (store.state.model === '__system__') {
       if (getBusy()) return;
@@ -2390,7 +2394,8 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     pendingSendOrigin = composer.getBoundingClientRect();
     composer.value = ''; saveComposerDraft(); autoGrow();
     const atts = attachments.takePending();
-    agent.send(text, atts);
+    if (document.documentElement.getAttribute('data-chat-mode') === '1') sendChatTurn({ text, atts, send: (t, a) => agent.send(t, a) });
+    else agent.send(text, atts);
   }
 
   // ── /system 隐藏通道：命令识别器见 ui-system-commands.js（P4 拆分）──

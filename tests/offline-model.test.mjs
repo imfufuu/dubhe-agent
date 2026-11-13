@@ -71,8 +71,8 @@ test('offline model identity is a generic GGUF slot and recognizes the former lo
   assert.ok(LEGACY_OFFLINE_MODEL_IDS.includes('local/qwen2.5-1.5b-instruct-heretic-q4_k_m'));
   assert.equal(isOfflineModelId(LEGACY_OFFLINE_MODEL_IDS[0]), true);
   assert.equal(isOfflineModelId('gpt-5.6-sol'), false);
-  assert.equal(OFFLINE_MODEL_CONTEXT_SIZE, 4096);
-  assert.equal(OFFLINE_MODEL_CONTEXT_BUDGET, 3072);
+  assert.equal(OFFLINE_MODEL_CONTEXT_SIZE, 8192);
+  assert.equal(OFFLINE_MODEL_CONTEXT_BUDGET, 6144);
   assert.equal(MAX_SINGLE_GGUF_BYTES, 16 * 1024 ** 3, '单个 GGUF 上限已放宽到 16 GiB');
 });
 
@@ -202,7 +202,7 @@ test('local inference passes the OPFS Blob array to Wllama 3.8.1 and never fetch
       modelFileProvider: async () => ({ file: fileA, metadata: { fileName: 'model-a.gguf' } }),
     });
     assert.deepEqual(loaded[0].value, [fileA], 'loadModel receives a local Blob array, not a Model URL');
-    assert.equal(loaded[0].options.n_ctx, 4096);
+    assert.equal(loaded[0].options.n_ctx, 8192);
     assert.equal(request.model, OFFLINE_MODEL_ID);
     assert.equal(request.stream, true);
     assert.equal('max_tokens' in request, false, '本地推理不再指定最大输出 token（避免 4096 上下文报错）');

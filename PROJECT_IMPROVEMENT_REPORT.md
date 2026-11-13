@@ -4,7 +4,7 @@
 
 | 检查项 | 命令 / 方法 | 结果 |
 |---|---|---|
-| 全量回归 | `node tools/run-tests.mjs` | **1644 项 / 86 个文件真跑 / 0 失败**（含 Python 侧 89 项） |
+| 全量回归 | `node tools/run-tests.mjs` | **1652 项 / 88 个文件真跑 / 0 失败**（含 Python 侧 89 项） |
 | 新增回归 | `tests/phase-b2.test.mjs`、`tests/tuner-ui.test.mjs` 重写 | 5 + 5 项全通过；修回 `agent-runtime` / `agent` / `document-skills` / `offline-model` 的旧断言 |
 | 语法 | `node --check` 覆盖 Worker + 全部新增/修改 `js/*.js` + 新测试 | 全部通过 |
 | 服务端语法 | `python -m py_compile server.py`（run-tests 内置） | 通过 |
@@ -69,4 +69,4 @@
 
 ## 4. 一句话结论
 
-功能面与回归覆盖已经扎实（1644 项零失败），**最值得投入的仍是「公开 Workers AI 网关的访问控制 + 可观测性」与「9.75 MB 字体 WOFF2 化」**；其次是为对话模式裸聊、16 GiB/128 MB 大文件补真实浏览器验证，避免「代码支持」与「真机可用」之间出现落差。
+功能面与回归覆盖已经扎实（1652 项零失败），**最值得投入的仍是「公开 Workers AI 网关的访问控制 + 可观测性」与「9.75 MB 字体 WOFF2 化」**；其次是为对话模式裸聊、16 GiB/128 MB 大文件补真实浏览器验证，避免「代码支持」与「真机可用」之间出现落差。

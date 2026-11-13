@@ -47,6 +47,7 @@ export const CAPABILITY_REGISTRY = Object.freeze({
   tool_library: R('invariantCore', 'local', { core: 15 }),
   // 自注册工具管理入口：按需挂载（非核心），本地注册表变更全部经用户确认。
   tool_registry: R('invariantCore', 'local'),
+  set_final_report: R('invariantCore', 'local'),
   document_tool: R('invariantCore', 'fs-write', { heavy: true }),
   xlsx_tool: R('invariantCore', 'fs-write', { heavy: true }),
   knowledge_search: R('invariantCore', 'local', { core: 13, parallel: true, readOnly: true }),

@@ -2,18 +2,21 @@
 // Agent 可以在运行时通过 `tool_registry` 工具注册、读取、更新、启用/停用和删除自己的工具，
 // 并在之后的回合里像内置工具一样调用它们。安全边界（刻意保守）：
 //   · 名称强制 custom_ 前缀，绝不能覆盖或删除任何内置工具；
-//   · handler 是「声明式」白名单（模板 / 文本变换 / 安全算式 / 常量 / 时间 / 回显），
-//     不接受 JS 源码、eval、URL 或任意 shell —— Agent 无法用它给自己造一个执行后门；
+//   · handler 可为声明式白名单，也可为 code；代码类必须先过安全部门静态初审
+//     （禁用网络 / 全局对象 / 循环 / 动态求值），再经用户确认卡批准，执行走受限运行时；
 //   · 所有变更（register/update/delete/enable/disable）必须持一次性用户确认票据；
 //     Agent 只能拿到「待确认请求」，批准动作只存在于 UI，工具侧不提供 approve；
 //   · 最多 24 个工具 / 64 KiB，本地持久化，可按名称读取完整定义（含 handler 配置）审计。
 // 纯逻辑模块：浏览器用 localStorage，Node 测试环境自动退回内存存储。
+import { reviewToolCode } from './tool-code-review.js';
+import { runToolCode } from './tool-code-runtime.js';
+
 const STORAGE_KEY = 'dubhe.agent.self-tools.v1';
 const MAX_TOOLS = 24;
 const MAX_BYTES = 64 * 1024;
 const APPROVAL_TTL_MS = 5 * 60 * 1000;
 const NAME_RE = /^custom_[a-z0-9_]{1,48}$/;
-export const HANDLER_KINDS = Object.freeze(['constant', 'text_template', 'text_transform', 'calculator', 'timestamp', 'echo']);
+export const HANDLER_KINDS = Object.freeze(['constant', 'text_template', 'text_transform', 'calculator', 'timestamp', 'echo', 'code']);
 const TRANSFORM_OPS = Object.freeze(['upper', 'lower', 'trim', 'reverse', 'length', 'json']);
 
 let memoryStore = null;
@@ -118,8 +121,15 @@ function validateDefinition(def) {
     if (!/^[a-z0-9_]{1,32}$/.test(key)) throw new Error(`参数名不合法：${key}`);
     if (!['string', 'number', 'integer', 'boolean'].includes(String(spec?.type || ''))) throw new Error(`参数 ${key} 的 type 不合法`);
   }
-  const handler = def.handler && typeof def.handler === 'object' ? def.handler : null;
+  let handler = def.handler && typeof def.handler === 'object' ? def.handler : null;
   if (!handler || !HANDLER_KINDS.includes(handler.kind)) throw new Error(`handler.kind 必须是 ${HANDLER_KINDS.join(' / ')} 之一`);
+  if (handler.kind === 'code') {
+    // 第一道门：安全部门静态初审。未通过的代码连用户确认环节都进不去。
+    const src = String(handler.code || '');
+    const review = reviewToolCode(src);
+    if (!review.approved) throw new Error(`安全初审未通过：${review.reasons.join('；')}`);
+    handler = { ...handler, code: src, review: { policy: review.policy, approved: true, checkedAt: review.checkedAt } };
+  }
   if (handler.kind === 'text_template' && (typeof handler.template !== 'string' || handler.template.length > 2000)) throw new Error('text_template 需要不超过 2000 字符的 template');
   if (handler.kind === 'text_transform' && !TRANSFORM_OPS.includes(handler.op)) throw new Error(`text_transform.op 必须是 ${TRANSFORM_OPS.join(' / ')} 之一`);
   if (handler.kind === 'constant' && typeof handler.value !== 'string') throw new Error('constant 需要字符串 value');
@@ -154,7 +164,9 @@ export function registerTool(def, { confirmToken = '', origin = 'agent' } = {}) 
   const clean = validateDefinition(def);
   if (load().some((t) => t.name === clean.name)) return { ok: false, error: `工具 ${clean.name} 已存在；请用 update 修改或先 delete。` };
   if (load().length >= MAX_TOOLS) return { ok: false, error: `最多 ${MAX_TOOLS} 个自注册工具。` };
-  return mutate('register', `注册新工具 ${clean.name}（${clean.handler.kind}）`, confirmToken, (list) => {
+  // 第二道门：用户确认（输出里的确认卡）。代码工具的确认摘要里明示初审结论。
+  const gate = clean.handler.kind === 'code' ? '，已通过安全初审，仍需你确认' : '';
+  return mutate('register', `注册${clean.handler.kind === 'code' ? '代码' : '声明式'}工具 ${clean.name}（${clean.handler.kind}${gate}）`, confirmToken, (list) => {
     const now = new Date().toISOString();
     list.push({ ...clean, enabled: true, origin, createdAt: now, updatedAt: now });
     return { tool: clean.name };
@@ -269,6 +281,7 @@ export function invokeRegisteredTool(name, args = {}, { confirmToken = '' } = {}
   const a = checkArgs(tool, args);
   const h = tool.handler || {};
   switch (h.kind) {
+    case 'code': return runToolCode(h.code || '', a);
     case 'constant': return String(h.value || '');
     case 'text_template': return renderTemplate(h.template || '', a);
     case 'text_transform': {
@@ -324,7 +337,7 @@ export function handleRegistryAction(args = {}, ctx = {}) {
         'tool_registry：自注册工具的注册 / 读取 / 管理 / 调用。',
         '可用 action：list, read, register, update, delete, enable, disable, invoke, pending, help。',
         'register/update/delete/enable/disable 都需要用户确认：第一次调用返回 confirm_token，',
-        '用户在「对话输出的确认卡」批准后，带同一个 confirm_token 重试即可（票据一次性、5 分钟有效）。',
+        '代码类 handler 还必须先通过安全部门静态初审（禁用网络/全局/循环/动态求值等）；之后仍需用户在「对话输出的确认卡」批准，带同一个 confirm_token 重试即可（票据一次性、5 分钟有效）。',
         `名称必须 custom_ 开头；handler.kind：${HANDLER_KINDS.join(' / ')}；模型提供的代码永远不会被执行。`,
         'definition 示例：{name:"custom_greet",description:"打招呼",parameters:{type:"object",properties:{who:{type:"string"}},required:["who"]},handler:{kind:"text_template",template:"你好，{{who}}！"}}',
       ].join('\n');

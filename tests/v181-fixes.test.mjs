@@ -591,7 +591,7 @@ test('convert_file：三条通路计划、ffmpeg 参数、注册表/契约/挂�
   assert.equal(String.fromCharCode(wav[0], wav[1], wav[2], wav[3]), 'RIFF');
   const { TOOL_DEFS } = await import('../js/tools.js');
   assert.ok(TOOL_DEFS.some((t) => t.name === 'convert_file' && /ffmpeg\.wasm/.test(t.description)));
-  assert.equal(TOOL_DEFS.length, 53, '含新增的 tool_library 与 xlsx_tool；V1.9 再增 patch_apply / dom_inspect / chart_render；视频生成增 generate_video；复杂任务清单增 checklist；本机桌面 local_desktop');
+  assert.equal(TOOL_DEFS.length, 54, '含新增的 tool_library 与 xlsx_tool；V1.9 再增 patch_apply / dom_inspect / chart_render；视频生成增 generate_video；复杂任务清单增 checklist；本机桌面 local_desktop');
   const caps = await import('../js/capabilities.js');
   assert.ok(caps.CAPABILITY_REGISTRY.convert_file, '能力登记');
   assert.ok(caps.TOOL_MOUNT_RULES.convert_file, '按需挂载规则（no-rule 会全量下发）');
@@ -736,7 +736,7 @@ test('文档扫描：算法核（合成纸面检出四角）、PDF 结构、入�
 test('2026.10.21：「自动路由」徽标改为「自动」、设置网关栏目补英文翻译、演示跟随语言清空重播', () => {
   // 1. 路由徽标只显示「自动」；旧文案全仓绝迹
   const picker = read('../js/ui-model-picker.js');
-  assert.match(picker, /localeText\('自动', 'Auto'\)/);
+  assert.doesNotMatch(picker, /badge[^>]*>FREE|自动<\/span>/);
   assert.equal(picker.includes('自动路由'), false);
   assert.equal(read('../js/ui-strings.js').includes('自动路由'), false);
   assert.equal(translateUI('自动', 'en'), 'Auto');

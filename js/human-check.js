@@ -96,7 +96,7 @@ export function solveHumanChallenge({ origin, siteKey, signal } = {}) {
       pending = null;
       resolve(value || '');
     };
-    cancel.addEventListener('click', () => finish(''));
+    cancel.addEventListener('click', () => { try { globalThis.dispatchEvent?.(new CustomEvent('dubhe:turnstile-cancelled')); } catch { /* noop */ } finish(''); });
     if (signal) {
       signal.addEventListener('abort', () => finish(''), { once: true });
     }

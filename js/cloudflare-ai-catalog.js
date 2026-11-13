@@ -93,6 +93,7 @@ export function cfModelCard(id) {
     tags: cfModelTags(id),
     plannedDeprecation: model.plannedDeprecation || null,
     // Neurons, not USD: never let a USD rate card render a bogus chart for hosted models.
-    pricing: { unit: 'neurons', input: model.input, output: model.output, currency: null },
+    // 2026-11-09：不再把 Neurons 费率喂给美元价目表/图表，避免换算错误。
+    pricing: null,
   };
 }
