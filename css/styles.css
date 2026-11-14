@@ -3314,6 +3314,10 @@ html:lang(de) .tok-row > span { min-width: 0; overflow-wrap: anywhere; }
 .human-check-widget{min-height:66px;display:flex;justify-content:center}
 .human-check-cancel{align-self:flex-end;border:1px solid var(--line,rgba(127,127,127,.3));background:var(--bg-soft,transparent);color:inherit;border-radius:8px;padding:6px 14px;cursor:pointer;font:inherit;font-size:13px}
 .human-check-cancel:hover{background:var(--bg-hover,rgba(127,127,127,.12))}
+.human-check-retry{align-self:flex-end;border:1px solid var(--line,rgba(127,127,127,.3));background:var(--bg-soft,transparent);color:inherit;border-radius:8px;padding:6px 14px;cursor:pointer;font:inherit;font-size:13px}
+.human-check-retry:hover{background:var(--bg-hover,rgba(127,127,127,.12))}
+.human-check-card>:where(.human-check-retry,.human-check-cancel)+.human-check-cancel{margin-left:8px}
+.human-check-card{flex-wrap:wrap}
 
 /* ── 文稿扫描：全屏取景（第 18 条）── */
 .scan-modal.scan-fs-on .scan-video, .scan-modal.scan-fs-on .scan-canvas { max-height: calc(100dvh - 170px); }
@@ -3770,3 +3774,17 @@ html[data-flags-ready="pending"] .md-flag::after {
 .first-visit-presets { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
 .first-visit-preset { cursor: pointer; }
 .first-visit-card { width: min(420px, calc(100vw - 40px)); }
+
+/* 自注册工具卡片：操作按钮相邻、详情不撑宽设置页 */
+.tuner-tool-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; }
+.tuner-tool-head .tuner-tool-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.tuner-tool-head .tuner-tool-kind { display: none; }
+.tuner-tool-head .tuner-mini { flex: 0 0 auto; }
+.tuner-tool-json { max-width: 100%; box-sizing: border-box; overflow-x: auto; white-space: pre-wrap; word-break: break-all; }
+.tool-manager-root, #set-capability-sec { max-width: 100%; overflow-x: hidden; }
+.settings-card, .settings-body { overflow-x: hidden; }
+.tuner-env-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.tuner-env-row .tuner-seg { flex: 1 1 auto; }
+.tuner-env-row .tuner-sub { margin-top: 0; flex: 0 0 auto; }
+.choice-checkbox { display: inline-block; width: 12px; height: 12px; border: 1.5px solid currentColor; border-radius: 3px; margin-right: 6px; vertical-align: -2px; }
+.choice-opt.selected .choice-checkbox { background: currentColor; box-shadow: inset 0 0 0 2px var(--bg); }

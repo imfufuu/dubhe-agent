@@ -10517,10 +10517,10 @@ test('#10 视频识别默认模型改为 Gemini 3.5 Flash Lite（设置档位 / 
   assert.equal(cfg2.DEFAULT_VIDEO_MODEL, 'gemini-3.5-flash-lite');
   assert.equal(cfg2.resolveVideoModel(undefined), 'gemini-3.5-flash-lite');
   assert.equal(cfg2.resolveVideoModel('not-a-model'), 'gemini-3.5-flash-lite');
-  assert.equal(cfg2.VIDEO_MODELS.find((m) => m.id === 'gemini-3.5-flash-lite').tag, '低价');
-  assert.equal(cfg2.VIDEO_MODELS.find((m) => m.id === 'gemini-3.5-flash-lite').tagEn, 'Cheap');
+  assert.equal(cfg2.VIDEO_MODELS.find((m) => m.id === 'gemini-3.5-flash-lite').tag, '默认 · 低价');
+  assert.equal(cfg2.VIDEO_MODELS.find((m) => m.id === 'gemini-3.5-flash-lite').tagEn, 'Default · Cheap');
   assert.equal(cfg2.VISION_MODELS.find((m) => m.id === 'gemini-3.5-flash-lite').tagEn, 'Cheap');
-  assert.equal(cfg2.VIDEO_MODELS.find((m) => m.id === 'gemini-3.8-flash').tag, '热门');
+  assert.equal(cfg2.VIDEO_MODELS.find((m) => m.id === 'gemini-3.8-flash').tag, '通用');
   const { createStore } = await import('../js/state.js');
   assert.equal(createStore().state.settings.videoModel, 'gemini-3.5-flash-lite');
   assert.equal(createStore().state.settings.imageRemoteReview, true);
@@ -11057,7 +11057,7 @@ test('生图模型选择器迁到设置 → 多模态模型：模型菜单无 dd
   assert.doesNotMatch(picker, /\.dd-foot|#image-model'/);
   assert.match(picker, /const sel = \$\('#set-image-model'\);\s*const fam = imageFamilyOf\(want\) \|\| 'gpt-image-2';\s*if \(sel && sel\.options\.length && sel\.value !== fam\) sel\.value = fam;/);
   const st = fsp.readFileSync(new URL('../js/settings.js', import.meta.url), 'utf8');
-  assert.match(st, /fillModelSelect\(\$\('#set-image-model'\), IMAGE_FAMILIES\.map\(/);
+  assert.match(st, /const imageFamilies = IMAGE_FAMILIES\.filter/);
   assert.match(st, /store\.state\.imageModel = id;\s*store\.notify\(\);/, '写进当前会话而不是全局 settings');
   assert.match(st, /随当前会话保存/);
   const css = fsp.readFileSync(new URL('../css/styles.css', import.meta.url), 'utf8');

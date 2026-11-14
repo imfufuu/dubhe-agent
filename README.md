@@ -846,3 +846,4 @@ JS/Python 支持 `path` 读取已存在源码代替重复 `code`；长内联 JS/
 - Agent 可通过 `set_final_report` 指定任务最终产物报告，回合结束自动打开面板与文件；对话模式只发送一条身份声明、UI 降级（普通思考按钮 / 隐藏沙箱联网 / 文本附件直接解析）。
 - 自注册工具支持代码 handler（静态安全初审 + 用户确认两道门），菜单位置前置到设置页「网关」之后；见 [`V4_FEATURES_REPORT.md`](./V4_FEATURES_REPORT.md)。
 - 2026-11-09：TeamoRouter 新模型/官方价目、GPT Image 2.6 与 MJ 四宫格切分、识图空正文修复、Workers AI 不计价、首次称谓与个性化提示词等；见 [`UPDATE_2026_11_09_REPORT.md`](./UPDATE_2026_11_09_REPORT.md)。
+- 2026-11-13：修复对话模式开关从未生效（纯净模型对话、零提示词/零工具表）、flow 文本、Thinking 英文标签、多选选择框、设置页与导航页重设计、功能知识库；见 [`V6_UI_REPORT.md`](./V6_UI_REPORT.md)。

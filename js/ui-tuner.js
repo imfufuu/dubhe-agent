@@ -5,7 +5,6 @@
 // 本模块只写 store.state.tuner；请求侧解释统一由 agent-runtime.js 负责。
 import { text as t, onLanguageChange } from './locale.js';
 import { TUNER_DEFAULTS, TEMPERATURE_PRESETS, normalizeTuner, temperatureValueFor, resolveTurnEnvironment } from './agent-runtime.js';
-import { openToolManager } from './ui-tool-manager.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -89,11 +88,8 @@ export function installTuner({ store, toast = () => {} } = {}) {
     setAttr('tuner-personal-prompt', 'placeholder', t('补充你的偏好，不会覆盖应用主提示词；对话模式下不发送', 'Add your preferences; does not replace the app prompt and is not sent in Chat mode'));
     setText('tuner-label-temp', t('回答温度', 'Temperature'));
     setText('tuner-label-env', t('环境设置', 'Environment'));
-    setText('tuner-label-tools', t('自注册工具', 'Self-registered tools'));
     setText('tuner-chat-thinking-label', t('启用思考', 'Enable thinking'));
     setText('tuner-reset', t('恢复默认', 'Reset to defaults'));
-    setText('tuner-open-tools', t('在设置中管理', 'Manage in Settings'));
-    setText('tuner-tools-note', t('工具管理与用户确认已移出调节器：待确认的变更会显示在对话输出里。', 'Tool management and approvals moved out of the tuner: pending changes appear in the chat output.'));
     setAttr('tuner-btn', 'title', t('调节器：回答温度与 Agent/对话环境', 'Tuner: temperature and Agent/Chat environment'));
     setAttr('tuner-btn', 'aria-label', t('调节器', 'Tuner'));
     setAttr('tuner-modal', 'aria-label', t('调节器', 'Tuner'));
@@ -111,12 +107,11 @@ export function installTuner({ store, toast = () => {} } = {}) {
     const hint = $('tuner-env-hint');
     if (hint) hint.textContent = env.toolsEnabled
       ? t('Agent 模式：下发工具表与系统提示词。', 'Agent: tool table and system prompts are sent.')
-      : t('对话模式：只上传一条简短身份声明，工具表为空，仅做模型测试。', 'Chat: only a short identity line is sent; no tools, model test only.');
+      : t('对话模式：不上传任何提示词，纯净模型对话，零工具。', 'Chat: no prompt text is uploaded; pure model conversation with zero tools.');
   }
 
   btn.addEventListener('click', toggle);
   close?.addEventListener('click', hide);
-  $('tuner-open-tools')?.addEventListener('click', () => { hide(); openToolManager(); });
   $('tuner-personal-prompt')?.addEventListener('change', (e) => commit({ personalPrompt: String(e.target.value || '').slice(0, 2000) }));
   $('tuner-chat-thinking')?.addEventListener('change', (e) => commit({ chatThinking: e.target.checked }));
   $('tuner-reset')?.addEventListener('click', () => { store.state.tuner = { ...TUNER_DEFAULTS }; store.notify(); render(); });

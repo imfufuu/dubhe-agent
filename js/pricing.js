@@ -3,7 +3,8 @@
 // CNY 价目表按 2026-10-23 中间价归一为内部 USD；促销价、账户折扣和实际区域账单不计入。
 // 分层价格在 contextTier 中显式建模；DeepSeek 当前 off-peak 值为预估基准，peak 时段会更高。
 // 独立模块：不修改 config.js / api.js 的既有导出列表，避免 Pages 混版缓存下 ESM link 失败。
-import { getLanguage } from './locale.js';
+import { getLanguage, text as localeText } from './locale.js';
+import { isOfflineModelId } from './offline-model-config.js';
 import {
   TEAMOROUTER_GATEWAY_ID, TEAMOROUTER_TEXT_PRICING, TEAMOROUTER_FAST_PRICING,
   TEAMOROUTER_GPT_IMAGE_PRICING, TEAMOROUTER_GEMINI_IMAGE_PRICING,
@@ -280,6 +281,7 @@ function teamorouterOverride(modelId, official) {
  * 价格来源由返回对象的 priceSource 标明。
  */
 export function getModelPricing(modelId, { gatewayId = '' } = {}) {
+  if (isOfflineModelId(modelId)) return { id: modelId, kind: 'chat', mode: 'local', unpriced: true, input: 0, output: 0 };
   const official = officialModelPricing(modelId);
   if (!isTeamoRouterGateway(gatewayId)) return official;
   const tr = teamorouterOverride(modelId, official);
@@ -340,6 +342,17 @@ export function estimateChatCost(modelId, usage, opts = {}) {
   const gatewayId = opts.gatewayId || '';
   const p = getModelPricing(modelId, { gatewayId });
   if (!p || !usage) return null;
+  if (p.mode === 'local') {
+    return {
+      kind: 'chat', model: p.id || String(modelId || ''),
+      inputTokens: Math.max(0, Number(usage.input ?? usage.prompt_tokens ?? 0) || 0),
+      outputTokens: Math.max(0, Number(usage.output ?? usage.completion_tokens ?? 0) || 0),
+      cachedTokens: 0, cacheCreationTokens: 0, cacheCreation5mTokens: 0, cacheCreation1hTokens: 0,
+      inRate: 0, outRate: 0, cachedRate: 0, cacheCreationRate: 0,
+      fast: false, freeTier: false, priceSource: 'local', unpriced: true,
+      costUsd: 0, rateLabel: localeText('本地模型不计价 · 仅统计上传/输出 token', 'Local models are unpriced · upload/output tokens are still counted'),
+    };
+  }
   if (p.mode === 'neurons') {
     const inputTok = Math.max(0, Number(usage.input ?? usage.prompt_tokens ?? usage.input_tokens ?? 0) || 0);
     const outputTok = Math.max(0, Number(usage.output ?? usage.completion_tokens ?? usage.output_tokens ?? 0) || 0);
@@ -350,7 +363,7 @@ export function estimateChatCost(modelId, usage, opts = {}) {
       inRate: 0, outRate: 0, cachedRate: 0, cacheCreationRate: 0,
       cacheCreation5mRate: 0, cacheCreation1hRate: 0,
       fast: false, freeTier: false, priceSource: 'cloudflare', unpriced: true,
-      costUsd: 0, rateLabel: 'Workers AI Neurons；美元费用以 Cloudflare 账单为准',
+      costUsd: 0, rateLabel: localeText('Workers AI Neurons；美元费用以 Cloudflare 账单为准', 'Workers AI Neurons; USD amounts follow the Cloudflare bill'),
     };
   }
   if (p.kind === 'vision') {
@@ -407,9 +420,7 @@ export function estimateChatCost(modelId, usage, opts = {}) {
   const cacheCreation1hRate = (p.cacheCreation1h != null ? p.cacheCreation1h : (p.cacheCreation != null ? p.cacheCreation : p.input)) * fastMult * cacheCreation1hTier;
   const cacheCreationRate = cacheCreation5mRate; // legacy summary field; aggregate-only usage defaults to 5m.
   const cacheStorageNote = String(p.id || modelId).startsWith('doubao-seed-')
-    ? (getLanguage() === 'en'
-      ? ' · Volcengine cache storage is billed per token-hour and is not included because storage-duration usage is unavailable'
-      : ' · 火山引擎缓存存储按 token·小时计费；因未提供存储时长用量，未计入估价')
+    ? localeText(' · 火山引擎缓存存储按 token·小时计费；因未提供存储时长用量，未计入估价', ' · Volcengine cache storage is billed per token-hour and is not included because storage-duration usage is unavailable')
     : '';
 
   const costUsd = (
@@ -453,7 +464,7 @@ export function estimateVisionCost({
   gatewayId = '',
 } = {}) {
   const { base } = normalizeModelKey(model);
-  if (base === '@cf/moondream/moondream3.1-9b-a2b') return { kind: 'vision', model: base, imageCount, costUsd: 0, unpriced: true, inputUnavailable: true, rateLabel: 'Workers AI Neurons；美元费用以 Cloudflare 账单为准' };
+  if (base === '@cf/moondream/moondream3.1-9b-a2b') return { kind: 'vision', model: base, imageCount, costUsd: 0, unpriced: true, inputUnavailable: true, rateLabel: localeText('Workers AI Neurons；美元费用以 Cloudflare 账单为准', 'Workers AI Neurons; USD amounts follow the Cloudflare bill') };
   // 识图 / 视频识别模型可在设置里换成 Gemini / Claude：没有专表时用对话价目表（同一模型的多模态输入按文本 token 计）
   const officialP = VISION_MODEL_PRICING[base]
     || (MODEL_PRICING[base] ? { ...MODEL_PRICING[base], id: base, label: base, defaultTokensPerImage: 1100 } : VISION_MODEL_PRICING[VISION_MODEL_ID]);
@@ -504,7 +515,7 @@ export function estimateImageCost({
   gatewayId = '',
 } = {}) {
   const { base } = normalizeModelKey(model);
-  if (base === '@cf/black-forest-labs/flux-1-schnell') return { kind: 'image', model: base, count: Math.max(1, Number(count) || 1), costUsd: 0, unpriced: true, rateLabel: 'Workers AI Neurons；美元费用以 Cloudflare 账单为准' };
+  if (base === '@cf/black-forest-labs/flux-1-schnell') return { kind: 'image', model: base, count: Math.max(1, Number(count) || 1), costUsd: 0, unpriced: true, rateLabel: localeText('Workers AI Neurons；美元费用以 Cloudflare 账单为准', 'Workers AI Neurons; USD amounts follow the Cloudflare bill') };
   const officialP = IMAGE_MODEL_PRICING[base] || getModelPricing(base) || IMAGE_MODEL_PRICING['gpt-image-2.5-sunburst'];
   const p = (isTeamoRouterGateway(gatewayId) && teamorouterOverride(base, officialP)) || officialP;
   const n = Math.max(1, Number(count) || 1);
@@ -588,7 +599,7 @@ function contextTierNote(p, language = getLanguage()) {
 function rateEstimateLabel(kind, input, output, extras = '', language = getLanguage()) {
   const name = language === 'en'
     ? ({ chat: 'Rate estimate', vision: 'Vision rate estimate', image: 'Image rate estimate' }[kind] || 'Rate estimate')
-    : ({ chat: '费率估算', vision: '识图费率估算', image: '生图费率估算' }[kind] || '费率估算');
+    : ({ chat: localeText('费率估算', 'Rate estimate'), vision: localeText('识图费率估算', 'Vision rate estimate'), image: localeText('生图费率估算', 'Image rate estimate') }[kind] || localeText('费率估算', 'Rate estimate'));
   return language === 'en'
     ? `${name}: input ${formatRate(input, language)}/M · output ${formatRate(output, language)}/M${extras}`
     : `${name} 输入 ${formatRate(input, language)}/M · 输出 ${formatRate(output, language)}/M${extras}`;
@@ -598,7 +609,8 @@ function rateEstimateLabel(kind, input, output, extras = '', language = getLangu
 export function priceBadgeFor(modelId, { fastMode = false, language = getLanguage(), gatewayId = '' } = {}) {
   const p = getModelPricing(modelId, { gatewayId });
   if (!p) return '';
-  if (p.mode === 'neurons') return ''; // Workers AI 不计价（美元/神经元换算不可靠）
+  if (p.mode === 'neurons' || p.mode === 'local') return ''; // Workers AI / 本地模型不计价
+
   if (p.kind === 'vision') return `${language === 'en' ? 'Vision' : '识图'} ${formatRate(p.input, language)}/${formatRate(p.output, language)} /M`;
   if (p.kind === 'image') {
     if (p.mode === 'tier' && p.tiers) return `${language === 'en' ? 'Image' : '生图'} ${formatCcy(p.tiers['1k'] || 0.06, language)}~${formatCcy(p.tiers['4k'] || 0.25, language)}/${language === 'en' ? 'image' : '张'}`;
@@ -620,8 +632,8 @@ export function priceBadgeFor(modelId, { fastMode = false, language = getLanguag
 /** 本轮费用悬浮提示（tok-cost 的 title）：按网关区分口径 */
 export function turnCostTitle(s) {
   return isTeamoRouterGateway(s.gatewayId)
-    ? 'TeamoRouter 折后价预估（含识图/音视频分析/生图/视频生成/子智能体）'
-    : '按模型官方列表价预估（含识图/音视频分析/生图/视频生成/子智能体）';
+    ? localeText('TeamoRouter 折后价预估（含识图/音视频分析/生图/视频生成/子智能体）', 'Estimated TeamoRouter discounted cost (vision, audio/video analysis, image and video generation, sub-agents included)')
+    : localeText('按模型官方列表价预估（含识图/音视频分析/生图/视频生成/子智能体）', 'Estimated from the model official list price (vision, audio/video analysis, image and video generation, sub-agents included)');
 }
 
 /** 本轮费用明细行（消息 meta 悬浮提示用） */
@@ -650,7 +662,7 @@ function videoGenCost(b) {
     estimated: !!b.estimated,
     unpriced: !hasQuote,
     priceSource: PRICE_SOURCE_TEAMOROUTER,
-    rateLabel: hasQuote ? (getLanguage() === 'en' ? 'quoted by gateway' : '网关实时报价') : '',
+    rateLabel: hasQuote ? (getLanguage() === 'en' ? 'quoted by gateway' : localeText('网关实时报价', 'Live gateway pricing')) : '',
   };
 }
 
@@ -908,15 +920,15 @@ export function summarizeTurnCost(arg1, opts = {}) {
   if (avItems.length) extraTags.push(`音视频分析 ${formatCcy(avCostUsd)}`);
   if (imageItems.length) extraTags.push(`生图 ${formatCcy(imageCostUsd)}`);
   if (videoGenItems.length) extraTags.push(`视频生成 ${formatCcy(videoGenCostUsd)}`);
-  const badgeText = turnGatewayId === 'cloudflare' ? 'Workers AI · 不计价（账单以 Cloudflare 为准）' : extraTags.length
+  const badgeText = turnGatewayId === 'cloudflare' ? localeText('Workers AI · 不计价（账单以 Cloudflare 为准）', 'Workers AI · unpriced (billing follows Cloudflare)') : extraTags.length
     ? `≈ ${formatCcy(totalCostUsd)}（${extraTags.join(' + ')}）`
     : `≈ ${formatCcy(totalCostUsd)}`;
 
   const tooltipLines = [trTurn
     ? `本轮 TeamoRouter 折后预估总价：${formatCcy(totalCostUsd)}`
     : `本轮官方预估总价：${formatCcy(totalCostUsd)}`];
-  if (turnGatewayId === 'cloudflare') tooltipLines[0] = 'Workers AI 不计价；本地美元合计不代表实际账单或免费额度，以 Cloudflare 控制台为准。';
-  else if (incomplete) tooltipLines.push('部分用量或费用未完整回传，以上费用不完整；以网关账单为准。');
+  if (turnGatewayId === 'cloudflare') tooltipLines[0] = localeText('Workers AI 不计价；本地美元合计不代表实际账单或免费额度，以 Cloudflare 控制台为准。', 'Workers AI is unpriced; the local USD total is neither the bill nor free-tier usage — check the Cloudflare console.');
+  else if (incomplete) tooltipLines.push(localeText('部分用量或费用未完整回传，以上费用不完整；以网关账单为准。', 'Some usage or cost was not fully reported, so this total is incomplete; rely on the gateway bill.'));
   if (hasChatUsage && turnGatewayId !== 'cloudflare') {
     const mName = [...chatModels].join(', ') || defaultModel;
     const p = estimateChatCost(mName, { input: inputTokens, output: outputTokens }, { fastMode });
@@ -969,7 +981,7 @@ export function summarizeTurnCost(arg1, opts = {}) {
     totalCostUsd,
     totalUsd: totalCostUsd,
     incomplete,
-    formatted: incomplete ? '用量不完整' : formatCcy(totalCostUsd),
+    formatted: incomplete ? localeText('用量不完整', 'Incomplete usage') : formatCcy(totalCostUsd),
     visionCount: visionItems.length,
     avCount: avItems.length,
     videoGenCount: videoGenItems.length,

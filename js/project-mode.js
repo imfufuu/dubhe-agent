@@ -185,22 +185,22 @@ export function openProjectMode({ store, agent, projectFileSystem = null }) {
     const dir = !path || isDir ? path : parentDir(path);
     const entries = [];
     const add = (id, zh, en, fn, disabled = false) => entries.push({ id, label: T(zh, en), fn, disabled });
-    if (path && !isDir) add('open', '打开', 'Open', () => openFile(path));
+    if (path && !isDir) add('open', T('打开', 'Open'), 'Open', () => openFile(path));
     if (!path || isDir) {
-      add('new-file', '新建文件', 'New file', () => { selectDirectory(dir); startCreate(); });
-      add('new-folder', '新建文件夹', 'New folder', () => { selectDirectory(dir); startCreate('folder'); });
-      add('import-file', '导入文件', 'Import files', () => { selectDirectory(dir); importFileInput.click(); });
-      add('import-folder', '导入文件夹', 'Import folder', () => { selectDirectory(dir); importDirInput.click(); });
+      add('new-file', T('新建文件', 'New file'), 'New file', () => { selectDirectory(dir); startCreate(); });
+      add('new-folder', T('新建文件夹', 'New folder'), 'New folder', () => { selectDirectory(dir); startCreate('folder'); });
+      add('import-file', T('导入文件', 'Import files'), 'Import files', () => { selectDirectory(dir); importFileInput.click(); });
+      add('import-folder', T('导入文件夹', 'Import folder'), 'Import folder', () => { selectDirectory(dir); importDirInput.click(); });
     }
     if (path) {
       add('rename', '重命名', 'Rename', () => { state.renaming = path; renderTree({ force: true }); });
-      add('copy', '拷贝', 'Copy', () => { state.clipboard = { path, cut: false }; flash(T('已拷贝', 'Copied')); });
-      add('cut', '剪切', 'Cut', () => { state.clipboard = { path, cut: true }; flash(T('已剪切', 'Cut')); });
+      add('copy', T('拷贝', 'Copy'), 'Copy', () => { state.clipboard = { path, cut: false }; flash(T('已拷贝', 'Copied')); });
+      add('cut', T('剪切', 'Cut'), 'Cut', () => { state.clipboard = { path, cut: true }; flash(T('已剪切', 'Cut')); });
     }
-    if (!path || isDir) add('paste', '粘贴', 'Paste', () => pasteInto(dir), !state.clipboard);
+    if (!path || isDir) add('paste', T('粘贴', 'Paste'), 'Paste', () => pasteInto(dir), !state.clipboard);
     if (path) {
-      add('compress', '压缩为 ZIP', 'Compress to ZIP', () => compressPath(path));
-      if (!isDir && /\.zip$/i.test(path)) add('extract', '解压缩', 'Extract ZIP', () => extractPath(path));
+      add('compress', T('压缩为 ZIP', 'Compress to ZIP'), 'Compress to ZIP', () => compressPath(path));
+      if (!isDir && /\.zip$/i.test(path)) add('extract', T('解压缩', 'Extract'), 'Extract ZIP', () => extractPath(path));
       add('delete', '删除', 'Delete', () => removePath(path, isDir));
     }
     menuNode = h('div', { class: 'pm-context-menu', role: 'menu', 'aria-label': T('文件操作', 'File operations') });

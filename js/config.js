@@ -125,33 +125,33 @@ export function sortModelsInFamily(models) {
 // 不可作为对话模型直接选择：统一由主智能体通过 generate_image 工具调用，
 // 保留 Agent 的工具循环特性（生成→写沙箱→可继续编辑/下载）。
 export const IMAGE_MODELS = [
-  { id: '@cf/black-forest-labs/flux-1-schnell', family: 'cloudflare-flux', role: 'default', label: 'FLUX.1 Schnell', tag: '热门', note: 'Workers AI Hosted · 单张默认尺寸', tagEn: 'Popular', noteEn: 'Workers AI Hosted; one image at default dimensions' },
-  { id: 'gpt-image-2', family: 'gpt-image-2', role: 'default',            label: 'GPT Image 2',            tag: '热门',  note: '均衡·默认', tagEn: 'Popular', noteEn: 'Balanced · default choice' },
-  { id: 'gpt-image-2.5-sunburst', family: 'gpt-image-2.5', role: 'realistic', label: 'GPT Image 2.5 Sunburst', tag: '热门',        note: '高质感写实', tagEn: 'Popular', noteEn: 'High-fidelity realism' },
-  { id: 'gpt-image-2.5-flare', family: 'gpt-image-2.5', role: 'illustration',    label: 'GPT Image 2.5 Flare',    tag: '热门',        note: '风格化/插画', tagEn: 'Popular', noteEn: 'Stylized illustration' },
-  { id: 'gemini-3.1-flash-image', family: 'nano-banana', role: 'fast', label: 'Nano Banana 2',          tag: '热门', note: 'Gemini 3.1 Flash Image · 高质量文生图', tagEn: 'Popular', noteEn: 'Gemini 3.1 Flash Image · high-quality text-to-image' },
+  { id: '@cf/black-forest-labs/flux-1-schnell', family: 'cloudflare-flux', role: 'default', label: 'FLUX.1 Schnell', tag: 'Cloudflare · 文生图', note: 'Workers AI Hosted · 单张默认尺寸', tagEn: 'Cloudflare · Text to image', noteEn: 'Workers AI Hosted; one image at default dimensions' },
+  { id: 'gpt-image-2', family: 'gpt-image-2', role: 'default',            label: 'GPT Image 2',            tag: '均衡 · 默认',  note: '均衡·默认', tagEn: 'Balanced · Default', noteEn: 'Balanced · default choice' },
+  { id: 'gpt-image-2.5-sunburst', family: 'gpt-image-2.5', role: 'realistic', label: 'GPT Image 2.5 Sunburst', tag: '写实',        note: '高质感写实', tagEn: 'Realistic', noteEn: 'High-fidelity realism' },
+  { id: 'gpt-image-2.5-flare', family: 'gpt-image-2.5', role: 'illustration',    label: 'GPT Image 2.5 Flare',    tag: '插画',        note: '风格化/插画', tagEn: 'Illustration', noteEn: 'Stylized illustration' },
+  { id: 'gemini-3.1-flash-image', family: 'nano-banana', role: 'fast', label: 'Nano Banana 2',          tag: 'Gemini 原生', note: 'Gemini 3.1 Flash Image · 高质量文生图', tagEn: 'Gemini native', noteEn: 'Gemini 3.1 Flash Image · high-quality text-to-image' },
   // 网关 2026-10 新上的 nano-banana-2-1：名字不带 -image-，之前被当成对话模型混进模型菜单（.33 修）。与 Nano Banana 2 同走 Gemini generateContent。
   // 2026-10-08 实测（一次成功调用）：ID = gemini-nano-banana-2.1（网关价目表 /v1/models/pricing 同名），Gemini 原生 generateContent，
   // responseModalities IMAGE + imageConfig { aspectRatio, imageSize }；imageSize '512' 上游 503，1K 正常（44s，1120 输出 token ≈ $0.0097/图）。
-  { id: 'gemini-nano-banana-2.1', family: 'nano-banana', role: 'quality', label: 'Nano Banana 2.1',        tag: '热门', note: 'Nano Banana 2.1 · 实测 1K 一张约 ¥0.07 / 44 秒（按 2026-10-23 中间价折算）；不支持 512，low 质量自动按 1K', tagEn: 'Popular', noteEn: 'Nano Banana 2.1 · measured ~$0.01 per 1K image in 44s; 512 unsupported, low quality falls back to 1K' },
-  { id: 'gpt-image-2-4k-upscale', family: 'gpt-image-2', role: 'upscale', label: 'GPT Image 2 4K Upscale', tag: '低价', note: '4K 输出按张 $0.02（非升采样 4K 约 $0.0858/张）；画面特征以实测为准', tagEn: 'Cheap', noteEn: '4K output at $0.02/image (vs about $0.0858 for native 4K); look to be verified' },
-  { id: 'gpt-image-2.5-sunburst-4k-upscale', family: 'gpt-image-2.5', role: 'upscale-realistic', label: 'GPT Image 2.5 Sunburst 4K Upscale', tag: '低价', note: '写实 4K 升采样，按张 $0.02（非升采样 4K 约 $0.0714/张）', tagEn: 'Cheap', noteEn: 'Realistic 4K upscale, $0.02/image (native 4K about $0.0714)' },
-  { id: 'gpt-image-2.5-flare-4k-upscale', family: 'gpt-image-2.5', role: 'upscale-illustration', label: 'GPT Image 2.5 Flare 4K Upscale', tag: '低价', note: '插画 4K 升采样，按张 $0.02（非升采样 4K 约 $0.0572/张）', tagEn: 'Cheap', noteEn: 'Illustration 4K upscale, $0.02/image (native 4K about $0.0572)' },
-  { id: 'gemini-3-pro-image', family: 'nano-banana', role: 'pro', label: 'Gemini 3 Pro Image', tag: '热门', note: 'Gemini 3 Pro Image · 按 Token 计费，质量档最高（耗时更长）', tagEn: 'Popular', noteEn: 'Gemini 3 Pro Image · token billing, highest quality (slower)' },
-  { id: 'gpt-image-2.6-sunburst', family: 'gpt-image-2.6', role: 'realistic', label: 'GPT Image 2.6 Sunburst', tag: '热门', tagEn: 'Popular', note: '高质感写实；按张 $0.02（官方 list $0.20）', noteEn: 'High-fidelity realism; $0.02/image (list $0.20)' },
-  { id: 'gpt-image-2.6-flare', family: 'gpt-image-2.6', role: 'illustration', label: 'GPT Image 2.6 Flare', tag: '热门', tagEn: 'Popular', note: '风格化/插画；按张 $0.02', noteEn: 'Stylized illustration; $0.02/image' },
-  { id: 'gpt-image-2.6-sunburst-4k-upscale', family: 'gpt-image-2.6', role: 'upscale-realistic', label: 'GPT Image 2.6 Sunburst 4K Upscale', tag: '低价', tagEn: 'Cheap', note: '写实 4K 升采样，按张 $0.02', noteEn: 'Realistic 4K upscale, $0.02/image' },
-  { id: 'gpt-image-2.6-flare-4k-upscale', family: 'gpt-image-2.6', role: 'upscale-illustration', label: 'GPT Image 2.6 Flare 4K Upscale', tag: '低价', tagEn: 'Cheap', note: '插画 4K 升采样，按张 $0.02', noteEn: 'Illustration 4K upscale, $0.02/image' },
-  { id: 'midjourney', family: 'midjourney', role: 'artistic', label: 'Midjourney', tag: '热门', note: 'Midjourney（非官方通道）· 仅文生图，实际可用性以上游为准', tagEn: 'Popular', noteEn: 'Midjourney (unofficial) · text-to-image; availability depends on the gateway' },
+  { id: 'gemini-nano-banana-2.1', family: 'nano-banana', role: 'quality', label: 'Nano Banana 2.1',        tag: 'Gemini 原生 · 新', note: 'Nano Banana 2.1 · 实测 1K 一张约 ¥0.07 / 44 秒（按 2026-10-23 中间价折算）；不支持 512，low 质量自动按 1K', tagEn: 'Gemini native · New', noteEn: 'Nano Banana 2.1 · measured ~$0.01 per 1K image in 44s; 512 unsupported, low quality falls back to 1K' },
+  { id: 'gpt-image-2-4k-upscale', family: 'gpt-image-2', role: 'upscale', label: 'GPT Image 2 4K Upscale', tag: '4K 升采样', note: '4K 输出按张 $0.02（非升采样 4K 约 $0.0858/张）；画面特征以实测为准', tagEn: '4K upscale', noteEn: '4K output at $0.02/image (vs about $0.0858 for native 4K); look to be verified' },
+  { id: 'gpt-image-2.5-sunburst-4k-upscale', family: 'gpt-image-2.5', role: 'upscale-realistic', label: 'GPT Image 2.5 Sunburst 4K Upscale', tag: '写实 · 4K', note: '写实 4K 升采样，按张 $0.02（非升采样 4K 约 $0.0714/张）', tagEn: 'Realistic · 4K', noteEn: 'Realistic 4K upscale, $0.02/image (native 4K about $0.0714)' },
+  { id: 'gpt-image-2.5-flare-4k-upscale', family: 'gpt-image-2.5', role: 'upscale-illustration', label: 'GPT Image 2.5 Flare 4K Upscale', tag: '插画 · 4K', note: '插画 4K 升采样，按张 $0.02（非升采样 4K 约 $0.0572/张）', tagEn: 'Illustration · 4K', noteEn: 'Illustration 4K upscale, $0.02/image (native 4K about $0.0572)' },
+  { id: 'gemini-3-pro-image', family: 'nano-banana', role: 'pro', label: 'Gemini 3 Pro Image', tag: '精细 · Pro', note: 'Gemini 3 Pro Image · 按 Token 计费，质量档最高（耗时更长）', tagEn: 'Detailed · Pro', noteEn: 'Gemini 3 Pro Image · token billing, highest quality (slower)' },
+  { id: 'gpt-image-2.6-sunburst', family: 'gpt-image-2.6', role: 'realistic', label: 'GPT Image 2.6 Sunburst', tag: '写实', tagEn: 'Realistic', note: '高质感写实；按张 $0.02（官方 list $0.20）', noteEn: 'High-fidelity realism; $0.02/image (list $0.20)' },
+  { id: 'gpt-image-2.6-flare', family: 'gpt-image-2.6', role: 'illustration', label: 'GPT Image 2.6 Flare', tag: '插画', tagEn: 'Illustration', note: '风格化/插画；按张 $0.02', noteEn: 'Stylized illustration; $0.02/image' },
+  { id: 'gpt-image-2.6-sunburst-4k-upscale', family: 'gpt-image-2.6', role: 'upscale-realistic', label: 'GPT Image 2.6 Sunburst 4K Upscale', tag: '写实 · 4K', tagEn: 'Realistic · 4K', note: '写实 4K 升采样，按张 $0.02', noteEn: 'Realistic 4K upscale, $0.02/image' },
+  { id: 'gpt-image-2.6-flare-4k-upscale', family: 'gpt-image-2.6', role: 'upscale-illustration', label: 'GPT Image 2.6 Flare 4K Upscale', tag: '插画 · 4K', tagEn: 'Illustration · 4K', note: '插画 4K 升采样，按张 $0.02', noteEn: 'Illustration 4K upscale, $0.02/image' },
+  { id: 'midjourney', family: 'midjourney', role: 'artistic', label: 'Midjourney', tag: '非官方 · 艺术', note: 'Midjourney（非官方通道）· 仅文生图，实际可用性以上游为准', tagEn: 'Unofficial · Artistic', noteEn: 'Midjourney (unofficial) · text-to-image; availability depends on the gateway' },
 ];
 export const DEFAULT_IMAGE_MODEL = 'gpt-image-2';
 // 模型家族：菜单里每个家族只占一项，具体变体（写实/插画/4K 升采样/Pro）由 Agent 按需求自动选择。
 export const IMAGE_FAMILIES = Object.freeze([
-  { id: 'cloudflare-flux', label: 'Cloudflare FLUX.1 Schnell', tag: '热门', note: 'Workers AI 单张默认尺寸，不支持参考图；消耗 Neurons', tagEn: 'Popular', noteEn: 'Workers AI; one image at default size, no reference images; consumes Neurons', defaultModel: '@cf/black-forest-labs/flux-1-schnell' },
+  { id: 'cloudflare-flux', label: 'Cloudflare FLUX.1 Schnell', tag: 'Hosted · 文生图', note: 'Workers AI 单张默认尺寸，不支持参考图；消耗 Neurons', tagEn: 'Hosted · Text to image', noteEn: 'Workers AI; one image at default size, no reference images; consumes Neurons', defaultModel: '@cf/black-forest-labs/flux-1-schnell' },
   { id: 'gpt-image-2', label: 'GPT Image 2', tag: '热门', note: '均衡 · 默认；4K 自动走升采样变体', tagEn: 'Popular', noteEn: 'Balanced default; 4K uses the upscale variant', defaultModel: 'gpt-image-2' },
-  { id: 'gpt-image-2.5', label: 'GPT Image 2.5', tag: '热门', note: '写实或插画两个变体，由 Agent 按描述自动选；4K 走升采样', tagEn: 'Popular', noteEn: 'Realistic or illustration variant chosen by Agent; 4K uses upscale', defaultModel: 'gpt-image-2.5-sunburst' },
-  { id: 'gpt-image-2.6', label: 'GPT Image 2.6', tag: '热门', tagEn: 'Popular', note: '写实 / 插画与 4K 升采样四个变体，按张 $0.02', noteEn: 'Realistic / illustration and 4K upscale variants, $0.02/image', defaultModel: 'gpt-image-2.6-sunburst' },
-  { id: 'nano-banana', label: 'Nano Banana', tag: '热门', note: 'Nano Banana 2 / 2.1 / 3 Pro 三档，由 Agent 按质量与速度需求选择', tagEn: 'Popular', noteEn: 'Nano Banana 2 / 2.1 / 3 Pro, chosen by quality and speed', defaultModel: 'gemini-3.1-flash-image' },
+  { id: 'gpt-image-2.5', label: 'GPT Image 2.5', tag: '写实 / 插画', note: '写实或插画两个变体，由 Agent 按描述自动选；4K 走升采样', tagEn: 'Realistic / Illustration', noteEn: 'Realistic or illustration variant chosen by Agent; 4K uses upscale', defaultModel: 'gpt-image-2.5-sunburst' },
+  { id: 'gpt-image-2.6', label: 'GPT Image 2.6', tag: '写实 / 插画', tagEn: 'Realistic / Illustration', note: '写实 / 插画与 4K 升采样四个变体，按张 $0.02', noteEn: 'Realistic / illustration and 4K upscale variants, $0.02/image', defaultModel: 'gpt-image-2.6-sunburst' },
+  { id: 'nano-banana', label: 'Nano Banana', tag: 'Gemini 原生', note: 'Nano Banana 2 / 2.1 / 3 Pro 三档，由 Agent 按质量与速度需求选择', tagEn: 'Gemini native', noteEn: 'Nano Banana 2 / 2.1 / 3 Pro, chosen by quality and speed', defaultModel: 'gemini-3.1-flash-image' },
   { id: 'midjourney', label: 'Midjourney', tag: '热门', note: '仅文生图，实际可用性以上游为准', tagEn: 'Popular', noteEn: 'Text-to-image; availability depends on the gateway', defaultModel: 'midjourney' },
 ]);
 export function isMidjourneyModel(id) { return String(id || '') === 'midjourney'; }
@@ -202,17 +202,17 @@ export function resolveImageVariant(familyOrModel, { style = 'auto', resolution 
 export const GROK_SENSITIVE_VISION_MODEL = 'grok-4.7';
 export const VISION_MODELS = [
   { id: GROK_SENSITIVE_VISION_MODEL, label: 'Grok 4.7', tag: '热门', tagEn: 'Popular', note: '通过当前支持的网关上传图片并按量计费；服务商政策仍适用，不保证处理所有内容', noteEn: 'Images are sent to the selected supported gateway and billed; provider policies still apply, and acceptance is not guaranteed' },
-  {"id": "deepseek-v4-flash-vision-exp", "label": "DeepSeek V4 Vision", "tag": "热门", "tagEn": "Popular", "note": "旧别名按 DeepSeek V4.1 Flash 非高峰官方价计费，约 ¥1.01/M 输入（高峰时段更高）", "noteEn": "Legacy alias billed at DeepSeek V4.1 Flash's official off-peak rate: $0.15/M input; peak rates are higher"},
+  {"id": "deepseek-v4-flash-vision-exp", "label": "DeepSeek V4 Vision", "tag": "默认 · 实验价", "tagEn": "Default · Experimental", "note": "旧别名按 DeepSeek V4.1 Flash 非高峰官方价计费，约 ¥1.01/M 输入（高峰时段更高）", "noteEn": "Legacy alias billed at DeepSeek V4.1 Flash's official off-peak rate: $0.15/M input; peak rates are higher"},
   {"id": "gemini-3.5-flash-lite", "label": "Gemini 3.5 Flash Lite", "tag": "低价", "tagEn": "Cheap", "note": "网关标价约 ¥2.02/M 输入（按 2026-10-23 中间价折算）；实际账单以网关为准", "noteEn": "Gateway list price $0.3/M input; actual billing may vary"},
-  {"id": "gemini-3.8-flash", "label": "Gemini 3.8 Flash", "tag": "热门", "tagEn": "Popular", "note": "网关标价约 ¥5.04/M 输入（按 2026-10-23 中间价折算）；实际账单以网关为准", "noteEn": "Gateway list price $0.75/M input; actual billing may vary"},
-  {"id": "gemini-3.1-pro-preview", "label": "Gemini 3.1 Pro", "tag": "热门", "tagEn": "Popular", "note": "网关标价约 ¥13.44/M 输入（按 2026-10-23 中间价折算）；实际账单以网关为准", "noteEn": "Gateway list price $2/M input; actual billing may vary"},
-  {"id": "claude-sonnet-5-5", "label": "Claude Sonnet 5.5", "tag": "热门", "tagEn": "Popular", "note": "网关标价约 ¥13.44/M 输入（按 2026-10-23 中间价折算）；实际账单以网关为准", "noteEn": "Gateway list price $2/M input; actual billing may vary"},
+  {"id": "gemini-3.8-flash", "label": "Gemini 3.8 Flash", "tag": "通用", "tagEn": "General", "note": "网关标价约 ¥5.04/M 输入（按 2026-10-23 中间价折算）；实际账单以网关为准", "noteEn": "Gateway list price $0.75/M input; actual billing may vary"},
+  {"id": "gemini-3.1-pro-preview", "label": "Gemini 3.1 Pro", "tag": "高精度", "tagEn": "High accuracy", "note": "网关标价约 ¥13.44/M 输入（按 2026-10-23 中间价折算）；实际账单以网关为准", "noteEn": "Gateway list price $2/M input; actual billing may vary"},
+  {"id": "claude-sonnet-5-5", "label": "Claude Sonnet 5.5", "tag": "文档 / 代码截图", "tagEn": "Docs / code shots", "note": "网关标价约 ¥13.44/M 输入（按 2026-10-23 中间价折算）；实际账单以网关为准", "noteEn": "Gateway list price $2/M input; actual billing may vary"},
 ];
 export const DEFAULT_VISION_MODEL = 'deepseek-v4-flash-vision-exp';
 export const VIDEO_MODELS = [
-  {"id": "gemini-3.5-flash-lite", "label": "Gemini 3.5 Flash Lite", "tag": "低价", "tagEn": "Cheap", "note": "已验证视频输入；按实际 token 计费，不保证固定每分钟价", "noteEn": "Video input previously verified; token-based billing, not a fixed per-minute price"},
-  {"id": "gemini-3.8-flash", "label": "Gemini 3.8 Flash", "tag": "热门", "tagEn": "Popular", "note": "已验证视频输入；按实际 token 计费，不保证固定每分钟价", "noteEn": "Video input previously verified; token-based billing, not a fixed per-minute price"},
-  {"id": "gemini-3.1-pro-preview", "label": "Gemini 3.1 Pro", "tag": "热门", "tagEn": "Popular", "note": "已验证视频输入；按实际 token 计费，不保证固定每分钟价", "noteEn": "Video input previously verified; token-based billing, not a fixed per-minute price"},
+  {"id": "gemini-3.5-flash-lite", "label": "Gemini 3.5 Flash Lite", "tag": "默认 · 低价", "tagEn": "Default · Cheap", "note": "已验证视频输入；按实际 token 计费，不保证固定每分钟价", "noteEn": "Video input previously verified; token-based billing, not a fixed per-minute price"},
+  {"id": "gemini-3.8-flash", "label": "Gemini 3.8 Flash", "tag": "通用", "tagEn": "General", "note": "已验证视频输入；按实际 token 计费，不保证固定每分钟价", "noteEn": "Video input previously verified; token-based billing, not a fixed per-minute price"},
+  {"id": "gemini-3.1-pro-preview", "label": "Gemini 3.1 Pro", "tag": "通用", "tagEn": "General", "note": "已验证视频输入；按实际 token 计费，不保证固定每分钟价", "noteEn": "Video input previously verified; token-based billing, not a fixed per-minute price"},
 ];
 export const DEFAULT_VIDEO_MODEL = 'gemini-3.5-flash-lite';
 // Audio uses the same three Gemini IDs, with independent user selection.

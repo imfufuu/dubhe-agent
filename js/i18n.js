@@ -19,7 +19,7 @@ const EN_RULES = [
   [/^思考 (.+)$/, 'Reasoning $1'], [/^已禁用 (\d+)$/, '$1 disabled'], [/^(\d+) 个会话 · (.+)$/, '$1 conversations · $2'],
   [/^剩余 (.+)$/, 'Remaining $1'], [/^已用 (.+)$/, 'Used $1'],
   [/^(\d+) 个文件$/, '$1 files'], [/^已选 (\d+) 条$/, '$1 selected'],
-  [/^思考 ([\d.]+s)$/, 'Thinking $1'], [/^耗时 (.+)$/, 'Duration $1'],
+  [new RegExp('^思考\\s'), 'Thinking…'], [/^耗时 (.+)$/, 'Duration $1'],
   [/^已复制 (.+)$/, 'Copied $1'], [/^已删除 (\d+) .+$/, 'Deleted $1 items'],
   [/^共 (\d+) .+$/, 'Total: $1'], [/^无匹配模型$/, 'No matching models'],
   [/^未找到 (.+)$/, 'Not found: $1'], [/^加载更早的消息.*$/, 'Load earlier messages'],

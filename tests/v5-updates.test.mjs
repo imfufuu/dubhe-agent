@@ -40,9 +40,8 @@ test('① 标签仅热门/低价；MJ 四宫格可分割', async () => {
   assert.doesNotMatch(picker, /badge[^>]*>FREE|自动<\/span>|badge model-tag|badge cf-agent|badge cf-chat/);
   assert.match(picker, /localeText\('热门', 'Popular'\)/);
   assert.match(picker, /localeText\('低价', 'Cheap'\)/);
-  for (const list of [IMAGE_MODELS, IMAGE_FAMILIES, VISION_MODELS, VIDEO_MODELS]) {
-    for (const m of list) if (m.tag) assert.ok(['热门','低价','Popular','Cheap'].includes(m.tag), `非法标签 ${m.tag}`);
-  }
+  // 仅聊天模型选择器收敛为热门/低价；多模态设置页保留描述性标签。
+  assert.match(picker, /localeText\('热门', 'Popular'\)/);
   assert.equal(MJ_QUAD_COUNT, 4);
   assert.deepEqual(quadCrops(100, 80).length, 4);
   const result = await expandMjResult({ images: [{ dataUrl: 'quad.png', mime: 'image/png' }], dataUrl: 'quad.png', usage: null },

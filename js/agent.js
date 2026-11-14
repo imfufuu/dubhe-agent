@@ -579,8 +579,8 @@ export function createAgent(store, hooks = {}) {
       ].filter((s) => s && String(s).trim()).join('\n\n'),
     });
     if (activeTurnEnv?.environment === 'chat') {
-      // 对话模式：只保留真实的用户/助手历史。唯一的简短身份声明由 api.js 的
-      // chatIdentityMessage() 在请求边界注入（模型名 / 对话模式 / 无工具 / 仅模型测试）。
+      // 对话模式（纯净模型对话）：只保留真实的用户/助手历史，
+      // 不注入任何 system/task 文本，也不声明工具能力。
       return compacted.filter((m) => m && m.role !== 'system' && m.role !== 'developer');
     }
     return [...layers.messages, ...compacted];

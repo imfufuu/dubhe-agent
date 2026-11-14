@@ -6,16 +6,16 @@ export function prepareCommandArgs(name, args, fs) {
   if (!SOURCE_TOOLS.has(name)) return args || {};
   const a = args || {};
   if (a.path != null) {
-    if (typeof a.path !== 'string' || !a.path.trim()) throw new Error('path 必须是非空字符串');
+    if (typeof a.path !== 'string' || !a.path.trim()) throw new Error(text('path 必须是非空字符串', 'path must be a non-empty string'));
     const path = a.path.trim().replace(/^sandbox:\/\//i, '').replace(/^\.\//, '');
-    if (!isSafeFsPath(path)) throw new Error('源码路径必须是合法的沙箱相对路径');
+    if (!isSafeFsPath(path)) throw new Error(text('源码路径必须是合法的沙箱相对路径', 'The source path must be a valid sandbox-relative path'));
     const source = fs.read(path);
     if (source == null) throw new Error(`找不到源码文件：${path}`);
-    if (typeof source !== 'string' || /^data:/i.test(source)) throw new Error('源码文件必须是文本');
-    if (a.code != null && a.code !== source) throw new Error('源码在执行前发生变动或 code 与 path 不一致，请重新读取后再执行');
+    if (typeof source !== 'string' || /^data:/i.test(source)) throw new Error(text('源码文件必须是文本', 'The source file must be text'));
+    if (a.code != null && a.code !== source) throw new Error(text('源码在执行前发生变动或 code 与 path 不一致，请重新读取后再执行', 'The source changed before execution, or code no longer matches path; read it again before running'));
     return { ...a, path, code: source };
   }
-  if (typeof a.code !== 'string' || !a.code.trim()) throw new Error('请提供 code 或已有源码文件 path');
+  if (typeof a.code !== 'string' || !a.code.trim()) throw new Error(text('请提供 code 或已有源码文件 path', 'Provide code, or the path of an existing source file'));
   return a;
 }
 export function retainCommandSource(name, args, ctx, out) {

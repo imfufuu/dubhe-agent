@@ -428,9 +428,10 @@ export async function streamOfflineModel({
     const abandon = () => retireOfflineEngine(engine);
     const modelKey = String(localModel.metadata?.fileName || localModel.file.name || `${localModel.file.size}:${localModel.metadata?.importedAt || ''}`);
     const isLoaded = typeof engine.isModelLoaded === 'function' && engine.isModelLoaded();
-    if (!isLoaded || loadedModelKey !== modelKey) {
-      // 残留的 proxy（上一次加载失败或被中止）会让 loadModel 报 “Module is already initialized”，
-      // 而 isModelLoaded() 因缺少 metadata 判为未加载；因此只要 proxy 存在就先 exit() 清空。
+    // 第二次提问：同一模型、proxy 仍在时不要重新 loadModel。wllama 的 isModelLoaded()
+    // 在上一轮 createChatCompletion 之后可能短暂返回 false；旧逻辑据此 exit()+loadModel()，
+    // 触发 "Module is already initialized"。只有模型文件真的换了，或 proxy 已清空，才重新加载。
+    if (loadedModelKey !== modelKey || (!isLoaded && !engine.proxy)) {
       if (isLoaded || engine.proxy) await withAbort(Promise.resolve().then(() => engine.exit?.()), signal, abandon);
       // Wllama 3.8.1 accepts Blob[] directly; the OPFS File is passed locally, never as a URL.
       try {

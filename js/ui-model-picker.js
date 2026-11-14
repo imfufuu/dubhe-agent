@@ -314,23 +314,23 @@ export function installModelPicker({ store, agent, toast, getBusy, openKeyModal,
     }
     if (id === '__system__') {
       if (preSystem) { closeMenu(); return; }
-      if (getBusy()) { closeMenu(); return toast('请等待当前回合结束再进入系统命令通道', 'warn'); }
+      if (getBusy()) { closeMenu(); return toast(localeText('请等待当前回合结束再进入系统命令通道', 'Wait for the current turn to end before entering the system command channel'), 'warn'); }
       const prevModel = store.state.model;
       store.state.model = id;
       enterSystem(prevModel);
       store.notify();
       updateModelBtn(); closeMenu(); applySystemLock();
-      toast('已进入 /system 隐藏通道：直接输入 /help 查看命令（真实会话不会被写入）', 'ok', 4200);
+      toast(localeText('已进入 /system 隐藏通道：直接输入 /help 查看命令（真实会话不会被写入）', 'Entered the hidden /system channel: type /help to list commands (the real session is not written)'), 'ok', 4200);
       return;
     }
     if (preSystem) {
-      if (getBusy()) { closeMenu(); return toast('请等待当前回合结束', 'warn'); }
+      if (getBusy()) { closeMenu(); return toast(localeText('请等待当前回合结束', 'Wait for the current turn to finish'), 'warn'); }
       store.state.model = id;
       exitSystem();
       store.notify();
       updateModelBtn(); closeMenu(); applySystemLock();
       syncCapLine();
-      toast('已退出隐藏通道，回到原会话', 'ok', 2400);
+      toast(localeText('已退出隐藏通道，回到原会话', 'Left the hidden channel and returned to the session'), 'ok', 2400);
       return;
     }
     store.state.model = id;

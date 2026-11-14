@@ -114,7 +114,7 @@ export function installFilesPanel({ store, agent, toast, fmtSize, highlightCode,
   const zipName = (path, mime) => withExtension(path.split('/').pop() || 'file', mime && mime.startsWith('image/') ? mime : '');
   function downloadFile(path) {
     let raw;
-    try { raw = agent.fs.read(path); } catch { return toast('文件已不存在', 'err'); }
+    try { raw = agent.fs.read(path); } catch { return toast(localeText('文件已不存在', 'The file no longer exists'), 'err'); }
     const { bytes, mime: detectedMime } = fileBytesFromValue(raw);
     // 优先用文件路径扩展名推断的 MIME，避免浏览器因 text/plain 把文件另存为 .txt
     const pathMime = mimeFromPath(path);
@@ -132,7 +132,7 @@ export function installFilesPanel({ store, agent, toast, fmtSize, highlightCode,
   });
   let filesZippedOnce = false;
   function saveZip(entries, base) {
-    if (!entries.length) return toast('没有可打包的文件', 'warn');
+    if (!entries.length) return toast(localeText('没有可打包的文件', 'There is nothing to package'), 'warn');
     const blob = createZip(entries);
     saveBlob(`${base}-${stampName()}.zip`, blob);
     filesZippedOnce = true;
@@ -326,7 +326,7 @@ export function installFilesPanel({ store, agent, toast, fmtSize, highlightCode,
   function openFileViewer(path) {
     const viewer = $('#file-viewer');
     let raw = '';
-    try { raw = agent.fs.read(path); } catch { return toast('文件已不存在', 'err'); }
+    try { raw = agent.fs.read(path); } catch { return toast(localeText('文件已不存在', 'The file no longer exists'), 'err'); }
     const rawStr = String(raw);
     const byteLen = approxBytes(rawStr);
     const lower = path.toLowerCase();

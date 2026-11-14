@@ -1,6 +1,6 @@
 import { createStreamSmoother } from './stream-smoothing.js';
 import { expandMjResult } from './mj-quad.js';
-import { fitMessagesToContext } from './offline-context.js';
+import { fitMessagesToContext, estimateTokens } from './offline-context.js';
 // ─── TeamoRouter API 客户端 ────────────────────────────────────────────
 // 协议路由 + SSE 流式解析 + 传输层（浏览器直连 / 服务端代理兜底）
 // 纯函数导出，便于 node 单测（tests/agent.test.mjs）
@@ -608,35 +608,42 @@ export function buildAnthropicPayload(messages, { maxTokens = MAX_TOKENS, includ
 // onThinkingFallback：思考参数被 400 降级时回调（用于向用户提示，避免静默关闭）
 // 首响应超时：HTTP 200 已返回但读流时超过该毫秒数仍未解析到有效 JSON SSE 事件 → 视为连接假死
 export const FIRST_TOKEN_TIMEOUT_MS = 15000;
-/** 对话模式的唯一提示词：简短身份声明，不含工具表/规则/记忆/技能。 */
-export function chatIdentityMessage(model) {
-  const zh = `你是运行在 Dubhe Agent 网页里的 ${model} 模型，当前为对话模式，不能运行任何工具，只做模型测试。`;
-  const en = `You are the ${model} model running inside the Dubhe Agent web app. Chat mode: no tools are available; this is a model-only test.`;
-  return { role: 'system', content: localeText(zh, en) };
-}
+/** 对话模式是纯净模型对话：不注入任何 system/task/instructions 文本，也不声明工具能力。 */
+export function chatIdentityMessage(model) { return null; }
 
 export async function streamChat({ model, apiKey, messages, tools, fastMode = false, thinking = false, reasoningLevel = 'medium', temperature, plan = null, iteration = 1, phase = '', subagentId = '', signal, onEvent, onThinkingFallback, webEnabled = false, onWebFallback, gatewayId = DEFAULT_GATEWAY_ID, gatewayBaseUrl = '', firstTokenTimeoutMs = FIRST_TOKEN_TIMEOUT_MS, streamTimeoutMs = REQUEST_TIMEOUT_MS, smoothText = false, bareChat = false, personalPrompt = '' }) {
   // 废弃/改名模型别名解析（agent 层已做，但子智能体直传时再保底一次）
   model = resolveModelAlias(model);
+  if (bareChat) { tools = []; fastMode = false; thinking = false; }
   if (isNetworkOffline() && !isOfflineModelId(model)) {
     throw new Error(localeText('离线模式只允许使用已保存的本地 GGUF；没有发送网关请求。', 'Offline mode only permits the saved local GGUF; no gateway request was sent.'));
   }
   if (isOfflineModelId(model)) {
     const localBase = fitMessagesToContext(stripEmptyAssistantMessages(messages), OFFLINE_MODEL_CONTEXT_BUDGET);
     const localMessages = buildOpenAIMessages(
-      bareChat ? [chatIdentityMessage(model), ...localBase.filter((m) => !['system', 'developer'].includes(String(m?.role || '')))] : localBase,
+      bareChat ? localBase.filter((m) => !['system', 'developer'].includes(String(m?.role || ''))) : localBase,
       { includeReasoning: false },
     );
     if (localMessages.some((message) => Array.isArray(message.content))) {
       throw new Error(localeText('本地 GGUF 目前仅支持文本；离线模式暂不处理图片/视频附件。', 'Local GGUF currently supports text only; image/video attachments are not supported offline.'));
     }
+    // 本地模型不计价，但仍统计上传(input)/输出(output) token：wllama 不返回 usage，这里按文本估算。
+    let outChars = 0;
+    const relayOffline = (ev) => {
+      if (ev && typeof ev.text === 'string' && (ev.type === 'text' || ev.type === 'reasoning')) outChars += ev.text.length;
+      if (typeof onEvent === 'function') onEvent(ev);
+    };
     await streamOfflineModel({
       messages: localMessages,
       tools: tools && tools.length ? toOpenAITools(tools) : [],
       signal,
       temperature: typeof temperature === 'number' ? temperature : 0.7,
-      onChunk: createOpenAIStream(onEvent || (() => {})),
+      onChunk: createOpenAIStream(relayOffline),
     });
+    if (typeof onEvent === 'function') onEvent({ type: 'usage', usage: {
+      input: estimateTokens(localMessages.map((m) => ({ content: typeof m.content === 'string' ? m.content : '' }))),
+      output: Math.max(1, Math.ceil(outChars / 2)),
+    } });
     return;
   }
   const gateway = getGateway(gatewayId);
@@ -644,11 +651,11 @@ export async function streamChat({ model, apiKey, messages, tools, fastMode = fa
   const modelKey = modelScopeKey(model, gateway.id);
   const level = normalizeReasoningLevel(reasoningLevel);
   const wantThinking = thinking && !thinkingUnsupported.has(modelKey);
-  // bareChat（对话模式）：只保留用户/助手历史 + 一条简短身份声明；
-  // 工具表、系统规则、记忆、技能与思考策略提示一律不下发。
+  // bareChat（对话模式）：请求体里只有用户/助手历史，零 system / developer /
+  // instructions / task 文本，也不带工具表、思考策略或个性化补充层。
   const cleanedMessages = stripEmptyAssistantMessages(messages);
   let requestMessages = bareChat
-    ? [chatIdentityMessage(model), ...cleanedMessages.filter((m) => !['system', 'developer'].includes(String(m?.role || '')))]
+    ? cleanedMessages.filter((m) => !['system', 'developer'].includes(String(m?.role || '')))
     : withReasoningStrategy(cleanedMessages, { thinking, level });
   if (!bareChat) {
     // 个性化系统提示词与用户决策作为独立补充层追加，不改写应用主提示词。
@@ -704,15 +711,15 @@ export async function streamChat({ model, apiKey, messages, tools, fastMode = fa
       if (allowTemp) body.temperature = tempInfo.temperature;
       if (fastMode && gateway.id === DEFAULT_GATEWAY_ID) body.service_tier = 'fast'; // TeamoRouter 专属计费字段
     }
-    if (withThinking) Object.assign(body, thinkingParamsFor(model, level));
+    if (withThinking && !bareChat) Object.assign(body, thinkingParamsFor(model, level));
     if (effortUnsupported.has(modelKey)) delete body.reasoning_effort;
     // Native toggle parameters differ by model family; do not invent them for unrelated IDs.
-    if (gateway.id === 'kimi' && /^kimi-k2\.6(?:$|-)/i.test(model)) body.thinking = { type: withThinking ? 'enabled' : 'disabled' };
+    if (!bareChat && gateway.id === 'kimi' && /^kimi-k2\.6(?:$|-)/i.test(model)) body.thinking = { type: withThinking ? 'enabled' : 'disabled' };
     if (gateway.id === 'kimi' && /^kimi-k3(?:$|-)/i.test(model)) {
       const effort = { mini: 'low', low: 'low', medium: 'high', high: 'high', max: 'max', ultra: 'max' }[level];
       body.reasoning_effort = withThinking ? effort : 'low';
     }
-    if (gateway.id === 'qwen' && /^qwen3\.8(?:-|$)/i.test(model)) {
+    if (!bareChat && gateway.id === 'qwen' && /^qwen3\.8(?:-|$)/i.test(model)) {
       // Qwen3.8 uses reasoning_effort; the official API maps "none" to disabled thinking.
       // Do not send enable_thinking alongside reasoning_effort for this family.
       delete body.enable_thinking;
@@ -722,7 +729,7 @@ export async function streamChat({ model, apiKey, messages, tools, fastMode = fa
     } else if (gateway.id === 'qwen' && /^qwen3\.7(?:-|$)/i.test(model)) {
       body.enable_thinking = !!withThinking;
     }
-    if (gateway.id === DEFAULT_GATEWAY_ID && protocol !== 'anthropic' && /^minimax-m3(?:$|-)/i.test(model)) {
+    if (!bareChat && gateway.id === DEFAULT_GATEWAY_ID && protocol !== 'anthropic' && /^minimax-m3(?:$|-)/i.test(model)) {
       // MiniMax M3 sends inline <think>…</think> in content unless split is requested.
       // Keep reasoning separate even when UI thinking is disabled; M3 supports disabling it explicitly.
       body.reasoning_split = true;
@@ -865,7 +872,7 @@ export async function streamChat({ model, apiKey, messages, tools, fastMode = fa
   const abortError = () => {
     const reason = signal && signal.reason;
     if (reason && typeof reason === 'object' && typeof reason.name === 'string') return reason;
-    const err = new Error('模型请求已中止');
+    const err = new Error(localeText('模型请求已中止', 'Model request aborted'));
     err.name = 'AbortError';
     return err;
   };
@@ -919,7 +926,7 @@ export async function streamChat({ model, apiKey, messages, tools, fastMode = fa
     if (signal?.aborted) throw abortError();
     if (protocolError) throw protocolError;
     if (!sawTerminalEvent && !sawDone) {
-      const err = new Error('模型响应流在结束前中断，未收到完成标记');
+      const err = new Error(localeText('模型响应流在结束前中断，未收到完成标记', 'Model response stream ended before completion (no finish marker received)'));
       err.name = 'IncompleteStreamError';
       throw err;
     }
@@ -959,15 +966,15 @@ function httpErrorMessage(status, text, gatewayId = DEFAULT_GATEWAY_ID) {
   } catch { /* 保留原文 */ }
   const spec = getGateway(gatewayId);
   const hints = gatewayId === DEFAULT_GATEWAY_ID ? {
-    401: '（请检查 API Key：应以 sk-teamo- 开头，且未被删除）',
-    402: '（余额不足，请前往 TeamoRouter 控制台充值）',
-    404: '（模型不存在，请用 GET /v1/models 核对模型 ID）',
-    429: '（触发限流，稍后自动重试）',
+    401: localeText('（请检查 API Key：应以 sk-teamo- 开头，且未被删除）', ' (check the API key: it should start with sk-teamo- and not be revoked)'),
+    402: localeText('（余额不足，请前往 TeamoRouter 控制台充值）', ' (insufficient balance — top up in the TeamoRouter console)'),
+    404: localeText('（模型不存在，请用 GET /v1/models 核对模型 ID）', ' (model not found — verify the model ID against GET /v1/models)'),
+    429: localeText('（触发限流，稍后自动重试）', ' (rate limited, retrying automatically)'),
   } : {
     401: `（请检查 ${spec.name} API Key、账号权限与模型访问权限）`,
     403: `（${spec.name} 拒绝访问；检查账号权限、区域和模型可用性）`,
     404: `（检查 ${spec.name} 的模型 ID 与网关基础 URL）`,
-    429: gatewayId === 'cloudflare' ? '（请检查 Cloudflare 额度或限流；未自动重试）' : '（触发限流，稍后自动重试）',
+    429: gatewayId === 'cloudflare' ? localeText('（请检查 Cloudflare 额度或限流；未自动重试）', ' (check Cloudflare quota or rate limits; no automatic retry)') : localeText('（触发限流，稍后自动重试）', ' (rate limited, retrying automatically)'),
   };
   return `HTTP ${status}: ${String(msg).slice(0, 400)} ${hints[status] || ''}`.trim();
 }
@@ -1322,7 +1329,7 @@ async function postImageStream(path, { apiKey, body, signal, timeoutMs, format =
       while ((idx = buf.indexOf('\n\n')) >= 0) { handle(buf.slice(0, idx)); buf = buf.slice(idx + 2); }
     }
     if (buf.trim()) handle(buf);
-    if (!final) throw new Error('图像流式响应结束时没有终图（可能是网关未完整转发流式事件）');
+    if (!final) throw new Error(localeText('图像流式响应结束时没有终图（可能是网关未完整转发流式事件）', 'The image stream ended without a final image (the gateway may not forward all stream events)'));
     return final;
   } finally {
     t.release();
@@ -1576,7 +1583,7 @@ async function generateMidjourney({ prompt, size, apiKey, signal }) {
   try {
     if (isCnUnavailableModel(gatewayBase(), 'midjourney')) throw new Error(localeText('该模型在当前地区不可用', 'This model is not available in the current region'));
     const r = await fetch(gatewayBase() + '/mj/submit/imagine', { method: 'POST', headers, body: buildMjSubmitBody(text), signal: t.signal, redirect: 'manual' });
-    if (r.type === 'opaqueredirect' || (r.status >= 300 && r.status < 400)) throw new Error('Midjourney 提交被重定向，已拒绝（未重试）。');
+    if (r.type === 'opaqueredirect' || (r.status >= 300 && r.status < 400)) throw new Error(localeText('Midjourney 提交被重定向，已拒绝（未重试）。', 'Midjourney submission was redirected and refused (not retried).'));
     const raw = await r.text().catch(() => '');
     if (!r.ok) {
       const err = new Error(httpErrorMessage(r.status, raw, DEFAULT_GATEWAY_ID));
@@ -1597,7 +1604,7 @@ async function generateMidjourney({ prompt, size, apiKey, signal }) {
       const gr = await request(`/mj/task/${encodeURIComponent(taskId)}/fetch`, { method: 'GET', headers: authHeaders('openai', apiKey, DEFAULT_GATEWAY_ID), signal: tt.signal });
       const gtext = await gr.text().catch(() => '');
       if (!gr.ok) throw new Error(httpErrorMessage(gr.status, gtext, DEFAULT_GATEWAY_ID));
-      try { task = JSON.parse(gtext); } catch { if (/^https?:\/\/\S+$/i.test(gtext.trim())) task = { status: 'SUCCESS', imageUrl: gtext.trim() }; else throw new Error('返回非 JSON'); }
+      try { task = JSON.parse(gtext); } catch { if (/^https?:\/\/\S+$/i.test(gtext.trim())) task = { status: 'SUCCESS', imageUrl: gtext.trim() }; else throw new Error(localeText('返回非 JSON', 'Response is not JSON')); }
     } catch (error) {
       if (signal?.aborted || error?.name === 'AbortError') throw error;
       throw new Error(`Midjourney 查询失败：${error.message}；task_id=${taskId}，请勿重新提交，可凭 ID 查询。`);
@@ -1616,7 +1623,7 @@ async function generateMidjourney({ prompt, size, apiKey, signal }) {
 
 // 图片编辑：images = [{ name?, dataUrl }]（沙箱内图片读出即为 data URL）；mask 可选
 export async function editImage({ model, apiKey, prompt, images = [], mask, size, quality, inputFidelity, format = 'png', n, signal, timeoutMs = IMAGE_TIMEOUT_MS, onRetry, gatewayId = DEFAULT_GATEWAY_ID, gatewayBaseUrl = '' } = {}) {
-  if (isMidjourneyModel(model)) throw new Error('Midjourney 不支持图片编辑，只能文生图。');
+  if (isMidjourneyModel(model)) throw new Error(localeText('Midjourney 不支持图片编辑，只能文生图。', 'Midjourney does not support image editing — text-to-image only.'));
   if (!images.length) throw new Error(localeText('图片编辑需要至少一张原图（reference_paths）', 'Image editing needs at least one source image (reference_paths).'));
   if (isNanoImageModel(model)) {
     if (!['teamorouter', 'gemini'].includes(gatewayId)) throw new Error(`Nano Banana 编辑需要 TeamoRouter 或 Gemini 网关；当前网关为「${getGateway(gatewayId).name}」`);

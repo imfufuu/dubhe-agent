@@ -9,6 +9,7 @@
 // 纯函数（视图夹取 / 缩放 / 排行）与事件委托分开：前者可单测，后者挂在消息列表上（一次性）。
 import { esc } from './ui-markdown.js?v=2026.10.25.1';
 import { formatNumber } from './i18n.js?v=2026.10.25.1';
+import { text } from './locale.js';
 
 export const MAP_VIEW_W = 720;
 export const MAP_VIEW_H = 392;
@@ -83,7 +84,7 @@ export function decorateGeoMap(box, rows) {
   if (!box || box.querySelector('.md-map-ctrl')) return;
   box.tabIndex = 0;
   box.setAttribute('role', 'group');
-  box.setAttribute('aria-label', '地图：滚轮或 + / − 缩放，拖动平移，0 复位');
+  box.setAttribute('aria-label', text('地图：滚轮或 + / − 缩放，拖动平移，0 复位', 'Map: scroll or +/- to zoom, drag to pan, 0 to reset'));
   box._mapView = { k: 1, x: 0, y: 0 };
   // 地图 SVG 包进 .md-map-stage（相对定位），控件只锚定地图本身，不随排行条一起跑到卡片底部
   const svg = svgOf(box);
@@ -94,12 +95,15 @@ export function decorateGeoMap(box, rows) {
     stage.appendChild(svg);
   }
   const stage = box.querySelector('.md-map-stage') || box;
+  const outLabel = text('缩小', 'Zoom out');
+  const inLabel = text('放大', 'Zoom in');
+  const resetLabel = text('复位', 'Reset');
   stage.insertAdjacentHTML('beforeend',
-    '<div class="md-map-ctrl" role="toolbar" aria-label="地图缩放">'
-    + '<button type="button" data-map-act="out" aria-label="缩小" title="缩小（−）">−</button>'
+    `<div class="md-map-ctrl" role="toolbar" aria-label="${text('地图缩放', 'Map zoom')}">`
+    + `<button type="button" data-map-act="out" aria-label="${outLabel}" title="${text('缩小（−）', 'Zoom out (−)')}">−</button>`
     + '<span class="md-map-scale" aria-live="polite">100%</span>'
-    + '<button type="button" data-map-act="in" aria-label="放大" title="放大（+）">+</button>'
-    + '<button type="button" data-map-act="reset" aria-label="复位" title="复位（0 / 双击）">⟲</button>'
+    + `<button type="button" data-map-act="in" aria-label="${inLabel}" title="${text('放大（+）', 'Zoom in (+)')}">+</button>`
+    + `<button type="button" data-map-act="reset" aria-label="${resetLabel}" title="${text('复位（0 / 双击）', 'Reset (0 / double-click)')}">⟲</button>`
     + '</div>');
   box.insertAdjacentHTML('beforeend', mapRankingHtml(rows));
   paintMapView(box);

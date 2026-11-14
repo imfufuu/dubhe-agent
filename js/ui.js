@@ -37,7 +37,8 @@ import { unlockAdminKey, adminUnlocked, isAdminAlias, adminExpiresAt, adminPhras
 import { shortSuggest } from './commands.js';
 import { getOrCreateUserSalutation, buildWelcomeGreeting } from './user-salutation.js';
 import { installShiftEnterGuard } from './composer-newline-guard.js';
-import { copyText } from './copy-text.js';
+import { copyText } from './copy-text.js'; const THINKING_LABEL = 'Thinking…';
+import { pauseTaskClock, resumeTaskClock, resetTaskClock, taskClockWaitingMs, taskClockMark, taskClockPauseReason } from './task-clock.js';
 import { installChatModeUI, installFinalReportOpener, toggleChatThinking, chatModeThinkingTitle, sendChatTurn } from './ui-chat-mode.js';
 import { installWelcomeMotion } from './ui-welcome-motion.js?v=2026.10.25.1';
 import { paintReasoningBlocks } from './ui-reasoning-motion.js?v=2026.10.25.1';
@@ -359,7 +360,7 @@ export function mountUI(store, agent) {
           return;
         }
         syncWeb();
-        toast('未检测到可用中继（公共 Cloudflare Worker 或本地 server.py 都不可达），联网抓取暂不可用', 'warn', 4200);
+        toast(localeText('未检测到可用中继（公共 Cloudflare Worker 或本地 server.py 都不可达），联网抓取暂不可用', 'No reachable relay (both the public Cloudflare Worker and local server.py are unreachable) — web fetching is unavailable for now'), 'warn', 4200);
         return;
       }
       store.state.settings.webEnabled = store.state.settings.webEnabled === false;
@@ -412,6 +413,7 @@ export function mountUI(store, agent) {
   };
   thinkingToggle.addEventListener('click', (e) => {
     e.stopPropagation();
+    // 对话模式：按下切换思考开关（再按一下关闭）；Agent 模式：展开分级菜单（彩蛋）。
     if (document.documentElement.getAttribute('data-chat-mode') === '1') { toggleChatThinking({ store, syncThinking, closeThinkMenu }); return; }
     if (thinkMenu && thinkMenu.classList.contains('open')) closeThinkMenu();
     else openThinkMenu();
@@ -423,7 +425,7 @@ export function mountUI(store, agent) {
       const v = btn.getAttribute('data-think');
       if (v === 'off') {
         store.state.settings.thinking = false;
-        toast('思考 Off');
+        toast(localeText('思考 Off', 'Reasoning off'));
       } else {
         store.state.settings.thinking = true;
         store.state.settings.reasoningLevel = normalizeReasoningLevel(v);
@@ -509,7 +511,7 @@ const fmtAdminExp = (ms) => {
     const typed = keyInput.value.trim();
     const gatewayId = store.state.gatewayId || DEFAULT_GATEWAY_ID;
     const chk = validateGatewayKey(typed, gatewayId, isAdminAlias);
-    if (!chk.ok) { toast('Key 格式错误：' + chk.reason, 'err', 5000); keyInput.focus(); keyInput.select(); return; }
+    if (!chk.ok) { toast(localeText('Key 格式错误：', 'Invalid key format: ') + chk.reason, 'err', 5000); keyInput.focus(); keyInput.select(); return; }
     // 管理员别名：先用口令解封（解不开就拒绝保存，避免存进去一把用不了的 key）
     if (isAdminAlias(typed)) {
       toast(localeText('正在校验管理员口令与暗号…', 'Verifying admin key and phrase…'), 'ok', 1500);
@@ -712,7 +714,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
         e.stopPropagation();
         const wasActive = s.id === store.state.activeSessionId;
         const busyAtDelete = getBusy();
-        if (busyAtDelete && wasActive) return toast('当前会话正在输出，不能删这一条', 'warn');
+        if (busyAtDelete && wasActive) return toast(localeText('当前会话正在输出，不能删这一条', 'This session is still streaming; it cannot be deleted now'), 'warn');
         if (!confirm(`删除会话「${s.title || '新对话'}」？不可恢复。`)) return;
         // 删除会话不改变用户当前选择的网关与模型（会话级恢复只在主动切换时发生）。
         const keptGateway = store.state.gatewayId, keptModel = store.state.model; store.deleteSession(s.id); store.state.gatewayId = keptGateway; store.state.model = keptModel;
@@ -761,7 +763,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       input.replaceWith(span);
       if (commit && v && v !== (s.title || '') && typeof store.renameSession === 'function') {
         store.renameSession(s.id, v);
-        toast('会话已重命名', 'ok', 1400);
+        toast(localeText('会话已重命名', 'Session renamed'), 'ok', 1400);
       }
       renderSessions();
     };
@@ -775,7 +777,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
   }
   function switchToSession(id) {
     if (id === store.state.activeSessionId) return;
-    if (getBusy()) return toast('请等待当前回合结束再切换会话', 'warn');
+    if (getBusy()) return toast(localeText('请等待当前回合结束再切换会话', 'Wait for the current turn to end before switching sessions'), 'warn');
     if (inSystem()) leaveSystemChannel(); // 退出 /system 通道，切到该会话最后使用的模型
     saveComposerDraft();
     store.switchSession(id);
@@ -788,11 +790,11 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     syncThinking(); syncCapLine();
   }
   $('#new-session').addEventListener('click', () => {
-    if (getBusy()) return toast('请等待当前回合结束', 'warn');
+    if (getBusy()) return toast(localeText('请等待当前回合结束', 'Wait for the current turn to finish'), 'warn');
     if (inSystem()) leaveSystemChannel(); // 退出 /system 通道，切回进入前的模型
     // 当前已是空会话（没有消息、没有沙箱文件）：不重建视图，只提示——避免整页重绘闪一下
     const emptyNow = !(store.state.messages || []).length && !Object.keys(store.state.files || {}).length;
-    if (emptyNow) { composer.focus(); return toast('已在新对话中', 'ok', 1800); }
+    if (emptyNow) { composer.focus(); return toast(localeText('已在新对话中', 'Started a new chat'), 'ok', 1800); }
     saveComposerDraft();
     (store.ensureDraft ? store.ensureDraft() : store.createSession());
     loadComposerDraft();
@@ -803,13 +805,13 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
   });
   // 一键清除所有会话记录（含各自的沙箱文件与检查点）：不可恢复，所以必须确认
   $('#clear-sessions').addEventListener('click', () => {
-    if (getBusy()) return toast('请等待当前回合结束', 'warn');
+    if (getBusy()) return toast(localeText('请等待当前回合结束', 'Wait for the current turn to finish'), 'warn');
     const n = (store.listableSessions ? store.listableSessions() : store.sortedSessions()).length;
-    if (!n) { toast('当前没有任何会话记录'); return; }
+    if (!n) { toast(localeText('当前没有任何会话记录', 'There are no saved sessions')); return; }
     if (!confirm(`清除全部 ${n} 条会话记录？所有消息、检查点与沙箱文件都会被删除，且不可恢复。`)) return;
     if (!confirm('再次确认：此操作不可恢复。确定清空全部会话？')) return;
     if (typeof store.clearAllSessions !== 'function') {
-      return toast('浏览器缓存了旧版本代码，请硬刷新（Ctrl/Cmd + Shift + R）后再用「清空」', 'warn', 5000);
+      return toast(localeText('浏览器缓存了旧版本代码，请硬刷新（Ctrl/Cmd + Shift + R）后再用「清空」', 'The browser cached old code; hard refresh (Ctrl/Cmd + Shift + R) and then clear'), 'warn', 5000);
     }
     const removed = store.clearAllSessions();
     loadComposerDraft(); agent.loadFiles({});
@@ -830,10 +832,10 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
   undoPill.addEventListener('click', () => {
     cancelRollbackAnim();
     undoPill.classList.remove('show');
-    if (store.undoRollback()) { rebuildMessages(); renderSessions(); updateStats(); toast('已撤销回滚'); }
+    if (store.undoRollback()) { rebuildMessages(); renderSessions(); updateStats(); toast(localeText('已撤销回滚', 'Rollback undone')); }
   });
   function doRollback(m) {
-    if (getBusy()) return toast('请等待当前回合结束');
+    if (getBusy()) return toast(localeText('请等待当前回合结束', 'Wait for the current turn to finish'));
     if (!confirm('回滚到本轮对话之前？该轮及其后的消息将被移除（可撤销）。')) return;
     const msgs = store.state.messages || [];
     const idx = msgs.findIndex((x) => x.id === m.id);
@@ -844,7 +846,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     const discardedNodes = $$('.msg', msgList).filter((n) => discardedIds.has(n.dataset.id));
     store.rollbackBeforeMessage(m.id);
     renderSessions(); updateStats(); showUndoPill();
-    toast('已回滚，可点击「撤销回滚」恢复', 'ok');
+    toast(localeText('已回滚，可点击「撤销回滚」恢复', 'Rolled back; use “Undo rollback” to restore'), 'ok');
     if (discardedNodes.length) {
       disintegrateMessageNodes(discardedNodes, () => rebuildMessages());
     } else {
@@ -1111,7 +1113,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
           // 之前只调 agent.regenerate()：store 里旧消息删了，但 DOM 节点还挂在消息区，
           // 新回答又追加在下面 → 看起来像「没重新生成」或「生成了两条」。
           const removed = store.dropLastAssistantTurn();
-          if (removed) { rebuildMessages(); toast('已覆盖上一次回答，正在重新生成…', 'ok', 1600); }
+          if (removed) { rebuildMessages(); toast(localeText('已覆盖上一次回答，正在重新生成…', 'Replaced the previous answer, regenerating…'), 'ok', 1600); }
           agent.regenerate();
         }
       }));
@@ -1125,13 +1127,13 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     if (getBusy()) return;
     const i = store.state.messages.findIndex((x) => x.id === m.id);
     const um = i > 0 ? store.state.messages[i - 1] : null;
-    if (!um || um.role !== 'user') { toast('找不到对应的提问，请手动重新提问', 'err', 2200); return; }
-    if (i !== store.state.messages.length - 1) { toast('这条不是最近一轮，请先「回滚」再重问', 'err', 2400); return; }
-    if (/先联网(检索|查|搜索)/.test(um.text || '')) { toast('这一轮已经要求过「先联网检索」了 —— 建议换个模型（Claude / GPT 系列）再试', 'err', 2800); return; }
+    if (!um || um.role !== 'user') { toast(localeText('找不到对应的提问，请手动重新提问', 'The original question was not found; please ask again manually'), 'err', 2200); return; }
+    if (i !== store.state.messages.length - 1) { toast(localeText('这条不是最近一轮，请先「回滚」再重问', 'This is not the latest turn; roll back first, then ask again'), 'err', 2400); return; }
+    if (/先联网(检索|查|搜索)/.test(um.text || '')) { toast(localeText('这一轮已经要求过「先联网检索」了 —— 建议换个模型（Claude / GPT 系列）再试', 'This turn already asked for a web-first answer — try a different model (Claude / GPT family) instead'), 'err', 2800); return; }
     store.dropLastAssistantTurn();   // 覆盖式重试：别把没检索到的旧回答留在上面
     store.updateMessage(um.id, { text: '先联网检索再回答：' + (um.text || '') });
     rebuildMessages();
-    toast('已改写提问（先联网检索再回答），正在重试…', 'ok', 1800);
+    toast(localeText('已改写提问（先联网检索再回答），正在重试…', 'Rewrote the question to search the web first, retrying…'), 'ok', 1800);
     agent.regenerate();
   }
   const BUDGET_CHANNEL_LABEL = { toolCalls: '工具调用', retries: '重试次数', durationMs: '墙钟时长', parallelTasks: '并发任务', memoryWrites: '记忆写入', externalSideEffects: '外部副作用', tokens: 'Token 消耗' };
@@ -1303,8 +1305,8 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     const laterAssistant = after.slice(0, nextUser < 0 ? undefined : nextUser).some(x => x.role === 'assistant');
     if (!m._displayFragment && !getBusy() && !laterAssistant && m.done && !m.cancelled && !String(m.text || '').trim() && !(m.toolCalls && m.toolCalls.length) && !m.error) {
       html += lengthCapped
-        ? '<div class="trunc-note">输出在长度上限前结束，未收到可见正文。请点击「重新生成」重试。</div>'
-        : '<div class="trunc-note">模型未返回可见答复。请点击「重新生成」重试。</div>';
+        ? localeText('<div class="trunc-note">输出在长度上限前结束，未收到可见正文。请点击「重新生成」重试。</div>', '<div class="trunc-note">Output stopped at the length cap before any visible text arrived. Click “Regenerate” to retry.</div>')
+        : localeText('<div class="trunc-note">模型未返回可见答复。请点击「重新生成」重试。</div>', '<div class="trunc-note">The model returned no visible answer. Click “Regenerate” to retry.</div>');
     }
     replacePreservingEffects(body, html);
     // 正文新增字符淡入
@@ -1364,9 +1366,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       const bits = [];
       if (m.reasoningLevel && m.reasoningLevel !== 'off') bits.push(reasoningLevelLabel(m.reasoningLevel));
       if (m.reasoningMs) bits.push(fmtSpan(m.reasoningMs));
-      const title = gptSummaryOnly
-        ? localeText('思考摘要', 'Reasoning summary')
-        : localeText('思考过程', 'Reasoning process');
+      const title = THINKING_LABEL;
       const nameEl = $('.chip-name', reason);
       const stateEl = $('.chip-state', reason);
       if (nameEl) nameEl.textContent = title;
@@ -1910,11 +1910,11 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
   function webNote(w) {
     const box = el('div', 'web-note');
     const sources = (w.sources || []).filter((x) => x && x.url).slice(0, 6);
-    if (w.status === 'searching') box.innerHTML = '<span class="web-dot"></span><span>联网检索中…</span>';
+    if (w.status === 'searching') box.innerHTML = localeText('<span class="web-dot"></span><span>联网检索中…</span>', '<span class="web-dot"></span><span>Searching the web…</span>');
     else if (w.status === 'error') {
       // 上游检索服务不可用（如 Anthropic 的 error_code:"unavailable"）：如实说清，不显示「0 条来源」
       box.innerHTML = `<span class="web-fail">联网检索未成功</span><span class="mono">${esc(String(w.message || '上游未返回结果').slice(0, 90))}</span>`
-        + (sources.length ? '' : '<span class="web-hint">可稍后重试，或换用其它支持原生联网的模型</span>');
+        + (sources.length ? '' : localeText('<span class="web-hint">可稍后重试，或换用其它支持原生联网的模型</span>', '<span class="web-hint">Retry later, or switch to a model with native web search</span>'));
     }
     else {
       // 各家原生格式给的计数字段不一致（有的只给 sources），取两者较大值，别显示「0 条来源」
@@ -1941,7 +1941,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     let tail = wrap.querySelector(':scope > .message-tail');
     if (!m.cancelled) { tail?.remove(); return; }
     if (!tail) { tail = el('div', 'message-tail'); wrap.append(tail); }
-    if (tail.innerHTML !== '<span class="cancelled-tag">已停止</span>') tail.innerHTML = '<span class="cancelled-tag">已停止</span>';
+    if (tail.innerHTML !== localeText('<span class="cancelled-tag">已停止</span>', '<span class="cancelled-tag">Stopped</span>')) tail.innerHTML = localeText('<span class="cancelled-tag">已停止</span>', '<span class="cancelled-tag">Stopped</span>');
     const bar = wrap.querySelector(':scope > .msg-toolbar');
     if (bar) wrap.insertBefore(tail, bar); else wrap.append(tail);
   }
@@ -2117,16 +2117,17 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     idle: ['', 'ok'],
     moderating: ['连接模型中', 'busy'],  // 对用户只显示「连接模型中」，不暴露审核过程（避免心理负担）；fail-closed 拦截时气泡会说明
     connecting: ['连接模型中', 'busy'],
-    thinking: ['思考中', 'busy'], streaming: ['生成中', 'busy'],
+    thinking: [THINKING_LABEL, 'busy'], streaming: ['生成中', 'busy'],
     executing: ['沙箱执行中', 'busy'], done: ['完成', 'ok'], error: ['出错', 'err'], cancelled: ['已停止', 'warn'],
   };
   const DOTS = '<span class="sdots" aria-hidden="true"><i></i><i></i><i></i></span>';
   let busySince = 0;
+  let busyWaitMark = 0;   // 进入 busy 时的累计暂停值；等待确认/人机验证的时间不计入任务耗时
   let busyTimer = null;
   const stopBusyTicker = () => { if (busyTimer) { clearInterval(busyTimer); busyTimer = null; } };
   function paintStatus(s) {
     const [baseLabel] = STATUS[s] || STATUS.idle;
-    const label = [...confirmNodes.values()].some(n => !n.classList.contains('resolved')) ? localeText('等待执行权限确认', 'Waiting for execution permission') : baseLabel;
+    const label = [...confirmNodes.values()].some(n => !n.classList.contains('resolved')) ? localeText('等待执行权限确认', 'Waiting for execution permission') : (taskClockPauseReason() === 'human' ? localeText('等待人机验证', 'Waiting for the human check') : baseLabel);
     statusText.innerHTML = `${esc(label)}${DOTS}<span class="selapsed mono"></span>`;
     paintElapsed();
   }
@@ -2136,7 +2137,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     if (!busySince) return;
     const el = statusText.querySelector('.selapsed');
     if (!el) return;
-    const secs = (performance.now() - busySince) / 1000;
+    const secs = (performance.now() - busySince - (taskClockWaitingMs() - busyWaitMark)) / 1000;
     el.textContent = secs >= 0.8 ? `${secs.toFixed(1)}s` : '';
   }
   function setStatus(s) {
@@ -2146,12 +2147,12 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     const busy = ['moderating', 'connecting', 'thinking', 'streaming', 'executing'].includes(s);
     if (busy && presentationStopped) { presentationScope = ''; syncPresentationScope(); }
     if (busy) {
-      if (!busySince) busySince = performance.now();
+      if (!busySince) { resetTaskClock(); busySince = performance.now(); busyWaitMark = taskClockMark(); }
       statusDot.className = `dot busy ${s}`;
       if (!busyTimer) busyTimer = setInterval(paintElapsed, 100);
       paintStatus(s);
     } else {
-      busySince = 0; stopBusyTicker();
+      busySince = 0; busyWaitMark = 0; resumeTaskClock('confirm'); stopBusyTicker();
       statusDot.className = 'dot ' + cls;
       // 完成态短暂回显后清空，避免状态栏留白显得突兀
       if (s === 'done') {
@@ -2242,7 +2243,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     }
   }
   $('#export-btn').addEventListener('click', () => {
-    if (!store.state.messages.length) return toast('暂无可导出的对话');
+    if (!store.state.messages.length) return toast(localeText('暂无可导出的对话', 'There is no conversation to export'));
     const active = store.state.sessions.find((s) => s.id === store.state.activeSessionId) || {};
     const data = {
       app: 'Dubhe Agent', exportedAt: new Date().toISOString(), model: store.state.model,
@@ -2264,7 +2265,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     a.download = `dubhe-agent-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.json`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-    toast('已导出会话 JSON', 'ok');
+    toast(localeText('已导出会话 JSON', 'Session JSON exported'), 'ok');
   });
 
   // ── 导入会话（兼容本应用导出的 JSON）────────────────────────────────
@@ -2277,16 +2278,16 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     try {
       // 忙判定必须在改 store 之前：旧写法先 importSession 再判忙，
       // 回合进行中导入会把正在跑的对话数组换掉（半轮丢失 + 状态栏错乱）
-      if (getBusy()) return toast('请等待当前回合结束再导入', 'warn');
+      if (getBusy()) return toast(localeText('请等待当前回合结束再导入', 'Wait for the current turn to end before importing'), 'warn');
       const data = JSON.parse(await file.text());
       saveComposerDraft();
       const s = store.importSession(data);
-      if (!s) return toast('导入失败：文件里没有有效的 messages 数组', 'err');
+      if (!s) return toast(localeText('导入失败：文件里没有有效的 messages 数组', 'Import failed: the file has no valid messages array'), 'err');
       loadComposerDraft(); agent.loadFiles(store.state.files);
       rebuildMessages({ scroll: 'bottom' }); renderSessions(); renderFiles(); updateStats(); renderTimeStats();
       toast(`已导入会话「${s.title}」（${s.messages.length} 条消息）`, 'ok');
     } catch (err) {
-      toast('导入失败：' + err.message, 'err');
+      toast(localeText('导入失败：', 'Import failed: ') + err.message, 'err');
     }
   });
 
@@ -2389,7 +2390,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       welcomeMotion.sync();
       return;
     }
-    if (!store.state.apiKey && !getGateway(store.state.gatewayId).noKey && !isOfflineModelId(store.state.model)) { composerDraftAwaitingKey = text; openKeyModal(); toast('请先配置 TeamoRouter API Key（输入内容已保留，保存后自动放回）', 'warn'); return; }
+    if (!store.state.apiKey && !getGateway(store.state.gatewayId).noKey && !isOfflineModelId(store.state.model)) { composerDraftAwaitingKey = text; openKeyModal(); toast(localeText('请先配置 TeamoRouter API Key（输入内容已保留，保存后自动放回）', 'Configure a TeamoRouter API key first (your input is kept and restored after saving)'), 'warn'); return; }
     if (getBusy()) return;
     pendingSendOrigin = composer.getBoundingClientRect();
     composer.value = ''; saveComposerDraft(); autoGrow();
@@ -2446,12 +2447,12 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
     const btn = e.target.closest('.att-video');
     if (!btn || !msgList.contains(btn)) return;
     e.preventDefault(); e.stopPropagation();
-    if (btn.classList.contains('is-off')) { toast('该视频内容未持久化（已省略），无法播放', 'info'); return; }
+    if (btn.classList.contains('is-off')) { toast(localeText('该视频内容未持久化（已省略），无法播放', 'This video was not persisted (omitted), so it cannot play'), 'info'); return; }
     const msgEl = btn.closest('.msg[data-id]');
     const msg = msgEl ? (store.state.messages || []).find((x) => String(x.id) === String(msgEl.dataset.id)) : null;
     const att = msg && Array.isArray(msg.attachments) ? msg.attachments[Number(btn.dataset.attIdx)] : null;
     const url = att ? videoBlobUrl(att.dataUrl) : '';
-    if (!url) { toast('视频数据不可用', 'err'); return; }
+    if (!url) { toast(localeText('视频数据不可用', 'Video data unavailable'), 'err'); return; }
     const v = document.createElement('video');
     v.className = 'att-video-player';
     v.controls = true; v.autoplay = true; v.playsInline = true; v.preload = 'metadata';
@@ -2462,7 +2463,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
   msgList.addEventListener('click', (e) => {
     const sw = e.target.closest('[data-switch-gateway]');
     if (sw) {
-      if (getBusy()) { toast('当前仍在生成，先停止再切换', 'info'); return; }
+      if (getBusy()) { toast(localeText('当前仍在生成，先停止再切换', 'Still generating — stop it before switching'), 'info'); return; }
       const from = gatewayBase();
       const to = setGatewayBase(null, 'manual');
       updateTransportBadge();
@@ -2842,6 +2843,7 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       ].join('');
       const settle = (decision, label) => {
         const res = (() => { try { return agent.resolveConfirmation(node.dataset.key, decision, label); } catch { return { ok: false }; } })();
+        resumeTaskClock('confirm');
         if (res && res.ok !== false && decision !== 'deny') {
           confirmNodes.delete(node.dataset.key); node.remove(); paintStatus(agent.getStatus());
           return;
@@ -2861,11 +2863,12 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
       node.querySelector('[data-decision="allow-session"]')?.addEventListener('click', () => settle('allow-session', localeText('本会话内该工具不再逐次确认', 'Allowed for this session')));
       node.querySelector('[data-decision="deny"]').addEventListener('click', () => settle('deny', localeText('已拒绝执行', 'Denied')));
       msgList.appendChild(node);
-      confirmNodes.set(node.dataset.key, node);
+      confirmNodes.set(node.dataset.key, node); pauseTaskClock('confirm');
       paintStatus(agent.getStatus());
       scrollToBottom(true);
     },
     onConfirmationResolved(call, rec) {
+      resumeTaskClock('confirm');
       const node = confirmNodes.get(String(rec?.key || ''));
       if (!node || node.classList.contains('resolved')) return;
       if (rec?.decision === 'allow-once' || rec?.decision === 'allow-session') {
@@ -2984,15 +2987,12 @@ const MEM_EMPTY_ART = `<svg class="files-empty-art mem-empty-art" viewBox="0 0 1
   };
   // UI 挂载完成：同步取消启动超时，再淡出加载屏，避免慢网下先闪出误报。
   const bootGuard = window.__dubheBootGuard;
-  if (bootGuard && typeof bootGuard.complete === 'function') {
-    bootGuard.complete();
-  } else {
-    requestAnimationFrame(() => {
-      const boot = document.getElementById('boot-screen');
-      if (!boot) return;
-      boot.classList.add('fade-out');
-      setTimeout(() => { boot.remove(); }, 500);
-    });
-  }
+  if (bootGuard && typeof bootGuard.complete === 'function') bootGuard.complete();
+  else requestAnimationFrame(() => {
+    const boot = document.getElementById('boot-screen');
+    if (!boot) return;
+    boot.classList.add('fade-out');
+    setTimeout(() => { boot.remove(); }, 500);
+  });
   return ui;
 }

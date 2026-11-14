@@ -25,6 +25,9 @@ jobs:
           for f in js/*.js relay/*.js sw.js tools/*.mjs; do node --check "$f" || exit 1; done
       - name: i18n audit
         run: node scripts/i18n-audit.mjs --json
+      - name: i18n coverage · 界面模块不得有写死中文
+        if: ${{ !cancelled() }}
+        run: node tools/i18n-coverage.mjs --check
       - name: tests/agent-runtime.test.mjs · regression
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/agent-runtime.test.mjs
@@ -46,6 +49,9 @@ jobs:
       - name: tests/boot-guard.test.mjs · regression
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/boot-guard.test.mjs
+      - name: tests/chat-purity.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/chat-purity.test.mjs
       - name: tests/checklist.test.mjs · regression
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/checklist.test.mjs
@@ -109,6 +115,9 @@ jobs:
       - name: tests/human-check.test.mjs · regression
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/human-check.test.mjs
+      - name: tests/i18n-coverage.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/i18n-coverage.test.mjs
       - name: tests/i18n-packs.test.mjs · regression
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/i18n-packs.test.mjs
@@ -208,6 +217,9 @@ jobs:
       - name: tests/tangut-font.test.mjs · regression
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/tangut-font.test.mjs
+      - name: tests/task-clock.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/task-clock.test.mjs
       - name: tests/teamorouter-pricing.test.mjs · regression
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/teamorouter-pricing.test.mjs
@@ -268,6 +280,9 @@ jobs:
       - name: tests/v5-updates.test.mjs · regression
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/v5-updates.test.mjs
+      - name: tests/v6-ui-updates.test.mjs · regression
+        if: ${{ !cancelled() }}
+        run: node tools/run-tests.mjs tests/v6-ui-updates.test.mjs
       - name: tests/video-and-attachments.test.mjs · regression
         if: ${{ !cancelled() }}
         run: node tools/run-tests.mjs tests/video-and-attachments.test.mjs

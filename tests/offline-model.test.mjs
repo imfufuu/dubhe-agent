@@ -365,7 +365,7 @@ test('tool execution provides a final fail-closed guard before a remote tool can
 
 test('local-only sends skip remote API Key prompts without relaxing the gateway-key requirement for remote models', () => {
   const ui = fs.readFileSync(new URL('../js/ui.js', import.meta.url), 'utf8');
-  assert.match(ui, /if \(!store\.state\.apiKey && !getGateway\(store\.state\.gatewayId\)\.noKey && !isOfflineModelId\(store\.state\.model\)\) \{ composerDraftAwaitingKey = text; openKeyModal\(\); toast\('请先配置 TeamoRouter API Key（输入内容已保留，保存后自动放回）', 'warn'\); return; \}/);
+  assert.match(ui, /if \(!store\.state\.apiKey && !getGateway\(store\.state\.gatewayId\)\.noKey && !isOfflineModelId\(store\.state\.model\)\) \{ composerDraftAwaitingKey = text; openKeyModal\(\); toast\(localeText\('请先配置 TeamoRouter API Key（输入内容已保留，保存后自动放回）', '[^']*'\), 'warn'\); return; \}/);
   assert.match(ui, /if \(!store\.state\.apiKey && !getGateway\(store\.state\.gatewayId\)\.noKey && !isOfflineModelId\(store\.state\.model\)\) setTimeout\(openKeyModal, 600\);/);
   const choices = fs.readFileSync(new URL('../js/ui-choices.js', import.meta.url), 'utf8');
   assert.match(choices, /if \(!store\.state\.apiKey && !getGateway\(store\.state\.gatewayId\)\.noKey && !isOfflineModelId\(store\.state\.model\)\)/);
@@ -468,4 +468,36 @@ test('推荐超轻量模型配置与真实推理报告一致', () => {
   const settings = fs.readFileSync(new URL('../js/settings.js', import.meta.url), 'utf8');
   assert.match(app, /id="set-recommended-models"/);
   assert.match(settings, /RECOMMENDED_LIGHTWEIGHT_MODELS/);
+});
+
+test('本地模型不计价，但仍统计上传/输出 token', async () => {
+  const { priceBadgeFor, estimateChatCost } = await import('../js/pricing.js');
+  assert.equal(priceBadgeFor('local/gguf'), '');
+  const cost = estimateChatCost('local/gguf', { input: 123, output: 45 });
+  assert.equal(cost.unpriced, true);
+  assert.equal(cost.costUsd, 0);
+  assert.equal(cost.inputTokens, 123);
+  assert.equal(cost.outputTokens, 45);
+});
+
+test('第二次提问：保守 token 估算 + 输入上限 + 同模型不重复 loadModel', async () => {
+  const { estimateTokens, fitMessagesToContext, OFFLINE_INPUT_CAP } = await import('../js/offline-context.js');
+  assert.ok(estimateTokens([{ content: '中'.repeat(100) }]) >= 100, '中文按 1 字 1 token 保守估算');
+  const msgs = [{ role: 'system', content: 'S' }, ...Array.from({ length: 40 }, (_, i) => ({ role: 'user', content: '中文问题'.repeat(200) + i }))];
+  const fitted = fitMessagesToContext(msgs, 6144);
+  assert.ok(estimateTokens(fitted) <= OFFLINE_INPUT_CAP, `裁剪后仍应低于输入上限，实际 ${estimateTokens(fitted)}`);
+  assert.equal(fitted[0].role, 'system');
+  let loadCalls = 0;
+  const engine = {
+    proxy: {},
+    isModelLoaded() { return false; }, // 模拟 wllama 第二轮短暂误报未加载
+    async loadModel() { loadCalls++; },
+    async exit() { this.proxy = {}; },
+    async createChatCompletion() { return (async function* () { yield { ok: 1 }; })(); },
+  };
+  const file = new Blob(['m']);
+  const opts = { engineProvider: async () => engine, modelFileProvider: async () => ({ file, metadata: { fileName: 'same.gguf' } }) };
+  await streamOfflineModel({ messages: [{ role: 'user', content: 'first' }], onChunk: () => {} }, opts);
+  await streamOfflineModel({ messages: [{ role: 'user', content: 'second' }], onChunk: () => {} }, opts);
+  assert.equal(loadCalls, 1, '同一模型第二轮不得重新 loadModel（避免 already initialized）');
 });

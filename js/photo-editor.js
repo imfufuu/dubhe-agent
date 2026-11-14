@@ -82,73 +82,73 @@ export function openPhotoEditor(file, options = {}) {
   if (!doc || !file) return Promise.resolve(null);
   const win = doc.defaultView || globalThis;
   const ImageCtor = win.Image || globalThis.Image;
-  if (!ImageCtor || typeof win.URL?.createObjectURL !== 'function') return Promise.reject(new Error('此浏览器不支持本地照片编辑'));
+  if (!ImageCtor || typeof win.URL?.createObjectURL !== 'function') return Promise.reject(new Error(localeText('此浏览器不支持本地照片编辑', 'This browser does not support local photo editing')));
 
   return new Promise((resolve, reject) => {
     const modal = doc.createElement('div');
     modal.className = 'photo-editor-modal';
     modal.setAttribute('role', 'dialog');
     modal.setAttribute('aria-modal', 'true');
-    modal.setAttribute('aria-label', '编辑拍摄的照片');
+    modal.setAttribute('aria-label', localeText('编辑拍摄的照片', 'Edit the captured photo'));
     modal.innerHTML = `
       <section class="photo-editor" role="document">
         <header class="photo-editor-head">
           <div class="photo-editor-heading">
-            <div class="photo-editor-title">照片编辑</div>
-            <div class="photo-file-name" aria-live="polite">正在读取照片…</div>
+            <div class="photo-editor-title">${localeText('照片编辑', 'Photo editor')}</div>
+            <div class="photo-file-name" aria-live="polite">${localeText('正在读取照片…', 'Reading photo…')}</div>
           </div>
           <div class="photo-editor-head-right">
-            <span class="photo-local-badge" title="所有处理都在浏览器本地完成，不会上传"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 19 6v5.2c0 4.4-3 7.7-7 9.3-4-1.6-7-4.9-7-9.3V6l7-3Z"/><path d="m9 12 2 2 4-4.5"/></svg>仅本地处理</span>
-            <button class="photo-editor-close icon-btn" type="button" aria-label="取消编辑" title="关闭（Esc）"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
+            <span class="photo-local-badge" title="${localeText('所有处理都在浏览器本地完成，不会上传', 'Everything is processed locally in the browser; nothing is uploaded')}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 19 6v5.2c0 4.4-3 7.7-7 9.3-4-1.6-7-4.9-7-9.3V6l7-3Z"/><path d="m9 12 2 2 4-4.5"/></svg>${localeText('仅本地处理', 'Local only')}</span>
+            <button class="photo-editor-close icon-btn" type="button" aria-label="${localeText('取消编辑', 'Cancel editing')}" title="${localeText('关闭（Esc）', 'Close (Esc)')}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
           </div>
         </header>
-        <div class="photo-toolbar" role="toolbar" aria-label="照片编辑工具">
+        <div class="photo-toolbar" role="toolbar" aria-label="${localeText('照片编辑工具', 'Photo editing tools')}">
           <div class="photo-tool-group">
-            <button class="photo-tool-button" type="button" data-photo-action="undo" title="撤销（⌘Z / Ctrl+Z）" aria-label="撤销" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 8 5 12l4 4"/><path d="M5.5 12H14a4.5 4.5 0 0 1 0 9h-2"/></svg><span class="photo-tool-name">撤销</span></button>
+            <button class="photo-tool-button" type="button" data-photo-action="undo" title="${localeText('撤销（⌘Z / Ctrl+Z）', 'Undo (⌘Z / Ctrl+Z)')}" aria-label="撤销" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 8 5 12l4 4"/><path d="M5.5 12H14a4.5 4.5 0 0 1 0 9h-2"/></svg><span class="photo-tool-name">${localeText('撤销', 'Undo')}</span></button>
           </div>
           <div class="photo-tool-group">
-            <button class="photo-tool-button" type="button" data-photo-action="rotate-left" title="向左旋转 90°（Shift+R）" aria-label="向左旋转 90 度"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg><span class="photo-tool-name">左旋</span></button>
-            <button class="photo-tool-button" type="button" data-photo-action="rotate-right" title="向右旋转 90°（R）" aria-label="向右旋转 90 度"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg><span class="photo-tool-name">右旋</span></button>
+            <button class="photo-tool-button" type="button" data-photo-action="rotate-left" title="${localeText('向左旋转 90°（Shift+R）', 'Rotate 90° left (Shift+R)')}" aria-label="${localeText('向左旋转 90 度', 'Rotate 90 degrees left')}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg><span class="photo-tool-name">${localeText('左旋', 'Rotate left')}</span></button>
+            <button class="photo-tool-button" type="button" data-photo-action="rotate-right" title="${localeText('向右旋转 90°（R）', 'Rotate 90° right (R)')}" aria-label="${localeText('向右旋转 90 度', 'Rotate 90 degrees right')}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg><span class="photo-tool-name">${localeText('右旋', 'Rotate right')}</span></button>
           </div>
           <div class="photo-tool-group">
-            <button class="photo-tool-button" type="button" data-photo-action="crop" title="裁剪（C）" aria-label="裁剪" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3v13a2 2 0 0 0 2 2h12M3 7h13a2 2 0 0 1 2 2v12"/></svg><span class="photo-tool-name">裁剪</span></button>
-            <button class="photo-tool-button" type="button" data-photo-action="draw" title="画笔标注（B）" aria-label="画笔" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 16.5-.8 4.3 4.3-.8L19 8.5 15.5 5 4 16.5Z"/><path d="m13.8 6.7 3.5 3.5"/></svg><span class="photo-tool-name">画笔</span></button>
+            <button class="photo-tool-button" type="button" data-photo-action="crop" title="${localeText('裁剪（C）', 'Crop (C)')}" aria-label="裁剪" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3v13a2 2 0 0 0 2 2h12M3 7h13a2 2 0 0 1 2 2v12"/></svg><span class="photo-tool-name">${localeText('裁剪', 'Crop')}</span></button>
+            <button class="photo-tool-button" type="button" data-photo-action="draw" title="${localeText('画笔标注（B）', 'Brush annotation (B)')}" aria-label="画笔" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 16.5-.8 4.3 4.3-.8L19 8.5 15.5 5 4 16.5Z"/><path d="m13.8 6.7 3.5 3.5"/></svg><span class="photo-tool-name">${localeText('画笔', 'Brush')}</span></button>
           </div>
           <div class="photo-dimensions" aria-live="polite">— × — px</div>
         </div>
         <div class="photo-editor-main">
-          <div class="photo-stage"><div class="photo-canvas-wrap"><canvas class="photo-canvas" aria-label="照片预览"></canvas><canvas class="photo-overlay" aria-hidden="true"></canvas></div></div>
+          <div class="photo-stage"><div class="photo-canvas-wrap"><canvas class="photo-canvas" aria-label="${localeText('照片预览', 'Photo preview')}"></canvas><canvas class="photo-overlay" aria-hidden="true"></canvas></div></div>
           <section class="photo-editor-context-panel photo-context" data-ctx="crop" hidden>
-            <div class="photo-context-text"><strong>裁剪区域</strong><span>拖动创建选区，拖边缘或手柄微调；Enter 应用，Esc 取消。</span></div>
+            <div class="photo-context-text"><strong>${localeText('裁剪区域', 'Crop area')}</strong><span>${localeText('拖动创建选区，拖边缘或手柄微调；Enter 应用，Esc 取消。', 'Drag to create a selection, then fine-tune with the edges or handles; Enter applies, Esc cancels.')}</span></div>
             <div class="photo-context-actions">
-              <button class="ghost-btn photo-context-cancel" type="button" data-photo-action="cancel-crop" title="取消裁剪">取消</button>
-              <button class="primary-btn photo-context-apply" type="button" data-photo-action="apply-crop" title="应用当前裁剪（Enter）">应用裁剪</button>
+              <button class="ghost-btn photo-context-cancel" type="button" data-photo-action="cancel-crop" title="${localeText('取消裁剪', 'Cancel crop')}">${localeText('取消', 'Cancel')}</button>
+              <button class="primary-btn photo-context-apply" type="button" data-photo-action="apply-crop" title="${localeText('应用当前裁剪（Enter）', 'Apply the current crop (Enter)')}">${localeText('应用裁剪', 'Apply crop')}</button>
             </div>
           </section>
-          <section class="photo-brush-panel photo-context" data-ctx="draw" aria-label="画笔设置" hidden>
-            <label class="photo-pen-color" title="画笔颜色">
-              <input type="color" value="#ffffff" aria-label="画笔颜色">
+          <section class="photo-brush-panel photo-context" data-ctx="draw" aria-label="${localeText('画笔设置', 'Brush settings')}" hidden>
+            <label class="photo-pen-color" title="${localeText('画笔颜色', 'Brush color')}">
+              <input type="color" value="#ffffff" aria-label="${localeText('画笔颜色', 'Brush color')}">
               <span class="photo-swatch" aria-hidden="true"></span>
-              <span class="photo-ctx-label">颜色 <small class="photo-color-value">#FFFFFF</small></span>
+              <span class="photo-ctx-label">${localeText('颜色', 'Color')} <small class="photo-color-value">#FFFFFF</small></span>
             </label>
-            <div class="photo-swatches" aria-label="常用颜色">
-              <button type="button" class="photo-swatch-btn" data-swatch="#ffffff" style="--sw:#ffffff" aria-label="白色"></button>
-              <button type="button" class="photo-swatch-btn" data-swatch="#0a0a0a" style="--sw:#0a0a0a" aria-label="黑色"></button>
-              <button type="button" class="photo-swatch-btn" data-swatch="#facc15" style="--sw:#facc15" aria-label="黄色"></button>
-              <button type="button" class="photo-swatch-btn" data-swatch="#f43f5e" style="--sw:#f43f5e" aria-label="玫红"></button>
-              <button type="button" class="photo-swatch-btn" data-swatch="#38bdf8" style="--sw:#38bdf8" aria-label="天蓝"></button>
+            <div class="photo-swatches" aria-label="${localeText('常用颜色', 'Common colors')}">
+              <button type="button" class="photo-swatch-btn" data-swatch="#ffffff" style="--sw:#ffffff" aria-label="${localeText('白色', 'White')}"></button>
+              <button type="button" class="photo-swatch-btn" data-swatch="#0a0a0a" style="--sw:#0a0a0a" aria-label="${localeText('黑色', 'Black')}"></button>
+              <button type="button" class="photo-swatch-btn" data-swatch="#facc15" style="--sw:#facc15" aria-label="${localeText('黄色', 'Yellow')}"></button>
+              <button type="button" class="photo-swatch-btn" data-swatch="#f43f5e" style="--sw:#f43f5e" aria-label="${localeText('玫红', 'Rose')}"></button>
+              <button type="button" class="photo-swatch-btn" data-swatch="#38bdf8" style="--sw:#38bdf8" aria-label="${localeText('天蓝', 'Sky blue')}"></button>
             </div>
-            <label class="photo-pen-size" title="画笔粗细">
-              <span class="photo-ctx-label">粗细 <output class="photo-pen-size-value">6 px</output></span>
-              <input type="range" min="2" max="24" value="6" aria-label="画笔粗细">
+            <label class="photo-pen-size" title="${localeText('画笔粗细', 'Brush size')}">
+              <span class="photo-ctx-label">${localeText('粗细', 'Size')} <output class="photo-pen-size-value">6 px</output></span>
+              <input type="range" min="2" max="24" value="6" aria-label="${localeText('画笔粗细', 'Brush size')}">
             </label>
           </section>
         </div>
         <footer class="photo-editor-foot">
-          <div class="photo-editor-hint" role="status" aria-live="polite"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5M12 7.5h.01"/></svg><span>旋转、裁剪或标注后，保存的照片会作为附件加入本轮。</span></div>
+          <div class="photo-editor-hint" role="status" aria-live="polite"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5M12 7.5h.01"/></svg><span>${localeText('旋转、裁剪或标注后，保存的照片会作为附件加入本轮。', 'After rotating, cropping or annotating, the saved photo is attached to this turn.')}</span></div>
           <div class="photo-footer-actions">
-            <button class="ghost-btn photo-cancel" type="button" data-photo-action="cancel">取消</button>
-            <button type="button" class="primary-btn photo-save" data-photo-action="save"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v10m0 0 4-4m-4 4-4-4M5 18h14"/></svg>保存并添加附件</button>
+            <button class="ghost-btn photo-cancel" type="button" data-photo-action="cancel">${localeText('取消', 'Cancel')}</button>
+            <button type="button" class="primary-btn photo-save" data-photo-action="save"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v10m0 0 4-4m-4 4-4-4M5 18h14"/></svg>${localeText('保存并添加附件', 'Save and attach')}</button>
           </div>
         </footer>
       </section>`;
@@ -243,7 +243,7 @@ export function openPhotoEditor(file, options = {}) {
       const height = canvas.height;
       const size = width * height * 4;
       if (size > MAX_UNDO_BYTES) {
-        setHint('这张照片的撤销快照过大；当前编辑仍可继续，但该步无法撤销。');
+        setHint(localeText('这张照片的撤销快照过大；当前编辑仍可继续，但该步无法撤销。', 'The undo snapshot for this photo is too large; you can keep editing, but this step cannot be undone.'));
         return Promise.resolve(false);
       }
       let copy = null;
@@ -294,10 +294,10 @@ export function openPhotoEditor(file, options = {}) {
       if (cancelCropButton) cancelCropButton.hidden = !state.crop;
       if (state.crop) {
         state.selection = { x: 0, y: 0, width: canvas.width, height: canvas.height };
-        setHint('已框住整张照片：拖动八个手柄缩小选区，或直接在照片上重新框选；框内拖动可移动，完成后点“应用裁剪”。');
+        setHint(localeText('已框住整张照片：拖动八个手柄缩小选区，或直接在照片上重新框选；框内拖动可移动，完成后点“应用裁剪”。', 'The whole photo is selected: drag the eight handles to shrink the selection or drag on the photo again; drag inside to move it, then apply the crop.'));
       }
-      else if (state.draw) setHint('在照片上拖动进行标注；再次点击画笔可退出。');
-      else setHint('旋转、裁剪或标注后，保存的照片会作为附件加入本轮。');
+      else if (state.draw) setHint(localeText('在照片上拖动进行标注；再次点击画笔可退出。', 'Drag on the photo to annotate; click the brush again to exit.'));
+      else setHint(localeText('旋转、裁剪或标注后，保存的照片会作为附件加入本轮。', 'After rotating, cropping or annotating, the saved photo is attached to this turn.'));
       if (overlayCtx) overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
       if (state.crop) drawSelection();
       syncActionButtons();
@@ -441,11 +441,11 @@ export function openPhotoEditor(file, options = {}) {
         state.selection.x + state.selection.width, state.selection.y + state.selection.height,
         canvas.width, canvas.height,
       );
-      if (!rect) { setHint('裁剪选区太小，照片保持不变。'); return; }
+      if (!rect) { setHint(localeText('裁剪选区太小，照片保持不变。', 'The crop selection is too small; the photo is unchanged.')); return; }
       const next = doc.createElement('canvas');
       next.width = rect.width; next.height = rect.height;
       const nextCtx = next.getContext('2d');
-      if (!nextCtx) { setHint('裁剪不可用，照片保持不变。'); return; }
+      if (!nextCtx) { setHint(localeText('裁剪不可用，照片保持不变。', 'Cropping is unavailable; the photo is unchanged.')); return; }
       nextCtx.drawImage(canvas, rect.x, rect.y, rect.width, rect.height, 0, 0, rect.width, rect.height);
       pushUndoSnapshot();
       canvas.width = next.width; canvas.height = next.height;
@@ -470,7 +470,7 @@ export function openPhotoEditor(file, options = {}) {
     };
     const restoreSnapshot = async (snapshot) => {
       try {
-        if (!snapshot.copy || !snapshot.copy.width) throw new Error('无法恢复照片快照');
+        if (!snapshot.copy || !snapshot.copy.width) throw new Error(localeText('无法恢复照片快照', 'Could not restore the photo snapshot'));
         canvas.width = snapshot.width;
         canvas.height = snapshot.height;
         ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -489,7 +489,7 @@ export function openPhotoEditor(file, options = {}) {
       try {
         await Promise.all([...pendingSnapshots]);
         const snapshot = undoHistory.pop();
-        if (!snapshot) { setHint('没有可撤销的编辑。'); return; }
+        if (!snapshot) { setHint(localeText('没有可撤销的编辑。', 'There is no edit to undo.')); return; }
         state.historyBytes -= snapshot.size;
         await restoreSnapshot(snapshot);
       } catch (error) {
@@ -589,12 +589,12 @@ export function openPhotoEditor(file, options = {}) {
       if (action === 'draw') { setMode(state.draw ? null : 'draw'); return; }
       if (action === 'save') {
         button.disabled = true;
-        setHint('正在生成编辑后的照片…');
+        setHint(localeText('正在生成编辑后的照片…', 'Generating the edited photo…'));
         const type = file.type === 'image/png' ? 'image/png' : 'image/jpeg';
         const ext = type === 'image/png' ? 'png' : 'jpg';
         const name = String(file.name || `camera-photo.${ext}`).replace(/\.[^.]+$/, '') + `-edited.${ext}`;
         try {
-          const blob = await new Promise((res, rej) => canvas.toBlob((value) => value ? res(value) : rej(new Error('照片导出失败')), type, 0.92));
+          const blob = await new Promise((res, rej) => canvas.toBlob((value) => value ? res(value) : rej(new Error(localeText('照片导出失败', 'Photo export failed'))), type, 0.92));
           const output = new (win.File || File)([blob], name, { type, lastModified: Date.now() });
           finish(output);
         } catch (error) {
@@ -621,7 +621,7 @@ export function openPhotoEditor(file, options = {}) {
     });
     image.onload = () => {
       try {
-        if (!ctx || !overlayCtx || !image.naturalWidth || !image.naturalHeight) throw new Error('无法读取照片');
+        if (!ctx || !overlayCtx || !image.naturalWidth || !image.naturalHeight) throw new Error(localeText('无法读取照片', 'Could not read the photo'));
         const fitted = fitPhotoSize(image.naturalWidth, image.naturalHeight);
         canvas.width = fitted.width; canvas.height = fitted.height;
         ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
@@ -637,7 +637,7 @@ export function openPhotoEditor(file, options = {}) {
       }
     };
     image.onerror = () => {
-      setHint('浏览器无法解码这张照片；请取消后用普通附件入口添加。');
+      setHint(localeText('浏览器无法解码这张照片；请取消后用普通附件入口添加。', 'The browser cannot decode this photo; cancel and add it through the normal attachment button.'));
       modal.querySelector('[data-photo-action="save"]').disabled = true;
     };
     syncActionButtons();

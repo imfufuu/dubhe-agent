@@ -22,7 +22,9 @@ export function extractChoices(source) {
       body.push(lines[j]);
     }
     if (end < 0 || !choiceOptions(body.join('\n')).length) { output.push(line); continue; }
-    const block = { title: (open[1] || '').trim(), body: body.join('\n') };
+    const rawTitle = (open[1] || '').trim();
+    const multi = /^multi\b/i.test(rawTitle);
+    const block = { title: multi ? rawTitle.replace(/^multi\s*/i, '').trim() : rawTitle, body: body.join('\n'), multi };
     const previous = output.at(-1), match = /^\uE000CHOICE(\d+)\uE000$/.exec(previous || '');
     if (match) groups[Number(match[1])].push(block);
     else { groups.push([block]); output.push(`\uE000CHOICE${groups.length - 1}\uE000`); }

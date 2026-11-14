@@ -18,7 +18,7 @@ export function installChoiceHandler({ root, store, agent, getBusy, openKeyModal
     box.dataset.choiceStep = String(idx);
     blocks.forEach((b, i) => {
       b.classList.toggle('active', i === idx);
-      for (const opt of $$('.choice-opt', b)) { const selected = opt.dataset.choiceSend === answers[i]; opt.classList.toggle('selected', selected); opt.setAttribute('aria-pressed', String(selected)); }
+      for (const opt of $$('.choice-opt', b)) { const selected = b.dataset.choiceMulti === '1' ? String(answers[i] || '').split('|').includes(opt.dataset.choiceSend) : opt.dataset.choiceSend === answers[i]; opt.classList.toggle('selected', selected); opt.setAttribute('aria-pressed', String(selected)); }
     });
     $('[data-choice-back]', box).disabled = idx === 0;
     $('[data-choice-progress]', box).textContent = `${idx + 1} / ${blocks.length}`;
@@ -43,8 +43,16 @@ export function installChoiceHandler({ root, store, agent, getBusy, openKeyModal
     const opt = e.target.closest('[data-choice-send]');
     if (opt) {
       const idx = Number(opt.closest('.choice-qblock').dataset.choiceIdx), answers = read(box);
-      answers[idx] = answers[idx] === opt.dataset.choiceSend ? '' : opt.dataset.choiceSend;
-      if (answers[idx]) $('.choice-other', opt.closest('.choice-qblock')).value = '';
+      const block = opt.closest('.choice-qblock');
+      if (block.dataset.choiceMulti === '1') {
+        const picked = String(answers[idx] || '').split('|').filter(Boolean);
+        const at = picked.indexOf(opt.dataset.choiceSend);
+        if (at >= 0) picked.splice(at, 1); else picked.push(opt.dataset.choiceSend);
+        answers[idx] = picked.join('|');
+      } else {
+        answers[idx] = answers[idx] === opt.dataset.choiceSend ? '' : opt.dataset.choiceSend;
+        if (answers[idx]) $('.choice-other', block).value = '';
+      }
       box.dataset.choiceAnswers = JSON.stringify(answers);
       setStep(box, idx);
       return true;
@@ -55,7 +63,7 @@ export function installChoiceHandler({ root, store, agent, getBusy, openKeyModal
     if (jump) { setStep(box, Number(jump.dataset.choiceJump)); return true; }
     if (e.target.closest('[data-choice-submit]')) {
       const answers = read(box);
-      const items = $$('.choice-qblock', box).map((b, i) => ({ question: $('.choice-q', b).textContent.trim(), answer: answers[i] || '', other: $('.choice-other', b).value.trim() }));
+      const items = $$('.choice-qblock', box).map((b, i) => ({ question: $('.choice-q', b).textContent.trim(), answer: b.dataset.choiceMulti === '1' ? String(answers[i] || '').split('|').filter(Boolean).join('、') : (answers[i] || ''), other: $('.choice-other', b).value.trim() }));
       const missing = items.findIndex(x => !x.answer && !x.other);
       if (missing >= 0) { setStep(box, missing); toast(t('请回答每个问题后提交', 'Please answer every question before submitting'), 'warn'); return true; }
       if (!store.state.apiKey && !getGateway(store.state.gatewayId).noKey && !isOfflineModelId(store.state.model)) { openKeyModal(); toast(t('请先配置 API Key', 'Please configure an API key'), 'warn'); return true; }

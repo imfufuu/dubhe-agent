@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026-11-14 二批：Turnstile 核查、任务计时暂停、漏翻深挖
+
+- **防人机（300010）**：实测确认服务端链路可用——`api.js` 可达、Siteverify 返回 `invalid-input-secret`/`invalid-input-response` 可区分、中继 `/api/human/config` 已开闸且 `/api/human/verify` 只报令牌无效（密钥有效）。因此 300010 属客户端 widget 初始化失败：改为 `onload=__dubheTurnstileReady` + `turnstile.ready()` 后再 render、容器给最小尺寸、`300/600` 段错误按 400ms/1200ms 自动重画两次，并把 110200/100xxx/300xxx/600xxx 翻译成可照做的原因（110200 点名当前网页域名），失败时提供「重新验证」，脚本超时与加载失败分开报错。
+- **任务计时暂停**：新增 `js/task-clock.js`（多原因叠加的可暂停计时）。执行内核高风险确认卡出现即暂停、允许/拒绝/超时/回合结束恢复；Turnstile 对话框打开即暂停、关闭恢复；状态栏耗时与工具 `durationMs` 均扣除等待时间，状态栏在验证期间显示「等待人机验证」。
+- **漏翻文本**：旧审计只覆盖 `app.html` 与 `ui*.js`，`docs.html`/`index.html`/`settings.js`/`api.js`/`pricing.js`/`project-mode.js`/`photo-editor.js`/`quickmap.js`/`human-check.js` 从未被扫。新增 `tools/i18n-coverage.mjs`（页面 + 所有 locale 模块，排除模型侧文本），补齐 **143 条**写死中文（照片编辑器 45、`ui.js` 34、`pricing.js` 16、`settings.js` 13、`api.js` 12…），界面模块已清零；`docs.html` 371 条技术正文与 `index.html` 9 条营销长文案如实记为待翻译，并用上限锁定防回归。
+- 新增 `tests/task-clock.test.mjs`（8 项）与 `tests/i18n-coverage.test.mjs`（4 项），CI 增加 `i18n coverage --check` 步骤。详见 `UPDATE_2026_11_14_REPORT.md`；全量回归 **1680 项 / 93 文件 / 0 失败**。
+
+## 2026-11-14 四项纠偏（导航页首屏 / 思考按钮 / 本地模型）
+
+- **导航页**：删除误加的 `#design-manifesto` 宣言段落，改为重做首屏 `hero`：四列 1px 网格标记、等宽规格线、超大衬线标题、破格偏移与下划线、弹簧 hover、线性图标、`.run-corner` 角标；设计准则只留系统提示词与知识库，不抄进页面正文。
+- **思考按钮**：恢复 `app.html` 的 SVG 图标与「思考」文字，运行时不再覆盖 `textContent`；Agent 模式仍开分级菜单，对话模式仍按下开/关。
+- **本地模型**：`pricing.js` 的本地 GGUF 不计价、价目徽章为空，但 `api.js` 发出与在线同构的 `usage` 事件，保守统计上传/输入与输出 token；`estimateChatCost()` 同步保留 token 数、金额恒 0。
+- **第二次提问**：`offline-model.js` 按模型指纹复用同一 Wllama proxy，避免 `isModelLoaded()` 短暂误报触发 `exit()+loadModel()` 的 `already initialized`；`offline-context.js` 改为 CJK 感知保守估算并设 `OFFLINE_INPUT_CAP=7168`，避免累积历史撑爆 `n_ctx`。
+- 顺带修好知识索引构建脚本的 4 倍重复追加、CI 漏掉的测试 step、`ui.js` 行数预算，并更正过期测试/文档。详见 `V7_CORRECTIONS_REPORT.md`；全量回归 **1668 项 / 91 文件 / 0 失败**，i18n 审计、知识索引校验、语法检查、预览 HTTP 全部通过。
+
+## 2026-11-13 十三项修复（对话模式纯净请求为首要）
+
+- **根因修复**：`resolveTurnEnvironment()` 补 `environment` 字段，之前 `agent.js` / `ui-chat-mode.js` 判断 `environment === 'chat'` 永远为 false，导致 2.1k 系统提示词一直照发、工具表照传、UI 不降级。现对话模式请求体零 system/task/instructions/tools，只有用户历史（请求体 <400 B，`tests/chat-purity.test.mjs` 捕获真实 fetch 验证）。
+- flow 文本兜底、Thinking… 英文标签与时长格式、`:::choice multi`、调节器布局与入口清理、工具能力栏目合并前置、多模态标签复原、Cloudflare 生图家族按网关过滤、卡片按钮与横向滑动、五个工具按钮隐藏、系统提示词中的设计准则与双语功能知识库。**2026-11-14 纠偏**：导航页宣言段落已移除，改为按设计准则重排首屏，详见 `V7_CORRECTIONS_REPORT.md`。
+- 详见 `V6_UI_REPORT.md`；全量回归 **1666 项 / 91 文件 / 0 失败**。
+
 ## 2026-11-09 十一项更新（TeamoRouter 模型/价格、识图修复、交互与安全）
 
 - 用 API key 实测 `/v1/models`（80 个 ID）与 `/v1/models/pricing`；加入 GPT Image 2.6 四变体（$0.02/张）与 Claude Fable 5.2（$8/$40）、Gemini 4 Carbon（$2/$10）、Hydrogen（$1.5/$7.5）官方价目；标签只保留「热门 / 低价」。

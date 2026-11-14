@@ -225,7 +225,7 @@ async function relayCheck() {
       return after.label === 'origin' ? '同源中继可用（本地 server.py / Pages Functions）' : `已连接：${after.base}`;
     }
     return override ? `自定义地址不可用：${override}` : '未检测到中继（网页抓取工具将被禁用）';
-  } catch (e) { return '探测失败：' + (e.message || e); }
+  } catch (e) { return localeText('探测失败：', 'Probe failed: ') + (e.message || e); }
 }
 
 // 模型档位的 tag/note 有中英两版：英文界面不再出现「均衡 / 默认 / 效果最好」这类中文后缀。
@@ -260,7 +260,7 @@ function syncMultimodalSelects(store) {
   const gatewayId = store?.state?.gatewayId || DEFAULT_GATEWAY_ID;
   const grokAllowed = !effectiveModeration(settings) && (gatewayId === 'grok' || (gatewayId === DEFAULT_GATEWAY_ID && gatewayBase() !== GATEWAY_CN));
   const visionOptions = VISION_MODELS.filter(m => m.id !== GROK_SENSITIVE_VISION_MODEL || grokAllowed);
-  if (!visionOptions.some(m => m.id === vision)) visionOptions.unshift({ id: '', label: localeText('当前识图选项不可用，请重新选择', 'Selected vision model unavailable'), tag: '未发送', note: '请在当前网关选择可用模型', tagEn: 'Not sent', noteEn: 'Choose a compatible vision model' });
+  if (!visionOptions.some(m => m.id === vision)) visionOptions.unshift({ id: '', label: localeText('当前识图选项不可用，请重新选择', 'Selected vision model unavailable'), tag: localeText('未发送', 'Not sent'), note: localeText('请在当前网关选择可用模型', 'Pick an available model on the current gateway'), tagEn: 'Not sent', noteEn: 'Choose a compatible vision model' });
   // 音视频解析模型已合并为一个设置：videoModel 为存档主键，audioModel 与其保持同值（兼容旧快照与工具 ctx）
   const av = resolveVideoModel(settings.videoModel || settings.audioModel);
   // 生图模型随会话保存（store.state.imageModel），不在 settings 里；不在目录内的值退回默认
@@ -269,12 +269,16 @@ function syncMultimodalSelects(store) {
   const vgen = resolveVideoGenModel(settings.videoGenModel);
   fillModelSelect($('#set-vgen-model'), VIDEO_GEN_MENU, videoMenuIdOf(vgen));
   // 生图菜单按模型家族展示；具体变体（写实/插画/4K 升采样…）由 Agent 的 generate_image 自动选择
-  fillModelSelect($('#set-image-model'), IMAGE_FAMILIES.map((f) => ({ id: f.id, label: f.label, tag: f.tag, note: f.note, tagEn: f.tagEn, noteEn: f.noteEn })), imageFamilyOf(image) || 'gpt-image-2');
+  // Cloudflare FLUX 只在 Cloudflare 网关下出现；其它网关（尤其 TeamoRouter）不展示。
+  const gwNow = store.state.gatewayId || DEFAULT_GATEWAY_ID;
+  const imageFamilies = IMAGE_FAMILIES.filter((f) => (f.id === 'cloudflare-flux') === (gwNow === 'cloudflare'))
+    .map((f) => ({ id: f.id, label: f.label, tag: f.tag, note: f.note, tagEn: f.tagEn, noteEn: f.noteEn }));
+  fillModelSelect($('#set-image-model'), imageFamilies, imageFamilyOf(image) || 'gpt-image-2');
   fillModelSelect($('#set-vision-model'), visionOptions, visionOptions.some(m => m.id === vision) ? vision : '');
   fillModelSelect($('#set-av-model'), VIDEO_MODELS, av);
   // 决策层：Jev 版本（每轮路由判断 + 内容审核的 Jev 调用共用）
   const decision = setActiveJevModel(settings.decisionModel || JEV_MODEL);
-  fillModelSelect($('#set-decision-model'), JEV_VERSIONS.map((v) => ({ id: v.id, label: v.label, tag: '决策', note: v.note, tagEn: 'Decision', noteEn: v.note })), decision);
+  fillModelSelect($('#set-decision-model'), JEV_VERSIONS.map((v) => ({ id: v.id, label: v.label, tag: localeText('决策', 'Decision'), note: v.note, tagEn: 'Decision', noteEn: v.note })), decision);
   const note = $('#set-mm-note');
   if (note) {
     const vi = visionOptions.find((m) => m.id === vision) || { label: localeText('识图选项不可用，请重新选择', 'Vision selection unavailable; choose another') };
@@ -573,7 +577,7 @@ export async function loadBuildInfo({ fetchImpl = (typeof fetch === 'function' ?
 export function formatBuildInfo(info, appVersion) {
   if (!info || !info.ok) {
     if (info?.reason === 'offline') return { text: '离线状态：未检查部署清单', mismatch: false, href: '' };
-    return { text: info && info.reason === 'http-404' ? '非 Pages 部署（无 build.json）' : '未知（拉不到 build.json）', mismatch: false, href: '' };
+    return { text: info && info.reason === 'http-404' ? '非 Pages 部署（无 build.json）' : localeText('未知（拉不到 build.json）', 'Unknown (build.json unavailable)'), mismatch: false, href: '' };
   }
   const short = info.commit.slice(0, 12);
   const mismatch = !!(info.version && appVersion && info.version !== appVersion);
@@ -694,7 +698,7 @@ export function mountSettings(store, { onRelayChanged, onKeySaved, onSettingChan
     const v = $('#set-key').value.trim();
     const gatewayId = store.state.gatewayId || DEFAULT_GATEWAY_ID;
     const chk = validateApiKey(v, gatewayId);
-    if (!chk.ok) { toast('Key 格式错误：' + chk.reason, 'err', 5000); $('#set-key').focus(); $('#set-key').select(); return false; }
+    if (!chk.ok) { toast(localeText('Key 格式错误：', 'Invalid key format: ') + chk.reason, 'err', 5000); $('#set-key').focus(); $('#set-key').select(); return false; }
     store.state.apiKey = v;
     store.state.gatewayKeys = store.state.gatewayKeys || {};
     if (v && !isAdmin(v)) store.state.gatewayKeys[gatewayId] = v;
@@ -771,12 +775,12 @@ export function mountSettings(store, { onRelayChanged, onKeySaved, onSettingChan
   const saveGatewayToken = () => {
     const id = store.state.gatewayId || DEFAULT_GATEWAY_ID;
     const ok = writeGatewayToken(id, gatewayTokenInput.value);
-    if (!ok) { toast('浏览器拒绝存储网关令牌（可能禁用了本地存储）', 'err', 4000); return; }
+    if (!ok) { toast(localeText('浏览器拒绝存储网关令牌（可能禁用了本地存储）', 'The browser refused to store the gateway token (local storage may be disabled)'), 'err', 4000); return; }
     gatewayTokenInput.value = readGatewayToken(id);
     const clearBtn = $('#set-gateway-token-clear');
     if (clearBtn) clearBtn.hidden = !gatewayTokenInput.value;
     clearGatewayModelCache(id); // 令牌变化后带新凭据重新拉取模型列表
-    toast('网关访问令牌已保存在本机，不会写入会话导出', 'ok');
+    toast(localeText('网关访问令牌已保存在本机，不会写入会话导出', 'The gateway token is stored on this device and never written into session exports'), 'ok');
   };
   if (gatewayTokenInput) gatewayTokenInput.addEventListener('change', saveGatewayToken);
   $('#set-gateway-token-clear')?.addEventListener('click', () => {
@@ -785,12 +789,12 @@ export function mountSettings(store, { onRelayChanged, onKeySaved, onSettingChan
     if (gatewayTokenInput) gatewayTokenInput.value = '';
     $('#set-gateway-token-clear').hidden = true;
     clearGatewayModelCache(id);
-    toast('已清除该网关的访问令牌', 'info');
+    toast(localeText('已清除该网关的访问令牌', 'Cleared this gateway token'), 'info');
   });
 
   const addModel = () => {
     const gatewayId = store.state.gatewayId || DEFAULT_GATEWAY_ID;
-    if (gatewayId !== 'custom') { toast('手动添加模型 ID 仅适用于自定义网关', 'warn'); return; }
+    if (gatewayId !== 'custom') { toast(localeText('手动添加模型 ID 仅适用于自定义网关', 'Manual model IDs are only available for custom gateways'), 'warn'); return; }
     const input = $('#set-manual-model');
     const id = manualModelEditingId || String(input && input.value || '').trim();
     const providerInput = $('#set-manual-provider-name');
@@ -802,12 +806,12 @@ export function mountSettings(store, { onRelayChanged, onKeySaved, onSettingChan
       return;
     }
     if (!/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$/.test(id)) {
-      toast('模型 ID 只能包含字母、数字、点、下划线、冒号、斜杠或连字符', 'err'); return;
+      toast(localeText('模型 ID 只能包含字母、数字、点、下划线、冒号、斜杠或连字符', 'Model IDs may only contain letters, digits, dot, underscore, colon, slash or hyphen'), 'err'); return;
     }
     store.state.manualModelsByGateway = store.state.manualModelsByGateway || {};
     const list = Array.isArray(store.state.manualModelsByGateway.custom) ? store.state.manualModelsByGateway.custom : [];
     if (manualModelEditingId) {
-      if (!list.includes(id)) { resetManualModelEditor(); return toast('该模型已不存在，请重新添加。', 'warn'); }
+      if (!list.includes(id)) { resetManualModelEditor(); return toast(localeText('该模型已不存在，请重新添加。', 'That model no longer exists; add it again.'), 'warn'); }
       store.state.manualModelMetaByGateway = store.state.manualModelMetaByGateway || {};
       store.state.manualModelMetaByGateway.custom = store.state.manualModelMetaByGateway.custom || {};
       store.state.manualModelMetaByGateway.custom[id] = { providerName, iconDataUrl: manualModelIconDraft };
@@ -1232,7 +1236,7 @@ export function mountSettings(store, { onRelayChanged, onKeySaved, onSettingChan
     cacheBtn.disabled = true;
     if (updateCacheBtn) updateCacheBtn.disabled = true;
     const label = cacheBtn.textContent;
-    cacheBtn.textContent = '清除中…';
+    cacheBtn.textContent = localeText('清除中…', 'Clearing…');
     try {
       const r = await clearTransientCaches();
       const note = $('#set-cache-note');

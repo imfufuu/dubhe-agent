@@ -1,5 +1,6 @@
 // Stable DOM fragments in persisted SSE order plus lightweight UI lifecycle helpers.
 import { displayParts, toolFamily, adjacentToolMessages } from './toolflow.js?v=2026.10.25.1';
+import { renderMarkdown } from './ui-markdown.js?v=2026.10.25.1';
 import { checklistComplete } from './checklist.js';
 import { uiText as localeText } from './locale.js';
 export function syncToolMenuCursor(chips, live) {
@@ -69,6 +70,9 @@ export function paintOrderedAssistant(wrap, m, { paintPart, paintMeta, paintFoot
           thinkingBlocks: index === 0 ? m.thinkingBlocks : [], usage: index === 0 ? m.usage : null,
           webSearch: last ? m.webSearch : null, tempCommit: last ? m.tempCommit : null,
         });
+        // 折叠菜单里的文本块：paintPart 的分片路径偶尔拿不到正文，这里按 part.text 兜底渲染一次。
+        const md = row.querySelector(':scope > .md-body');
+        if (md && !md.innerHTML.trim() && String(part.text || '').trim()) md.innerHTML = renderMarkdown(String(part.text));
       });
       for (const row of [...flow.children]) if (!seen.has(row.dataset.part)) row.remove();
       paintMeta(wrap, m); paintFoot(wrap, m); syncShell(wrap);

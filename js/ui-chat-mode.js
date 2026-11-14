@@ -20,7 +20,7 @@ export function installChatModeUI({ store, doc = globalThis.document, thinkingTo
       }
     }
     if (thinkMenu) thinkMenu.hidden = chat;
-    for (const id of ['sandbox-toggle', 'web-toggle']) { const el = pick(id); if (el) el.hidden = chat; }
+    for (const id of ['sandbox-toggle', 'web-toggle', 'fast-toggle', 'project-toggle', 'panel-toggle']) { const el = pick(id); if (el) el.hidden = chat; }
     const attachments = typeof getAttachments === 'function' ? getAttachments() : null;
     if (attachments && typeof attachments.setChatMode === 'function') attachments.setChatMode(chat);
     try { syncThinking && syncThinking(); } catch { /* 尚未初始化 */ }
@@ -51,7 +51,7 @@ export function toggleChatThinking({ store, syncThinking, closeThinkMenu }) {
 }
 
 export function chatModeThinkingTitle(localeText) {
-  return localeText('对话模式：点击开关思考（无等级菜单）', 'Chat mode: toggle thinking (no level menu)');
+  return localeText('思考开关 · 按下切换', 'Thinking on/off');
 }
 
 /** 对话模式：文本附件已解析成正文，直接拼进消息，不传附件对象。 */

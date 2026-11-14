@@ -10,7 +10,7 @@ import { estimateTokens } from './context.js';
 import { tokenBreakdown, formatTokBreak } from './commands.js';
 import { priceBadgeFor, formatCcy } from './pricing.js';
 import { modelDisplayName } from './smartrouter.js?v=2026.10.25.1';
-import { onLanguageChange } from './locale.js';
+import { onLanguageChange, text as localeText } from './locale.js';
 import { onCurrencyChange } from './currency.js';
 
 export function installPopovers({ store }) {
@@ -86,7 +86,7 @@ export function installPopovers({ store }) {
     ];
     let html = rows.map(([k, v]) => `<div class="tok-row"><span>${esc(k)}</span><span>${esc(v)}</span></div>`).join('');
     html += `<div class="tok-row total router-model-row"><span>具体模型</span><span class="router-model">${providerIcon(providerOf(realModel))}<span class="mono">${esc(realModel || '未知')}</span></span></div>`;
-    html += '<div class="tok-hint">路由由本地启发式即时决定；换一句话问，可能会选到不同模型。</div>';
+    html += localeText('<div class="tok-hint">路由由本地启发式即时决定；换一句话问，可能会选到不同模型。</div>', '<div class="tok-hint">Routing is decided locally and instantly; asking the same thing differently may pick a different model.</div>');
     if (body) body.innerHTML = html;
     pop.hidden = false;
     placeTokPop(anchor);

@@ -103,6 +103,9 @@ export function resolveTurnEnvironment({ tuner, settings = {}, gatewayId = '' } 
   const levelText = REASONING_LEVEL_CHOICES.find((l) => l.id === levelId);
   return {
     mode: chat ? 'chat' : 'agent',
+    // 2026-11-13 修复：agent.js / ui-chat-mode.js 读的是 environment，
+    // 之前只有 mode，导致对话模式的裸聊分支与 UI 降级从来没生效。
+    environment: chat ? 'chat' : 'agent',
     toolsEnabled: !chat,
     thinking,
     reasoningLevel,

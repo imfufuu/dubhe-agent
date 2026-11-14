@@ -231,7 +231,7 @@ export async function openScanner({ doc = document } = {}) {
     await video.play().catch(() => { /* 自动播放策略下点了按钮才播 */ });
     syncCameraReady();
     if (!liveTimer) liveTimer = win.setInterval(() => { tickLive(); }, LIVE_INTERVAL_MS);
-    if (!cameraReady) setHint('摄像头已连接，正在等待画面…', '请保持此窗口打开；画面就绪后即可拍摄。');
+    if (!cameraReady) setHint(uiText('摄像头已连接，正在等待画面…', 'Camera connected, waiting for frames…'), '请保持此窗口打开；画面就绪后即可拍摄。');
   };
 
   const stop = () => {
@@ -458,7 +458,7 @@ export async function openScanner({ doc = document } = {}) {
       if (phase === 'live') {
         if (!cameraReady || !captureStill()) {
           syncCameraReady();
-          setHint('摄像头画面尚未就绪，请稍候再拍。', '画面就绪后“拍摄”按钮会自动启用。');
+          setHint(uiText('摄像头画面尚未就绪，请稍候再拍。', 'The camera is not ready yet; try capturing again in a moment.'), '画面就绪后“拍摄”按钮会自动启用。');
           return;
         }
         toReview();

@@ -27,14 +27,14 @@ let stylesPromise;
 export function shareStyles() {
   return stylesPromise ||= (async () => {
     const sheets = await Promise.all(STYLE_URLS.map(async (path) => {
-      const base = new URL(path, import.meta.url); base.searchParams.set('v', APP_VERSION); const r = await fetch(base); if (!r.ok) throw new Error('无法加载分享样式：' + path);
+      const base = new URL(path, import.meta.url); base.searchParams.set('v', APP_VERSION); const r = await fetch(base); if (!r.ok) throw new Error(text('无法加载分享样式：', 'Could not load sharing styles: ') + path);
       let css = await r.text();
       // The bundled KaTeX distribution retains WOFF2 only; remove non-existent legacy fallbacks.
       css = css.replace(/src\s*:\s*url\(([^)]*\.woff2[^)]*)\)[^;]*;/g, 'src:url($1) format("woff2");'); const matches = [...css.matchAll(/url\((?:['"])?([^)'"\s]+)(?:['"])?\)/g)];
       const unique = [...new Set(matches.map((m) => m[1]).filter((u) => !u.startsWith('data:')))];
       const replacements = new Map(await Promise.all(unique.map(async (url) => {
         const u = new URL(url, base); if (u.origin !== location.origin) return [url, 'data:,'];
-        const res = await fetch(u, { credentials: 'omit' }); if (!res.ok) throw new Error('无法嵌入分享字体：' + u.pathname);
+        const res = await fetch(u, { credentials: 'omit' }); if (!res.ok) throw new Error(text('无法嵌入分享字体：', 'Could not embed the sharing font: ') + u.pathname);
         return [url, await dataURL(await res.blob())];
       })));
       for (const [url, value] of replacements) css = css.split(url).join(value);
@@ -89,7 +89,7 @@ async function hydrateShareMaps(root) {
     const id = box.dataset.map === 'china' ? 'china' : 'world';
     let rows = []; try { rows = JSON.parse(box.dataset.rows || '[]'); } catch { /* empty */ }
     const url = new URL(`../assets/geo/${id}.json`, import.meta.url); url.searchParams.set('v', APP_VERSION);
-    const r = await fetch(url); if (!r.ok) throw new Error('无法嵌入地图边界：' + id);
+    const r = await fetch(url); if (!r.ok) throw new Error(text('无法嵌入地图边界：', 'Could not embed map boundaries: ') + id);
     const geo = await r.json(); const placeholder = box.querySelector('svg');
     if (placeholder) { placeholder.outerHTML = renderGeoMapSvg(geo, rows, box.dataset.mapTitle || '', id); box.dataset.mapState = 'ready'; decorateGeoMap(box, rows); }
   }
@@ -139,7 +139,7 @@ async function embedLazyFonts(textContent) {
   const out = [];
   for (const face of faces) {
     const res = await fetch(new URL(face.url, base), { credentials: 'omit' });
-    if (!res.ok) throw new Error('无法嵌入分享字体：' + face.url);
+    if (!res.ok) throw new Error(text('无法嵌入分享字体：', 'Could not embed the sharing font: ') + face.url);
     const bytes = new Uint8Array(await res.arrayBuffer());
     let bin = '';
     for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
@@ -165,7 +165,7 @@ export async function buildShareDocument({ messages, selected, fs, title = 'Dubh
   const lazyCss = await embedLazyFonts(main.textContent || '');
   let client = '', scriptPolicy = "'none'";
   if (interactive) {
-    const r = await fetch(new URL('./share-client.js', import.meta.url)); if (!r.ok) throw new Error('无法加载分享交互'); client = await r.text();
+    const r = await fetch(new URL('./share-client.js', import.meta.url)); if (!r.ok) throw new Error(text('无法加载分享交互', 'Could not load the sharing interactions')); client = await r.text();
     const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(client)));
     scriptPolicy = `'sha256-${btoa(String.fromCharCode(...hash))}'`;
   }

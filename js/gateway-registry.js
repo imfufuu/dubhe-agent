@@ -95,7 +95,7 @@ export const GATEWAYS = Object.freeze([
     docsUrl: 'https://api-docs.deepseek.com/', keyHint: 'sk-…', keyLabel: 'DeepSeek API Key',
   },
   {
-    id: 'glm', name: 'GLM / 智谱 AI', category: 'first-party', provider: 'GLM',
+    id: 'glm', name: localeText('GLM / 智谱 AI', 'GLM / Zhipu AI'), category: 'first-party', provider: 'GLM',
     baseUrl: 'https://open.bigmodel.cn/api/paas/v4', protocol: 'openai', chatPath: 'chat/completions', listMode: 'static',
     docsUrl: 'https://open.bigmodel.cn/dev/api', keyHint: 'id.secret', keyLabel: '智谱 API Key',
   },
@@ -110,19 +110,19 @@ export const GATEWAYS = Object.freeze([
     docsUrl: 'https://platform.kimi.ai/docs/api/overview', keyHint: 'sk-…', keyLabel: 'Kimi API Key',
   },
   {
-    id: 'doubao', name: 'Doubao / 火山方舟', category: 'first-party', provider: 'Doubao',
+    id: 'doubao', name: localeText('Doubao / 火山方舟', 'Doubao / Volcengine Ark'), category: 'first-party', provider: 'Doubao',
     baseUrl: 'https://ark.cn-beijing.volces.com/api/v3', protocol: 'openai', chatPath: 'chat/completions', listMode: 'static',
     docsUrl: 'https://docs.volcengine.com/docs/ark/text-generation?lang=zh', keyHint: '火山方舟 API Key', keyLabel: '火山方舟 API Key',
   },
   {
-    id: 'qwen', name: 'Qwen / 阿里云百炼', category: 'first-party', provider: 'Qwen',
+    id: 'qwen', name: localeText('Qwen / 阿里云百炼', 'Qwen / Alibaba Bailian'), category: 'first-party', provider: 'Qwen',
     baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', protocol: 'openai', chatPath: 'chat/completions', listMode: 'qwen',
     docsUrl: 'https://help.aliyun.com/zh/model-studio/models', keyHint: 'sk-…', keyLabel: '阿里云百炼 API Key',
   },
   {
     id: 'cloudflare', name: 'Cloudflare Workers AI', category: 'third-party', provider: 'Cloudflare',
     baseUrl: '', protocol: 'openai', chatPath: 'v1/chat/completions', listMode: 'openai', listPath: 'v1/models',
-    docsUrl: 'https://developers.cloudflare.com/workers-ai/', keyHint: '无需 API Key', keyLabel: '无需 API Key（请填写 Worker URL）', noKey: true,
+    docsUrl: 'https://developers.cloudflare.com/workers-ai/', keyHint: localeText('无需 API Key', 'No API key needed'), keyLabel: localeText('无需 API Key（请填写 Worker URL）', 'No API key needed (enter the Worker URL)'), noKey: true,
   },
   {
     id: 'custom', name: '自定义 OpenAI 兼容网关', category: 'third-party', provider: null,
@@ -195,7 +195,7 @@ export function gatewayModelListUrl(id, baseUrl = '') {
   if (spec.id === 'qwen') {
     const chatBase = String(baseUrl || spec.baseUrl).trim();
     let origin = '';
-    try { origin = new URL(chatBase).origin; } catch { throw new Error('Qwen 网关基础 URL 无效'); }
+    try { origin = new URL(chatBase).origin; } catch { throw new Error(localeText('Qwen 网关基础 URL 无效', 'Invalid Qwen gateway base URL')); }
     // The official DashScope model directory pages at 100 items; derive the regional host
     // from the selected compatible-mode endpoint (WorkspaceId and API Key must share a region).
     return `${origin}/api/v1/models?providers=qwen&page_no=1&page_size=100`;

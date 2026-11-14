@@ -514,20 +514,17 @@
       </section>
       <section class="tuner-sec">
         <div class="tuner-label"><span id="tuner-label-env"></span></div>
-        <div id="tuner-env-options" class="tuner-seg" role="group"></div>
-        <div id="tuner-chat-block" class="tuner-sub" hidden>
-          <label class="tuner-check"><input id="tuner-chat-thinking" type="checkbox"/><span id="tuner-chat-thinking-label"></span></label>
+        <div class="tuner-env-row">
+          <div id="tuner-env-options" class="tuner-seg" role="group"></div>
+          <div id="tuner-chat-block" class="tuner-sub" hidden>
+            <label class="tuner-check"><input id="tuner-chat-thinking" type="checkbox"/><span id="tuner-chat-thinking-label"></span></label>
+          </div>
         </div>
         <p id="tuner-env-hint" class="tuner-hint"></p>
       </section>
       <section class="tuner-sec">
         <div class="tuner-label"><span id="tuner-label-personal"></span><span id="tuner-personal-count" class="tuner-value"></span></div>
         <textarea id="tuner-personal-prompt" class="tuner-personal" rows="3" maxlength="2000"></textarea>
-      </section>
-      <section class="tuner-sec">
-        <div class="tuner-label"><span id="tuner-label-tools"></span></div>
-        <button id="tuner-open-tools" type="button" class="ghost-btn"></button>
-        <p class="tuner-hint" id="tuner-tools-note"></p>
       </section>
     </div>
     <div class="modal-actions"><span id="tuner-summary" class="tuner-summary"></span><button id="tuner-reset" type="button" class="ghost-btn"></button></div>
@@ -599,13 +596,17 @@
         <div class="set-row"><div class="set-lbl"><div class="set-title">当前中继</div><div class="set-sub" id="set-relay-msg">检测中…</div></div></div>
       </section>
 
-      <section class="set-sec" id="set-tool-manager-sec">
-        <h4>自注册工具</h4>
+      <section class="set-sec" id="set-capability-sec">
+        <h4>工具能力</h4>
         <div class="set-row" id="set-tool-manager">
           <div class="set-lbl"><div class="set-title" id="tool-manager-title"></div><div class="set-sub" id="tool-manager-desc"></div></div>
           <div class="set-ctl"><span id="tool-manager-count" class="mono"></span><span class="tool-manager-pending" id="tool-manager-pending" hidden></span></div>
         </div>
         <div class="set-row"><div class="set-ctl"><div id="tool-manager-root" class="tool-manager-root"></div></div></div>
+        <div class="set-sub">按当前模型、思考档位与功能开关，预览本轮可用工具及未启用原因。</div>
+        <div id="set-capability-details" class="set-capability-details" aria-label="当前工具能力表">
+          <div class="capability-detail-panel"><div class="capability-detail-inner"><div id="set-capability-table-body" class="capability-table capability-table-body" role="region" aria-live="polite" aria-label="当前工具能力表"></div></div></div>
+        </div>
       </section>
 
       <section class="set-sec">
@@ -654,13 +655,6 @@
         </div>
       </section>
 
-      <section class="set-sec" id="set-capability-sec">
-        <h4>工具能力</h4>
-        <div class="set-sub">按当前模型、思考档位与功能开关，预览本轮可用工具及未启用原因。</div>
-        <div id="set-capability-details" class="set-capability-details" aria-label="当前工具能力表">
-          <div class="capability-detail-panel"><div class="capability-detail-inner"><div id="set-capability-table-body" class="capability-table capability-table-body" role="region" aria-live="polite" aria-label="当前工具能力表"></div></div></div>
-        </div>
-      </section>
 
       <section class="set-sec" id="set-budget-sec">
         <h4>执行预算</h4>

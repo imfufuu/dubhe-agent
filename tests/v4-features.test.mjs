@@ -42,19 +42,13 @@ test('① 最终产物报告：非内部路径校验、工具登记与回合事�
   assert.match(read('js/ui-chat-mode.js'), /openFileViewer\(path\)/);
 });
 
-test('② 对话模式只声明身份：模型名 / 对话模式 / 无工具 / 仅模型测试', () => {
-  const msg = chatIdentityMessage('gpt-test-x');
-  assert.equal(msg.role, 'system');
-  assert.match(msg.content, /gpt-test-x/);
-  assert.match(msg.content, /Dubhe Agent|对话模式|不能运行任何工具|只做模型测试|Chat mode|no tools|model-only test/);
-  assert.ok(msg.content.length < 160, '身份声明必须简短');
+test('② 对话模式零提示词：不注入任何 system/task 文本', () => {
+  assert.equal(chatIdentityMessage('gpt-test-x'), null, '纯净模型对话不声明身份/工具能力');
   const api = read('js/api.js');
-  assert.match(api, /export function chatIdentityMessage/);
-  assert.match(api, /bareChat\s*\?\s*\[chatIdentityMessage\(model\), \.\.\.cleanedMessages\.filter/);
-  assert.match(api, /bareChat \? \[chatIdentityMessage\(model\), \.\.\.localBase\.filter/);
-  assert.doesNotMatch(api, /bareChat（对话模式）：请求体里不出现任何 system/);
-  assert.match(read('js/agent.js'), /唯一的简短身份声明由 api\.js/);
-  assert.match(read('js/ui-tuner.js'), /只上传一条简短身份声明/);
+  assert.match(api, /bareChat\s*\?\s*cleanedMessages\.filter/);
+  assert.match(api, /if \(bareChat\) \{ tools = \[\]; fastMode = false; thinking = false; \}/);
+  assert.match(read('js/agent.js'), /纯净模型对话/);
+  assert.match(read('js/ui-tuner.js'), /不上传任何提示词/);
 });
 
 test('③ 代码注册：安全初审拒绝危险代码，通过后仍需用户确认', () => {
@@ -85,8 +79,8 @@ test('③ 代码注册：安全初审拒绝危险代码，通过后仍需用户�
   assert.match(read('js/tool-catalog.js'), /安全初审/);
   // 菜单移到设置页靠前
   const app = read('app.html');
-  assert.ok(app.indexOf('id="set-tool-manager-sec"') < app.indexOf('<h4>外观</h4>'), '自注册工具菜单应在外观之前');
-  assert.ok(app.indexOf('<h4>网关</h4>') < app.indexOf('id="set-tool-manager-sec"'));
+  assert.ok(app.indexOf('id="set-capability-sec"') < app.indexOf('<h4>外观</h4>'), '自注册工具菜单应在外观之前');
+  assert.ok(app.indexOf('<h4>网关</h4>') < app.indexOf('id="set-capability-sec"'));
 });
 
 test('④ 对话模式 UI：思考变普通按钮、隐藏沙箱/联网、附件仅文本直接解析', () => {

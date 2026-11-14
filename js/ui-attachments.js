@@ -414,15 +414,15 @@ export function installAttachments({ composer, toast, safeImgSrc, fmtSize, onCha
   let urlBusy = false;
   async function addFromUrl(url) {
     const target = String(url || '').trim();
-    if (!/^https?:\/\//i.test(target)) { toast('请输入以 http(s):// 开头的文件链接', 'err'); return false; }
-    if (urlBusy) { toast('上一个链接还在拉取中…', 'info'); return false; }
+    if (!/^https?:\/\//i.test(target)) { toast(localeText('请输入以 http(s):// 开头的文件链接', 'Enter a file URL starting with http(s)://'), 'err'); return false; }
+    if (urlBusy) { toast(localeText('上一个链接还在拉取中…', 'The previous link is still downloading…'), 'info'); return false; }
     if (pending.length >= MAX_FILES) { toast(`最多 ${MAX_FILES} 个附件`, 'err'); return false; }
     urlBusy = true;
     const label = target.length > 60 ? `${target.slice(0, 57)}…` : target;
     try {
       await relayAvailable();
       if (!relaySupports('file')) {
-        toast('当前中继不支持跨域拉取文件（需要新版 relay/worker.js，health 声明 file 能力）', 'err', 5200);
+        toast(localeText('当前中继不支持跨域拉取文件（需要新版 relay/worker.js，health 声明 file 能力）', 'This relay cannot fetch files cross-origin (needs the newer relay/worker.js that advertises the file capability in health)'), 'err', 5200);
         return false;
       }
       toast(`正在经中继拉取 ${label}`, 'info', 2600);

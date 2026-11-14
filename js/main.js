@@ -59,12 +59,12 @@ const hooks = {
   onFsChange: (paths) => ui && ui.onFsChange && ui.onFsChange(paths),
   onTempCommit: (m) => ui && ui.onTempCommit && ui.onTempCommit(m),
   onModerationFailOpen: (reason) => {
-    globalThis.__dubheDebugLog && globalThis.__dubheDebugLog('moderation.fail-open', reason || '超时');
-    toast(`⚠ 图片/文本审核${reason || '超时'}，本轮已放行——控制台输入 __dubheModDump() 可复制完整审核日志（β）`, 'warn', 9000);
+    globalThis.__dubheDebugLog && globalThis.__dubheDebugLog('moderation.fail-open', reason || localeText('超时', 'Timeout'));
+    toast(`⚠ 图片/文本审核${reason || localeText('超时', 'Timeout')}，本轮已放行——控制台输入 __dubheModDump() 可复制完整审核日志（β）`, 'warn', 9000);
   },
   onModerationFailClosed: (reason) => {
-    globalThis.__dubheDebugLog && globalThis.__dubheDebugLog('moderation.fail-closed', reason || '超时');
-    toast('图片审核超时，本轮已阻止（图片未进沙箱）。模型在后台继续预热，稍后重发即可', 'warn', 9000);
+    globalThis.__dubheDebugLog && globalThis.__dubheDebugLog('moderation.fail-closed', reason || localeText('超时', 'Timeout'));
+    toast(localeText('图片审核超时，本轮已阻止（图片未进沙箱）。模型在后台继续预热，稍后重发即可', 'Image moderation timed out; this turn was blocked (the image never reached the sandbox). The model keeps warming up — resend in a moment'), 'warn', 9000);
   },
   onAssistantStart: (m) => ui && ui.onAssistantStart(m),
   onRetry: (_m, info) => {
@@ -72,7 +72,7 @@ const hooks = {
     const total = 3;
     const why = info && info.reason === 'first-token-timeout'
       ? `${Math.round(15)} 秒未收到模型输出`
-      : '连接瞬断';
+      : localeText('连接瞬断', 'Connection dropped briefly');
     toast(`连接异常（${why}），正在第 ${n}/${total} 次重试…`, 'warn', 3000);
   },
   onDelta: (m, text) => ui && ui.onDelta(m, text),
@@ -119,7 +119,7 @@ const hooks = {
     ui && ui.onAssistantDone(last || store.state.messages[store.state.messages.length - 1]);
     ui && ui.updateStats();
   },
-  onNeedKey: () => { window.openKeyModal && window.openKeyModal(); toast('请先配置 API Key', 'warn'); },
+  onNeedKey: () => { window.openKeyModal && window.openKeyModal(); toast(localeText('请先配置 API Key', 'Configure an API key first'), 'warn'); },
 };
 
 bootStage('kernel');
@@ -137,7 +137,7 @@ installFlagFontRecovery();
 installFlagCopyHandler();
 installFirstVisit();
 // 用户手动取消 Cloudflare 人机验证：把决策写进本轮提示词，避免 Agent 自动重试。
-globalThis.addEventListener?.('dubhe:turnstile-cancelled', () => { globalThis.__dubheUserDecision = '用户手动取消了 Cloudflare 人机验证；本轮不要重试该工具，也不要再次弹出验证。'; });
+globalThis.addEventListener?.('dubhe:turnstile-cancelled', () => { globalThis.__dubheUserDecision = localeText('用户手动取消了 Cloudflare 人机验证；本轮不要重试该工具，也不要再次弹出验证。', 'The user cancelled the Cloudflare human check; do not retry that tool this turn and do not reopen the check.'); });
 installProjectEntry({ store, agent });
 installDeviceControls();
 // 旧浏览器提示（.32）：缺 color-mix / :has 时样式会「有骨架、丢细节」，用户容易以为是加载失败；说清原因与版本建议，每个会话只提一次

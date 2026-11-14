@@ -856,7 +856,7 @@ console.log('\n⑱ 设置页字号 / 深度思考 / 本地会话数回归');
     ok('本地存储按 v2 实际显示会话数而非旧 key 的 0', $('#set-about-store').textContent.startsWith('3 个会话'), $('#set-about-store').textContent);
     const imgSel = $('#set-image-model');
     // 生图菜单按模型家族展示（GPT Image 2 / GPT Image 2.5 / Nano Banana）；变体由 Agent 自动选择
-    ok('设置页生图模型菜单按家族展示（6 项，含 GPT Image 2.6）', imgSel.options.length === 6 && [...imgSel.options].some((o) => o.value === 'cloudflare-flux') && [...imgSel.options].some((o) => o.value === 'nano-banana'), `实际 ${imgSel.options.length}`);
+    ok('设置页生图模型菜单按家族展示（TeamoRouter 下 5 项，Cloudflare FLUX 仅 Cloudflare 网关）', imgSel.options.length === 5 && ![...imgSel.options].some((o) => o.value === 'cloudflare-flux') && [...imgSel.options].some((o) => o.value === 'nano-banana'), `实际 ${imgSel.options.length}`);
     ok('设置页生图选择器显示当前会话所属家族', imgSel.value === imageFamilyOf(store.state.imageModel), `${imgSel.value} vs ${store.state.imageModel}`);
     imgSel.value = 'nano-banana'; imgSel.dispatchEvent(new window.Event('change', { bubbles: true }));
     ok('改生图家族写入会话的家族 ID（变体由 Agent 按提示词选）store.state.imageModel', imageFamilyOf(store.state.imageModel) === 'nano-banana', store.state.imageModel);

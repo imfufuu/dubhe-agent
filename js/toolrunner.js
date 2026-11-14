@@ -30,6 +30,7 @@ import { toolName } from './executionContext.js?v=2026.10.25.1';
 import { skillToolsFromResult } from './skill-library.js';
 import { shouldAutoReview, reviewToolCall } from './auto-review.js';
 import { toolDefinitionFromResult } from './tool-catalog.js';
+import { taskClockMark, taskClockSpan } from './task-clock.js';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // 一次委派最多并发几个子智能体（再高就是自己跟自己抢网关并发额度了）
@@ -783,6 +784,7 @@ export function createToolRunner({ store, emit, getFs, runSubagent } = {}) {
       })();
       exec.inflight.set(opKey, inflightPromise);
       const t0 = Date.now();
+      const waitMark = taskClockMark();
       let result = '';
       try {
         result = await inflightPromise;
@@ -845,7 +847,7 @@ export function createToolRunner({ store, emit, getFs, runSubagent } = {}) {
       const status = (execError || post.failureSignalled || post.failureKind) ? 'failed' : 'succeeded';
       // 把结论写回 call 本身：工具芯片重建（合并到同轮最后一条消息 / 刷新页面）后仍能显示 成功 / 失败 与耗时
       call.status = status === 'failed' ? 'error' : 'ok';
-      call.durationMs = Math.max(1, Date.now() - t0);   // 本地小工具常在 1ms 内结束：记 1ms 而不是 0，界面上才有耗时可显示
+      call.durationMs = Math.max(1, Date.now() - t0 - taskClockSpan(waitMark));   // 本地小工具常在 1ms 内结束：记 1ms 而不是 0，界面上才有耗时可显示
       if (status === 'failed') call.errorNote = String((execError && execError.message) || '').slice(0, 200); // 不把失败归类标签当提示
       const closed = exec.machine.endToolRun(run, {
         status,
@@ -929,11 +931,12 @@ export function createToolRunner({ store, emit, getFs, runSubagent } = {}) {
       if (turn.signal.aborted) throw new DOMException('Aborted', 'AbortError');
       call.settled = false;
       const started = Date.now();
+      const startedMark = taskClockMark();
       const result = await runCall(call);
       if (turn.signal.aborted) throw new DOMException('Aborted', 'AbortError');
       call.settled = true;
       if (!['ok', 'error'].includes(call.status)) call.status = 'ok';
-      call.durationMs ??= Math.max(1, Date.now() - started);
+      call.durationMs ??= Math.max(1, Date.now() - started - taskClockSpan(startedMark));
       if (call.status === 'ok') captureEditPreviewSnapshot(call, call.args?.scope === 'project' ? createProjectFS(store) : getFs());
       emit('onToolEvent', call, { status: call.status, settled: true, durationMs: call.durationMs,
         note: call.errorNote || '', finalOutput: String(result) });
